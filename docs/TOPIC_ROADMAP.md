@@ -6,8 +6,8 @@
 |---|---|---|---|
 | B00 | CONCLUÍDO | Governança e cadastro local | Projeto reconhecido no Codex; documentos-base presentes. |
 | V00 | CONCLUÍDO | Viabilidade e primeiro corte do MVP | Hipóteses, gates e rota de parada aprovados em 24/09/2026. |
-| V01 | PR ABERTO | Repriorização para estúdio de cortes dinâmicos | Persona, fluxo vertical, integração inicial com Instagram e roadmap V01–R09 consolidados. |
-| R01 | PENDENTE | Fluxo real e baseline interno | Depende do merge de V01. |
+| V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
+| R01 | EM EXECUÇÃO | Fluxo real e baseline interno | Protocolo aprovado; aguarda execução e métricas dos três lotes autorizados. |
 | R02 | PENDENTE | Descoberta de fontes | Depende de R01. |
 | R03 | PENDENTE | Experimento criativo concierge | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
@@ -129,6 +129,17 @@ Em 24/09/2026, o usuário esclareceu que:
 
 V01 substitui o recorte `metadados-only/export-only` de V00, preservando revisão
 humana, origem, controles determinísticos, mídia fora do Git e fallback manual.
+
+### R01 — protocolo aprovado
+
+Em 24/09/2026, foi aprovado o protocolo sanitizado de execução em
+`docs/R01_BASELINE_PROTOCOL.md`. O exercício compara as quatro famílias em três
+lotes, separa tempo ativo de espera e registra custos, falhas, retrabalhos e uma
+rubric definida antes da avaliação.
+
+Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
+G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e
+outros dados privados não devem ser adicionados ao repositório.
 
 ## Riscos residuais
 

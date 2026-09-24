@@ -1,7 +1,7 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V01 repriorizado; implementação ainda não autorizada
-**Fase atual:** planejamento; nenhuma implementação autorizada
+**Status:** V01 concluído; R01 em execução; implementação ainda não autorizada
+**Fase atual:** validação manual do fluxo; nenhuma implementação autorizada
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-24
 
