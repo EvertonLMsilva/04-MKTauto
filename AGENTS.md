@@ -21,7 +21,9 @@
    idempotência e contratos.
 6. Executar testes focados, revisar o diff e atualizar o roadmap com evidência.
 7. Com remoto disponível, concluir cada tópico com commit, push e PR.
-8. Após merge, gerar o prompt do próximo tópico sem iniciá-lo.
+8. Após a confirmação do merge, exibir na resposta o prompt completo do próximo
+   tópico sem iniciá-lo. Se nenhum tópico estiver desbloqueado, exibir o prompt
+   de retomada do tópico bloqueado com sua condição de desbloqueio.
 
 Somente o commit-base do bootstrap, necessário para criar a branch principal, é
 exceção à exigência de PR.
