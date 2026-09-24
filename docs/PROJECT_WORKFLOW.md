@@ -35,7 +35,9 @@ O próximo tópico só começa após o merge do anterior.
 4. Se houver implementação, aprovar um pacote curto antes de usar o Codex.
 5. No Codex, verificar a base, executar apenas o pacote, testar e revisar o diff.
 6. Registrar decisão, aceite e risco residual; fazer commit, push e abrir PR.
-7. Após o merge, registrar o próximo tópico desbloqueado sem iniciá-lo.
+7. Após a confirmação do merge, registrar e exibir na resposta o prompt completo
+   do próximo tópico sem iniciá-lo. Se nenhum tópico estiver desbloqueado, exibir
+   o prompt de retomada do tópico bloqueado e sua condição de desbloqueio.
 
 ## Pacote curto padrão
 
