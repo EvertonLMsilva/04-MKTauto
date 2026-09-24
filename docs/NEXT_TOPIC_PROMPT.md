@@ -1,9 +1,9 @@
 # Próximo tópico — R01 Descoberta, direitos e baseline
 
 > Estado em 24/09/2026: análise executada e registrada em
-> `docs/R01_DISCOVERY_BASELINE.md`. R01 está bloqueado em `stop/reposicionar`;
-> este prompt só pode ser retomado após apresentar operadores, lotes autorizados
-> e responsável jurídico conforme as condições daquele registro.
+> `docs/TOPIC_ROADMAP.md`. R01 está bloqueado em `stop/reposicionar`; este prompt
+> só pode ser retomado após apresentar operadores, lotes autorizados e responsável
+> jurídico conforme as condições do roadmap.
 
 ## Resultado
 
