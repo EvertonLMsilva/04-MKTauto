@@ -137,6 +137,11 @@ Em 24/09/2026, foi aprovado o protocolo sanitizado de execução em
 lotes, separa tempo ativo de espera e registra custos, falhas, retrabalhos e uma
 rubric definida antes da avaliação.
 
+A pesquisa manual em `docs/R01_NICHE_RESEARCH.md` selecionou dicas práticas de
+tecnologia como hipótese principal e organização doméstica e cozinha rápida como
+lotes comparativos. Os sinais públicos definem padrões a testar, mas não
+autorizam reutilização de mídia de terceiros.
+
 Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
 G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e
 outros dados privados não devem ser adicionados ao repositório.

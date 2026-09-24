@@ -13,8 +13,8 @@ agregadas.
 ## Desenho do exercício
 
 - Executar três lotes, um perfil por vez.
-- Preferir três nichos do portfólio; usar menos nichos somente quando o registro
-  final explicar como o recorte reduz variáveis sem comprometer G0.
+- Usar os três nichos candidatos registrados em `docs/R01_NICHE_RESEARCH.md`:
+  dicas práticas de tecnologia, organização doméstica e cozinha rápida.
 - Cada lote parte de uma fonte própria, licenciada ou autorizada, cuja prova é
   conferida antes do cronômetro e referenciada apenas por um ID interno.
 - Produzir, a partir da mesma fonte de cada lote, uma versão de cada família:
@@ -24,6 +24,11 @@ agregadas.
 
 O exercício planejado contém 3 fontes e 12 variações. A quantidade candidata do
 lote inicial será decidida depois das medições, não presumida por este protocolo.
+
+Os exemplos públicos encontrados na pesquisa servem somente para reconhecer
+padrões editoriais. Não são fontes autorizadas para os lotes. Cada fonte do
+baseline precisa ser produzida pelo operador, licenciada ou autorizada de forma
+independente.
 
 ## Preparação de cada lote
 
