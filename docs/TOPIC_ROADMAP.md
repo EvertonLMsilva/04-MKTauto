@@ -6,9 +6,11 @@
 |---|---|---|---|
 | B00 | CONCLUÍDO | Governança e cadastro local | Projeto reconhecido no Codex; documentos-base presentes. |
 | V00 | CONCLUÍDO | Viabilidade, reuso e ordem do MVP | T00–T18 avaliados; escopo, consolidações, gates e roadmap R01–R07 aprovados em 24/09/2026. |
-| R01 | PRONTO PARA ANÁLISE | Descoberta, direitos e baseline | Operadores e lotes autorizados acessíveis; fluxo observado; decisões bloqueantes e plano de evidência aprovados. |
+| R01 | BLOQUEADO — STOP/REPOSICIONAR | Descoberta, direitos e baseline | G0 não satisfeito: sem evidência de operadores, lotes autorizados ou responsável jurídico; protocolo e condições de retomada em `docs/R01_DISCOVERY_BASELINE.md`. |
 
-Somente R01 está pronto. Nenhum tópico de implementação está autorizado.
+R01 registrou a rota de parada em 24/09/2026. R02 e todos os tópicos de
+implementação permanecem não autorizados até a condição de retomada de R01 e G0
+serem satisfeitos.
 
 ## Corte aprovado do MVP
 
@@ -76,7 +78,8 @@ Defaults aprovados:
 
 ## Dependências e riscos residuais
 
-- R01 depende de acesso a operadores e mídia realmente autorizada.
+- R01 está bloqueado por ausência demonstrada de operadores, mídia autorizada e
+  responsável jurídico. Ver o [registro de análise](R01_DISCOVERY_BASELINE.md).
 - Envio de mídia a provedores depende de decisão sobre dados, região e retenção.
 - A declaração do usuário não substitui autorização compatível nem revisão
   profissional antes de produção pública.

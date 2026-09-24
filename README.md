@@ -11,10 +11,11 @@ Leia [docs/CONTENT_AUTOMATION_MVP_PROJECT.md](docs/CONTENT_AUTOMATION_MVP_PROJEC
 As regras estão em [AGENTS.md](AGENTS.md). O trabalho usa o
 [fluxo econômico](docs/PROJECT_WORKFLOW.md), o
 [roadmap](docs/TOPIC_ROADMAP.md) e o
-[prompt do próximo tópico](docs/NEXT_TOPIC_PROMPT.md).
+[registro de R01](docs/R01_DISCOVERY_BASELINE.md).
 
 ## Próximo passo
 
-Analisar somente `R01 — Descoberta, direitos e baseline`, conforme o
-[prompt do próximo tópico](docs/NEXT_TOPIC_PROMPT.md). Nenhuma implementação está
-autorizada antes de satisfazer os gates de matéria-prima, valor e construção.
+R01 registrou `stop/reposicionar`: faltam operadores acessíveis, três lotes reais
+autorizados e responsável jurídico. Consulte o
+[registro de análise](docs/R01_DISCOVERY_BASELINE.md) para as condições de
+retomada. R02 e qualquer implementação permanecem não autorizados.
