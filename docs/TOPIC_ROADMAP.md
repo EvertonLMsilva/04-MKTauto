@@ -142,6 +142,11 @@ tecnologia como hipótese principal e organização doméstica e cozinha rápida
 lotes comparativos. Os sinais públicos definem padrões a testar, mas não
 autorizam reutilização de mídia de terceiros.
 
+O usuário esclareceu que o fluxo candidato não exige gravação própria: ele deve
+encontrar vídeos existentes com direito de adaptação e produzir cortes com valor
+editorial substancial. Mudanças superficiais não satisfazem o produto, e direito
+de uso continua sendo gate independente da transformação criativa.
+
 Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
 G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e
 outros dados privados não devem ser adicionados ao repositório.

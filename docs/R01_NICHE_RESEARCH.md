@@ -7,10 +7,11 @@ A hipótese principal para o primeiro perfil é **dicas práticas de tecnologia 
 rápida**. A escolha é uma hipótese para o baseline, não uma promessa de audiência
 ou definição definitiva do portfólio.
 
-O recorte favorece conteúdo que o operador consegue produzir originalmente com
-gravação de tela, demonstrações próprias e cenas filmadas por ele. Reels de
-terceiros observados na pesquisa são referências editoriais, não fontes de mídia
-para download, corte ou repostagem.
+O recorte favorece acervos de vídeos existentes que permitam adaptação por
+licença, domínio público ou autorização do titular. O operador não precisa
+gravar a fonte. Reels encontrados em perfis são referências editoriais e só
+podem virar insumo quando houver uma permissão independente e registrável para
+baixar, adaptar e publicar.
 
 ## Método e limites
 
@@ -27,11 +28,11 @@ formato, não médias da categoria nem previsão de desempenho.
 
 ## Sinais observados
 
-| Nicho | Sinal público pontual | Padrões recorrentes | Produção original viável |
+| Nicho | Sinal público pontual | Padrões recorrentes | Fonte reutilizável necessária |
 |---|---|---|---|
-| Dicas de tecnologia | Tópico `techtips`: 4,3 milhões de reels; exemplos exibidos entre 1,6 e 23,4 milhões de visualizações | configuração oculta, problema/solução, lista de três recursos, demonstração de tela, gancho de curiosidade | alta: captura do próprio aparelho, voz e roteiro próprios |
-| Organização doméstica | Tópico `homeorganization`: 2,5 milhões de reels; exemplos exibidos de 202 a 8,2 milhões de visualizações | antes/depois, solução visual, produto em uso, organização por etapas | alta: ambiente, objetos e filmagem próprios |
-| Cozinha rápida | Tópico `cookinghacks`: 583 mil reels; exemplos exibidos entre 65,4 mil e 3,8 milhões de visualizações; `#cookinghacks` aparece com 782,2 mil postagens no relatório TikTok Next 2026 | truque único, três dicas, transformação visível, teste de dica viral | média: exige ingredientes, espaço e cuidado com alegações |
+| Dicas de tecnologia | Tópico `techtips`: 4,3 milhões de reels; exemplos exibidos entre 1,6 e 23,4 milhões de visualizações | configuração oculta, problema/solução, lista de três recursos, demonstração de tela, gancho de curiosidade | vídeo de catálogo com derivação permitida ou autorização do titular; dica verificada separadamente |
+| Organização doméstica | Tópico `homeorganization`: 2,5 milhões de reels; exemplos exibidos de 202 a 8,2 milhões de visualizações | antes/depois, solução visual, produto em uso, organização por etapas | demonstração licenciada/autorizada, incluindo marcas, pessoas e música abrangidas |
+| Cozinha rápida | Tópico `cookinghacks`: 583 mil reels; exemplos exibidos entre 65,4 mil e 3,8 milhões de visualizações; `#cookinghacks` aparece com 782,2 mil postagens no relatório TikTok Next 2026 | truque único, três dicas, transformação visível, teste de dica viral | preparo licenciado/autorizado e revisão de alegações e segurança alimentar |
 
 O relatório TikTok Next 2026 também sinaliza procura por conteúdo mais real,
 útil e baseado em processo, além de jornadas de descoberta via busca. Entre os
@@ -40,10 +41,11 @@ o público a decidir “por que comprar”.
 
 ## Ranking para o baseline
 
-Escala de 1 a 5. Pesos: demanda observável 30%, facilidade de produção original
-25%, repetibilidade 20%, monetização adjacente 15% e segurança editorial 10%.
+Escala de 1 a 5. Pesos: demanda observável 30%, facilidade de obter e transformar
+fonte autorizada 25%, repetibilidade 20%, monetização adjacente 15% e segurança
+editorial 10%.
 
-| Posição | Nicho | Demanda | Produção | Repetição | Monetização | Segurança | Nota ponderada |
+| Posição | Nicho | Demanda | Fonte/transformação | Repetição | Monetização | Segurança | Nota ponderada |
 |---:|---|---:|---:|---:|---:|---:|---:|
 | 1 | Dicas práticas de tecnologia | 5 | 5 | 5 | 4 | 4 | 4,75 |
 | 2 | Organização doméstica | 4 | 4 | 4 | 5 | 4 | 4,15 |
@@ -53,6 +55,18 @@ O ranking prioriza viabilidade editorial e direitos, não apenas volume. Futebol
 celebridades, notícias e política aparecem com frequência em tendências diárias,
 mas foram excluídos do baseline por volatilidade, maior dependência de imagens de
 terceiros e riscos adicionais de direito, contexto e segurança.
+
+## Modelo de transformação
+
+O produto parte de um vídeo existente permitido e cria uma obra editorialmente
+nova por meio de seleção de trechos, mudança de estrutura, roteiro próprio,
+informação ou análise adicional, narração/texto, legendas e identidade visual.
+Somente borda, velocidade, legenda automática, junção de clipes ou narração do
+que já aparece na tela são mudanças de baixo valor.
+
+Valor criativo substancial e direito de uso são verificações independentes: uma
+transformação forte não substitui licença, autorização ou uma exceção jurídica
+aplicável; uma licença válida também não garante recomendação pela plataforma.
 
 ## Tipos de vídeo candidatos
 
@@ -82,10 +96,15 @@ exemplos observados.
   <https://about.fb.com/br/news/2026/03/apresentando-uma-nova-era-de-descoberta-de-produtos-impulsionada-por-ia-e-criadores/>
 - Meta, diretrizes de originalidade no Reels do Facebook:
   <https://about.fb.com/br/news/2026/03/recompensando-criadores-originais-no-facebook/>
+- Instagram, orientação oficial sobre direitos autorais:
+  <https://www.facebook.com/help/354736791367645/>
+- Creative Commons, licenças e condições de adaptação:
+  <https://creativecommons.org/share-your-work/use-remix/cc-licenses/>
 
 ## Próxima evidência necessária
 
-Para concluir G0, o operador deve gravar ou fornecer uma fonte original ou
-formalmente autorizada para cada nicho e executar os três lotes conforme
-`docs/R01_BASELINE_PROTOCOL.md`. A pesquisa de popularidade não substitui essa
-execução nem concede direito de reutilizar qualquer reel observado.
+Para concluir G0, o operador deve selecionar uma fonte existente, licenciada,
+em domínio público ou formalmente autorizada para cada nicho e executar os três
+lotes conforme `docs/R01_BASELINE_PROTOCOL.md`. A pesquisa de popularidade não
+substitui essa execução nem concede direito de reutilizar qualquer reel
+observado.

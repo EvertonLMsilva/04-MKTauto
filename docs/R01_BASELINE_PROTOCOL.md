@@ -15,8 +15,9 @@ agregadas.
 - Executar três lotes, um perfil por vez.
 - Usar os três nichos candidatos registrados em `docs/R01_NICHE_RESEARCH.md`:
   dicas práticas de tecnologia, organização doméstica e cozinha rápida.
-- Cada lote parte de uma fonte própria, licenciada ou autorizada, cuja prova é
-  conferida antes do cronômetro e referenciada apenas por um ID interno.
+- Cada lote parte de um vídeo existente licenciado, em domínio público ou
+  autorizado para adaptação e publicação, cuja prova é conferida antes do
+  cronômetro e referenciada apenas por um ID interno.
 - Produzir, a partir da mesma fonte de cada lote, uma versão de cada família:
   narrada, texto sobre vídeo, legendada e multitrecho.
 - Não publicar. A saída termina em exportação local e revisão humana da versão
@@ -26,9 +27,13 @@ O exercício planejado contém 3 fontes e 12 variações. A quantidade candidata
 lote inicial será decidida depois das medições, não presumida por este protocolo.
 
 Os exemplos públicos encontrados na pesquisa servem somente para reconhecer
-padrões editoriais. Não são fontes autorizadas para os lotes. Cada fonte do
-baseline precisa ser produzida pelo operador, licenciada ou autorizada de forma
-independente.
+padrões editoriais. Não são fontes autorizadas para os lotes sem uma licença ou
+autorização independente que permita download, adaptação e publicação.
+
+Cada variação precisa adicionar valor editorial substancial: reorganizar a
+narrativa e acrescentar informação, análise, verificação ou contexto próprio.
+Legenda, borda, mudança de velocidade, simples junção ou narração descritiva
+isoladas não atendem ao exercício.
 
 ## Preparação de cada lote
 
@@ -39,8 +44,9 @@ Registrar fora do Git a prova de direito de uso. No resumo sanitizado, preencher
 | Lote | `L01`, `L02` ou `L03` |
 | Perfil/nicho | Nome genérico, sem conta ou pessoa identificável |
 | Fonte | ID interno não reversível |
-| Condição de uso | `própria`, `licenciada` ou `autorizada` |
+| Condição de uso | `licenciada`, `domínio público` ou `autorizada` |
 | Prova conferida | `sim` ou `não`; sem anexar a prova |
+| Escopo conferido | adaptação, uso comercial, plataforma, território e validade |
 | Entrada | Duração, resolução e tamanho, sem nome de arquivo |
 | Ferramentas | Nome e versão; sem conta, token ou caminho privado |
 | Limites prévios | Teto de tempo ativo e custo aceito pelo operador |
