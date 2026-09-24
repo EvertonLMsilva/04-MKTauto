@@ -6,7 +6,13 @@
 |---|---|---|---|
 | B00 | CONCLUÍDO | Governança e cadastro local | Projeto reconhecido no Codex; documentos-base presentes. |
 | V00 | CONCLUÍDO | Viabilidade, reuso e ordem do MVP | T00–T18 avaliados; escopo, consolidações, gates e roadmap R01–R07 aprovados em 24/09/2026. |
-| R01 | BLOQUEADO — STOP/REPOSICIONAR | Descoberta, direitos e baseline | G0 não satisfeito: sem evidência de operadores, lotes autorizados ou responsável jurídico; protocolo e condições de retomada em `docs/R01_DISCOVERY_BASELINE.md`. |
+| R01 | BLOQUEADO — STOP/REPOSICIONAR | Descoberta, direitos e baseline | G0 não satisfeito: sem evidência de operadores, lotes autorizados ou responsável jurídico; ver registro abaixo. |
+| R02 | BLOQUEADO | Experimento concierge de geração | Depende de R01 e G0. |
+| R03 | PENDENTE | Revisão e exportação manual | Depende de R02. |
+| R04 | PENDENTE | Contrato determinístico e riscos | Depende de G1. |
+| R05 | PENDENTE | Fundação e entrada autorizada | Depende de R04 e G3. |
+| R06 | PENDENTE | Geração, revisão e exportação | Depende de R05. |
+| R07 | PENDENTE | Piloto instrumentado e decisão | Depende de R06. |
 
 R01 registrou a rota de parada em 24/09/2026. R02 e todos os tópicos de
 implementação permanecem não autorizados até a condição de retomada de R01 e G0
@@ -76,10 +82,58 @@ Defaults aprovados:
 | G4 — publicação | Somente após R07 mostrar que exportação manual é gargalo e um spike Meta for aprovado. |
 | G5 — afiliados | Somente após R07, com acesso oficial/contratual, disclosure e revisão jurídica próprios. |
 
+## Registro de execução dos tópicos
+
+Este é o histórico único do roadmap. Novos tópicos atualizam esta seção, sem criar
+um arquivo de acompanhamento por tópico.
+
+### R01 — Descoberta, direitos e baseline
+
+- Analisado em: 24/09/2026.
+- Decisão: `stop/reposicionar`; G0 não satisfeito; R02 não autorizado.
+
+O repositório não contém evidência sanitizada de operadores entrevistados,
+fluxos observados, lotes reais acessíveis ou autorizações verificáveis. Isso não
+prova que usuários ou mídia não existam; apenas impede avançar sem evidência.
+
+| Aceite | Estado | Evidência/pendência |
+|---|---|---|
+| Operadores e 3 lotes autorizados ou rota de parada | atendido pela rota de parada | nenhum operador/lote demonstrado |
+| Fluxo e baseline manual | não atendido | nenhum fluxo real observado |
+| Lote inicial e edição leve testáveis | provisório | 10 itens; MP4/MOV; 15–90 s; até 250 MB; edição em até 2 min |
+| Rubric e amostra de 30 itens | planejado | 3 lotes × 10 itens autorizados |
+| Direitos, retenção, proibições e responsável jurídico | bloqueado parcialmente | controles mínimos definidos; responsável e prazo jurídico ausentes |
+| Dados, região e retenção de provedor | provisório | mínimo necessário; Brasil; sem treino; exclusão em até 24 h |
+| Pacote de R02 | não aprovado | depende de G0 |
+
+Baseline, se retomado: medir tempo ativo e espera separadamente em conferência da
+mídia, direitos, entendimento, preparação, revisão e organização; registrar
+mediana por item, reaberturas, retrabalho, orçamento e prazo aceitável por lote.
+
+Edição leve: correções de linguagem/tom, ajuste curto de título/CTA/hashtags,
+correção factual explícita ou remoção pontual, sempre em até 2 minutos. Reescrita
+da ideia, pesquisa, retranscrição ou mudança de posicionamento é edição pesada.
+
+Rubric: pontuar de 0 a 2 fidelidade, idioma, aderência ao briefing, completude e
+segurança. Um item é utilizável com pelo menos 8/10, sem zero em fidelidade ou
+segurança, sem bloqueio de direitos/política e dentro do limite de edição leve.
+Meta posterior: 21 de 30 itens.
+
+Controles mínimos: admitir somente obra própria, encomendada/licenciada ou com
+autorização expressa compatível; manter prova privada fora do Git; bloquear item
+pendente, expirado ou revogado; excluir scraping/repostagem e conteúdo sensível,
+regulado ou de terceiros sem autorização. Takedown interrompe uso e exportação e
+exige remoção manual. Prazo jurídico de guarda permanece pendente.
+
+Condição de retomada: disponibilizar fora do Git contatos consentidos de até 5
+operadores, referências e provas de 3 lotes reais e a função responsável pelas
+pendências jurídicas. No repositório entram somente IDs sanitizados, decisões e
+tempos agregados.
+
 ## Dependências e riscos residuais
 
 - R01 está bloqueado por ausência demonstrada de operadores, mídia autorizada e
-  responsável jurídico. Ver o [registro de análise](R01_DISCOVERY_BASELINE.md).
+  responsável jurídico. A condição de retomada está no registro acima.
 - Envio de mídia a provedores depende de decisão sobre dados, região e retenção.
 - A declaração do usuário não substitui autorização compatível nem revisão
   profissional antes de produção pública.
