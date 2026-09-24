@@ -4,6 +4,8 @@
 
 - Responder em português, com objetividade e economia de tokens.
 - Trabalhar em um tópico por conversa e por branch.
+- Todo tópico concluído exige commit, push e PR aberto; o próximo tópico só
+  começa após o merge.
 - Antes de alterar arquivos, declarar tópico, entrega, fora de escopo e aceite.
 - Sem dúvida bloqueante, executar o escopo aprovado sem pedir confirmações repetidas.
 - Não repetir prompts, análises ou pacotes já aprovados.
@@ -18,11 +20,11 @@
 5. Alterar somente o necessário; usar TDD para domínio, estados, permissões,
    idempotência e contratos.
 6. Executar testes focados, revisar o diff e atualizar o roadmap com evidência.
-7. Commit, push e PR somente quando houver remoto e o pacote autorizar.
+7. Com remoto disponível, concluir cada tópico com commit, push e PR.
 8. Após merge, gerar o prompt do próximo tópico sem iniciá-lo.
 
-O bootstrap documental anterior ao primeiro commit/remoto é exceção: ele prepara
-as regras, mas não presume branch, PR ou merge inexistentes.
+Somente o commit-base do bootstrap, necessário para criar a branch principal, é
+exceção à exigência de PR.
 
 ## Economia com qualidade
 
@@ -52,4 +54,4 @@ as regras, mas não presume branch, PR ou merge inexistentes.
 - Não limpar, sobrescrever ou incluir mudanças locais do usuário sem autorização.
 
 Um tópico só termina com aceite demonstrado, testes pertinentes passando, diff
-restrito, documentação coerente e riscos residuais registrados.
+restrito, documentação coerente, riscos residuais registrados e PR aberto.

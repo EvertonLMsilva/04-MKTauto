@@ -21,19 +21,21 @@ contexto.
 
 ## Estados
 
-`PENDENTE → EM ANÁLISE → APROVADO → EM EXECUÇÃO → CONCLUÍDO`.
+`PENDENTE → EM ANÁLISE → APROVADO → EM EXECUÇÃO → PR ABERTO → CONCLUÍDO`.
 
 Usar `BLOQUEADO` somente com impedimento explícito e condição de retomada.
+O próximo tópico só começa após o merge do anterior.
 
 ## Fluxo mínimo
 
 1. Definir um problema, resultado e fora de escopo.
 2. No Chat, verificar necessidade, viabilidade, soluções existentes, APIs
    oficiais, custo, risco e menor corte útil.
-3. Se não houver mudança no repositório, concluir no Chat.
+3. Se não houver implementação, registrar somente a decisão documental necessária.
 4. Se houver implementação, aprovar um pacote curto antes de usar o Codex.
 5. No Codex, verificar a base, executar apenas o pacote, testar e revisar o diff.
-6. Registrar decisão, aceite, risco residual e próximo tópico desbloqueado.
+6. Registrar decisão, aceite e risco residual; fazer commit, push e abrir PR.
+7. Após o merge, registrar o próximo tópico desbloqueado sem iniciá-lo.
 
 ## Pacote curto padrão
 
@@ -64,6 +66,7 @@ base Git exata, riscos, rollback, custos e aprovação externa.
 
 ## Conclusão
 
-Um tópico termina quando entrega valor observável, atende o aceite e registra
-somente: resultado, verificações, riscos residuais e próximo passo. PR, métricas
-ou documentação adicional só são exigidos quando realmente aplicáveis.
+Um tópico termina quando entrega valor observável, atende o aceite, registra
+resultado, verificações e riscos residuais e possui PR aberto. O próximo passo é
+preparado após o merge. Métricas ou documentação adicional só são exigidas quando
+realmente aplicáveis.
