@@ -1,5 +1,10 @@
 # Próximo tópico — R01 Descoberta, direitos e baseline
 
+> Estado em 24/09/2026: análise executada e registrada em
+> `docs/R01_DISCOVERY_BASELINE.md`. R01 está bloqueado em `stop/reposicionar`;
+> este prompt só pode ser retomado após apresentar operadores, lotes autorizados
+> e responsável jurídico conforme as condições daquele registro.
+
 ## Resultado
 
 - Problema: ainda não há evidência de que operadores possuam mídia autorizada e
@@ -55,7 +60,7 @@
 - [ ] Fluxo e baseline manual estão mensurados.
 - [ ] Lote inicial e “edição leve” estão definidos de forma testável.
 - [ ] Rubric e amostra-alvo de 30 itens estão planejadas sem material irregular.
-- [ ] Prova de direitos, retenção, categorias proibidas e owner jurídico estão
+- [ ] Prova de direitos, retenção, categorias proibidas e responsável jurídico estão
       definidos ou marcados como bloqueio explícito.
 - [ ] Dados permitidos em provedores, região e retenção estão decididos.
 - [ ] Pacote de R02 aprovado somente se G0 for satisfeito.
