@@ -1,69 +1,59 @@
-# Próximo tópico — R01 Descoberta, direitos e baseline
+# Próximo tópico — R01 Fluxo real e baseline interno
 
-> Estado em 24/09/2026: análise executada e registrada em
-> `docs/TOPIC_ROADMAP.md`. R01 está bloqueado em `stop/reposicionar`; este prompt
-> só pode ser retomado após apresentar operadores, lotes autorizados e responsável
-> jurídico conforme as condições do roadmap.
+> Executar somente após o merge de V01. Este tópico valida o processo com o
+> próprio operador antes de escolher stack ou construir aplicação.
 
 ## Resultado
 
-- Problema: ainda não há evidência de que operadores possuam mídia autorizada e
-  economizem tempo com o fluxo proposto.
-- Resultado observável: fechar usuário, fluxo, lote, baseline, rubric e condições
-  jurídicas/operacionais mínimas antes de qualquer construção.
-- Valor esperado: impedir investimento em software sem matéria-prima, demanda ou
-  critério mensurável de sucesso.
+- Problema: ainda não sabemos o tempo, o custo, os insumos e os retrabalhos para
+  transformar vídeos encontrados por nicho em cortes dinâmicos publicáveis.
+- Resultado observável: executar três lotes representativos, medir o processo e
+  fechar o menor formato que seguirá para descoberta e experimento criativo.
+- Valor esperado: impedir que o MVP automatize etapas inexistentes ou formatos
+  que não geram valor editorial.
+
+## Persona principal
+
+Operador individual de um portfólio de perfis temáticos em `pt-BR`, responsável
+por selecionar fontes, criar variações, revisar, publicar e acompanhar resultados.
 
 ## Escopo
 
-1. Identificar até 5 operadores da persona aprovada e observar o fluxo atual.
-2. Obter acesso a 3 lotes reais com evidência de autorização, sem copiar a mídia
-   para o repositório.
-3. Cronometrar o tempo ativo por etapa e registrar os principais retrabalhos.
-4. Definir formato, duração, tamanho e quantidade provisórios do lote inicial.
-5. Definir “edição leve” por tempo e tipo de alteração e preparar a rubric.
-6. Definir origens aceitas, prova de direitos, validade, retenção, bloqueio e
-   takedown, com responsável por pendências jurídicas.
-7. Definir quais dados podem ser enviados a provedores, região e retenção aceita.
-8. Registrar critérios para avançar, iterar ou interromper o produto.
+1. Definir três perfis/nichos representativos ou justificar um recorte menor.
+2. Selecionar três lotes reais com origem registrada e mídia própria, licenciada
+   ou autorizada para os testes.
+3. Executar o fluxo manual com ferramentas existentes: busca, seleção, roteiro,
+   corte, narração/texto, legenda, revisão, renderização e exportação.
+4. Cronometrar tempo ativo e espera por etapa, custo, falhas e retrabalho.
+5. Comparar ao menos: narrado, texto sobre vídeo, legendado e multitrecho.
+6. Definir formato, duração, resolução, tamanho e quantidade do lote inicial.
+7. Definir rubric de utilidade, dinamismo, clareza, fidelidade e segurança.
+8. Registrar critérios objetivos para avançar, iterar ou interromper R02.
 
 ## Fora de escopo
 
-- Implementação, stack, arquitetura e escolha definitiva de provedor.
-- Upload ou armazenamento de mídia no repositório.
-- Publicação automática, Meta, Shopee, analytics e afiliados.
-- Composição, edição ou geração de vídeo.
+- Criar aplicação ou arquitetura.
+- Automatizar download, transcrição, edição, renderização ou publicação.
+- Escolher definitivamente IA, renderizador ou ferramenta de dashboard.
+- Integrar Instagram, Shopee ou qualquer parceiro.
+- Colocar mídia, tokens, autorizações privadas ou dados pessoais no Git.
 
 ## Base mínima
 
-- Git em `main`, sem commits/remoto no bootstrap; preservar todos os arquivos não
-  rastreados existentes.
-- Defaults aprovados: metadados-only, export-only, processo concierge/manual,
-  `pt-BR`, um operador e um projeto por vez.
-- Evidências esperadas: notas sanitizadas, tempos agregados, modelo de evidência
-  de direitos e plano de avaliação; nunca mídia, dados pessoais ou autorizações
-  privadas no repositório.
+- Git em `main` após o merge de V01, preservando mudanças locais.
+- Um operador, vários perfis possíveis, um perfil e um lote por vez.
+- Publicação manual e dados de desempenho manuais durante R01.
+- Revisão jurídica formal adiada para G4; testes limitados a mídia própria,
+  licenciada ou autorizada e com origem registrada.
 
-## Economia com qualidade
+## Aceite
 
-- Fazer descoberta, análise e comparação no Chat.
-- Usar ferramentas existentes para entrevistas, planilha e cronômetro.
-- Não criar aplicação, dataset sintético ou arquitetura para compensar ausência
-  de usuários e lotes reais.
-- Consultar fonte oficial atual somente quando uma obrigação jurídica ou externa
-  não puder ser resolvida pelas evidências já registradas.
-
-## Aceite da análise
-
-- [ ] Operadores e 3 lotes autorizados estão acessíveis, ou o tópico registra
-      `stop/reposicionar` com evidência.
-- [ ] Fluxo e baseline manual estão mensurados.
-- [ ] Lote inicial e “edição leve” estão definidos de forma testável.
-- [ ] Rubric e amostra-alvo de 30 itens estão planejadas sem material irregular.
-- [ ] Prova de direitos, retenção, categorias proibidas e responsável jurídico estão
-      definidos ou marcados como bloqueio explícito.
-- [ ] Dados permitidos em provedores, região e retenção estão decididos.
-- [ ] Pacote de R02 aprovado somente se G0 for satisfeito.
+- [ ] Três lotes reais foram executados ou o tópico registra `stop/reposicionar`.
+- [ ] Tempos, custos, espera, falhas e retrabalhos estão agregados no roadmap.
+- [ ] Os formatos dinâmicos foram comparados por rubric definida previamente.
+- [ ] O menor lote e o fluxo candidato estão definidos de forma testável.
+- [ ] Nenhuma mídia ou evidência privada entrou no repositório.
+- [ ] R02 foi aprovado somente se G0 estiver satisfeito.
 
 Este prompt autoriza análise e documentação estritamente necessárias. Não
 autoriza implementação.

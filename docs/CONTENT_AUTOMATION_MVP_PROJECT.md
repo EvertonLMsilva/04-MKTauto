@@ -1,35 +1,50 @@
-# Content Automation Engine — Fundação do MVP
+# MKTauto — estúdio de cortes dinâmicos
 
-**Status:** proposta para validação
+**Status:** V01 repriorizado; implementação ainda não autorizada
 **Fase atual:** planejamento; nenhuma implementação autorizada
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-24
 
 ## 1. Resumo executivo
 
-A fonte descreve uma operação em que alguém coleta vídeos virais de uma página estrangeira, aplica um template, gera 25 publicações, agenda tudo no Instagram e, após ganhar alcance, promove produtos da Shopee como afiliado.
+A operação-alvo administra perfis temáticos próprios: encontra vídeos relevantes
+por nicho, cria uma abordagem editorial, produz cortes verticais dinâmicos,
+publica no Instagram e aprende com desempenho, custo e receita.
 
-O produto proposto preserva o valor operacional — **produzir, revisar e distribuir conteúdo em lote** — sem depender de cópia não autorizada nem de promessas de renda. O sistema transforma mídia própria, licenciada ou expressamente autorizada em pacotes de conteúdo localizados para um projeto editorial. Cada pacote passa por revisão humana antes de exportação ou publicação. Métricas futuras fecham o ciclo de aprendizado.
+O produto preserva o valor operacional — **descobrir, criar, revisar, publicar e
+medir conteúdo em lote** — sem depender de scraping irregular nem de promessa de
+renda. Cada versão renderizada passa por revisão humana antes de exportação ou
+publicação. Instagram é o primeiro adaptador; outros canais e parceiros entram
+depois do MVP por contratos pequenos e comprovados.
 
 O MVP deve responder a uma pergunta central:
 
-> Um operador consegue transformar insumos autorizados em conteúdos publicáveis, consistentes e rastreáveis, com muito menos trabalho manual e sem perder controle editorial?
+> Um operador consegue transformar fontes relevantes em cortes verticais
+> dinâmicos, publicá-los com controle e identificar quais formatos merecem
+> continuar, com muito menos trabalho manual?
 
-Não tentaremos provar, no mesmo ciclo, descoberta automática de tendências, crescimento de audiência, geração completa de vídeo, atribuição de vendas e otimização autônoma.
+Não tentaremos provar, no mesmo ciclo, crescimento garantido, atribuição completa
+de vendas, otimização autônoma, múltiplas plataformas e múltiplos parceiros.
 
 ## 2. Visão e princípios
 
 ### Visão
 
-Ser o espaço de trabalho que converte oportunidades de conteúdo em uma operação editorial repetível: **entrada autorizada → análise → variações → revisão → distribuição → medição**.
+Ser o espaço de trabalho que converte oportunidades de conteúdo em uma operação
+editorial repetível: **descoberta → seleção → criação → corte → revisão →
+publicação → medição**.
 
 ### Usuário inicial
 
-Um criador ou pequeno operador de conteúdo que administra uma página em português, recebe de 5 a 25 vídeos por lote e hoje prepara manualmente título, legenda, CTA, hashtags e calendário.
+Um operador individual que administra um portfólio de perfis temáticos em
+português, seleciona vídeos por nicho e hoje combina manualmente roteiro,
+trechos, narração, texto, legendas, renderização, publicação e métricas.
 
 ### Promessa do MVP
 
-Para um lote válido, gerar rascunhos estruturados e revisáveis em minutos, preservar a origem e os direitos de cada ativo e entregar um pacote pronto para publicação manual ou para um piloto controlado via API oficial.
+Para um lote válido, gerar variações verticais revisáveis — narradas, textuais,
+legendadas ou multitrecho —, preservar a origem, publicar a versão aprovada no
+Instagram e mostrar desempenho, custo, receita e lucro estimado.
 
 ### Princípios
 
@@ -45,44 +60,45 @@ Para um lote válido, gerar rascunhos estruturados e revisáveis em minutos, pre
 
 | ID | Hipótese | Evidência necessária | Decisão se falsa |
 |---|---|---|---|
-| H1 | O usuário aceita fornecer apenas mídia própria/licenciada e declarar os direitos. | 5 entrevistas e 3 lotes reais autorizados. | Reposicionar para conteúdo criado pelo próprio usuário ou bibliotecas licenciadas. |
-| H2 | Metadados gerados por IA economizam pelo menos 50% do tempo de preparação. | Comparação cronometrada manual versus assistida. | Reduzir geração e focar templates/workflow. |
-| H3 | Pelo menos 70% dos rascunhos ficam utilizáveis com edição leve. | Avaliação humana em 30 itens; rubric definida previamente. | Melhorar contexto, prompts e validação antes de integrar publicação. |
-| H4 | Exportação resolve a primeira validação sem publicação automática. | Usuários concluem o fluxo e publicam os pacotes exportados. | Priorizar integração oficial de publicação. |
-| H5 | A API oficial do Instagram atende conta, formato, permissões, revisão e limites do piloto. | Spike com documentação atual e conta de teste. | Manter exportação/manual como limite do MVP. |
-| H6 | Há uma forma oficial e contratualmente permitida de consultar produtos/links da Shopee no mercado-alvo. | Confirmação documental/comercial. | Afiliados continuam fora do MVP ou usam cadastro manual posterior. |
+| H1 | Busca assistida encontra fontes úteis por nicho sem depender de scraping irregular. | 3 lotes reais e comparação entre busca manual e fonte/API oficial. | Manter curadoria e importação manuais. |
+| H2 | Assistência reduz pelo menos 50% do tempo ativo até um corte revisável. | Comparação cronometrada manual versus assistida. | Reduzir automação e focar templates/workflow. |
+| H3 | Pelo menos 70% das variações ficam utilizáveis com edição leve. | Avaliação humana em 30 cortes; rubric definida previamente. | Melhorar contexto, seleção e templates antes de integrar publicação. |
+| H4 | Narração, texto, legendas e multitrecho cobrem o primeiro portfólio. | Três lotes comparados por formato, nicho e retrabalho. | Cortar formatos sem valor ou criar tópico específico. |
+| H5 | A API oficial do Instagram atende conexão, publicação, revisão e insights do piloto. | Spike atual e conta profissional de teste. | Preservar exportação e métricas manuais como fallback. |
+| H6 | Custos, receita informada e insights permitem decisão por vídeo e perfil. | Painel usado no piloto para decidir continuar, iterar ou parar. | Simplificar métricas antes de adicionar parceiros. |
 
 ## 4. Escopo do MVP
 
 ### Incluído
 
-1. Criar um projeto editorial com nicho, público, idioma, tom, palavras proibidas e CTA padrão.
-2. Enviar um lote pequeno de vídeos e metadados suportados, com declaração de origem, licença/autorização e validade de uso.
-3. Validar arquivo, tamanho, formato, duplicidade básica e presença dos campos de direitos.
-4. Extrair metadados técnicos e, se necessário, uma transcrição do áudio por serviço aprovado.
-5. Gerar um rascunho estruturado por item: assunto, hook, título, legenda, hashtags, CTA e alertas.
-6. Aplicar template editorial simples aos metadados; edição/renderização avançada de vídeo não faz parte do primeiro corte.
-7. Exibir fila de revisão com estados, comparação com a fonte, edição e aprovação/rejeição.
-8. Gerar pacote exportável (manifesto e arquivos/metadados) pronto para operação manual.
-9. Registrar eventos mínimos de auditoria, erros, tempos do funil, uso/custo de IA e resultado de exportação.
+1. Cadastrar vários perfis com nicho, público, idioma, tom e regras editoriais.
+2. Buscar candidatos por tema em fontes permitidas e aceitar importação manual.
+3. Manter URL/origem, condição de uso declarada e dados técnicos do arquivo.
+4. Transcrever, sugerir trechos e permitir ajuste humano do intervalo.
+5. Gerar abordagem, roteiro, título, legenda, hashtags, CTA e alertas.
+6. Criar variações narradas, com texto, legendas ou múltiplos trechos.
+7. Compor e renderizar vídeo vertical em templates pequenos e testados.
+8. Revisar a versão exata, editar, aprovar/rejeitar e exportar.
+9. Publicar a versão aprovada no Instagram por API oficial, com fallback manual.
+10. Coletar insights e registrar custos, receita informada e lucro estimado.
+11. Exibir painel mínimo por perfil, vídeo e formato.
 
 ### Corte vertical proposto
 
-Um único operador, um único idioma de saída (`pt-BR`), um projeto por vez,
-metadados editoriais para Instagram, exportação manual, lotes limitados e um
-conjunto pequeno de formatos documentados. O limite exato de lote e arquivo será
-decidido em R01/R02 após medir o fluxo, custo e latência.
+Um único operador, `pt-BR`, vários perfis cadastráveis e somente um perfil/lote
+processado por vez. O fluxo cobre descoberta assistida, quatro famílias iniciais
+de corte, publicação e insights no Instagram e painel mínimo. O limite exato de
+lote, arquivo e templates será decidido em R01–R03 após medir o processo.
 
 ### Fora do MVP (explícito)
 
-- Scraping, download ou repostagem automática de páginas de terceiros.
-- Descoberta autônoma de tendências e ranking de viralidade.
+- Download/repostagem irregular, scraping e descoberta autônoma irrestrita.
 - Geração integral de vídeo por IA, clonagem de voz ou avatares.
-- Editor de vídeo completo, biblioteca de templates complexos e renderização em escala.
+- Editor genérico, templates complexos e renderização em escala.
 - TikTok, YouTube, Facebook, X ou publicação multicanal.
-- Publicação automática no Instagram e analytics de publicação.
+- Publicação sem revisão humana e postagem real antes do gate de lançamento.
 - Stories automáticos e inserção automática de links de afiliados.
-- Catálogo, matching, comissão, atribuição ou payout da Shopee.
+- Catálogo, matching, comissão, atribuição ou payout de parceiros.
 - Aprendizado autônomo, experimentos A/B automáticos e recomendação de horário.
 - Equipes, organizações, cobrança, marketplace de templates e aplicativo móvel.
 - Promessas ou otimização direta de receita/viralização.
@@ -93,12 +109,14 @@ Qualquer item acima exige um novo tópico aprovado, validação jurídica/plataf
 
 ### Métricas de resultado do piloto
 
-- 3 operadores concluem ao menos 2 lotes cada sem assistência do time.
-- Tempo mediano entre upload válido e lote revisável é menor que 10 minutos para 10 itens, excluindo indisponibilidade externa.
+- O operador conclui 3 lotes representativos no fluxo completo.
+- Tempo mediano entre seleção válida e corte revisável é pelo menos 50% menor que o baseline manual.
 - Redução mediana de pelo menos 50% no tempo ativo de preparação contra baseline manual.
-- Pelo menos 70% dos rascunhos são aprovados após no máximo edição leve, segundo rubric acordada.
+- Pelo menos 70% dos 30 cortes avaliados são aprovados após no máximo edição leve, segundo rubric acordada.
 - Pelo menos 95% dos itens mantém origem, declaração de direitos e histórico de revisão rastreáveis.
 - 100% dos efeitos externos são precedidos por aprovação humana registrável.
+- Publicação e insights do Instagram funcionam em conta profissional de teste, com exportação manual como fallback.
+- O painel permite comparar visualizações, interações, custo, receita informada e lucro estimado por perfil e formato.
 
 ### Guardrails operacionais
 
@@ -112,30 +130,30 @@ Sucesso do MVP valida eficiência e controle do workflow, não crescimento, vira
 ## 6. Workflow e estados
 
 ```text
-Projeto editorial
+Perfil temático
       ↓
-Upload + origem + direitos
+busca por nicho → candidato + origem
       ↓
-Validação determinística ── falha → correção/rejeição
+seleção + importação + validação ── falha → correção/rejeição
       ↓
 Processamento síncrono no primeiro corte
-  metadados → transcrição → geração estruturada → checagens
+  transcrição → trechos → roteiro → narração/texto → composição
       ↓
-Rascunho revisável
+versão vertical renderizada
       ↓
 edição humana → aprovação explícita
       ↓
-exportação manual
+exportação ou publicação no Instagram
       ↓
-auditoria + métricas operacionais
+insights + custo + receita + painel
 ```
 
 Estados mínimos do item:
 
-`RECEIVED → VALIDATING → PROCESSING → NEEDS_REVIEW → APPROVED → EXPORTING → COMPLETED`
+`DISCOVERED → SELECTED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
 
-Saídas laterais: `VALIDATION_FAILED`, `PROCESSING_FAILED`, `REJECTED` e
-`EXPORT_FAILED`, com tentativa controlada quando segura. Transições são
+Saídas laterais: `VALIDATION_FAILED`, `PROCESSING_FAILED`, `RENDER_FAILED`,
+`REJECTED`, `EXPORT_FAILED` e `PUBLISH_FAILED`, com tentativa controlada quando segura. Transições são
 determinísticas, autorizadas, idempotentes e auditadas. Editar um item aprovado
 cria nova versão e invalida a aprovação anterior.
 
@@ -144,21 +162,24 @@ cria nova versão e invalida a aprovação anterior.
 | Módulo | Responsabilidade no MVP | Limite importante |
 |---|---|---|
 | Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
-| Projetos editoriais | Briefing, idioma, tom, regras e defaults. | Um fluxo editorial simples. |
-| Ingestão e direitos | Upload, validação, hash, origem, licença e expiração. | Recusa item sem declaração obrigatória. |
+| Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
+| Descoberta de fontes | Busca por nicho, candidatos e origem. | APIs/fontes permitidas; sem scraping irregular. |
+| Ingestão e origem | Importação, validação, hash e condição de uso declarada. | Mídia e evidências privadas fora do Git. |
 | Fluxo de processamento | Estados, falhas e progresso do processamento síncrono inicial. | Fila/jobs somente se medições provarem necessidade. |
-| Content Intelligence | Transcrição e sugestões estruturadas. | Saída não é fato nem autorização. |
+| Content Intelligence | Transcrição, trechos, roteiro, texto e metadados. | Saída não é fato nem autorização. |
+| Composição e renderização | Narração, texto, legendas, multitrecho e saída vertical. | Templates pequenos; sem editor genérico. |
 | Policy Engine | Regras de schema, proibições, alertas e bloqueios. | Não depende apenas de moderação por IA. |
-| Review Workspace | Visualização, edição, versionamento, aprovação e rejeição. | Aprovação individual ou em lote com confirmação. |
-| Exportação | Pacote exportável para publicação manual. | Sem publisher no MVP. |
-| Auditoria e observabilidade | Eventos, métricas, erros, custo e correlação. | Sem armazenar prompts/conteúdo sensível por padrão. |
+| Review Workspace | Visualização, edição, versionamento, aprovação e rejeição. | Aprovação da versão renderizada exata. |
+| Publicação | Exportação e adaptador oficial do Instagram. | Falha externa não elimina o fallback manual. |
+| Insights e monetização | Métricas, custos, receita e lucro estimado. | Receita começa manual/CSV; sem promessa de retorno. |
+| Painel | Comparação por perfil, vídeo e formato. | Metabase OSS ou painel nativo somente após spike. |
+| Auditoria e observabilidade | Eventos, erros, custo e correlação. | Sem armazenar prompts/conteúdo sensível por padrão. |
 
 ## 8. Arquitetura adiada por gate
 
-V00 removeu arquitetura, stack, fila, publisher e entidades físicas como decisões
-antecipadas. R01–R03 validam o fluxo com processo e ferramentas existentes. R04
-só define contrato de domínio, ameaças e arquitetura mínima se o gate G1 comprovar
-valor; R05 só cria fundação técnica após o gate G3.
+V01 mantém stack, fila e entidades físicas adiadas. R01–R03 validam o fluxo com
+processo e ferramentas existentes. R04 define somente contratos exigidos pela
+evidência; R05 cria a fundação técnica após G2.
 
 Continuam válidos como restrições, não como escolha de tecnologia:
 
@@ -185,13 +206,17 @@ Validar antes de implementar:
 - limites, expiração de token, webhooks, insights disponíveis e retenção;
 - exigências de exclusão de dados, branding e termos de automação.
 
-**Gate:** sem spike aprovado, o MVP termina em exportação manual.
+**Gate:** R08 implementa o primeiro adaptador somente após G3; falha ou falta de
+acesso preserva exportação manual e impede publicação real.
 
-### Shopee Affiliate
+### Parceiros e monetização
 
-Validar disponibilidade oficial no Brasil, elegibilidade, autenticação, catálogo, geração de deep links, regras de divulgação, atribuição, limites e permissão para automação.
+Shopee é apenas um candidato. Cada parceiro futuro deve validar disponibilidade
+oficial, elegibilidade, autenticação, catálogo, links, divulgação, atribuição,
+limites e permissão para automação.
 
-**Gate:** nenhuma integração Shopee entra no MVP. O resultado do spike apenas informa roadmap.
+**Gate:** nenhuma integração de parceiro entra no MVP. Receita manual/CSV permite
+validar o painel sem bloquear o fluxo principal.
 
 ### IA, transcrição e moderação
 
@@ -206,8 +231,9 @@ Validar armazenamento privado, fila/jobs, banco, criptografia/KMS, antivírus ou
 ### IA pode
 
 - transcrever áudio;
-- classificar assunto e extrair estrutura editorial;
-- sugerir hook, título, legenda, hashtags e CTA;
+- classificar assunto e sugerir trechos relevantes;
+- sugerir roteiro, hook, título, legenda, hashtags e CTA;
+- sugerir variação narrada, textual, legendada ou multitrecho;
 - traduzir/localizar com contexto;
 - apontar riscos e duplicidade semântica como sinal auxiliar.
 
@@ -260,11 +286,14 @@ Uma declaração do usuário reduz ambiguidade operacional, mas não substitui r
 
 ### Eventos mínimos
 
-`asset_received`, `asset_validated`, `generation_started/completed/failed`,
-`review_edited`, `review_approved/rejected`, `export_completed/failed` e
-`rights_revoked`.
+`candidate_discovered/selected`, `asset_received/validated`,
+`generation_started/completed/failed`, `render_completed/failed`,
+`review_edited`, `review_approved/rejected`, `export_completed/failed`,
+`publication_completed/failed`, `insights_synced/failed` e `rights_revoked`.
 
-Cada evento leva `correlation_id`, ator, projeto, item, versão, timestamp e resultado; nunca segredo. Eventos de produto e auditoria podem compartilhar origem, mas têm políticas de acesso e retenção distintas.
+Cada evento leva `correlation_id`, ator, perfil, item, versão, timestamp e
+resultado; nunca segredo. Eventos de produto e auditoria podem compartilhar
+origem, mas têm políticas de acesso e retenção distintas.
 
 ### Métricas
 
@@ -272,14 +301,16 @@ Cada evento leva `correlation_id`, ator, projeto, item, versão, timestamp e res
 - taxa de falha/tentativa por etapa e provedor;
 - aceitação sem edição, edição leve, rejeição e motivo;
 - latência e custo de IA por item/lote;
-- taxa de exportação bem-sucedida;
+- taxa de renderização, exportação, publicação e sincronização bem-sucedida;
+- visualizações e interações por perfil, vídeo e formato;
+- custo, receita informada e lucro estimado;
 - violações bloqueadas pelos guardrails.
 
 ### Alertas e SLO piloto
 
-No piloto, registrar crescimento de falhas externas, exportação inconsistente e
-aumento anormal de custo. Alertas, dashboards e SLO só entram após baseline e
-volume que os justifiquem.
+No piloto, registrar crescimento de falhas externas, publicação inconsistente e
+aumento anormal de custo. O painel mínimo entra em R09; alertas e SLO completos
+só entram após volume que os justifique.
 
 ## 14. Estratégia de testes e TDD
 
@@ -288,7 +319,7 @@ volume que os justifiquem.
 - **Unidade/TDD:** estados, permissões, direitos, expiração, idempotência, custo e regras editoriais.
 - **Contrato:** schemas de IA, armazenamento, transcrição e Meta; fixtures sanitizadas e fakes locais.
 - **Integração:** banco, fila, objeto, outbox e worker em ambiente efêmero.
-- **E2E:** upload autorizado → geração fake → revisão → exportação; publicação só em conta sandbox/teste.
+- **E2E:** candidato → importação → geração fake → renderização → revisão → exportação; publicação só em conta profissional de teste.
 - **Segurança:** isolamento entre usuários, upload malicioso, URLs, segredos em logs e autorização de efeitos.
 - **Avaliação de IA:** conjunto versionado, rubric humana, regressão de qualidade, segurança e custo.
 
@@ -313,38 +344,42 @@ volume que os justifiquem.
 | Dependência de provedor/API | Alto | Adaptadores, exportação como fallback e decisões por evidência. |
 | Produto não economiza tempo | Alto | Baseline manual, piloto cedo e gate antes de publicação/analytics. |
 | Expectativa de renda/viralidade | Médio/alto | Posicionamento explícito, métricas operacionais e nenhuma alegação garantida. |
-| Shopee sem API adequada | Médio | Manter afiliados fora do MVP; validar comercialmente antes do roadmap. |
+| Parceiro sem API adequada | Médio | Manter parceiros fora do MVP e validar cada adaptador separadamente. |
 
 ## 16. Roadmap pós-MVP
 
 Cada fase depende de dados da anterior e nova revisão de políticas:
 
-1. **Publicação confiável:** mais contas, calendário, webhooks, reconciliação e analytics oficiais.
-2. **Produção ampliada:** templates visuais licenciados, legendas no vídeo e renderização controlada.
-3. **Inteligência de desempenho:** métricas normalizadas, cohorts, sugestões explicáveis e testes A/B aprovados.
-4. **Descoberta autorizada:** fontes oficiais/licenciadas, sinais de tendência e fila de oportunidades.
-5. **Afiliados:** catálogo oficial, disclosure, matching como sugestão, atribuição e aprovação humana.
+1. **Operação ampliada:** calendário, webhooks, reconciliação e mais contas.
+2. **Produção ampliada:** novos templates, formatos e renderização em escala.
+3. **Inteligência de desempenho:** cohorts, sugestões explicáveis e testes A/B aprovados.
+4. **Descoberta ampliada:** mais fontes oficiais/licenciadas e sinais de tendência.
+5. **Parceiros:** catálogos oficiais, disclosure, links, atribuição e aprovação humana.
 6. **Multicanal e equipes:** novos adaptadores, papéis, aprovação em equipe e billing.
 
 O sistema nunca deve evoluir para automação irrestrita de cópia ou publicação sem responsabilização.
 
-## 17. Roadmap mínimo aprovado no V00
+## 17. Roadmap mínimo repriorizado no V01
 
-V00 consolidou T00–T18 em sete entregas. A matriz completa de decisões, gates e
-riscos residuais está em `docs/TOPIC_ROADMAP.md`.
+V01 substituiu o recorte `metadados-only/export-only` por dez tópicos pequenos,
+contados desde a própria repriorização. A matriz de gates e evidências está em
+`docs/TOPIC_ROADMAP.md`.
 
 | ID | Entrega | Depende de | Resultado mínimo |
 |---|---|---|---|
-| R01 | Descoberta, direitos e baseline | V00 | Operadores/lotes acessíveis; fluxo e baseline medidos; lote, rubric, direitos e dados permitidos definidos. |
-| R02 | Experimento concierge de geração | R01 | Amostra autorizada compara qualidade, tempo, custo, retenção e falhas de soluções existentes. |
-| R03 | Revisão e exportação manual | R02 | Processo completo executado sem aplicação; formato de exportação usado pelo operador. |
-| R04 | Contrato determinístico e riscos | gate G1 | Domínio, estados, regras, ameaças e retenção derivados do fluxo comprovado. |
-| R05 | Fundação e entrada autorizada | R04 | Base técnica e primeira capacidade determinística testada. |
-| R06 | Corte geração–revisão–exportação | R05 | Fluxo implementado com aprovação da versão exata e exportação segura. |
-| R07 | Piloto instrumentado e decisão | R06 | 3 operadores × 2 lotes; decisão `go`, `iterate` ou `stop` baseada no baseline. |
+| V01 | Repriorização | V00 | Visão, persona, fluxo, integração inicial e roadmap coerentes. |
+| R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
+| R02 | Descoberta | R01 | Busca manual e fonte/API oficial comparadas por nicho. |
+| R03 | Experimento criativo | R02 | Quatro famílias de corte avaliadas por rubric. |
+| R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
+| R05 | Fundação | R04/G2 | Aplicação reproduzível para vários perfis. |
+| R06 | Descoberta e preparação | R05 | Busca, seleção, importação, transcrição e trechos funcionam. |
+| R07 | Produção dinâmica | R06 | Roteiro, composição, revisão, renderização e exportação funcionam. |
+| R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
+| R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
 
-Somente R01 está pronto para análise. T08 e T16–T18 permanecem adiados; fila,
-publicação, analytics e afiliados exigem evidência e novos gates.
+R01 fica pronto para análise somente após o merge de V01. Um tópico pode ser
+dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
 
 ## 18. Definition of Ready e Done
 
@@ -363,25 +398,26 @@ publicação, analytics e afiliados exigem evidência e novos gates.
 - Métricas/logs necessários presentes e sanitizados.
 - Riscos residuais e próximo tópico desbloqueado registrados.
 
-## 19. Decisões do V00 e pendências de R01
+## 19. Decisões do V01 e pendências de R01
 
 Decisões aprovadas:
 
-1. O primeiro piloto termina em exportação manual.
-2. O MVP gera metadados; composição visual e edição de vídeo ficam fora.
+1. O operador administra perfis próprios de diferentes nichos.
+2. O MVP produz cortes dinâmicos e não somente metadados.
 3. O processo começa concierge/manual e síncrono.
-4. Meta, publicação, analytics e Shopee não são dependências do MVP.
-5. Nenhuma implementação começa antes dos gates de matéria-prima, valor e
-   construção.
+4. Instagram é o primeiro adaptador obrigatório, com exportação como fallback.
+5. O painel combina insights, custos e receita manual/importada.
+6. Outros canais e parceiros ficam pós-MVP e entram por adaptadores.
+7. Nenhuma implementação começa antes dos gates de fluxo, valor e construção.
 
 R01 deve produzir evidência para as pendências restantes:
 
-1. operador real e baseline do fluxo atual;
-2. formatos, duração, tamanho e quantidade do lote inicial;
-3. definição mensurável de “edição leve”;
-4. prova de direitos, retenção, categorias proibidas e responsável jurídico;
+1. baseline do operador interno em três lotes;
+2. nichos e fontes representativos;
+3. formatos, duração, tamanho e quantidade do lote inicial;
+4. definição mensurável de edição leve e qualidade aceitável;
 5. orçamento e prazo aceitáveis por lote;
-6. dados que podem ser enviados a provedores, região e retenção.
+6. origem e condição de uso registradas, sem mídia no Git.
 
 Até R01 concluir essas respostas, a ação correta é descoberta e decisão — não
 implementação.

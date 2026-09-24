@@ -1,6 +1,8 @@
-# Content Automation Engine
+# MKTauto — estúdio de cortes dinâmicos
 
-Repositório de planejamento de um sistema para transformar conteúdo autorizado em pacotes de publicação, com revisão humana, distribuição controlada e aprendizado por métricas.
+Repositório de planejamento de um sistema para um operador administrar vários
+perfis temáticos, encontrar fontes por nicho e produzir cortes verticais
+dinâmicos com narração, texto, legendas ou múltiplos trechos.
 
 O projeto está na fase de definição do MVP. **Ainda não há aplicação implementada.**
 
@@ -15,7 +17,6 @@ tópicos.
 
 ## Próximo passo
 
-R01 registrou `stop/reposicionar`: faltam operadores acessíveis, três lotes reais
-autorizados e responsável jurídico. Consulte o [roadmap](docs/TOPIC_ROADMAP.md)
-para as condições de retomada. R02 e qualquer implementação permanecem não
-autorizados.
+V01 reprioriza o produto para o fluxo completo de cortes, integração inicial com
+Instagram e painel de desempenho. Após o merge de V01, R01 medirá três lotes no
+processo manual; nenhuma implementação começa antes desse aceite.
