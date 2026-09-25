@@ -44,19 +44,19 @@ representam volume absoluto de mercado.
 |---|---|---:|---:|---:|---|---|
 | C01 | análises de futebol de seleções europeias | 100/100/100/75/100 → 96,25 | 0/75/100/25/75 → 50,00 | 77,75 | observação: sem fonte verde para imagens de jogo | E01, E02, E03 |
 | C02 | análises da seleção brasileira e amistosos | 100/75/75/75/100 → 85,00 | 0/75/100/25/75 → 50,00 | 71,00 | observação: sem fonte verde para imagens de jogo | E01, E02, E03 |
-| C03 | futebol entre seleções da Ásia e América do Sul | 100/75/50/50/100 → 73,75 | 0/75/75/50/75 → 48,75 | 63,75 | observação: pico e direitos | E01 |
-| C04 | futebol entre seleções africanas | 100/50/50/50/100 → 67,50 | 0/75/75/50/75 → 48,75 | 60,00 | observação: pico e direitos | E01 |
-| C05 | notícias de personalidades da TV brasileira | 100/50/25/25/100 → 57,50 | 0/50/75/25/50 → 36,25 | 49,00 | reprovado: pico, privacidade e origem | E01 |
-| C06 | música sertaneja e notícias de artistas | 100/50/50/50/100 → 67,50 | 0/75/100/25/75 → 50,00 | 60,50 | observação: direitos de música/imagem | E01 |
-| C07 | cinema e carreiras internacionais | 100/25/25/25/100 → 51,25 | 0/50/50/25/50 → 31,25 | 43,25 | reprovado: pico isolado e origem | E01 |
-| C08 | clima extremo e alertas explicados | 100/75/50/100/100 → 86,25 | 75/100/100/50/75 → 82,50 | 84,75 | elegível provisório | E01, E13, E19 |
-| C09 | pesquisas eleitorais explicadas | 100/50/75/100/100 → 83,75 | 75/75/100/25/50 → 70,00 | 78,25 | observação: verificação e segurança editorial | E01 |
-| C10 | política internacional explicada | 100/25/50/50/100 → 62,50 | 0/50/75/25/25 → 33,75 | 51,00 | reprovado: pico e origem | E01 |
+| C03 | futebol entre seleções da Ásia e América do Sul | 100/75/50/50/100 → 76,25 | 0/75/75/50/75 → 48,75 | 65,25 | observação: pico e direitos | E01 |
+| C04 | futebol entre seleções africanas | 100/50/50/50/100 → 70,00 | 0/75/75/50/75 → 48,75 | 61,50 | observação: pico e direitos | E01 |
+| C05 | notícias de personalidades da TV brasileira | 100/50/25/25/100 → 61,25 | 0/50/75/25/50 → 36,25 | 51,25 | reprovado: pico, privacidade e origem | E01 |
+| C06 | música sertaneja e notícias de artistas | 100/50/50/50/100 → 70,00 | 0/75/100/25/75 → 50,00 | 62,00 | observação: direitos de música/imagem | E01 |
+| C07 | cinema e carreiras internacionais | 100/25/25/25/100 → 55,00 | 0/50/50/25/50 → 31,25 | 45,50 | reprovado: pico isolado e origem | E01 |
+| C08 | clima extremo e alertas explicados | 100/75/50/100/100 → 83,75 | 75/100/100/50/75 → 82,50 | 83,25 | elegível provisório | E01, E13, E19 |
+| C09 | pesquisas eleitorais explicadas | 100/50/75/100/100 → 82,50 | 75/75/100/25/50 → 70,00 | 77,50 | observação: verificação e segurança editorial | E01 |
+| C10 | política internacional explicada | 100/25/50/50/100 → 63,75 | 0/50/75/25/25 → 33,75 | 51,75 | reprovado: pico e origem | E01 |
 | C11 | motos utilitárias e lançamentos | 100/75/100/100/100 → 93,75 | 100/100/100/50/75 → 90,00 | 92,25 | elegível provisório | E01, E04, E05, E10 |
 | C12 | SUVs compactos e comparativos | 100/50/50/100/100 → 77,50 | 100/100/100/50/75 → 90,00 | 82,50 | elegível provisório | E01, E11 |
-| C13 | Xbox, Game Pass e lançamentos | 75/75/100/100/100 → 88,75 | 100/100/100/50/100 → 95,00 | 91,25 | elegível provisório | E01, E06, E07, E09 |
-| C14 | seguros e proteção do consumidor | 100/50/100/100/100 → 90,00 | 100/100/100/75/100 → 96,25 | 92,50 | elegível provisório | E01, E14, E15, E12 |
-| C15 | impostos e reforma tributária para pequenos negócios | 100/50/100/100/100 → 90,00 | 100/100/100/50/75 → 90,00 | 90,00 | elegível provisório | E01, E16, E17 |
+| C13 | Xbox, Game Pass e lançamentos | 75/75/100/100/100 → 86,25 | 100/100/100/50/100 → 92,50 | 88,75 | elegível provisório | E01, E06, E07, E09 |
+| C14 | seguros e proteção do consumidor | 100/50/100/100/100 → 87,50 | 100/100/100/75/100 → 96,25 | 91,00 | elegível provisório | E01, E14, E15, E12 |
+| C15 | impostos e reforma tributária para pequenos negócios | 100/50/100/100/100 → 87,50 | 100/100/100/50/75 → 90,00 | 88,50 | elegível provisório | E01, E16, E17 |
 | C16 | decisões judiciais e casos públicos | 100/25/25/50/100 → 58,75 | 0/50/100/25/25 → 38,75 | 50,75 | reprovado: verificação, segurança e origem | E01 |
 | C17 | indenização e direitos do consumidor | 100/25/25/75/100 → 62,50 | 100/100/100/50/75 → 90,00 | 73,50 | observação: confirmação cruzada insuficiente | E01, E12 |
 | C18 | imóveis e arquitetura de alto padrão | 100/25/25/50/100 → 58,75 | 100/75/75/25/50 → 72,50 | 64,25 | observação: confirmação cruzada insuficiente | E01, E18 |
@@ -67,11 +67,11 @@ representam volume absoluto de mercado.
 
 | Posição | Candidato | Final | Motivo de entrada | Condição para permanecer |
 |---:|---|---:|---|---|
-| 1 | C14 — seguros e proteção do consumidor | 92,50 | busca atual, agenda pública recorrente, alto valor explicativo e vídeo licenciado genérico disponível | repetir elegibilidade na rodada 2 e validar alegações somente em fonte oficial |
-| 2 | C11 — motos utilitárias e lançamentos | 92,25 | pico atual confirmado por release e calendário editorial recorrente; fonte genérica licenciada | repetir elegibilidade e evitar marcas/logos não cobertos |
-| 3 | C13 — Xbox, Game Pass e lançamentos | 91,25 | sinal de busca, feed semanal em pt-BR e pauta contínua; fonte genérica licenciada | repetir elegibilidade e não reutilizar trailers/gameplay sem regra específica aplicável |
-| 4 | C15 — impostos e reforma tributária | 90,00 | sinal atual e agenda oficial recorrente com utilidade prática | repetir elegibilidade; revisão factual humana obrigatória |
-| 5 | C08 — clima extremo e alertas explicados | 84,75 | pico atual, alta utilidade e repetibilidade sazonal | obter confirmação cruzada oficial na rodada 2 e usar mídia sem pessoa/marca identificável |
+| 1 | C11 — motos utilitárias e lançamentos | 92,25 | pico atual confirmado por release e calendário editorial recorrente; fonte genérica licenciada | repetir elegibilidade e evitar marcas/logos não cobertos |
+| 2 | C14 — seguros e proteção do consumidor | 91,00 | busca atual, agenda pública recorrente, alto valor explicativo e vídeo licenciado genérico disponível | repetir elegibilidade na rodada 2 e validar alegações somente em fonte oficial |
+| 3 | C13 — Xbox, Game Pass e lançamentos | 88,75 | sinal de busca, feed semanal em pt-BR e pauta contínua; fonte genérica licenciada | repetir elegibilidade e não reutilizar trailers/gameplay sem regra específica aplicável |
+| 4 | C15 — impostos e reforma tributária | 88,50 | sinal atual e agenda oficial recorrente com utilidade prática | repetir elegibilidade; revisão factual humana obrigatória |
+| 5 | C08 — clima extremo e alertas explicados | 83,25 | pico atual, alta utilidade e repetibilidade sazonal | obter confirmação cruzada oficial na rodada 2 e usar mídia sem pessoa/marca identificável |
 
 O limite de dois micronichos por macronicho foi respeitado. C12 e C20 ficaram
 fora do corte por nota; C01 ficou fora apesar da maior tendência bruta porque
@@ -97,8 +97,8 @@ testada na rodada 2.
 Os lotes não estão autorizados por esta seleção provisória. Se permanecerem
 elegíveis em 01/10/2026, a ordem candidata maximiza diversidade:
 
-1. C14 — seguros e proteção do consumidor;
-2. C11 — motos utilitárias e lançamentos;
+1. C11 — motos utilitárias e lançamentos;
+2. C14 — seguros e proteção do consumidor;
 3. C13 — Xbox, Game Pass e lançamentos.
 
 Antes de L01–L03, o operador deve guardar fora do Git a prova aplicável, criar

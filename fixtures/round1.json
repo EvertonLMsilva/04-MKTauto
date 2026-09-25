@@ -1,0 +1,166 @@
+{
+  "date": "2026-09-24",
+  "evidence": [
+    { "id": "E01", "label": "Google Trends Brasil — snapshot de 24h", "sourceUrl": "https://trends.google.com/trending?geo=BR&hl=pt-BR" },
+    { "id": "E02", "label": "TikTok — Copa do Mundo 2026", "sourceUrl": "https://newsroom.tiktok.com/como-a-copa-do-mundo-da-fifa-2026-ganhou-vida-no-tiktok?lang=pt-BR" },
+    { "id": "E03", "label": "YouTube — cultura e tendências", "sourceUrl": "https://blog.youtube/intl/pt-br/culture-and-trends/" },
+    { "id": "E04", "label": "Honda NXR160 Bros 2027", "sourceUrl": "https://prodsalaimp.honda.com.br/releases/honda-nxr160-bros-2027-novas-cores-e-aprimoramento-em-itens-de-seguranca-e-praticidade" },
+    { "id": "E05", "label": "Honda Motos — calendário editorial", "sourceUrl": "https://www.honda.com.br/motos/blog/busca" },
+    { "id": "E06", "label": "Xbox Wire em português", "sourceUrl": "https://news.xbox.com/pt-br/ver-tudo/?_categories=xbox-game-studios" },
+    { "id": "E07", "label": "Xbox — próximos jogos", "sourceUrl": "https://news.xbox.com/pt-br/2026/08/28/proxima-semana-em-xbox-novos-jogos-de-31-de-agosto-a-4-de-setembro/" },
+    { "id": "E08", "label": "YouTube — animação independente", "sourceUrl": "https://blog.youtube/intl/pt-br/culture-and-trends/a-nova-onda-da-animacao-como-criadores-independentes-estao-redefinindo-o-entretenimento-global/" },
+    { "id": "E09", "label": "Pexels — controle de jogo", "sourceUrl": "https://www.pexels.com/video/hands-playing-video-game-with-controller-30301758/" },
+    { "id": "E10", "label": "Pexels — motocicleta", "sourceUrl": "https://www.pexels.com/video/riding-a-motorcycle-on-an-empty-road-at-sunset-16512698/" },
+    { "id": "E11", "label": "Pexels — automóvel", "sourceUrl": "https://www.pexels.com/video/a-person-driving-a-car-and-parked-on-the-side-8865234/" },
+    { "id": "E12", "label": "Pexels — finanças", "sourceUrl": "https://www.pexels.com/video/a-man-counting-bank-notes-6700261/" },
+    { "id": "E13", "label": "NASA — regras de mídia", "sourceUrl": "https://www.nasa.gov/nasa-brand-center/images-and-media/" },
+    { "id": "E14", "label": "Susep — proteção do consumidor", "sourceUrl": "https://www.gov.br/susep/pt-br/central-de-conteudos/noticias/2026/setembro/susep-adota-medida-cautelar-contra-a-facta-seguradora" },
+    { "id": "E15", "label": "Susep — estudos sobre capitalização", "sourceUrl": "https://www.gov.br/susep/pt-br/central-de-conteudos/noticias/2026/setembro/susep-apresenta-estudos-para-revisao-da-regulamentacao-de-titulos-de-capitalizacao" },
+    { "id": "E16", "label": "Receita Federal — reforma tributária", "sourceUrl": "https://www.gov.br/receitafederal/pt-br/acesso-a-informacao/acoes-e-programas/programas-e-atividades/reforma-tributaria-do-consumo/orientacoes-da-reforma-tributaria" },
+    { "id": "E17", "label": "Pexels — cálculo tributário", "sourceUrl": "https://www.pexels.com/video/deductible-items-for-computing-tax-amount-sue-6863206/" },
+    { "id": "E18", "label": "Pexels — visita a imóvel", "sourceUrl": "https://www.pexels.com/video/person-showing-the-house-7817209/" },
+    { "id": "E19", "label": "Pexels — solo seco", "sourceUrl": "https://www.pexels.com/video/scenic-drought-landscape-with-cracked-earth-36249169/" }
+  ],
+  "candidates": [
+    {
+      "name": "Análises de futebol de seleções europeias", "macroNiche": "esportes", "summary": "Análises contextuais de partidas e seleções.", "evidenceIds": ["E01", "E02", "E03"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 100, "crossConfirmation": 100, "persistence": 75, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 75, "repeatability": 100, "inverseSaturation": 25, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": false, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Alta demanda, mas sem fonte verde para imagens de jogo."
+    },
+    {
+      "name": "Seleção brasileira e amistosos", "macroNiche": "esportes", "summary": "Contexto e análise de amistosos da seleção.", "evidenceIds": ["E01", "E02", "E03"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 75, "crossConfirmation": 75, "persistence": 75, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 75, "repeatability": 100, "inverseSaturation": 25, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": false, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Demanda atual sem direitos demonstrados sobre as imagens."
+    },
+    {
+      "name": "Futebol Ásia e América do Sul", "macroNiche": "esportes", "summary": "Pautas de seleções fora do eixo europeu.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 75, "crossConfirmation": 50, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 75, "repeatability": 75, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Sinal concentrado em uma fonte e sem mídia verde."
+    },
+    {
+      "name": "Futebol entre seleções africanas", "macroNiche": "esportes", "summary": "Análises de seleções africanas.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 50, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 75, "repeatability": 75, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Pico pontual e direitos não demonstrados."
+    },
+    {
+      "name": "Personalidades da TV brasileira", "macroNiche": "entretenimento", "summary": "Notícias explicadas sobre personalidades públicas.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 25, "persistence": 25, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 50, "repeatability": 75, "inverseSaturation": 25, "operationalFit": 50 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": false, "verifiable": false, "safe": false },
+      "explanation": "Risco de privacidade, origem e pico isolado."
+    },
+    {
+      "name": "Música sertaneja e artistas", "macroNiche": "música", "summary": "Notícias e contexto sobre música sertaneja.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 50, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 75, "repeatability": 100, "inverseSaturation": 25, "operationalFit": 75 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": true, "verifiable": true, "safe": false },
+      "explanation": "Direitos de música e imagem não demonstrados."
+    },
+    {
+      "name": "Cinema e carreiras internacionais", "macroNiche": "entretenimento", "summary": "Retrospectivas e atualizações de carreiras do cinema.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 25, "crossConfirmation": 25, "persistence": 25, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 50, "repeatability": 50, "inverseSaturation": 25, "operationalFit": 50 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": false, "greenSource": false, "knownOrigin": false, "verifiable": true, "safe": true },
+      "explanation": "Pico isolado e origem audiovisual não resolvida."
+    },
+    {
+      "name": "Clima extremo e alertas explicados", "macroNiche": "clima", "summary": "Explicações verificadas sobre alertas e eventos climáticos.", "evidenceIds": ["E01", "E13", "E19"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 75, "crossConfirmation": 50, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 75, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Pauta útil e repetível com mídia genérica licenciada."
+    },
+    {
+      "name": "Pesquisas eleitorais explicadas", "macroNiche": "política", "summary": "Leitura metodológica de pesquisas eleitorais.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 75, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 75, "transformability": 75, "repeatability": 100, "inverseSaturation": 25, "operationalFit": 50 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": false, "safe": false },
+      "explanation": "Exige capacidade de verificação e segurança editorial ainda ausentes."
+    },
+    {
+      "name": "Política internacional explicada", "macroNiche": "política", "summary": "Contexto factual de eventos internacionais.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 25, "crossConfirmation": 50, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 50, "repeatability": 75, "inverseSaturation": 25, "operationalFit": 25 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": false, "verifiable": false, "safe": false },
+      "explanation": "Sinal fraco e alto custo de verificação."
+    },
+    {
+      "name": "Motos utilitárias e lançamentos", "macroNiche": "automóveis", "summary": "Comparativos e explicações sobre motos de uso cotidiano.", "evidenceIds": ["E01", "E04", "E05", "E10"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 75, "crossConfirmation": 100, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Sinal atual, pauta recorrente e fonte genérica licenciada."
+    },
+    {
+      "name": "SUVs compactos e comparativos", "macroNiche": "automóveis", "summary": "Comparativos de uso e características de SUVs compactos.", "evidenceIds": ["E01", "E11"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 50, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Pauta contínua com material genérico utilizável."
+    },
+    {
+      "name": "Xbox, Game Pass e lançamentos", "macroNiche": "jogos", "summary": "Lançamentos e mudanças do ecossistema Xbox.", "evidenceIds": ["E01", "E06", "E07", "E09"],
+      "trend": { "searchMomentum": 75, "videoVelocity": 75, "crossConfirmation": 100, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 100 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Feed recorrente em pt-BR e fonte genérica licenciada."
+    },
+    {
+      "name": "Seguros e proteção do consumidor", "macroNiche": "finanças", "summary": "Explicações práticas sobre seguros e direitos do consumidor.", "evidenceIds": ["E01", "E12", "E14", "E15"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 100, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 75, "operationalFit": 100 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Agenda pública recorrente e alto valor explicativo."
+    },
+    {
+      "name": "Impostos e reforma tributária", "macroNiche": "finanças", "summary": "Orientações para pequenos negócios baseadas em fontes oficiais.", "evidenceIds": ["E01", "E16", "E17"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 50, "crossConfirmation": 100, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Pauta recorrente com fonte oficial e utilidade prática."
+    },
+    {
+      "name": "Decisões judiciais e casos públicos", "macroNiche": "direito", "summary": "Explicações de decisões públicas.", "evidenceIds": ["E01"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 25, "crossConfirmation": 25, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 0, "transformability": 50, "repeatability": 100, "inverseSaturation": 25, "operationalFit": 25 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": false, "knownOrigin": false, "verifiable": false, "safe": false },
+      "explanation": "Verificação, segurança e origem insuficientes."
+    },
+    {
+      "name": "Indenização e direitos do consumidor", "macroNiche": "direito", "summary": "Orientação geral baseada em fontes públicas.", "evidenceIds": ["E01", "E12"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 25, "crossConfirmation": 25, "persistence": 75, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Confirmação cruzada ainda insuficiente."
+    },
+    {
+      "name": "Imóveis e arquitetura de alto padrão", "macroNiche": "imóveis", "summary": "Análise de arquitetura e mercado de alto padrão.", "evidenceIds": ["E01", "E18"],
+      "trend": { "searchMomentum": 100, "videoVelocity": 25, "crossConfirmation": 25, "persistence": 50, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 75, "repeatability": 75, "inverseSaturation": 25, "operationalFit": 50 },
+      "gates": { "multipleSignals": false, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Há fonte utilizável, mas falta confirmação de demanda."
+    },
+    {
+      "name": "Animação independente on-line", "macroNiche": "animação", "summary": "Criadores, técnicas e lançamentos de animação independente.", "evidenceIds": ["E08", "E10"],
+      "trend": { "searchMomentum": 25, "videoVelocity": 75, "crossConfirmation": 75, "persistence": 100, "recency": 75 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 50, "operationalFit": 75 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Estruturalmente forte, mas abaixo do corte de busca."
+    },
+    {
+      "name": "Jogos independentes brasileiros", "macroNiche": "jogos", "summary": "Descoberta e contexto sobre jogos feitos no Brasil.", "evidenceIds": ["E06", "E07", "E09"],
+      "trend": { "searchMomentum": 50, "videoVelocity": 75, "crossConfirmation": 75, "persistence": 100, "recency": 100 },
+      "viability": { "usableSource": 100, "transformability": 100, "repeatability": 100, "inverseSaturation": 75, "operationalFit": 100 },
+      "gates": { "multipleSignals": true, "fourWeekSupply": true, "greenSource": true, "knownOrigin": true, "verifiable": true, "safe": true },
+      "explanation": "Pauta recorrente e operacionalmente adequada."
+    }
+  ]
+}

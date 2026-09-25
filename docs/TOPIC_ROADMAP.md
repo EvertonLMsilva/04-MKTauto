@@ -8,7 +8,8 @@
 | V00 | CONCLUÍDO | Viabilidade e primeiro corte do MVP | Hipóteses, gates e rota de parada aprovados em 24/09/2026. |
 | V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
 | R01 | EM EXECUÇÃO | Fluxo real e baseline interno | Protocolo aprovado; aguarda execução e métricas dos três lotes autorizados. |
-| R02 | PENDENTE | Descoberta dinâmica de nichos e fontes | Depende de R01. |
+| R01A | PR ABERTO | Instrumento local de descoberta assistida | Aplicação mínima implementada e validada; aguarda revisão e merge. |
+| R02 | PENDENTE | Descoberta dinâmica de nichos e fontes | Depende de R01 e da validação de R01A. |
 | R03 | PENDENTE | Experimento criativo concierge | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
 | R05 | PENDENTE | Fundação e múltiplos perfis | Depende de R04 e G2. |
@@ -46,6 +47,7 @@ Defaults aprovados:
 |---|---|---|---|
 | V01 | Reposicionar visão e roadmap | V00 | Documentos coerentes com cortes dinâmicos, múltiplos perfis, Instagram inicial e extensibilidade posterior. |
 | R01 | Medir o fluxo interno | V01 | Um operador executa 3 lotes reais; etapas, tempo ativo, espera, retrabalho, custo e resultado são registrados sem mídia no Git. |
+| R01A | Instrumentar a descoberta | Rodada 1 de R01 | Aplicação local coleta sinais oficiais, usa IA para sugerir candidatos e calcula ranking explicável por regras testadas. |
 | R02 | Validar descoberta dinâmica | R01 | Ranking manual e ao menos uma fonte/API oficial são comparados; o `top 5` mantém score explicável e cada fonte candidata preserva origem e condição de uso. |
 | R03 | Provar o processo criativo | R02 | Processo concierge produz e avalia variações narradas, textuais, legendadas e multitrecho com ferramentas existentes. |
 | R04 | Definir domínio e adaptadores | R03 | Estados, invariantes e contratos mínimos de fonte, IA, renderização, publicação, insights, monetização e parceiros são testáveis. |
@@ -161,6 +163,19 @@ G0 permanece aberto e R02 continua bloqueado. A decisão intermediária é
 `iterar R01` até a segunda rodada, a confirmação de três fontes verdes e a
 execução medida de L01–L03. Mídia, provas de autorização e outros dados privados
 não devem ser adicionados ao repositório.
+
+### R01A — instrumentação antecipada aprovada
+
+Em 25/09/2026, o usuário aprovou antecipar uma aplicação local pequena porque a
+repetição manual antes de qualquer instrumento não oferecia retorno suficiente.
+R01A não substitui G0: usa YouTube Data API como primeiro sinal oficial, OpenAI
+para sugerir agrupamentos e regras determinísticas para validar evidência,
+calcular scores, aplicar gates e limitar diversidade.
+
+A fixture da rodada 1 revelou erros aritméticos no registro manual e foi usada
+para corrigir scores sem trocar componentes ou pesos. Execuções ao vivo continuam
+dependentes de chaves locais não commitadas; vídeo popular não recebe estado
+verde automaticamente.
 
 ## Riscos residuais
 

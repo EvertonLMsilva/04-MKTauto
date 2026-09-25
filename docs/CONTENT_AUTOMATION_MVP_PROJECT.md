@@ -1,7 +1,7 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V01 concluído; R01 em execução; implementação ainda não autorizada
-**Fase atual:** validação manual do fluxo; nenhuma implementação autorizada
+**Status:** V01 concluído; R01 e R01A em execução
+**Fase atual:** validação instrumentada da descoberta e baseline do fluxo
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-24
 
@@ -177,9 +177,11 @@ cria nova versão e invalida a aprovação anterior.
 
 ## 8. Arquitetura adiada por gate
 
-V01 mantém stack, fila e entidades físicas adiadas. R01–R03 validam o fluxo com
-processo e ferramentas existentes. R04 define somente contratos exigidos pela
-evidência; R05 cria a fundação técnica após G2.
+V01 mantém fila e fundação ampla adiadas. R01–R03 validam o fluxo com processo e
+ferramentas existentes. R01A é uma exceção pequena e reversível: instrumenta
+somente descoberta, evidência e ranking, sem antecipar a arquitetura completa.
+R04 define os demais contratos exigidos pela evidência; R05 cria a fundação
+técnica após G2.
 
 Continuam válidos como restrições, não como escolha de tecnologia:
 
@@ -369,7 +371,8 @@ contados desde a própria repriorização. A matriz de gates e evidências está
 |---|---|---|---|
 | V01 | Repriorização | V00 | Visão, persona, fluxo, integração inicial e roadmap coerentes. |
 | R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
-| R02 | Descoberta dinâmica | R01 | Ranking `top 5` e fonte/API oficial comparados; pautas e fontes preservam evidência e origem. |
+| R01A | Instrumento de descoberta | Rodada 1 de R01 | Sinais oficiais, sugestões de IA e ranking determinístico funcionam localmente. |
+| R02 | Descoberta dinâmica | R01/R01A | Ranking `top 5` e fonte/API oficial comparados; pautas e fontes preservam evidência e origem. |
 | R03 | Experimento criativo | R02 | Quatro famílias de corte avaliadas por rubric. |
 | R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
 | R05 | Fundação | R04/G2 | Aplicação reproduzível para vários perfis. |
@@ -408,7 +411,9 @@ Decisões aprovadas:
 4. Instagram é o primeiro adaptador obrigatório, com exportação como fallback.
 5. O painel combina insights, custos e receita manual/importada.
 6. Outros canais e parceiros ficam pós-MVP e entram por adaptadores.
-7. Nenhuma implementação começa antes dos gates de fluxo, valor e construção.
+7. Antes dos gates de fluxo, valor e construção, somente instrumentos locais,
+   reversíveis e explicitamente aprovados podem ser implementados para reduzir
+   custo ou erro da validação; efeitos externos continuam bloqueados.
 
 R01 deve produzir evidência para as pendências restantes:
 
@@ -419,5 +424,6 @@ R01 deve produzir evidência para as pendências restantes:
 5. orçamento e prazo aceitáveis por lote;
 6. origem e condição de uso registradas, sem mídia no Git.
 
-Até R01 concluir essas respostas, a ação correta é descoberta e decisão — não
-implementação.
+Até R01 concluir essas respostas, a implementação fica limitada ao instrumento
+de descoberta aprovado em R01A. Fundação, produção e efeitos externos continuam
+bloqueados.
