@@ -8,7 +8,7 @@
 | V00 | CONCLUÍDO | Viabilidade e primeiro corte do MVP | Hipóteses, gates e rota de parada aprovados em 24/09/2026. |
 | V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
 | R01 | EM EXECUÇÃO | Fluxo real e baseline interno | Protocolo aprovado; aguarda execução e métricas dos três lotes autorizados. |
-| R01A | PR ABERTO | Instrumento local de descoberta assistida | Aplicação mínima implementada e validada; aguarda revisão e merge. |
+| R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | R02 | PENDENTE | Descoberta dinâmica de nichos e fontes | Depende de R01 e da validação de R01A. |
 | R03 | PENDENTE | Experimento criativo concierge | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
@@ -176,6 +176,10 @@ A fixture da rodada 1 revelou erros aritméticos no registro manual e foi usada
 para corrigir scores sem trocar componentes ou pesos. Execuções ao vivo continuam
 dependentes de chaves locais não commitadas; vídeo popular não recebe estado
 verde automaticamente.
+
+O PR #8 foi mergeado em 25/09/2026 (`6706ba6`). A aplicação local, os nove
+testes, a fixture, a revisão humana e os adaptadores de YouTube/OpenAI encerram
+R01A. A execução ao vivo permanece uma validação de R01 e não libera G0 nem R02.
 
 ## Riscos residuais
 
