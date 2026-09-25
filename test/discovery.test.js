@@ -18,6 +18,7 @@ test("rodada 1 produz 20 candidatos e o top 5 esperado", async (context) => {
     "Clima extremo e alertas explicados",
   ]);
   assert.equal(store.latest().id, run.id);
+  assert.equal(store.get(run.id).id, run.id);
   const reviewed = store.reviewCandidate(run.id, run.top[0].id, "approved");
   assert.equal(reviewed.top[0].reviewDecision, "approved");
 });

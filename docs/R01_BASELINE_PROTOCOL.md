@@ -27,6 +27,13 @@ agregadas.
 O exercício planejado contém 3 fontes e 12 variações. A quantidade candidata do
 lote inicial será decidida depois das medições, não presumida por este protocolo.
 
+### Recorte aprovado para a rodada 2
+
+Após visualizar as saídas em 25/09/2026, o usuário substituiu a comparação de
+quatro famílias por um único formato útil por lote: corte com narração e legenda.
+O lote final da rodada 2 contém três vídeos, um por fonte. As variações isoladas
+de texto, narração e multitrecho não integram o aceite nem seguem adiante.
+
 Os exemplos públicos encontrados na pesquisa servem somente para reconhecer
 padrões editoriais. Não são fontes autorizadas para os lotes sem uma licença ou
 autorização independente que permita download, adaptação e publicação.

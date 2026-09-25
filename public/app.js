@@ -6,20 +6,33 @@ const elements = {
   eligibleCount: document.querySelector("#eligible-count"),
   mode: document.querySelector("#mode"),
   top: document.querySelector("#top"),
+  selectionNote: document.querySelector("#selection-note"),
   candidates: document.querySelector("#candidates"),
+  discoverSources: document.querySelector("#discover-sources"),
+  sourceStatus: document.querySelector("#source-status"),
+  sourceResults: document.querySelector("#source-results"),
 };
+
+let currentRun = null;
 
 elements.fixture.addEventListener("click", () => execute("/api/runs/fixture"));
 elements.live.addEventListener("click", () => execute("/api/runs/live"));
+elements.discoverSources.addEventListener("click", () => discoverSources(currentRun.id));
 
 const health = await request("/api/health");
 elements.live.disabled = !health.liveReady;
 elements.status.textContent = health.liveReady
   ? "Integrações configuradas. A busca atual está disponível."
-  : "Modo demonstração disponível. Configure as duas chaves para busca atual.";
+  : "Modo demonstração disponível. Configure a chave do YouTube e mantenha o Ollama ativo.";
 
-const latest = await request("/api/runs/latest");
-if (latest) render(latest);
+const requestedRunId = new URLSearchParams(window.location.search).get("run");
+const latest = await request(requestedRunId
+  ? `/api/runs/${encodeURIComponent(requestedRunId)}`
+  : "/api/runs/latest");
+if (latest) {
+  render(latest);
+  await loadSources(latest.id);
+}
 
 async function execute(endpoint) {
   setBusy(true);
@@ -36,18 +49,31 @@ async function execute(endpoint) {
 }
 
 function render(run) {
+  currentRun = run;
+  const provisional = run.top.length === 0;
+  const selection = provisional ? (run.provisionalTop ?? []) : run.top;
   elements.candidateCount.textContent = run.scored.length;
   elements.eligibleCount.textContent = run.scored.filter((item) => item.eligible).length;
   elements.mode.textContent = run.mode === "live" ? "Atual" : "Fixture";
-  elements.top.innerHTML = run.top.length
-    ? run.top.map((item, index) => `
+  const approvedMacros = new Set(selection
+    .filter((item) => item.reviewDecision === "approved")
+    .map((item) => item.macroNiche));
+  elements.discoverSources.disabled = run.mode !== "live" || approvedMacros.size < 3;
+  elements.sourceStatus.textContent = elements.discoverSources.disabled
+    ? "Aprove três nichos diversos de uma rodada atual para habilitar a busca."
+    : "Pronto para buscar arquivos reutilizáveis com download oficial.";
+  elements.selectionNote.textContent = provisional
+    ? "Ranking provisório: todos os critérios passaram, exceto a confirmação humana da fonte verde."
+    : "Somente candidatos que passaram em todos os gates.";
+  elements.top.innerHTML = selection.length
+    ? selection.map((item, index) => `
       <article class="rank-card">
         <span class="rank">${index + 1}</span>
         <p class="macro">${escapeHtml(item.macroNiche)}</p>
         <h3>${escapeHtml(item.name)}</h3>
         <strong>${number(item.finalScore)}</strong>
         <p>${escapeHtml(item.explanation)}</p>
-        <small>${item.evidenceIds.length} evidência(s)</small>
+        <small>${item.evidenceIds.length} evidência(s)${provisional ? " · direitos pendentes" : ""}</small>
         <div class="review-actions" data-candidate="${item.id}">
           <button class="approve" ${item.reviewDecision === "approved" ? "disabled" : ""}>Aprovar</button>
           <button class="reject" ${item.reviewDecision === "rejected" ? "disabled" : ""}>Rejeitar</button>
@@ -71,6 +97,71 @@ function render(run) {
   for (const group of elements.top.querySelectorAll(".review-actions")) {
     group.querySelector(".approve").addEventListener("click", () => review(run.id, group.dataset.candidate, "approved"));
     group.querySelector(".reject").addEventListener("click", () => review(run.id, group.dataset.candidate, "rejected"));
+  }
+}
+
+async function discoverSources(runId) {
+  elements.discoverSources.disabled = true;
+  elements.sourceStatus.textContent = "Buscando mídia reutilizável em repositório oficial…";
+  try {
+    const sourceRun = await request(`/api/runs/${runId}/sources/discover`, { method: "POST" });
+    renderSources(sourceRun);
+    elements.sourceStatus.textContent = `Busca concluída em ${formatDate(sourceRun.createdAt)}.`;
+  } catch (error) {
+    elements.sourceStatus.textContent = error.message;
+  } finally {
+    elements.discoverSources.disabled = false;
+  }
+}
+
+async function loadSources(runId) {
+  try {
+    const sourceRun = await request(`/api/runs/${runId}/sources/latest`);
+    if (sourceRun) renderSources(sourceRun);
+  } catch (error) {
+    elements.sourceStatus.textContent = error.message;
+  }
+}
+
+function renderSources(sourceRun) {
+  elements.sourceResults.innerHTML = sourceRun.niches.map((group) => `
+    <article class="source-group">
+      <p class="macro">${escapeHtml(group.macroNiche)}</p>
+      <h3>${escapeHtml(group.niche)}</h3>
+      <div class="source-grid">${group.sources.length ? group.sources.map((source) => `
+        <article class="source-card">
+          <h3>${escapeHtml(source.title)}</h3>
+          <p>${escapeHtml(source.creator || "Autoria não informada")}</p>
+          <small>Licença declarada: ${escapeHtml(source.declaredLicense)} · ${source.attributionRequired ? "atribuição obrigatória" : "sem atribuição obrigatória"}</small>
+          <a href="${escapeHtml(source.sourceUrl)}" target="_blank" rel="noreferrer">Ver origem e licença</a>
+          <a href="${escapeHtml(source.downloadUrl)}" target="_blank" rel="noreferrer">Abrir arquivo oficial</a>
+          <div class="review-actions" data-source="${escapeHtml(source.id)}">
+            <button class="approve" ${source.reviewDecision === "green" ? "disabled" : ""}>Confirmar verde</button>
+            <button class="reject" ${source.reviewDecision === "rejected" ? "disabled" : ""}>Rejeitar</button>
+          </div>
+          <small class="decision">Revisão: ${sourceReviewLabel(source.reviewDecision)}</small>
+        </article>`).join("") : '<p class="empty">Nenhuma fonte CC encontrada.</p>'}</div>
+    </article>`).join("");
+
+  for (const group of elements.sourceResults.querySelectorAll(".review-actions")) {
+    group.querySelector(".approve").addEventListener("click", () =>
+      reviewSource(sourceRun.id, group.dataset.source, "green"));
+    group.querySelector(".reject").addEventListener("click", () =>
+      reviewSource(sourceRun.id, group.dataset.source, "rejected"));
+  }
+}
+
+async function reviewSource(sourceRunId, sourceId, decision) {
+  try {
+    const sourceRun = await request(`/api/source-runs/${sourceRunId}/sources/${encodeURIComponent(sourceId)}/review`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    renderSources(sourceRun);
+    elements.sourceStatus.textContent = "Decisão de fonte registrada localmente.";
+  } catch (error) {
+    elements.sourceStatus.textContent = error.message;
   }
 }
 
@@ -116,4 +207,8 @@ function escapeHtml(value) {
 
 function reviewLabel(value) {
   return ({ approved: "aprovado", rejected: "rejeitado", pending: "pendente" })[value] || "pendente";
+}
+
+function sourceReviewLabel(value) {
+  return ({ green: "verde confirmado", rejected: "rejeitada", pending: "pendente" })[value] || "pendente";
 }

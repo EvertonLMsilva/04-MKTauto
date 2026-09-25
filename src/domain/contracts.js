@@ -20,15 +20,40 @@ const GATE_KEYS = [
   "verifiable",
   "safe",
 ];
+export const MACRO_NICHES = [
+  "animação",
+  "animais",
+  "automóveis",
+  "ciência e tecnologia",
+  "clima",
+  "direito",
+  "educação",
+  "entretenimento",
+  "esportes",
+  "finanças",
+  "imóveis",
+  "jogos",
+  "música",
+  "política",
+];
 
 export function validateCandidates(value, knownEvidenceIds = []) {
   if (!value || !Array.isArray(value.candidates)) {
     throw new Error("Resposta da IA não contém candidates[]");
   }
   const known = new Set(knownEvidenceIds);
+  const names = new Set();
   return value.candidates.map((candidate, index) => {
     requireText(candidate.name, `candidates[${index}].name`);
+    const normalizedName = candidate.name.trim().toLocaleLowerCase("pt-BR");
+    if (names.has(normalizedName)) {
+      throw new Error(`Nome de candidato duplicado: ${candidate.name}`);
+    }
+    names.add(normalizedName);
     requireText(candidate.macroNiche, `candidates[${index}].macroNiche`);
+    if (!MACRO_NICHES.includes(candidate.macroNiche)) {
+      throw new Error(`candidates[${index}].macroNiche não pertence à taxonomia permitida`);
+    }
     requireText(candidate.summary, `candidates[${index}].summary`);
     requireText(candidate.explanation, `candidates[${index}].explanation`);
     if (!Array.isArray(candidate.evidenceIds) || candidate.evidenceIds.length === 0) {
@@ -73,8 +98,9 @@ export const candidateResponseSchema = {
   properties: {
     candidates: {
       type: "array",
-      minItems: 5,
+      minItems: 20,
       maxItems: 20,
+      uniqueItems: true,
       items: {
         type: "object",
         additionalProperties: false,
@@ -90,7 +116,7 @@ export const candidateResponseSchema = {
         ],
         properties: {
           name: { type: "string" },
-          macroNiche: { type: "string" },
+          macroNiche: { type: "string", enum: MACRO_NICHES },
           summary: { type: "string" },
           evidenceIds: { type: "array", minItems: 1, items: { type: "string" } },
           trend: scoreObject(TREND_KEYS),

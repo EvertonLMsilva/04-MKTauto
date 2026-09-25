@@ -27,3 +27,10 @@ test("rejeita score fora do intervalo", () => {
   const invalid = { ...valid, trend: { ...valid.trend, recency: 101 } };
   assert.throws(() => validateCandidates({ candidates: [invalid] }, ["youtube:1"]), /entre 0 e 100/);
 });
+
+test("rejeita nome de candidato duplicado", () => {
+  assert.throws(
+    () => validateCandidates({ candidates: [valid, { ...valid }] }, ["youtube:1"]),
+    /duplicado/,
+  );
+});
