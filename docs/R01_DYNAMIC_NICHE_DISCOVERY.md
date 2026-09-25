@@ -97,10 +97,12 @@ Pode continuar no radar como `observação`, mas não recebe lote nem publicaç�
 Essas regras evitam portfólio instável, concentração em um único evento e seleção
 dominada por preferências subjetivas.
 
-## Validação manual em R01
+## Validação instrumentada em R01
 
-Antes de implementar, executar duas rodadas manuais separadas por pelo menos sete
-dias. Cada rodada deve:
+Antes de promover descoberta automatizada, executar duas rodadas separadas por
+pelo menos sete dias. R01A pode instrumentar coleta, agrupamento e cálculo para
+reduzir erro manual, desde que preserve evidências, pesos, gates e aprovação
+humana. Cada rodada deve:
 
 1. listar no mínimo 20 candidatos;
 2. calcular os dois scores com evidência disponível;
