@@ -47,7 +47,6 @@ export async function identifyCandidates({ apiKey, model, signals, fetchImpl = f
     gates: { ...candidate.gates, greenSource: false },
   }));
 }
-
 export function extractOutputText(response) {
   for (const item of response.output ?? []) {
     if (item.type !== "message") continue;
@@ -59,4 +58,3 @@ export function extractOutputText(response) {
   }
   throw new Error("A resposta da OpenAI não contém output_text");
 }
-

@@ -18,7 +18,6 @@ export function weightedScore(components, weights) {
   }
   return round(score);
 }
-
 export function scoreCandidate(candidate, config) {
   const trendScore = weightedScore(candidate.trend, config.trendWeights);
   const viabilityScore = weightedScore(
@@ -62,4 +61,3 @@ export function rankCandidates(candidates, config) {
 function round(value) {
   return Math.round(value * 100) / 100;
 }
-

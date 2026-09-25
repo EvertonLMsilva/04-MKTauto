@@ -16,7 +16,6 @@ const valid = {
 test("aceita candidato ligado a uma evidência conhecida", () => {
   assert.equal(validateCandidates({ candidates: [valid] }, ["youtube:1"]).length, 1);
 });
-
 test("rejeita evidência inventada pela IA", () => {
   assert.throws(
     () => validateCandidates({ candidates: [{ ...valid, evidenceIds: ["youtube:inventado"] }] }, ["youtube:1"]),
@@ -28,4 +27,3 @@ test("rejeita score fora do intervalo", () => {
   const invalid = { ...valid, trend: { ...valid.trend, recency: 101 } };
   assert.throws(() => validateCandidates({ candidates: [invalid] }, ["youtube:1"]), /entre 0 e 100/);
 });
-

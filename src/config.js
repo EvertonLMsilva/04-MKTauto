@@ -9,11 +9,9 @@ export async function loadConfig() {
   validateWeights(config.finalWeights, "finalWeights");
   return config;
 }
-
 function validateWeights(weights, name) {
   const total = Object.values(weights).reduce((sum, value) => sum + value, 0);
   if (Math.abs(total - 1) > 0.00001) {
     throw new Error(`${name} deve somar 1; total recebido: ${total}`);
   }
 }
-

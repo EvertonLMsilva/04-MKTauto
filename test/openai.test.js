@@ -21,7 +21,6 @@ test("extrai output_text sem assumir a primeira posição", () => {
   ] });
   assert.equal(text, "resultado");
 });
-
 test("força fonte verde para falso em sinais do YouTube", async () => {
   const fetchImpl = async () => ({
     ok: true,
@@ -30,4 +29,3 @@ test("força fonte verde para falso em sinais do YouTube", async () => {
   const result = await identifyCandidates({ apiKey: "teste", model: "teste", signals: [signal], fetchImpl });
   assert.equal(result[0].gates.greenSource, false);
 });
-
