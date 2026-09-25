@@ -2,109 +2,113 @@
 
 ## Decisão
 
-A hipótese principal para o primeiro perfil é **dicas práticas de tecnologia em
-`pt-BR`**. Os lotes comparativos serão **organização doméstica** e **cozinha
-rápida**. A escolha é uma hipótese para o baseline, não uma promessa de audiência
-ou definição definitiva do portfólio.
+Os três perfis representativos do produto são:
 
-O recorte favorece acervos de vídeos existentes que permitam adaptação por
-licença, domínio público ou autorização do titular. O operador não precisa
-gravar a fonte. Reels encontrados em perfis são referências editoriais e só
-podem virar insumo quando houver uma permissão independente e registrável para
-baixar, adaptar e publicar.
+1. **Jogos:** notícias, trailers, detalhes e análise editorial.
+2. **Inspiração:** contexto, síntese e reflexão com roteiro próprio.
+3. **Carros de luxo:** lançamentos, design, tecnologia e comparação.
+
+O produto não depende de o operador gravar a fonte. Ele encontra material
+existente, seleciona os trechos necessários e cria um post no qual a informação,
+a análise ou a narrativa nova são o conteúdo principal.
+
+Esta escolha substitui o recorte preliminar de tecnologia, organização e cozinha.
+Ela representa a intenção editorial declarada pelo operador; demanda e desempenho
+ainda precisam ser medidos e não são presumidos.
 
 ## Método e limites
 
-Pesquisa manual realizada em 24/09/2026, sem login e sem scraping, usando:
+A pesquisa manual foi realizada em 24/09/2026, sem login e sem scraping. Perfis
+e tendências servem para descobrir pautas e padrões. A fonte audiovisual deve vir
+do titular, de mídia oficial, catálogo licenciado, licença aberta compatível,
+domínio público, recurso oficial de remix ou autorização registrável.
 
-- páginas públicas de tópicos do Instagram;
-- relatório oficial TikTok Next 2026;
-- Google Trends Brasil como sinal de pauta volátil, não de nicho durável;
-- comunicados oficiais da Meta sobre descoberta, originalidade e produtos.
+Não existe duração ou percentual que torne qualquer trecho automaticamente
+permitido. A exceção de citação, crítica ou pequenos trechos depende do contexto
+e não será transformada em regra automática do produto antes da revisão de G4.
 
-As contagens são globais e pontuais, mudam continuamente e não representam
-demanda exclusiva do Brasil. Visualizações de exemplos públicos são sinais de
-formato, não médias da categoria nem previsão de desempenho.
+## Lotes representativos
 
-## Sinais observados
+| Lote | Nicho | Post candidato | Fonte preferencial | Principal risco |
+|---|---|---|---|---|
+| L01 | Jogos | detalhes e análise de trailer ou anúncio oficial | mídia do publisher e política de uso aplicável | trailer integral, vazamento, spoiler, música e monetização fora da política |
+| L02 | Inspiração | ideia central, contexto e reflexão própria | fala licenciada, domínio público ou criador parceiro; imagens e música licenciadas separadamente | compilação superficial, direitos da fala, imagem e trilha |
+| L03 | Carros de luxo | análise de lançamento, design ou tecnologia | press kit do fabricante com uso editorial permitido ou banco licenciado | termos do press kit, marcas, pessoas, locações e música |
 
-| Nicho | Sinal público pontual | Padrões recorrentes | Fonte reutilizável necessária |
-|---|---|---|---|
-| Dicas de tecnologia | Tópico `techtips`: 4,3 milhões de reels; exemplos exibidos entre 1,6 e 23,4 milhões de visualizações | configuração oculta, problema/solução, lista de três recursos, demonstração de tela, gancho de curiosidade | vídeo de catálogo com derivação permitida ou autorização do titular; dica verificada separadamente |
-| Organização doméstica | Tópico `homeorganization`: 2,5 milhões de reels; exemplos exibidos de 202 a 8,2 milhões de visualizações | antes/depois, solução visual, produto em uso, organização por etapas | demonstração licenciada/autorizada, incluindo marcas, pessoas e música abrangidas |
-| Cozinha rápida | Tópico `cookinghacks`: 583 mil reels; exemplos exibidos entre 65,4 mil e 3,8 milhões de visualizações; `#cookinghacks` aparece com 782,2 mil postagens no relatório TikTok Next 2026 | truque único, três dicas, transformação visível, teste de dica viral | preparo licenciado/autorizado e revisão de alegações e segurança alimentar |
+Jogos é o primeiro lote porque trailers e media kits oficiais tornam origem e
+contexto mais verificáveis. Carros de luxo vem em seguida pela disponibilidade
+potencial de press kits. Inspiração fica por último porque pode reunir vários
+direitos no mesmo arquivo e frequentemente oferece pouca transformação quando
+reduzido a cortes com texto e música.
 
-O relatório TikTok Next 2026 também sinaliza procura por conteúdo mais real,
-útil e baseado em processo, além de jornadas de descoberta via busca. Entre os
-exemplos citados estão `#cookinghacks`, rotinas, foco e demonstrações que ajudam
-o público a decidir “por que comprar”.
+## Modelo de transformação editorial
 
-## Ranking para o baseline
+O roteiro e a tese editorial são definidos antes da seleção dos trechos. O vídeo
+de terceiro funciona como evidência visual, não como atração integral republicada.
+A versão candidata deve:
 
-Escala de 1 a 5. Pesos: demanda observável 30%, facilidade de obter e transformar
-fonte autorizada 25%, repetibilidade 20%, monetização adjacente 15% e segurança
-editorial 10%.
+- selecionar somente o material necessário para sustentar cada ponto;
+- reorganizar a narrativa em torno de informação, crítica ou contexto novos;
+- usar narração, texto, legendas e identidade visual próprios;
+- identificar titular e fonte oficial;
+- tratar música, voz, imagem de pessoas e demais camadas separadamente;
+- terminar com revisão humana da versão exata.
 
-| Posição | Nicho | Demanda | Fonte/transformação | Repetição | Monetização | Segurança | Nota ponderada |
-|---:|---|---:|---:|---:|---:|---:|---:|
-| 1 | Dicas práticas de tecnologia | 5 | 5 | 5 | 4 | 4 | 4,75 |
-| 2 | Organização doméstica | 4 | 4 | 4 | 5 | 4 | 4,15 |
-| 3 | Cozinha rápida | 4 | 3 | 5 | 4 | 4 | 3,95 |
+Somente borda, recorte de tela, velocidade, legenda automática, junção de clipes
+ou narração do que já aparece são mudanças de baixo valor. Transformação criativa
+e permissão de uso são verificações independentes.
 
-O ranking prioriza viabilidade editorial e direitos, não apenas volume. Futebol,
-celebridades, notícias e política aparecem com frequência em tendências diárias,
-mas foram excluídos do baseline por volatilidade, maior dependência de imagens de
-terceiros e riscos adicionais de direito, contexto e segurança.
+## Classificação operacional da fonte
 
-## Modelo de transformação
+| Estado | Condição | Uso no fluxo |
+|---|---|---|
+| Verde | licença, autorização, domínio público, remix oficial ou política que cubra o uso proposto | pode entrar no lote, mantendo condições e atribuição |
+| Amarelo | mídia oficial disponível, mas termos comerciais, de adaptação ou plataforma são ambíguos | apenas referência de pauta; não publica até resolver |
+| Vermelho | vazamento, origem desconhecida, download irregular, repost integral ou proibição incompatível | rejeitar |
 
-O produto parte de um vídeo existente permitido e cria uma obra editorialmente
-nova por meio de seleção de trechos, mudança de estrutura, roteiro próprio,
-informação ou análise adicional, narração/texto, legendas e identidade visual.
-Somente borda, velocidade, legenda automática, junção de clipes ou narração do
-que já aparece na tela são mudanças de baixo valor.
+“Divulgação gratuita”, ausência de reclamação e manutenção de marca-d’água não
+mudam a classificação. Programas que remuneram cortes ou remixes são verdes
+somente dentro do escopo e das plataformas previstos em seus termos.
 
-Valor criativo substancial e direito de uso são verificações independentes: uma
-transformação forte não substitui licença, autorização ou uma exceção jurídica
-aplicável; uma licença válida também não garante recomendação pela plataforma.
+## Exemplo: análise de GTA VI
 
-## Tipos de vídeo candidatos
+A Rockstar disponibiliza trailers e outros arquivos oficiais de GTA VI, mas sua
+política geral de conteúdo de fãs trata usos ocasionais e não comerciais, reserva
+remoção caso a caso e direciona usos não cobertos para licenciamento. Ela também
+proíbe vazamentos pré-lançamento e pode remover cenas cinematográficas isoladas.
 
-1. **Problema → solução demonstrada:** gancho imediato e uma ação verificável.
-2. **Lista curta:** três dicas ou recursos, com cortes rápidos e progressão clara.
-3. **Antes → processo → depois:** transformação visual com resultado verificável.
-4. **Teste honesto:** executar uma dica ou produto e mostrar limite, falha e
-   resultado, sem alegação não demonstrada.
+Um post candidato como “detalhes do trailer de GTA VI” usa trechos estritamente
+ligados a cada observação, com análise predominante, fonte oficial indicada e sem
+reproduzir o trailer como substituto do original. A disponibilidade do download
+não é presumida como licença comercial; o estado fica amarelo quando os termos
+não cobrirem o uso pretendido.
 
-Os quatro padrões serão expressos nas famílias já previstas — narrado, texto
-sobre vídeo, legendado e multitrecho — sem copiar roteiro, áudio ou imagens dos
-exemplos observados.
+## Famílias a comparar
+
+1. **Narrado:** análise original conduz o post e o trecho ilustra cada ponto.
+2. **Texto sobre vídeo:** afirmações editoriais verificáveis estruturam o corte.
+3. **Legendado:** fala analítica própria recebe legenda revisada; não é mera
+   legenda do original.
+4. **Multitrecho:** vários excertos sustentam uma tese, comparação ou sequência.
 
 ## Fontes públicas consultadas
 
-- Instagram, tópico público `techtips`:
-  <https://www.instagram.com/popular/techtips/>
-- Instagram, tópico público `homeorganization`:
-  <https://www.instagram.com/popular/homeorganization/>
-- Instagram, tópico público `cookinghacks`:
-  <https://www.instagram.com/popular/cookinghacks/>
-- TikTok Next 2026:
-  <https://ads.tiktok.com/business/pt-BR/next>
-- Google Trends, Brasil:
-  <https://trends.google.com/trending?geo=BR&hl=pt-BR>
-- Meta, descoberta de produtos e criadores:
-  <https://about.fb.com/br/news/2026/03/apresentando-uma-nova-era-de-descoberta-de-produtos-impulsionada-por-ia-e-criadores/>
-- Meta, diretrizes de originalidade no Reels do Facebook:
+- Rockstar, política sobre material protegido:
+  <https://support.rockstargames.com/articles/7bNaeoMFTV0iUDGhStTXvz/policy-on-posting-copyrighted-rockstar-games-material>
+- Rockstar, mídia oficial de GTA VI:
+  <https://www.rockstargames.com/VI/downloads/videos>
+- Meta, diretrizes de originalidade:
   <https://about.fb.com/br/news/2026/03/recompensando-criadores-originais-no-facebook/>
-- Instagram, orientação oficial sobre direitos autorais:
+- Instagram, orientação sobre direitos autorais:
   <https://www.facebook.com/help/354736791367645/>
 - Creative Commons, licenças e condições de adaptação:
   <https://creativecommons.org/share-your-work/use-remix/cc-licenses/>
+- Lei 9.610/1998:
+  <https://www.planalto.gov.br/ccivil_03/leis/l9610.htm>
 
 ## Próxima evidência necessária
 
-Para concluir G0, o operador deve selecionar uma fonte existente, licenciada,
-em domínio público ou formalmente autorizada para cada nicho e executar os três
-lotes conforme `docs/R01_BASELINE_PROTOCOL.md`. A pesquisa de popularidade não
-substitui essa execução nem concede direito de reutilizar qualquer reel
-observado.
+Para concluir G0, o operador deve selecionar uma fonte verde para cada nicho e
+executar os três lotes conforme `docs/R01_BASELINE_PROTOCOL.md`. Fontes amarelas
+podem orientar pauta, mas não contam como lote executado nem seguem para
+publicação. Nenhuma mídia ou prova privada entra no Git.

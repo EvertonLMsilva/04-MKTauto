@@ -137,15 +137,19 @@ Em 24/09/2026, foi aprovado o protocolo sanitizado de execução em
 lotes, separa tempo ativo de espera e registra custos, falhas, retrabalhos e uma
 rubric definida antes da avaliação.
 
-A pesquisa manual em `docs/R01_NICHE_RESEARCH.md` selecionou dicas práticas de
-tecnologia como hipótese principal e organização doméstica e cozinha rápida como
-lotes comparativos. Os sinais públicos definem padrões a testar, mas não
-autorizam reutilização de mídia de terceiros.
+A pesquisa manual em `docs/R01_NICHE_RESEARCH.md` selecionou jogos, inspiração e
+carros de luxo como os três lotes representativos. O formato candidato é análise
+editorial transformativa: roteiro e informação próprios conduzem o post, e os
+trechos existentes funcionam como evidência visual.
 
 O usuário esclareceu que o fluxo candidato não exige gravação própria: ele deve
 encontrar vídeos existentes com direito de adaptação e produzir cortes com valor
 editorial substancial. Mudanças superficiais não satisfazem o produto, e direito
 de uso continua sendo gate independente da transformação criativa.
+
+Fontes agora recebem estado `verde`, `amarelo` ou `vermelho`. Somente fontes
+verdes entram nos lotes; mídia oficial com termos ambíguos orienta pauta, mas não
+segue para publicação até que o uso proposto esteja coberto.
 
 Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
 G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e

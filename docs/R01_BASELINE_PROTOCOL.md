@@ -14,7 +14,7 @@ agregadas.
 
 - Executar três lotes, um perfil por vez.
 - Usar os três nichos candidatos registrados em `docs/R01_NICHE_RESEARCH.md`:
-  dicas práticas de tecnologia, organização doméstica e cozinha rápida.
+  jogos, inspiração e carros de luxo.
 - Cada lote parte de um vídeo existente licenciado, em domínio público ou
   autorizado para adaptação e publicação, cuja prova é conferida antes do
   cronômetro e referenciada apenas por um ID interno.
@@ -47,6 +47,7 @@ Registrar fora do Git a prova de direito de uso. No resumo sanitizado, preencher
 | Condição de uso | `licenciada`, `domínio público` ou `autorizada` |
 | Prova conferida | `sim` ou `não`; sem anexar a prova |
 | Escopo conferido | adaptação, uso comercial, plataforma, território e validade |
+| Estado da fonte | `verde`; fontes `amarelas` ou `vermelhas` não entram no lote |
 | Entrada | Duração, resolução e tamanho, sem nome de arquivo |
 | Ferramentas | Nome e versão; sem conta, token ou caminho privado |
 | Limites prévios | Teto de tempo ativo e custo aceito pelo operador |
