@@ -151,9 +151,16 @@ Fontes agora recebem estado `verde`, `amarelo` ou `vermelho`. Somente fontes
 verdes entram nos lotes; mídia oficial com termos ambíguos orienta pauta, mas não
 segue para publicação até que o uso proposto esteja coberto.
 
-Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
-G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e
-outros dados privados não devem ser adicionados ao repositório.
+Em 24/09/2026, a primeira rodada manual assistida avaliou 20 candidatos e gerou
+um `top 5` provisório, registrado em `docs/R01_EXECUTION_LOG.md`. A rodada
+demonstrou o instrumento, mas não comprova estabilidade: a segunda execução só
+pode ocorrer em ou após 01/10/2026. Nenhum lote foi iniciado, e o tempo da
+sessão assistida não foi tratado como tempo ativo do operador.
+
+G0 permanece aberto e R02 continua bloqueado. A decisão intermediária é
+`iterar R01` até a segunda rodada, a confirmação de três fontes verdes e a
+execução medida de L01–L03. Mídia, provas de autorização e outros dados privados
+não devem ser adicionados ao repositório.
 
 ## Riscos residuais
 
