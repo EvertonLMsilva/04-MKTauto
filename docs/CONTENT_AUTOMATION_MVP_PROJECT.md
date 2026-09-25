@@ -1,7 +1,7 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V01 repriorizado; implementação ainda não autorizada
-**Fase atual:** planejamento; nenhuma implementação autorizada
+**Status:** V01 concluído; R01 em execução; implementação ainda não autorizada
+**Fase atual:** validação manual do fluxo; nenhuma implementação autorizada
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-24
 
@@ -369,7 +369,7 @@ contados desde a própria repriorização. A matriz de gates e evidências está
 |---|---|---|---|
 | V01 | Repriorização | V00 | Visão, persona, fluxo, integração inicial e roadmap coerentes. |
 | R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
-| R02 | Descoberta | R01 | Busca manual e fonte/API oficial comparadas por nicho. |
+| R02 | Descoberta dinâmica | R01 | Ranking `top 5` e fonte/API oficial comparados; pautas e fontes preservam evidência e origem. |
 | R03 | Experimento criativo | R02 | Quatro famílias de corte avaliadas por rubric. |
 | R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
 | R05 | Fundação | R04/G2 | Aplicação reproduzível para vários perfis. |

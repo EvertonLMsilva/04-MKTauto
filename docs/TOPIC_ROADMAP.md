@@ -6,9 +6,9 @@
 |---|---|---|---|
 | B00 | CONCLUÍDO | Governança e cadastro local | Projeto reconhecido no Codex; documentos-base presentes. |
 | V00 | CONCLUÍDO | Viabilidade e primeiro corte do MVP | Hipóteses, gates e rota de parada aprovados em 24/09/2026. |
-| V01 | PR ABERTO | Repriorização para estúdio de cortes dinâmicos | Persona, fluxo vertical, integração inicial com Instagram e roadmap V01–R09 consolidados. |
-| R01 | PENDENTE | Fluxo real e baseline interno | Depende do merge de V01. |
-| R02 | PENDENTE | Descoberta de fontes | Depende de R01. |
+| V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
+| R01 | EM EXECUÇÃO | Fluxo real e baseline interno | Protocolo aprovado; aguarda execução e métricas dos três lotes autorizados. |
+| R02 | PENDENTE | Descoberta dinâmica de nichos e fontes | Depende de R01. |
 | R03 | PENDENTE | Experimento criativo concierge | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
 | R05 | PENDENTE | Fundação e múltiplos perfis | Depende de R04 e G2. |
@@ -46,7 +46,7 @@ Defaults aprovados:
 |---|---|---|---|
 | V01 | Reposicionar visão e roadmap | V00 | Documentos coerentes com cortes dinâmicos, múltiplos perfis, Instagram inicial e extensibilidade posterior. |
 | R01 | Medir o fluxo interno | V01 | Um operador executa 3 lotes reais; etapas, tempo ativo, espera, retrabalho, custo e resultado são registrados sem mídia no Git. |
-| R02 | Validar descoberta por nicho | R01 | Busca manual e ao menos uma fonte/API oficial são comparadas; candidato mantém URL, origem e condição de uso declarada. |
+| R02 | Validar descoberta dinâmica | R01 | Ranking manual e ao menos uma fonte/API oficial são comparados; o `top 5` mantém score explicável e cada fonte candidata preserva origem e condição de uso. |
 | R03 | Provar o processo criativo | R02 | Processo concierge produz e avalia variações narradas, textuais, legendadas e multitrecho com ferramentas existentes. |
 | R04 | Definir domínio e adaptadores | R03 | Estados, invariantes e contratos mínimos de fonte, IA, renderização, publicação, insights, monetização e parceiros são testáveis. |
 | R05 | Criar fundação | R04 | Aplicação reproduzível para um operador e múltiplos perfis, com configuração editorial e auditoria mínima. |
@@ -129,6 +129,31 @@ Em 24/09/2026, o usuário esclareceu que:
 
 V01 substitui o recorte `metadados-only/export-only` de V00, preservando revisão
 humana, origem, controles determinísticos, mídia fora do Git e fallback manual.
+
+### R01 — protocolo aprovado
+
+Em 24/09/2026, foi aprovado o protocolo sanitizado de execução em
+`docs/R01_BASELINE_PROTOCOL.md`. O exercício compara as quatro famílias em três
+lotes, separa tempo ativo de espera e registra custos, falhas, retrabalhos e uma
+rubric definida antes da avaliação.
+
+A pesquisa em `docs/R01_NICHE_RESEARCH.md` usa jogos, inspiração e carros de luxo
+como exemplos do formato editorial, não como portfólio fixo. O método registrado
+em `docs/R01_DYNAMIC_NICHE_DISCOVERY.md` deve ranquear semanalmente cinco nichos;
+três candidatos elegíveis e diversos alimentam os lotes do baseline.
+
+O usuário esclareceu que o fluxo candidato não exige gravação própria: ele deve
+encontrar vídeos existentes com direito de adaptação e produzir cortes com valor
+editorial substancial. Mudanças superficiais não satisfazem o produto, e direito
+de uso continua sendo gate independente da transformação criativa.
+
+Fontes agora recebem estado `verde`, `amarelo` ou `vermelho`. Somente fontes
+verdes entram nos lotes; mídia oficial com termos ambíguos orienta pauta, mas não
+segue para publicação até que o uso proposto esteja coberto.
+
+Ainda não há resultado de R01: nenhum lote ou métrica foi fornecido nesta branch.
+G0 permanece aberto e R02 continua bloqueado. Mídia, provas de autorização e
+outros dados privados não devem ser adicionados ao repositório.
 
 ## Riscos residuais
 
