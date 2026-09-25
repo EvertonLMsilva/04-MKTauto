@@ -13,8 +13,9 @@ agregadas.
 ## Desenho do exercício
 
 - Executar três lotes, um perfil por vez.
-- Usar os três nichos candidatos registrados em `docs/R01_NICHE_RESEARCH.md`:
-  jogos, inspiração e carros de luxo.
+- Executar primeiro o método de `docs/R01_DYNAMIC_NICHE_DISCOVERY.md`, produzir
+  o `top 5` e selecionar três nichos elegíveis que maximizem diversidade. Jogos,
+  inspiração e carros de luxo são exemplos, não escolhas fixas.
 - Cada lote parte de um vídeo existente licenciado, em domínio público ou
   autorizado para adaptação e publicação, cuja prova é conferida antes do
   cronômetro e referenciada apenas por um ID interno.

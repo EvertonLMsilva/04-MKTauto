@@ -2,7 +2,7 @@
 
 ## Decisão
 
-Os três perfis representativos do produto são:
+Os três nichos usados como exemplos editoriais nesta análise são:
 
 1. **Jogos:** notícias, trailers, detalhes e análise editorial.
 2. **Inspiração:** contexto, síntese e reflexão com roteiro próprio.
@@ -12,9 +12,10 @@ O produto não depende de o operador gravar a fonte. Ele encontra material
 existente, seleciona os trechos necessários e cria um post no qual a informação,
 a análise ou a narrativa nova são o conteúdo principal.
 
-Esta escolha substitui o recorte preliminar de tecnologia, organização e cozinha.
-Ela representa a intenção editorial declarada pelo operador; demanda e desempenho
-ainda precisam ser medidos e não são presumidos.
+Esses exemplos substituem o recorte preliminar de tecnologia, organização e
+cozinha, mas não formam um portfólio fixo. O método em
+`docs/R01_DYNAMIC_NICHE_DISCOVERY.md` deve produzir um `top 5` semanal; três
+nichos elegíveis e diversos desse ranking alimentam os lotes do baseline.
 
 ## Método e limites
 
@@ -108,7 +109,8 @@ não cobrirem o uso pretendido.
 
 ## Próxima evidência necessária
 
-Para concluir G0, o operador deve selecionar uma fonte verde para cada nicho e
-executar os três lotes conforme `docs/R01_BASELINE_PROTOCOL.md`. Fontes amarelas
-podem orientar pauta, mas não contam como lote executado nem seguem para
-publicação. Nenhuma mídia ou prova privada entra no Git.
+Para concluir G0, o operador deve executar a descoberta manual, formar o `top 5`,
+selecionar três nichos elegíveis com fonte verde e executar os lotes conforme
+`docs/R01_BASELINE_PROTOCOL.md`. Fontes amarelas podem orientar pauta, mas não
+contam como lote executado nem seguem para publicação. Nenhuma mídia ou prova
+privada entra no Git.
