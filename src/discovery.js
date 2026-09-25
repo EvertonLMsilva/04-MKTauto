@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { identifyCandidates } from "./adapters/openai.js";
+import { identifyCandidates } from "./adapters/ollama.js";
 import { fetchPopularYouTubeSignals } from "./adapters/youtube.js";
 import { validateCandidates } from "./domain/contracts.js";
 import { rankCandidates } from "./domain/ranking.js";
@@ -27,11 +27,13 @@ export async function runLive({ config, store, env = process.env, fetchImpl = fe
     apiKey: env.YOUTUBE_API_KEY,
     regionCode: config.regionCode,
     maxResults: config.maxSignals,
+    categoryIds: config.signalCategoryIds,
     fetchImpl,
   });
   const candidates = withIds(await identifyCandidates({
-    apiKey: env.OPENAI_API_KEY,
-    model: env.OPENAI_MODEL || "gpt-6-astra",
+    model: env.OLLAMA_MODEL || "qwen3:4b",
+    baseUrl: env.OLLAMA_BASE_URL || "http://127.0.0.1:11434",
+    numCtx: Number(env.OLLAMA_NUM_CTX || 16_384),
     signals,
     fetchImpl,
   }));

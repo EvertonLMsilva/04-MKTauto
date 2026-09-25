@@ -2,6 +2,7 @@
   "regionCode": "BR",
   "language": "pt-BR",
   "maxSignals": 50,
+  "signalCategoryIds": [null, "2", "10", "15", "17", "20", "24", "25", "26", "27", "28"],
   "topSize": 5,
   "maxPerMacroNiche": 2,
   "trendWeights": {

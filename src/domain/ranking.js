@@ -45,17 +45,27 @@ export function rankCandidates(candidates, config) {
     .map((candidate) => scoreCandidate(candidate, config))
     .sort((left, right) => right.finalScore - left.finalScore || left.name.localeCompare(right.name));
 
+  const top = selectDiverse(scored.filter((candidate) => candidate.eligible), config);
+  const provisionalTop = selectDiverse(
+    scored.filter((candidate) =>
+      candidate.failedGates.length === 1 && candidate.failedGates[0] === "greenSource"),
+    config,
+  );
+
+  return { scored, top, provisionalTop };
+}
+
+function selectDiverse(candidates, config) {
   const macroCounts = new Map();
-  const top = [];
-  for (const candidate of scored) {
-    if (!candidate.eligible || top.length >= config.topSize) continue;
+  const selected = [];
+  for (const candidate of candidates) {
+    if (selected.length >= config.topSize) break;
     const count = macroCounts.get(candidate.macroNiche) ?? 0;
     if (count >= config.maxPerMacroNiche) continue;
     macroCounts.set(candidate.macroNiche, count + 1);
-    top.push(candidate);
+    selected.push(candidate);
   }
-
-  return { scored, top };
+  return selected;
 }
 
 function round(value) {

@@ -155,9 +155,11 @@ segue para publicação até que o uso proposto esteja coberto.
 
 Em 24/09/2026, a primeira rodada manual assistida avaliou 20 candidatos e gerou
 um `top 5` provisório, registrado em `docs/R01_EXECUTION_LOG.md`. A rodada
-demonstrou o instrumento, mas não comprova estabilidade: a segunda execução só
-pode ocorrer em ou após 01/10/2026. Nenhum lote foi iniciado, e o tempo da
-sessão assistida não foi tratado como tempo ativo do operador.
+demonstrou o instrumento, mas não comprova estabilidade. Em 25/09/2026, o
+usuário esclareceu que a janela antes prevista para 01/10/2026 não pode bloquear
+o avanço do MVP e autorizou a segunda execução imediata. Nenhum lote foi
+iniciado, e o tempo da sessão assistida não foi tratado como tempo ativo do
+operador.
 
 G0 permanece aberto e R02 continua bloqueado. A decisão intermediária é
 `iterar R01` até a segunda rodada, a confirmação de três fontes verdes e a
@@ -168,18 +170,30 @@ não devem ser adicionados ao repositório.
 
 Em 25/09/2026, o usuário aprovou antecipar uma aplicação local pequena porque a
 repetição manual antes de qualquer instrumento não oferecia retorno suficiente.
-R01A não substitui G0: usa YouTube Data API como primeiro sinal oficial, OpenAI
-para sugerir agrupamentos e regras determinísticas para validar evidência,
-calcular scores, aplicar gates e limitar diversidade.
+R01A não substitui G0: usa YouTube Data API como primeiro sinal oficial, IA para
+sugerir agrupamentos e regras determinísticas para validar evidência, calcular
+scores, aplicar gates e limitar diversidade. A versão inicial usou OpenAI; para
+a rodada 2, o usuário definiu Ollama local como provedor, sem chave externa de IA.
 
 A fixture da rodada 1 revelou erros aritméticos no registro manual e foi usada
 para corrigir scores sem trocar componentes ou pesos. Execuções ao vivo continuam
-dependentes de chaves locais não commitadas; vídeo popular não recebe estado
-verde automaticamente.
+dependentes da chave local do YouTube não commitada e do Ollama ativo; vídeo
+popular não recebe estado verde automaticamente.
 
 O PR #8 foi mergeado em 25/09/2026 (`6706ba6`). A aplicação local, os nove
-testes, a fixture, a revisão humana e os adaptadores de YouTube/OpenAI encerram
-R01A. A execução ao vivo permanece uma validação de R01 e não libera G0 nem R02.
+testes, a fixture, a revisão humana e os adaptadores iniciais encerraram R01A.
+A troca para Ollama local integra a execução da rodada 2 de R01. A execução ao
+vivo permanece uma validação de R01 e não libera G0 nem R02.
+
+Em 25/09/2026, a rodada 2 antecipada coletou 49 sinais oficiais e produziu 20
+candidatos únicos com duas evidências cada. O ranking provisório foi diverso,
+mas somente motos utilitárias permaneceu comparável ao top 5 da rodada 1. A
+revisão humana aprovou quatro itens e rejeitou um. Três fontes reutilizáveis do
+Wikimedia Commons foram confirmadas. Após recorte explícito do usuário, L01–L03
+produziram um corte narrado e legendado por nicho, três saídas locais medidas.
+As três versões exatas foram aprovadas pelo usuário em 25/09/2026. G0 permanece
+aberto somente pela lacuna de tempo ativo; a decisão segue `iterar R01`, sem
+bloqueio de calendário.
 
 ## Riscos residuais
 

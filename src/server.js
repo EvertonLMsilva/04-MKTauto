@@ -3,6 +3,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 import { loadConfig } from "./config.js";
 import { runFixture, runLive } from "./discovery.js";
+import { discoverApprovedSources } from "./source-discovery.js";
 import { RunStore } from "./store.js";
 
 const publicDir = new URL("../public/", import.meta.url);
@@ -13,7 +14,11 @@ const port = Number(process.env.PORT || 3000);
 const server = createServer(async (request, response) => {
   try {
     if (request.method === "GET" && request.url === "/api/health") {
-      return json(response, 200, { ok: true, liveReady: Boolean(process.env.OPENAI_API_KEY && process.env.YOUTUBE_API_KEY) });
+      return json(response, 200, {
+        ok: true,
+        liveReady: Boolean(process.env.YOUTUBE_API_KEY),
+        aiProvider: "ollama",
+      });
     }
     if (request.method === "GET" && request.url === "/api/config") {
       return json(response, 200, config);
@@ -21,11 +26,38 @@ const server = createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/api/runs/latest") {
       return json(response, 200, store.latest());
     }
+    const runMatch = request.url.match(/^\/api\/runs\/([^/?]+)$/);
+    if (request.method === "GET" && runMatch) {
+      const run = store.get(decodeURIComponent(runMatch[1]));
+      return run ? json(response, 200, run) : json(response, 404, { error: "Rodada não encontrada" });
+    }
     if (request.method === "POST" && request.url === "/api/runs/fixture") {
       return json(response, 201, await runFixture({ config, store }));
     }
     if (request.method === "POST" && request.url === "/api/runs/live") {
       return json(response, 201, await runLive({ config, store }));
+    }
+    const sourceDiscoveryMatch = request.url.match(/^\/api\/runs\/([^/]+)\/sources\/discover$/);
+    if (request.method === "POST" && sourceDiscoveryMatch) {
+      const run = store.get(sourceDiscoveryMatch[1]);
+      if (!run) return json(response, 404, { error: "Rodada não encontrada" });
+      return json(response, 201, await discoverApprovedSources({
+        run,
+        store,
+      }));
+    }
+    const latestSourcesMatch = request.url.match(/^\/api\/runs\/([^/]+)\/sources\/latest$/);
+    if (request.method === "GET" && latestSourcesMatch) {
+      return json(response, 200, store.latestSourceDiscovery(latestSourcesMatch[1]));
+    }
+    const sourceReviewMatch = request.url.match(/^\/api\/source-runs\/([^/]+)\/sources\/([^/]+)\/review$/);
+    if (request.method === "PATCH" && sourceReviewMatch) {
+      const body = await readJson(request);
+      return json(response, 200, store.reviewSource(
+        sourceReviewMatch[1],
+        decodeURIComponent(sourceReviewMatch[2]),
+        body.decision,
+      ));
     }
     const reviewMatch = request.url.match(/^\/api\/runs\/([^/]+)\/candidates\/([^/]+)\/review$/);
     if (request.method === "PATCH" && reviewMatch) {
@@ -49,11 +81,15 @@ function json(response, status, body) {
 }
 
 async function staticFile(urlPath, response) {
-  const requested = urlPath === "/" ? "index.html" : normalize(urlPath).replace(/^[/\\]+/, "");
+  const pathname = new URL(urlPath, "http://localhost").pathname;
+  const requested = pathname === "/" ? "index.html" : normalize(pathname).replace(/^[/\\]+/, "");
   if (requested.includes("..")) return json(response, 400, { error: "Caminho inválido" });
   try {
     const content = await readFile(new URL(requested, publicDir));
-    response.writeHead(200, { "Content-Type": mime(extname(requested)) });
+    response.writeHead(200, {
+      "Content-Type": mime(extname(requested)),
+      "Cache-Control": "no-store",
+    });
     response.end(content);
   } catch {
     json(response, 404, { error: "Arquivo não encontrado" });

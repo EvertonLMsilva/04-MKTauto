@@ -5,7 +5,8 @@
 - Tópico: `R01 — fluxo real e baseline interno`.
 - Persona principal: operador individual de perfis temáticos em `pt-BR`.
 - Rodada 1: executada de forma manual assistida em 24/09/2026.
-- Rodada 2: não pode ocorrer antes de 01/10/2026.
+- Rodada 2: autorizada para execução imediata em 25/09/2026; a janela antes
+  prevista para 01/10/2026 não bloqueia o avanço do MVP.
 - Lotes: não iniciados; dependem da confirmação da rodada 2 e de três fontes
   verdes conferidas pelo operador.
 - Decisão atual: `iterar R01`.
@@ -136,15 +137,110 @@ somente o total agregado. Custo incremental de fontes públicas: `R$ 0,00`.
 - E19 — [Pexels: vídeo genérico de solo seco](https://www.pexels.com/video/scenic-drought-landscape-with-cracked-earth-36249169/), estado `free to use` consultado em 24/09/2026.
 - Licença comum dos itens Pexels — [permissões e proibições](https://www.pexels.com/license/), consultada em 24/09/2026.
 
-## Condição de retomada
+## Rodada 2 — 25/09/2026, Brasil, pt-BR
 
-Em ou após 01/10/2026:
+A restrição de calendário foi removida por decisão do usuário. A aplicação
+coletou 49 sinais únicos pela YouTube Data API, distribuídos entre o chart geral
+e categorias oficiais disponíveis no Brasil. O Ollama local (`qwen3:4b`) gerou
+20 candidatos únicos, todos ligados a pelo menos duas evidências conhecidas.
+Pesos e âncoras de score não foram alterados.
 
-1. repetir a coleta sem alterar pesos ou âncoras;
-2. avaliar ao menos 20 candidatos;
-3. registrar entradas, saídas e divergências contra esta rodada;
-4. promover somente candidatos elegíveis nas duas execuções;
-5. confirmar três fontes verdes fora do Git;
-6. executar L01–L03 e as 12 variações com cronômetro do operador;
-7. agregar tempos, custos, espera, falhas e retrabalhos;
-8. decidir `avançar R02`, `iterar R01` ou `stop/reposicionar`.
+Como sinais populares não provam direito de adaptação, todos os candidatos
+permaneceram com `greenSource=false`. O ranking abaixo é provisório e serve para
+revisão humana; ele não promove fonte nem satisfaz G0.
+
+| Pos. | Candidato | Macronicho | Tendência | Viabilidade | Final | Estado |
+|---:|---|---|---:|---:|---:|---|
+| 1 | música popular brasileira | música | 84,25 | 82,25 | 83,45 | aprovado; fonte verde confirmada |
+| 2 | músicas ao vivo brasileiras | música | 81,75 | 77,25 | 79,95 | rejeitado pelo operador |
+| 3 | lançamentos de motos utilitárias | automóveis | 82,85 | 73,75 | 79,21 | aprovado; fonte verde confirmada |
+| 4 | jogos de Minecraft | jogos | 77,75 | 75,75 | 76,95 | aprovado; fonte verde confirmada |
+| 5 | curiosidades de eletrônicos | ciência e tecnologia | 69,00 | 69,25 | 69,10 | aprovado; fonte verde pendente |
+
+### Revisão humana do top 5
+
+O operador revisou a versão exata do ranking local em 25/09/2026. Quatro
+candidatos foram aprovados editorialmente e `músicas ao vivo brasileiras` foi
+rejeitado. Nenhuma decisão alterou automaticamente o estado de direitos.
+
+Para a validação de fontes e os lotes, a seleção candidata maximiza diversidade:
+
+1. música popular brasileira;
+2. lançamentos de motos utilitárias;
+3. jogos de Minecraft.
+
+`Curiosidades de eletrônicos` fica como reserva. A seleção se tornou definitiva
+após a conferência de três fontes do Wikimedia Commons com arquivo oficial e
+metadados de licença; mídia e prova detalhada permaneceram fora do Git.
+
+### Comparação com a rodada 1
+
+- `lançamentos de motos utilitárias` é o único candidato comparável que se
+  manteve no top 5 das duas execuções;
+- seguros, tributação e clima não reapareceram no corte da YouTube Data API;
+- jogos reapareceram como macronicho, mas `Minecraft` não confirma o candidato
+  anterior de Xbox/Game Pass;
+- música ganhou dois lugares, mostrando sensibilidade do chart atual e exigindo
+  cautela adicional com direitos de áudio e imagem;
+- não existem ainda três nichos promovíveis segundo a regra de duas execuções.
+
+### Instrumentação e retrabalho da descoberta
+
+- execução final válida: 88 segundos de espera de API/modelo local;
+- custo monetário incremental observado: `R$ 0,00`; consumo de quota do YouTube
+  e energia local não foram convertidos em custo financeiro;
+- tempo ativo do operador na descoberta: revisão concluída, mas sem cronômetro
+  comparável;
+- falhas: uma categoria sem chart regional retornou 404 e passou a ser tratada
+  como ausência de sinal, sem ocultar falhas de autenticação ou quota;
+- retrabalhos do instrumento: concentração temática, cópia de títulos, gate de
+  múltiplos sinais declarado incorretamente e candidato duplicado foram
+  reproduzidos e cobertos por regras/testes antes da execução final;
+- a descoberta de fontes foi retomada pela API oficial do Wikimedia Commons,
+  pois a YouTube Data API não fornece um arquivo reutilizável para edição.
+
+### Fontes verdes e lotes reais
+
+O operador definiu que somente mídia que não exige autorização individual pode
+entrar. A busca oficial aceitou `CC0`, domínio público e `CC BY`, rejeitando
+automaticamente licenças incompatíveis com esse recorte. A confirmação humana
+promoveu três fontes; as duas fontes `CC BY 3.0` receberam atribuição visível em
+todas as saídas.
+
+| Lote | Perfil | Condição | Prova conferida | Entrada |
+|---|---|---|---|---|
+| L01 | música popular brasileira | CC BY 3.0 | sim; registro externo | 327,30 s; 768x480; 6,29 MiB |
+| L02 | motos utilitárias | CC0 | sim; registro externo | 15,83 s; 270x480; 1,87 MiB |
+| L03 | jogos de Minecraft | CC BY 3.0 | sim; registro externo | 101,96 s; 854x480; 12,84 MiB |
+
+O usuário reduziu o lote final para uma versão por nicho, combinando narração e
+legenda. Foram mantidos três cortes locais com vídeo H.264, áudio AAC, resolução
+1080x1920, duração entre 15 e 24 segundos e hash SHA-256 registrado fora do
+Git. As saídas finais somam 13,23 MiB e não foram publicadas nem versionadas.
+As nove variações isoladas foram descartadas do lote final.
+
+### Medição dos lotes
+
+- espera do passe final das três versões selecionadas: 67,94 segundos;
+- espera total de renderização, incluindo retrabalho: 924,71 segundos;
+- custo monetário incremental observado: `R$ 0,00`;
+- falhas: três classes visuais — eventos ASS ausentes, texto fora da área segura
+  e divisão de legenda no meio de palavra — também atingiram versões
+  intermediárias posteriormente descartadas;
+- retrabalho: 27 renderizações adicionais antes do recorte; a revisão final
+  confirmou texto inteiro, atribuição visível, vídeo e áudio nas três saídas;
+- tempo ativo humano de preparação e revisão não foi cronometrado de modo
+  comparável e não será estimado retroativamente.
+
+A revisão humana aprovou as três versões exatas em 25/09/2026. A decisão
+permanece `iterar R01` somente porque o tempo ativo de preparação não foi medido
+de forma válida; não será estimado retroativamente.
+Não há evidência para `stop/reposicionar`; o calendário não bloqueia o MVP.
+
+## Condição de fechamento
+
+Sem restrição de calendário:
+
+1. executar uma rodada curta cronometrada se o tempo ativo continuar necessário
+   para a decisão de G0;
+2. decidir `avançar R02`, `iterar R01` ou `stop/reposicionar` com essa evidência.

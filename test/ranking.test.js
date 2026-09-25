@@ -34,6 +34,14 @@ test("bloqueia candidato sem fonte verde", () => {
   assert.deepEqual(result.failedGates, ["greenSource"]);
 });
 
+test("separa ranking provisório sem promover fonte pendente", () => {
+  const input = candidate({ gates: { ...candidate().gates, greenSource: false } });
+  const result = rankCandidates([input], config);
+  assert.equal(result.top.length, 0);
+  assert.equal(result.provisionalTop.length, 1);
+  assert.deepEqual(result.provisionalTop[0].failedGates, ["greenSource"]);
+});
+
 test("limita a dois candidatos por macronicho", () => {
   const candidates = [
     candidate({ name: "A", macroNiche: "jogos" }),
