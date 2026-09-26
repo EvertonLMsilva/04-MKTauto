@@ -13,8 +13,11 @@ import {
 } from "./domain/contracts.js";
 import { calculateHistoricalVelocity } from "./domain/velocity.js";
 
-const CATALOG_SCHEMA_VERSION = 1;
-const MIGRATION = readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8");
+const CATALOG_SCHEMA_VERSION = 2;
+const MIGRATIONS = new Map([
+  [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
+  [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
+]);
 
 export class TrendStoreError extends Error {
   constructor(code, message, options) {
@@ -172,6 +175,101 @@ export class TrendCatalogStore {
     return { candidate, snapshots, appearances, velocities: calculateHistoricalVelocity(snapshots) };
   }
 
+  beginDailyRun({ id, logicalDate, timezone, configHash, config, startedAt }) {
+    const prior = this.db.prepare("SELECT * FROM daily_runs WHERE logical_date = ?").get(logicalDate);
+    if (prior) {
+      if (prior.config_hash !== configHash || prior.id !== id || prior.timezone !== timezone) {
+        throw new TrendStoreError("DAILY_CONFIG_CONFLICT", `a data ${logicalDate} já possui execução com configuração diferente`);
+      }
+      return dailyRunFromRow(prior);
+    }
+    this.db.prepare(`INSERT INTO daily_runs
+      (logical_date, id, timezone, config_hash, config_json, state, started_at)
+      VALUES (?, ?, ?, ?, ?, 'RUNNING', ?)`)
+      .run(logicalDate, id, timezone, configHash, json(config), startedAt);
+    return this.getDailyRun(logicalDate);
+  }
+
+  getDailyRun(logicalDate) {
+    const row = this.db.prepare("SELECT * FROM daily_runs WHERE logical_date = ?").get(logicalDate);
+    if (!row) return null;
+    const value = dailyRunFromRow(row);
+    value.steps = this.db.prepare("SELECT * FROM daily_steps WHERE daily_run_id = ? ORDER BY step_key")
+      .all(row.id).map(dailyStepFromRow);
+    return value;
+  }
+
+  getDailyStep(dailyRunId, stepKey) {
+    const row = this.db.prepare("SELECT * FROM daily_steps WHERE daily_run_id = ? AND step_key = ?").get(dailyRunId, stepKey);
+    return row ? dailyStepFromRow(row) : null;
+  }
+
+  startDailyStep({ dailyRunId, stepKey, startedAt }) {
+    this.db.prepare(`INSERT INTO daily_steps (daily_run_id, step_key, state, started_at)
+      VALUES (?, ?, 'RUNNING', ?)
+      ON CONFLICT(daily_run_id, step_key) DO NOTHING`).run(dailyRunId, stepKey, startedAt);
+    return this.getDailyStep(dailyRunId, stepKey);
+  }
+
+  finishDailyStep({ dailyRunId, stepKey, state, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "SKIPPED", "FAILED"].includes(state)) throw new TrendStoreError("INVALID_DAILY_STEP_STATE", state);
+    this.db.prepare(`UPDATE daily_steps SET state = ?, completed_at = ?, duration_ms = ?, result_json = ?
+      WHERE daily_run_id = ? AND step_key = ?`)
+      .run(state, completedAt, durationMs, json(result), dailyRunId, stepKey);
+    return this.getDailyStep(dailyRunId, stepKey);
+  }
+
+  finishDailyRun({ logicalDate, state, trendRunId, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED"].includes(state)) throw new TrendStoreError("INVALID_DAILY_RUN_STATE", state);
+    this.db.prepare(`UPDATE daily_runs SET state = ?, trend_run_id = ?, completed_at = ?, duration_ms = ?, result_json = ?
+      WHERE logical_date = ?`).run(state, trendRunId ?? null, completedAt, durationMs, json(result), logicalDate);
+    return this.getDailyRun(logicalDate);
+  }
+
+  updateRunState(runId, state, updatedAt) {
+    const catalog = this.getRun(runId);
+    if (!catalog) throw new TrendStoreError("RUN_NOT_FOUND", `run inexistente: ${runId}`);
+    const run = validateTrendRun({ ...catalog.run, state, updatedAt }, catalog.sourceRuns);
+    this.db.prepare("UPDATE trend_runs SET state = ?, updated_at = ?, payload_json = ? WHERE id = ?")
+      .run(state, updatedAt, json(run), runId);
+    return this.getRun(runId);
+  }
+
+  changeCandidateState({ logicalDate, candidateId, nextState, actor, changedAt }) {
+    if (!["SHORTLISTED", "SELECTED"].includes(nextState)) throw new TrendStoreError("INVALID_CANDIDATE_STATE", nextState);
+    if (typeof actor !== "string" || actor.trim() === "") throw new TrendStoreError("INVALID_ACTOR", "ator explícito obrigatório");
+    const daily = this.getDailyRun(logicalDate);
+    if (!daily?.trendRunId || !daily.result?.rankedCandidateIds?.includes(candidateId)) {
+      throw new TrendStoreError("CANDIDATE_NOT_ELIGIBLE", `candidato não ranqueado na execução ${logicalDate}`);
+    }
+    const candidate = this.#candidate(candidateId);
+    if (!candidate) throw new TrendStoreError("CANDIDATE_NOT_FOUND", candidateId);
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      if (nextState === "SELECTED") {
+        const priorSelected = this.db.prepare("SELECT id, state, payload_json FROM trend_candidates WHERE state = 'SELECTED' AND id <> ?").get(candidateId);
+        if (priorSelected) this.#setCandidateState(daily.id, priorSelected, "SHORTLISTED", actor, changedAt);
+      }
+      const current = this.db.prepare("SELECT id, state, payload_json FROM trend_candidates WHERE id = ?").get(candidateId);
+      if (current.state !== nextState) this.#setCandidateState(daily.id, current, nextState, actor, changedAt);
+      this.db.exec("COMMIT");
+      return this.#candidate(candidateId);
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec("ROLLBACK");
+      throw mapSqliteError(error);
+    }
+  }
+
+  getCandidateStateEvents(logicalDate) {
+    const daily = this.getDailyRun(logicalDate);
+    if (!daily) return [];
+    return this.db.prepare(`SELECT candidate_id, previous_state, next_state, actor, changed_at
+      FROM candidate_state_events WHERE daily_run_id = ? ORDER BY id`).all(daily.id).map((row) => ({
+      candidateId: row.candidate_id, previousState: row.previous_state, nextState: row.next_state,
+      actor: row.actor, changedAt: row.changed_at,
+    }));
+  }
+
   close() {
     this.db.close();
   }
@@ -182,26 +280,16 @@ export class TrendCatalogStore {
       this.db.close();
       throw new TrendStoreError("CATALOG_VERSION_UNSUPPORTED", `versão ${current}; máximo suportado ${CATALOG_SCHEMA_VERSION}`);
     }
-    if (current === CATALOG_SCHEMA_VERSION) {
-      try {
-        const migration = this.db.prepare("SELECT name FROM schema_migrations WHERE version = ?").get(CATALOG_SCHEMA_VERSION);
-        if (migration?.name !== "001_trend_catalog") throw new Error("registro de migração ausente");
-        return;
-      } catch (error) {
-        this.db.close();
-        throw new TrendStoreError("CATALOG_SCHEMA_INVALID", "schema v1 não corresponde à migração conhecida", { cause: error });
-      }
-    }
-    if (current !== 0) {
-      this.db.close();
-      throw new TrendStoreError("CATALOG_VERSION_UNSUPPORTED", `versão intermediária desconhecida: ${current}`);
-    }
     try {
       this.db.exec("BEGIN IMMEDIATE");
-      this.db.exec(MIGRATION);
-      this.db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
-        .run(CATALOG_SCHEMA_VERSION, "001_trend_catalog", new Date().toISOString());
-      this.db.exec(`PRAGMA user_version = ${CATALOG_SCHEMA_VERSION}`);
+      for (let version = current + 1; version <= CATALOG_SCHEMA_VERSION; version += 1) {
+        const [name, sql] = MIGRATIONS.get(version) ?? [];
+        if (!name) throw new Error(`migração ${version} ausente`);
+        this.db.exec(sql);
+        this.db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
+          .run(version, name, new Date().toISOString());
+        this.db.exec(`PRAGMA user_version = ${version}`);
+      }
       this.db.exec("COMMIT");
     } catch (error) {
       if (this.db.isTransaction) this.db.exec("ROLLBACK");
@@ -319,6 +407,16 @@ export class TrendCatalogStore {
       topicClusterIds,
     };
   }
+
+  #setCandidateState(dailyRunId, row, nextState, actor, changedAt) {
+    const payload = { ...JSON.parse(row.payload_json), state: nextState };
+    this.db.prepare("UPDATE trend_candidates SET state = ?, payload_json = ? WHERE id = ?")
+      .run(nextState, json(payload), row.id);
+    this.db.prepare(`INSERT INTO candidate_state_events
+      (daily_run_id, candidate_id, previous_state, next_state, actor, changed_at)
+      VALUES (?, ?, ?, ?, ?, ?)`)
+      .run(dailyRunId, row.id, row.state, nextState, actor.trim(), changedAt);
+  }
 }
 
 function remapCluster(cluster, candidateMap) {
@@ -327,6 +425,24 @@ function remapCluster(cluster, candidateMap) {
 
 function rowsAsPayload(rows) {
   return rows.map(({ payload_json }) => JSON.parse(payload_json));
+}
+
+function dailyRunFromRow(row) {
+  return {
+    id: row.id, logicalDate: row.logical_date, timezone: row.timezone,
+    configHash: row.config_hash, config: JSON.parse(row.config_json), state: row.state,
+    trendRunId: row.trend_run_id ?? undefined, startedAt: row.started_at,
+    completedAt: row.completed_at ?? undefined, durationMs: row.duration_ms ?? undefined,
+    result: row.result_json ? JSON.parse(row.result_json) : undefined,
+  };
+}
+
+function dailyStepFromRow(row) {
+  return {
+    stepKey: row.step_key, state: row.state, startedAt: row.started_at,
+    completedAt: row.completed_at ?? undefined, durationMs: row.duration_ms ?? undefined,
+    result: row.result_json ? JSON.parse(row.result_json) : undefined,
+  };
 }
 
 function toAppearance(row) {

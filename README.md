@@ -28,6 +28,24 @@ Acesse `http://localhost:3000`. Sem chaves, use **Carregar rodada 1**. Para uma
 execução atual, mantenha o Ollama ativo, copie `.env.example` para sua
 configuração local e forneça `YOUTUBE_API_KEY`; arquivos `.env` são ignorados.
 
+### Radar diário local
+
+O M1 também possui uma interface manual adequada a agendadores externos. Ela
+não instala nem altera tarefas do sistema operacional:
+
+```powershell
+npm run trend:daily -- --date 2026-09-26 --timezone America/Sao_Paulo
+npm run trend:export -- --date 2026-09-26
+node --env-file-if-exists=.env src/trend-cli.js shortlist --date 2026-09-26 --candidate youtube:ID --actor operador
+node --env-file-if-exists=.env src/trend-cli.js select --date 2026-09-26 --candidate youtube:ID --actor operador
+```
+
+Cada data aceita uma única configuração material. Retry recupera etapas
+concluídas, e a pasta `data/trends/<data>` é substituída somente após todos os
+artefatos estarem prontos. Credenciais permanecem apenas no ambiente; sem a
+configuração mínima de uma fonte, o relatório registra o bloqueio sem chamar o
+adapter. Shortlist ou seleção não concedem direitos nem iniciam download.
+
 ## Documentos principais
 
 Leia [docs/CONTENT_AUTOMATION_MVP_PROJECT.md](docs/CONTENT_AUTOMATION_MVP_PROJECT.md) para conhecer visão, escopo, arquitetura proposta, riscos, critérios de sucesso e backlog priorizado.

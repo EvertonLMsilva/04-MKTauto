@@ -1,0 +1,149 @@
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { serializePublicTrendCatalog } from "./domain/contracts.js";
+
+const CSV_HEADERS = Object.freeze([
+  "position", "top5", "candidate_id", "state", "platform", "title", "author", "region",
+  "published_at", "duration_seconds", "canonical_url", "usage_condition", "score", "confidence",
+  "velocity", "engagement", "recency", "recurrence", "explanation",
+]);
+
+export function exportDailyCatalog({ store, logicalDate, outputRoot = "data/trends", fileSystem = defaultFileSystem() }) {
+  const daily = store.getDailyRun(logicalDate);
+  if (!daily?.trendRunId) throw new Error(`Execução diária não consolidada: ${logicalDate}`);
+  const stored = store.getRun(daily.trendRunId);
+  if (!stored) throw new Error(`Catálogo não encontrado: ${daily.trendRunId}`);
+  const publicCatalog = serializePublicTrendCatalog(stored);
+  const rankedIds = daily.result?.rankedCandidateIds ?? [];
+  const topIds = new Set(daily.result?.topCandidateIds ?? []);
+  const scoreByCandidate = new Map(publicCatalog.scores.map((score) => [score.candidateId, score]));
+  const candidatesById = new Map(publicCatalog.candidates.map((candidate) => [candidate.id, candidate]));
+  const ranking = rankedIds.map((candidateId, index) => {
+    const candidate = candidatesById.get(candidateId);
+    const score = scoreByCandidate.get(candidateId);
+    if (!candidate || !score) throw new Error(`Ranking inconsistente para ${candidateId}`);
+    return publicRankingItem(candidate, score, index + 1, topIds.has(candidateId));
+  });
+  const output = {
+    ...publicCatalog,
+    dailyRun: {
+      logicalDate: daily.logicalDate,
+      timezone: daily.timezone,
+      state: daily.state,
+      startedAt: daily.startedAt,
+      completedAt: daily.completedAt,
+      durationMs: daily.durationMs,
+      gaps: daily.result?.gaps ?? [],
+    },
+    ranking,
+    selectionAudit: store.getCandidateStateEvents(logicalDate),
+  };
+
+  const target = resolve(outputRoot, logicalDate);
+  const temporary = `${target}.tmp-${process.pid}`;
+  const backup = `${target}.bak-${process.pid}`;
+  assertScopedDirectory(target, resolve(outputRoot));
+  fileSystem.rm(temporary);
+  fileSystem.rm(backup);
+  try {
+    fileSystem.mkdir(temporary);
+    fileSystem.write(join(temporary, "catalog.json"), `${JSON.stringify(output, null, 2)}\n`);
+    fileSystem.write(join(temporary, "ranking.csv"), renderCsv(ranking));
+    fileSystem.write(join(temporary, "report.html"), renderHtml(output));
+    for (const candidate of publicCatalog.candidates) {
+      const item = ranking.find((ranked) => ranked.candidate.id === candidate.id) ?? { candidate, ranking: null };
+      const directory = join(temporary, "candidates", encodeURIComponent(candidate.id));
+      fileSystem.mkdir(directory);
+      fileSystem.write(join(directory, "candidate.json"), `${JSON.stringify(item, null, 2)}\n`);
+    }
+    if (fileSystem.exists(target)) fileSystem.rename(target, backup);
+    fileSystem.rename(temporary, target);
+    fileSystem.rm(backup);
+  } catch (error) {
+    if (!fileSystem.exists(target) && fileSystem.exists(backup)) fileSystem.rename(backup, target);
+    fileSystem.rm(temporary);
+    throw error;
+  }
+  return { directory: target, files: ["catalog.json", "ranking.csv", "report.html"], candidateCount: publicCatalog.candidates.length };
+}
+
+function publicRankingItem(candidate, score, position, top5) {
+  return {
+    position,
+    top5,
+    candidate,
+    score: {
+      value: score.value,
+      confidence: score.confidence,
+      components: score.components,
+      explanation: score.explanation,
+    },
+  };
+}
+
+function renderCsv(ranking) {
+  const rows = ranking.map(({ position, top5, candidate, score }) => [
+    position, top5, candidate.id, candidate.state, candidate.platform, candidate.title ?? "",
+    candidate.author ?? "", candidate.region ?? "", candidate.publishedAt, candidate.durationSeconds,
+    candidate.canonicalUrl, candidate.usageCondition, score.value, score.confidence,
+    componentCell(score.components.velocity), componentCell(score.components.engagement),
+    componentCell(score.components.recency), componentCell(score.components.recurrence), score.explanation,
+  ]);
+  return `\uFEFF${[CSV_HEADERS, ...rows].map((row) => row.map(csvCell).join(",")).join("\r\n")}\r\n`;
+}
+
+function componentCell(value) {
+  return value.availability === "AVAILABLE" ? String(value.value) : `UNAVAILABLE:${value.reason}`;
+}
+
+function csvCell(value) {
+  let text = String(value ?? "").replaceAll("\0", "");
+  if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+  return `"${text.replaceAll('"', '""')}"`;
+}
+
+function renderHtml(output) {
+  const rows = output.ranking.map(({ position, top5, candidate, score }) => `<tr>
+<td>${position}</td><td>${top5 ? "sim" : "não"}</td><td>${escapeHtml(candidate.platform)}</td>
+<td>${escapeHtml(candidate.title ?? "Título indisponível")}</td><td>${escapeHtml(candidate.state)}</td>
+<td>${score.value.toFixed(2)}</td><td>${Math.round(score.confidence * 100)}%</td>
+<td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
+  const sources = output.sourceRuns.map((source) => `<li><strong>${escapeHtml(source.platform)}</strong>: ${escapeHtml(source.status)} — ${escapeHtml(source.capabilities.discovery)}; lacunas: ${escapeHtml(source.gaps.join(", ") || "nenhuma")}</li>`).join("\n");
+  const gaps = output.dailyRun.gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("\n") || "<li>nenhuma</li>";
+  return `<!doctype html>
+<html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'">
+<title>Radar ${escapeHtml(output.dailyRun.logicalDate)}</title><style>
+body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.45;color:#1f2937}table{border-collapse:collapse;width:100%}th,td{border:1px solid #d1d5db;padding:.5rem;text-align:left}th{background:#f3f4f6}code{overflow-wrap:anywhere}.gap{color:#92400e}</style></head>
+<body><h1>Radar diário — ${escapeHtml(output.dailyRun.logicalDate)}</h1>
+<p>Timezone: <code>${escapeHtml(output.dailyRun.timezone)}</code>. Estado: <strong>${escapeHtml(output.dailyRun.state)}</strong>. Esta seleção não concede direitos de uso.</p>
+<h2>Cobertura</h2><ul>${sources}</ul><h2>Lacunas</h2><ul class="gap">${gaps}</ul>
+<h2>Ranking</h2><table><thead><tr><th>#</th><th>Top 5</th><th>Fonte</th><th>Título</th><th>Estado</th><th>Score</th><th>Confiança</th><th>URL</th></tr></thead>
+<tbody>${rows}</tbody></table></body></html>\n`;
+}
+
+function escapeHtml(value) {
+  return String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#39;");
+}
+
+function escapeAttribute(value) {
+  const url = new URL(value);
+  if (url.protocol !== "https:") throw new Error("URL pública deve usar HTTPS");
+  return escapeHtml(url.href);
+}
+
+function assertScopedDirectory(target, root) {
+  if (dirname(target) !== root || target === root) throw new Error("Diretório de exportação fora do escopo diário");
+}
+
+function defaultFileSystem() {
+  return {
+    exists: (path) => existsSync(path),
+    mkdir: (path) => mkdirSync(path, { recursive: true }),
+    write: (path, content) => writeFileSync(path, content, "utf8"),
+    rename: (from, to) => renameSync(from, to),
+    rm: (path) => rmSync(path, { recursive: true, force: true }),
+  };
+}
+
+export { CSV_HEADERS, renderCsv, renderHtml };

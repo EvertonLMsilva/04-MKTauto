@@ -18,8 +18,8 @@
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
-| R02F | PR ABERTO | M1 — cobertura oficial do TikTok | PR #20; Research API condicionada à elegibilidade, Display API `AUTHORIZED_ONLY` e 69 testes passando. |
-| R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
+| R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
+| R02G | PR ABERTO | M1 — execução diária e catálogo local | PR #21; run única por data/configuração, exportação local, seleção humana e 75 testes passando. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
@@ -425,6 +425,46 @@ externa nem persistência de evidência real.
 O PR #20 foi aberto em 26/09/2026 com diff restrito ao adapter oficial do
 TikTok, evolução aditiva do contrato de cobertura, testes, matriz de capacidades
 e este roadmap. A suíte completa passou com 69 testes.
+
+O PR #20 foi mergeado em 26/09/2026 (`2928845`) e desbloqueou R02G.
+
+### R02G — execução diária e catálogo local
+
+O orquestrador recebe data lógica e timezone explícitos e cria no máximo uma
+run por data. Um hash somente da configuração pública rejeita mudança material
+sem persistir tokens. Etapas têm chaves estáveis e resultados normalizados no
+SQLite; por isso, retry recupera coleta e análise concluídas sem repetir chamadas
+nem duplicar candidatos, snapshots, clusters ou scores.
+
+YouTube forma a evidência inicial. Clustering local, quando configurado, deriva
+consultas oficiais para Instagram e TikTok; depois, todas as observações válidas
+são consolidadas e ranqueadas novamente. Falha ou bloqueio isolável preserva as
+outras fontes e produz `COMPLETED_WITH_GAPS`. Sem Ollama, o sistema registra a
+lacuna e não inventa termos, clusters ou scores. Adapters sem configuração
+mínima não são chamados. Nenhuma validação externa foi executada porque não
+foram fornecidas credenciais e elegibilidades explícitas.
+
+A migração aditiva `002_daily_catalog` registra runs, etapas e eventos humanos.
+Shortlist e seleção exigem comando explícito; a seleção anterior é rebaixada
+atomicamente para manter no máximo um `SELECTED`. Somente candidatos ranqueados
+podem avançar, e o evento auditável não altera score, evidência ou condição de
+uso.
+
+O exportador publica por troca de diretório `catalog.json`, `ranking.csv` UTF-8
+com proteção contra formula injection, `report.html` autocontido/escapado e um
+`candidate.json` por candidato. A allowlist pública exclui credenciais, headers,
+payloads e cursores. Os comandos manuais estão no `README.md`; não há instalação
+automática de agendador nem criação de mídia.
+
+Os 75 testes da suíte passaram. Testes focados cobrem unicidade/configuração,
+retry, preservação do YouTube,
+bloqueios sem chamada, ranking consolidado, sanitização, CSV/HTML, publicação
+atômica e transições auditáveis. Riscos residuais: APIs continuam dependentes de
+credenciais/eligibilidade reais; clustering depende do Ollama; e a troca de
+diretório pressupõe que banco e saída estejam no mesmo host local.
+
+O PR #21 foi aberto em 26/09/2026 com diff restrito ao orquestrador, exportador,
+migração aditiva, CLI manual, testes e documentação de R02G.
 
 ## Backlog pós-MVP aprovado
 
