@@ -272,6 +272,8 @@ function toObservation({ item, region, durationSeconds, capturedAt, runId }) {
     snapshotIds: [],
     topicClusterIds: [],
     ...(nonBlank(item.snippet.channelTitle) ? { author: item.snippet.channelTitle } : {}),
+    ...(nonBlank(item.snippet.title) ? { title: item.snippet.title } : {}),
+    ...(nonBlank(item.snippet.categoryId) ? { category: CATEGORY_LABELS[item.snippet.categoryId] ?? `youtube:${item.snippet.categoryId}` } : {}),
   };
   const snapshot = {
     schemaVersion: RADAR_CONTRACT_VERSION,

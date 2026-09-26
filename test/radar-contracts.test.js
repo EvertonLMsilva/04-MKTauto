@@ -171,6 +171,11 @@ test("liga vários snapshots à mesma identidade sem duplicar candidato", () => 
 test("IA só referencia evidências conhecidas e não pode fornecer IDs, métricas ou score", () => {
   const proposal = validateAiTopicProposal({
     label: "Receitas rápidas",
+    niche: "alimentação",
+    subtheme: "receitas práticas",
+    likelyAudience: "adultos com pouco tempo",
+    narrativePattern: "passo a passo curto",
+    ptBrLocalization: "ingredientes disponíveis no Brasil",
     candidateIds: ["candidate-youtube"],
     evidenceSnapshotIds: ["snapshot-1"],
     explanation: "O assunto reaparece nas evidências.",

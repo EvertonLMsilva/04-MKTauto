@@ -110,6 +110,8 @@ test("normaliza identidade, URL, dados oficiais e métricas ausentes", async () 
     assert.equal(candidate.identityKey, "YOUTUBE:abc_123");
     assert.equal(candidate.canonicalUrl, "https://www.youtube.com/watch?v=abc_123");
     assert.equal(candidate.author, "Canal público");
+    assert.equal(candidate.title, "Vídeo abc_123");
+    assert.equal(candidate.category, "entretenimento");
     assert.equal(candidate.language, "pt-BR");
     assert.equal(candidate.publishedAt, "2026-09-25T10:00:00Z");
     assert.deepEqual(snapshot.metrics.views, { availability: "AVAILABLE", value: 123 });

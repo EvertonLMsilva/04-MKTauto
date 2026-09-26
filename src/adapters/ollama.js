@@ -1,9 +1,100 @@
-import { candidateResponseSchema, validateCandidates } from "../domain/contracts.js";
+import {
+  candidateResponseSchema,
+  validateAiTopicProposal,
+  validateCandidates,
+} from "../domain/contracts.js";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434";
 const ollamaResponseSchema = structuredClone(candidateResponseSchema);
 ollamaResponseSchema.properties.candidates.items.properties.evidenceIds.minItems = 2;
 ollamaResponseSchema.properties.candidates.items.properties.evidenceIds.uniqueItems = true;
+const topicProposalSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["clusters"],
+  properties: {
+    clusters: {
+      type: "array",
+      minItems: 1,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: [
+          "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
+          "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "explanation",
+        ],
+        properties: {
+          label: { type: "string" },
+          niche: { type: "string" },
+          subtheme: { type: "string" },
+          likelyAudience: { type: "string" },
+          narrativePattern: { type: "string" },
+          ptBrLocalization: { type: "string" },
+          candidateIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
+          evidenceSnapshotIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
+          explanation: { type: "string" },
+        },
+      },
+    },
+  },
+};
+
+export async function proposeTopicClusters({
+  model,
+  evidence,
+  baseUrl = DEFAULT_BASE_URL,
+  numCtx = 16_384,
+  fetchImpl = fetch,
+}) {
+  if (!model) throw new Error("OLLAMA_MODEL não configurado");
+  if (!Array.isArray(evidence) || evidence.length === 0) throw new Error("Nenhuma evidência disponível para agrupamento");
+  if (!Number.isInteger(numCtx) || numCtx < 8_192) throw new Error("OLLAMA_NUM_CTX deve ser um inteiro de pelo menos 8192");
+
+  const response = await fetchImpl(new URL("/api/chat", baseUrl), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model,
+      stream: false,
+      think: false,
+      format: topicProposalSchema,
+      options: { temperature: 0, num_ctx: numCtx },
+      messages: [{
+        role: "user",
+        content: [
+          "Agrupe em pt-BR somente as evidências fornecidas por assunto editorial equivalente.",
+          "Rotule nicho, subtema, público provável, padrão narrativo e possibilidade de localização para o Brasil.",
+          "Use exclusivamente candidateId e snapshotIds existentes na entrada.",
+          "Inclua cada candidateId fornecido exatamente uma vez em um único cluster.",
+          "Não devolva IDs próprios, URLs, métricas, direitos, estados, scores, posições ou qualquer campo fora do schema.",
+          "Cada snapshot citado deve pertencer a um candidato citado no mesmo cluster.",
+          `Schema: ${JSON.stringify(topicProposalSchema)}`,
+          `Evidências: ${JSON.stringify(evidence)}`,
+        ].join(" "),
+      }],
+    }),
+  });
+  if (!response.ok) {
+    throw new Error(`Ollama respondeu ${response.status}`);
+  }
+  const body = await response.json();
+  const content = body.message?.content;
+  if (typeof content !== "string" || content.trim() === "") throw new Error("A resposta do Ollama não contém message.content");
+  const parsed = JSON.parse(content);
+  if (!parsed || !Array.isArray(parsed.clusters)) throw new Error("A resposta do Ollama não contém clusters[]");
+  const candidateIds = evidence.map(({ candidateId }) => candidateId);
+  const snapshotOwner = new Map(evidence.flatMap(({ candidateId, snapshots }) => snapshots.map(({ id }) => [id, candidateId])));
+  const snapshotIds = [...snapshotOwner.keys()];
+  return parsed.clusters.map((proposal) => {
+    const value = validateAiTopicProposal(proposal, candidateIds, snapshotIds);
+    for (const snapshotId of value.evidenceSnapshotIds) {
+      if (!value.candidateIds.includes(snapshotOwner.get(snapshotId))) {
+        throw new Error(`UNKNOWN_EVIDENCE em aiProposal.evidenceSnapshotIds: ${snapshotId} não pertence aos candidatos do cluster`);
+      }
+    }
+    return value;
+  });
+}
 
 export async function identifyCandidates({
   model,
@@ -50,8 +141,7 @@ export async function identifyCandidates({
   });
 
   if (!response.ok) {
-    const detail = await response.text();
-    throw new Error(`Ollama respondeu ${response.status}: ${detail.slice(0, 300)}`);
+    throw new Error(`Ollama respondeu ${response.status}`);
   }
   const body = await response.json();
   const content = body.message?.content;

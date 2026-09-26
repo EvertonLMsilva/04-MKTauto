@@ -128,6 +128,29 @@ test("recupera run completa com cobertura, cluster e score preservados", () => {
   });
 });
 
+test("anexa análise atomicamente e retry não duplica clusters ou scores", () => {
+  withStore((store) => {
+    store.recordOperation(batch({ key: "collection", at: DAY_ONE, views: 100 }));
+    const analysis = { idempotencyKey: "analysis", runId: "run-2026-09-26", topicClusters: [cluster()], scores: [score()] };
+    store.recordAnalysis(analysis);
+    store.recordAnalysis(analysis);
+    assert.deepEqual(store.getRun("run-2026-09-26").topicClusters.map(({ id }) => id), ["cluster-1"]);
+    assert.deepEqual(store.getRun("run-2026-09-26").scores.map(({ id }) => id), ["score-1"]);
+
+    const conflictingCluster = { ...cluster(), id: "cluster-rollback", label: "Outro assunto" };
+    assert.throws(
+      () => store.recordAnalysis({
+        idempotencyKey: "analysis-conflict",
+        runId: "run-2026-09-26",
+        topicClusters: [conflictingCluster],
+        scores: [{ ...score(), value: 51 }],
+      }),
+      (error) => error instanceof TrendStoreError && error.code === "ENTITY_CONFLICT",
+    );
+    assert.equal(store.getRun("run-2026-09-26").topicClusters.some(({ id }) => id === "cluster-rollback"), false);
+  });
+});
+
 for (const status of ["PARTIAL", "BLOCKED_BY_PROVIDER", "FAILED"]) {
   test(`preserva cobertura ${status} ao recuperar a run`, () => {
     withStore((store) => {
@@ -260,6 +283,11 @@ function cluster() {
     schemaVersion: RADAR_CONTRACT_VERSION,
     id: "cluster-1",
     label: "Assunto",
+    niche: "entretenimento",
+    subtheme: "vídeos curtos",
+    likelyAudience: "público brasileiro",
+    narrativePattern: "explicação direta",
+    ptBrLocalization: "adaptável ao contexto brasileiro",
     candidateIds: ["candidate-1"],
     evidenceSnapshotIds: ["snapshot-1"],
     createdBy: "HUMAN",
