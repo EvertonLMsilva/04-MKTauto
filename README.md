@@ -1,8 +1,8 @@
 # MKTauto — estúdio de cortes dinâmicos
 
 Repositório de planejamento de um sistema para um operador administrar vários
-perfis temáticos, encontrar fontes por nicho e produzir cortes verticais
-dinâmicos com narração, texto, legendas ou múltiplos trechos.
+perfis temáticos, enviar um vídeo próprio/licenciado e produzir um novo corte
+vertical com roteiro, narração e legendas.
 
 O projeto possui uma primeira aplicação local de descoberta assistida. Ela usa a
 rodada 1 como demonstração e, quando configurada, combina sinais da YouTube Data
@@ -33,6 +33,6 @@ tópicos.
 
 ## Próximo passo
 
-R01A valida o instrumento com fixtures e, quando houver chaves, com uma execução
-ao vivo. R01 continua responsável pelos três lotes e pelo baseline; R02 permanece
-bloqueado até G0.
+V02 reprioriza o MVP para entrada por upload. Após seu merge, R02 valida extração
+de áudio, transcrição local e análise visual quando necessária; composição a
+partir de vários vídeos permanece no backlog pós-MVP.

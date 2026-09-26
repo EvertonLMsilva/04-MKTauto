@@ -1,26 +1,26 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V01 concluído; R01 e R01A em execução
-**Fase atual:** validação instrumentada da descoberta e baseline do fluxo
+**Status:** V02 em revisão no PR #11; PR #10 de R01 mergeado
+**Fase atual:** repriorização do fluxo para entrada por upload
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
-**Última atualização:** 2026-09-24
+**Última atualização:** 2026-09-25
 
 ## 1. Resumo executivo
 
-A operação-alvo administra perfis temáticos próprios: encontra vídeos relevantes
-por nicho, cria uma abordagem editorial, produz cortes verticais dinâmicos,
+A operação-alvo administra perfis temáticos próprios: envia vídeos com origem e
+direito de uso conhecidos, cria uma abordagem editorial, produz cortes verticais,
 publica no Instagram e aprende com desempenho, custo e receita.
 
-O produto preserva o valor operacional — **descobrir, criar, revisar, publicar e
-medir conteúdo em lote** — sem depender de scraping irregular nem de promessa de
-renda. Cada versão renderizada passa por revisão humana antes de exportação ou
-publicação. Instagram é o primeiro adaptador; outros canais e parceiros entram
-depois do MVP por contratos pequenos e comprovados.
+O produto preserva o valor operacional — **enviar, compreender, criar, revisar,
+publicar e medir conteúdo em lote** — sem depender de scraping irregular nem de
+promessa de renda. Cada versão renderizada passa por revisão humana antes de
+exportação ou publicação. Instagram é o primeiro adaptador; outros canais e
+parceiros entram depois do MVP por contratos pequenos e comprovados.
 
 O MVP deve responder a uma pergunta central:
 
-> Um operador consegue transformar fontes relevantes em cortes verticais
-> dinâmicos, publicá-los com controle e identificar quais formatos merecem
+> Um operador consegue transformar um vídeo enviado em conteúdo vertical novo e
+> dinâmico, publicá-lo com controle e identificar quais formatos merecem
 > continuar, com muito menos trabalho manual?
 
 Não tentaremos provar, no mesmo ciclo, crescimento garantido, atribuição completa
@@ -31,20 +31,20 @@ de vendas, otimização autônoma, múltiplas plataformas e múltiplos parceiros
 ### Visão
 
 Ser o espaço de trabalho que converte oportunidades de conteúdo em uma operação
-editorial repetível: **descoberta → seleção → criação → corte → revisão →
+editorial repetível: **upload → compreensão → criação → corte → revisão →
 publicação → medição**.
 
 ### Usuário inicial
 
 Um operador individual que administra um portfólio de perfis temáticos em
-português, seleciona vídeos por nicho e hoje combina manualmente roteiro,
+português, envia vídeos próprios/licenciados e hoje combina manualmente roteiro,
 trechos, narração, texto, legendas, renderização, publicação e métricas.
 
 ### Promessa do MVP
 
-Para um lote válido, gerar variações verticais revisáveis — narradas, textuais,
-legendadas ou multitrecho —, preservar a origem, publicar a versão aprovada no
-Instagram e mostrar desempenho, custo, receita e lucro estimado.
+Para um upload válido, gerar um corte vertical revisável com abordagem e roteiro
+novos, narração e legendas sincronizadas, preservar a origem, publicar a versão
+aprovada no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 
 ### Princípios
 
@@ -60,10 +60,10 @@ Instagram e mostrar desempenho, custo, receita e lucro estimado.
 
 | ID | Hipótese | Evidência necessária | Decisão se falsa |
 |---|---|---|---|
-| H1 | Busca assistida encontra fontes úteis por nicho sem depender de scraping irregular. | 3 lotes reais e comparação entre busca manual e fonte/API oficial. | Manter curadoria e importação manuais. |
+| H1 | Upload, transcrição e análise local extraem contexto suficiente para criar um roteiro novo. | Três vídeos com fala e ao menos um caso que exija análise visual. | Manter briefing e marcação humana como entrada obrigatória. |
 | H2 | Assistência reduz pelo menos 50% do tempo ativo até um corte revisável. | Comparação cronometrada manual versus assistida. | Reduzir automação e focar templates/workflow. |
-| H3 | Pelo menos 70% das variações ficam utilizáveis com edição leve. | Avaliação humana em 30 cortes; rubric definida previamente. | Melhorar contexto, seleção e templates antes de integrar publicação. |
-| H4 | Narração, texto, legendas e multitrecho cobrem o primeiro portfólio. | Três lotes comparados por formato, nicho e retrabalho. | Cortar formatos sem valor ou criar tópico específico. |
+| H3 | Pelo menos 70% dos cortes ficam utilizáveis com edição leve. | Avaliação humana em 30 cortes; rubric definida previamente. | Melhorar contexto, seleção e templates antes de integrar publicação. |
+| H4 | Um corte narrado e legendado cobre o primeiro portfólio. | Três vídeos avaliados por qualidade, fidelidade e retrabalho. | Ajustar roteiro, voz, legenda ou template antes de ampliar formatos. |
 | H5 | A API oficial do Instagram atende conexão, publicação, revisão e insights do piloto. | Spike atual e conta profissional de teste. | Preservar exportação e métricas manuais como fallback. |
 | H6 | Custos, receita informada e insights permitem decisão por vídeo e perfil. | Painel usado no piloto para decidir continuar, iterar ou parar. | Simplificar métricas antes de adicionar parceiros. |
 
@@ -72,28 +72,35 @@ Instagram e mostrar desempenho, custo, receita e lucro estimado.
 ### Incluído
 
 1. Cadastrar vários perfis com nicho, público, idioma, tom e regras editoriais.
-2. Buscar candidatos por tema em fontes permitidas e aceitar importação manual.
-3. Manter URL/origem, condição de uso declarada e dados técnicos do arquivo.
-4. Transcrever, sugerir trechos e permitir ajuste humano do intervalo.
-5. Gerar abordagem, roteiro, título, legenda, hashtags, CTA e alertas.
-6. Criar variações narradas, com texto, legendas ou múltiplos trechos.
-7. Compor e renderizar vídeo vertical em templates pequenos e testados.
-8. Revisar a versão exata, editar, aprovar/rejeitar e exportar.
-9. Publicar a versão aprovada no Instagram por API oficial, com fallback manual.
-10. Coletar insights e registrar custos, receita informada e lucro estimado.
-11. Exibir painel mínimo por perfil, vídeo e formato.
+2. Receber upload manual de vídeo próprio, licenciado ou autorizado.
+3. Manter origem declarada, hash, condição de uso e dados técnicos do arquivo.
+4. Extrair áudio com FFmpeg e transcrever localmente com `faster-whisper`,
+   preservando timestamps.
+5. Amostrar quadros e usar visão local no Ollama quando a transcrição não
+   explicar suficientemente o conteúdo.
+6. Usar o Ollama para gerar abordagem, roteiro novo, plano de trechos, título,
+   legenda de publicação, hashtags, CTA e alertas.
+7. Criar um corte com imagens somente do vídeo enviado, narração nova e legendas
+   sincronizadas com essa narração.
+8. Compor e renderizar vídeo vertical em templates pequenos e testados.
+9. Revisar a versão exata, editar, aprovar/rejeitar e exportar.
+10. Publicar a versão aprovada no Instagram por API oficial, com fallback manual.
+11. Coletar insights e registrar custos, receita informada e lucro estimado.
+12. Exibir painel mínimo por perfil, vídeo e formato.
 
 ### Corte vertical proposto
 
 Um único operador, `pt-BR`, vários perfis cadastráveis e somente um perfil/lote
-processado por vez. O fluxo cobre descoberta assistida, quatro famílias iniciais
-de corte, publicação e insights no Instagram e painel mínimo. O limite exato de
-lote, arquivo e templates será decidido em R01–R03 após medir o processo.
+processado por vez. O fluxo começa com upload manual e produz um corte narrado e
+legendado, seguido por publicação e insights no Instagram e painel mínimo. Busca
+assistida permanece um instrumento opcional; não é dependência do fluxo principal.
 
 ### Fora do MVP (explícito)
 
 - Download/repostagem irregular, scraping e descoberta autônoma irrestrita.
 - Geração integral de vídeo por IA, clonagem de voz ou avatares.
+- Composição de um único vídeo a partir de múltiplos uploads; item registrado no
+  backlog pós-MVP.
 - Editor genérico, templates complexos e renderização em escala.
 - TikTok, YouTube, Facebook, X ou publicação multicanal.
 - Publicação sem revisão humana e postagem real antes do gate de lançamento.
@@ -130,14 +137,15 @@ Sucesso do MVP valida eficiência e controle do workflow, não crescimento, vira
 ## 6. Workflow e estados
 
 ```text
-Perfil temático
+Perfil temático + declaração de origem/direitos
       ↓
-busca por nicho → candidato + origem
-      ↓
-seleção + importação + validação ── falha → correção/rejeição
+upload + hash + validação técnica ── falha → correção/rejeição
       ↓
 Processamento síncrono no primeiro corte
-  transcrição → trechos → roteiro → narração/texto → composição
+  áudio → transcrição ─┬→ roteiro novo → trechos → narração → legendas
+                       └→ quadros + visão local quando necessário
+                                             ↓
+                                         composição
       ↓
 versão vertical renderizada
       ↓
@@ -150,7 +158,7 @@ insights + custo + receita + painel
 
 Estados mínimos do item:
 
-`DISCOVERED → SELECTED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
+`UPLOADED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
 
 Saídas laterais: `VALIDATION_FAILED`, `PROCESSING_FAILED`, `RENDER_FAILED`,
 `REJECTED`, `EXPORT_FAILED` e `PUBLISH_FAILED`, com tentativa controlada quando segura. Transições são
@@ -163,11 +171,11 @@ cria nova versão e invalida a aprovação anterior.
 |---|---|---|
 | Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
 | Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
-| Descoberta de fontes | Busca por nicho, candidatos e origem. | APIs/fontes permitidas; sem scraping irregular. |
-| Ingestão e origem | Importação, validação, hash e condição de uso declarada. | Mídia e evidências privadas fora do Git. |
+| Descoberta de fontes | Sugestões opcionais de pauta e origem. | Não fornece o arquivo do fluxo principal. |
+| Ingestão e origem | Upload, validação, hash e condição de uso declarada. | Um vídeo por item; mídia e evidências privadas fora do Git. |
 | Fluxo de processamento | Estados, falhas e progresso do processamento síncrono inicial. | Fila/jobs somente se medições provarem necessidade. |
-| Content Intelligence | Transcrição, trechos, roteiro, texto e metadados. | Saída não é fato nem autorização. |
-| Composição e renderização | Narração, texto, legendas, multitrecho e saída vertical. | Templates pequenos; sem editor genérico. |
+| Content Intelligence | Transcrição, visão local quando necessária, trechos, roteiro novo e metadados. | Saída não é fato nem autorização. |
+| Composição e renderização | Narração, legendas e saída vertical baseada no upload. | Templates pequenos; sem editor genérico. |
 | Policy Engine | Regras de schema, proibições, alertas e bloqueios. | Não depende apenas de moderação por IA. |
 | Review Workspace | Visualização, edição, versionamento, aprovação e rejeição. | Aprovação da versão renderizada exata. |
 | Publicação | Exportação e adaptador oficial do Instagram. | Falha externa não elimina o fallback manual. |
@@ -177,7 +185,7 @@ cria nova versão e invalida a aprovação anterior.
 
 ## 8. Arquitetura adiada por gate
 
-V01 mantém fila e fundação ampla adiadas. R01–R03 validam o fluxo com processo e
+V02 mantém fila e fundação ampla adiadas. R01–R03 validam o fluxo com processo e
 ferramentas existentes. R01A é uma exceção pequena e reversível: instrumenta
 somente descoberta, evidência e ranking, sem antecipar a arquitetura completa.
 R04 define os demais contratos exigidos pela evidência; R05 cria a fundação
@@ -353,7 +361,9 @@ só entram após volume que os justifique.
 Cada fase depende de dados da anterior e nova revisão de políticas:
 
 1. **Operação ampliada:** calendário, webhooks, reconciliação e mais contas.
-2. **Produção ampliada:** novos templates, formatos e renderização em escala.
+2. **Produção ampliada:** novos templates, formatos e renderização em escala;
+   composição de um vídeo novo a partir de vários uploads do mesmo assunto, com
+   rastreabilidade de origem por trecho.
 3. **Inteligência de desempenho:** cohorts, sugestões explicáveis e testes A/B aprovados.
 4. **Descoberta ampliada:** mais fontes oficiais/licenciadas e sinais de tendência.
 5. **Parceiros:** catálogos oficiais, disclosure, links, atribuição e aprovação humana.
@@ -361,27 +371,28 @@ Cada fase depende de dados da anterior e nova revisão de políticas:
 
 O sistema nunca deve evoluir para automação irrestrita de cópia ou publicação sem responsabilização.
 
-## 17. Roadmap mínimo repriorizado no V01
+## 17. Roadmap mínimo repriorizado no V02
 
 V01 substituiu o recorte `metadados-only/export-only` por dez tópicos pequenos,
-contados desde a própria repriorização. A matriz de gates e evidências está em
-`docs/TOPIC_ROADMAP.md`.
+e V02 tornou upload único a entrada principal sem antecipar a fundação. A matriz
+de gates e evidências está em `docs/TOPIC_ROADMAP.md`.
 
 | ID | Entrega | Depende de | Resultado mínimo |
 |---|---|---|---|
 | V01 | Repriorização | V00 | Visão, persona, fluxo, integração inicial e roadmap coerentes. |
 | R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
 | R01A | Instrumento de descoberta | Rodada 1 de R01 | Sinais oficiais, sugestões de IA e ranking determinístico funcionam localmente. |
-| R02 | Descoberta dinâmica | R01/R01A | Ranking `top 5` e fonte/API oficial comparados; pautas e fontes preservam evidência e origem. |
-| R03 | Experimento criativo | R02 | Quatro famílias de corte avaliadas por rubric. |
+| V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
+| R02 | Ingestão e compreensão | V02 | Arquivo, áudio, transcrição e contexto visual formam entrada reproduzível. |
+| R03 | Experimento criativo | R02 | Um corte com roteiro novo, narração e legendas é avaliado por rubric. |
 | R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
 | R05 | Fundação | R04/G2 | Aplicação reproduzível para vários perfis. |
-| R06 | Descoberta e preparação | R05 | Busca, seleção, importação, transcrição e trechos funcionam. |
+| R06 | Ingestão e preparação | R05 | Upload, validação, transcrição, visão e trechos funcionam. |
 | R07 | Produção dinâmica | R06 | Roteiro, composição, revisão, renderização e exportação funcionam. |
 | R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
 | R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
 
-R01 fica pronto para análise somente após o merge de V01. Um tópico pode ser
+R02 fica pronto para execução somente após o merge de V02. Um tópico pode ser
 dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
 
 ## 18. Definition of Ready e Done
@@ -401,7 +412,7 @@ dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
 - Métricas/logs necessários presentes e sanitizados.
 - Riscos residuais e próximo tópico desbloqueado registrados.
 
-## 19. Decisões do V01 e pendências de R01
+## 19. Decisões de V01/V02 e evidências de R01
 
 Decisões aprovadas:
 
@@ -414,8 +425,12 @@ Decisões aprovadas:
 7. Antes dos gates de fluxo, valor e construção, somente instrumentos locais,
    reversíveis e explicitamente aprovados podem ser implementados para reduzir
    custo ou erro da validação; efeitos externos continuam bloqueados.
+8. Upload de um vídeo próprio/licenciado é a entrada principal do MVP.
+9. A IA cria roteiro e narração novos; as legendas sincronizam a nova narração.
+10. Composição a partir de vários uploads do mesmo assunto fica no backlog
+    pós-MVP e deverá preservar origem e direitos por trecho.
 
-R01 deve produzir evidência para as pendências restantes:
+R01 registrou evidência e lacunas para:
 
 1. baseline do operador interno em três lotes;
 2. nichos e fontes representativos;
@@ -424,6 +439,7 @@ R01 deve produzir evidência para as pendências restantes:
 5. orçamento e prazo aceitáveis por lote;
 6. origem e condição de uso registradas, sem mídia no Git.
 
-Até R01 concluir essas respostas, a implementação fica limitada ao instrumento
-de descoberta aprovado em R01A. Fundação, produção e efeitos externos continuam
-bloqueados.
+O merge do PR #10 encerrou R01 com decisão `iterar R01` pela lacuna de tempo
+ativo. V02 autoriza apenas o próximo spike local de ingestão e compreensão em
+R02; fundação, produção completa e efeitos externos continuam bloqueados pelos
+gates correspondentes.

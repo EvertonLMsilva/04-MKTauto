@@ -7,34 +7,38 @@
 | B00 | CONCLUÍDO | Governança e cadastro local | Projeto reconhecido no Codex; documentos-base presentes. |
 | V00 | CONCLUÍDO | Viabilidade e primeiro corte do MVP | Hipóteses, gates e rota de parada aprovados em 24/09/2026. |
 | V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
-| R01 | EM EXECUÇÃO | Fluxo real e baseline interno | Protocolo aprovado; aguarda execução e métricas dos três lotes autorizados. |
+| R01 | CONCLUÍDO | Fluxo real e baseline interno | PR #10 mergeado; três cortes aprovados e decisão `iterar R01` pela lacuna de tempo ativo. |
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
-| R02 | PENDENTE | Descoberta dinâmica de nichos e fontes | Depende de R01 e da validação de R01A. |
-| R03 | PENDENTE | Experimento criativo concierge | Depende de R02. |
+| V02 | EM REVISÃO | Repriorização para entrada por upload | PR #11 aberto; define compreensão local e corte novo a partir de um vídeo enviado. |
+| R02 | PENDENTE | Ingestão e compreensão do vídeo enviado | Depende de V02; usa evidência de R01 sem repetir descoberta. |
+| R03 | PENDENTE | Experimento criativo upload-first | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
 | R05 | PENDENTE | Fundação e múltiplos perfis | Depende de R04 e G2. |
-| R06 | PENDENTE | Descoberta e preparação | Depende de R05. |
+| R06 | PENDENTE | Ingestão e preparação | Depende de R05. |
 | R07 | PENDENTE | Produção dinâmica e exportação | Depende de R06. |
 | R08 | PENDENTE | Instagram: publicação e insights | Depende de R07 e G3. |
 | R09 | PENDENTE | Painel, piloto e decisão | Depende de R08. |
 
-Somente R01 ficará desbloqueado após o merge de V01. Cada tópico pode ser
-dividido antes da execução quando houver mais de uma entrega independente, risco
-elevado ou oportunidade de entregar valor menor e demonstrável.
+V02 é uma repriorização documental aprovada após o merge do PR #10. Cada tópico
+pode ser dividido antes da execução quando houver mais de uma entrega
+independente, risco elevado ou oportunidade de entregar valor menor e
+demonstrável.
 
 ## Corte aprovado do MVP
 
 Permitir que um operador individual administre vários perfis temáticos em
-`pt-BR` e transforme vídeos encontrados por nicho em cortes verticais autorais,
-dinâmicos, revisados e mensuráveis. O fluxo termina com publicação aprovada no
-Instagram e painel de desempenho; exportação manual permanece como fallback.
+`pt-BR`, envie um vídeo próprio/licenciado e o transforme em um novo corte
+vertical autoral, narrado, legendado, revisado e mensurável. O fluxo termina com
+publicação aprovada no Instagram e painel de desempenho; exportação manual
+permanece como fallback.
 
 Defaults aprovados:
 
 - uma persona: operador individual de um portfólio de perfis temáticos;
 - vários perfis, mas um perfil e um lote processados por vez;
-- busca assistida por fontes e APIs permitidas, sem scraping irregular;
-- variações com narração, texto sobreposto, legendas ou múltiplos trechos;
+- upload manual como entrada principal, com origem e condição de uso declaradas;
+- transcrição local; análise visual local quando a fala não explicar o vídeo;
+- um corte por entrada, com roteiro novo, narração e legendas sincronizadas;
 - revisão humana da versão renderizada antes de qualquer publicação;
 - Instagram como primeiro adaptador de publicação e insights;
 - receita manual/importada e lucro estimado, sem promessa de monetização;
@@ -48,12 +52,13 @@ Defaults aprovados:
 | V01 | Reposicionar visão e roadmap | V00 | Documentos coerentes com cortes dinâmicos, múltiplos perfis, Instagram inicial e extensibilidade posterior. |
 | R01 | Medir o fluxo interno | V01 | Um operador executa 3 lotes reais; etapas, tempo ativo, espera, retrabalho, custo e resultado são registrados sem mídia no Git. |
 | R01A | Instrumentar a descoberta | Rodada 1 de R01 | Aplicação local coleta sinais oficiais, usa IA para sugerir candidatos e calcula ranking explicável por regras testadas. |
-| R02 | Validar descoberta dinâmica | R01 | Ranking manual e ao menos uma fonte/API oficial são comparados; o `top 5` mantém score explicável e cada fonte candidata preserva origem e condição de uso. |
-| R03 | Provar o processo criativo | R02 | Processo concierge produz e avalia variações narradas, textuais, legendadas e multitrecho com ferramentas existentes. |
+| V02 | Reposicionar entrada do MVP | PR #10 | Documentos tornam upload único o fluxo principal e composição multivídeo um item explícito de backlog. |
+| R02 | Validar ingestão e compreensão | V02 | Um upload válido produz hash, metadados, áudio, transcrição com timestamps e análise visual quando necessária, sem mídia no Git. |
+| R03 | Provar criação upload-first | R02 | Processo concierge cria roteiro novo, plano de trechos, narração e legendas para um corte feito somente com o vídeo enviado. |
 | R04 | Definir domínio e adaptadores | R03 | Estados, invariantes e contratos mínimos de fonte, IA, renderização, publicação, insights, monetização e parceiros são testáveis. |
 | R05 | Criar fundação | R04 | Aplicação reproduzível para um operador e múltiplos perfis, com configuração editorial e auditoria mínima. |
-| R06 | Implementar descoberta e preparação | R05 | Busca permitida, seleção, importação, transcrição e marcação de trechos funcionam no fluxo principal. |
-| R07 | Implementar produção dinâmica | R06 | Roteiro, narração/texto, legendas, composição vertical, revisão, renderização e exportação completam um corte. |
+| R06 | Implementar ingestão e preparação | R05 | Upload, validação, transcrição, análise visual e marcação de trechos funcionam no fluxo principal. |
+| R07 | Implementar produção dinâmica | R06 | Roteiro novo, narração, legendas, composição vertical, revisão, renderização e exportação completam um corte. |
 | R08 | Integrar Instagram | R07 | Conta profissional conecta; somente versão aprovada publica; estado e insights são reconciliados; exportação cobre falha externa. |
 | R09 | Entregar painel e piloto | R08 | Painel cruza perfil, vídeo, formato, visualizações, interações, custo, receita e lucro estimado; piloto decide `go`, `iterate` ou `stop`. |
 
@@ -82,8 +87,9 @@ de uso registrada.
 O domínio não dependerá diretamente da Meta, de uma rede de afiliados ou de um
 provedor de IA. Os contratos entram somente quando exigidos pelo fluxo comprovado:
 
-- `Source`: localizar candidatos e preservar origem;
-- `ContentIntelligence`: transcrever, sugerir trechos e criar roteiro;
+- `Source`: receber o arquivo enviado e preservar origem, hash e condição de uso;
+- `ContentIntelligence`: transcrever, analisar quadros quando necessário,
+  sugerir trechos e criar roteiro novo;
 - `Renderer`: compor e renderizar a versão revisável;
 - `Publisher`: publicar a versão exata aprovada;
 - `Insights`: coletar e reconciliar métricas;
@@ -195,6 +201,20 @@ As três versões exatas foram aprovadas pelo usuário em 25/09/2026. G0 permane
 aberto somente pela lacuna de tempo ativo; a decisão segue `iterar R01`, sem
 bloqueio de calendário.
 
+### V02 — entrada por upload e backlog multivídeo
+
+Em 26/09/2026, o usuário definiu upload manual como entrada principal do MVP.
+Para cada vídeo, o sistema deve extrair/transcrever o áudio localmente, recorrer
+a análise visual local quando a fala não bastar, criar abordagem e roteiro novos
+com o Ollama, selecionar trechos somente do arquivo enviado e produzir um corte
+com narração nova e legendas sincronizadas. A versão exata continua sujeita a
+aprovação humana.
+
+A composição de um único vídeo a partir de vários uploads do mesmo assunto foi
+adicionada ao backlog pós-MVP. Essa evolução deverá validar direitos e hash de
+cada entrada, preservar a origem por trecho e impedir que um arquivo rejeitado
+participe da montagem.
+
 ## Riscos residuais
 
 - Busca não implica licença de uso; cada fonte precisa manter origem e condição
@@ -204,8 +224,8 @@ bloqueio de calendário.
 - Receita pode vir de fontes que o Instagram não expõe; o MVP aceita entrada
   manual/CSV antes de novos adaptadores.
 - Conteúdo dinâmico pode não gerar audiência ou lucro; R09 mede, não promete.
-- Renderização, transcrição e IA podem inviabilizar custo ou latência; R03 mede
-  antes da fundação.
+- Transcrição e visão local podem inviabilizar custo ou latência; R02 mede antes
+  do experimento criativo. R03 mede roteiro, voz, legenda e renderização.
 - Metabase OSS tem obrigações e limites de customização; R09 pode preferir painel
   nativo pequeno.
 - Publicação real permanece bloqueada por G4, mesmo que a integração técnica já
