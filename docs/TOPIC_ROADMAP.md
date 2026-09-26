@@ -471,7 +471,13 @@ candidatos do YouTube foram preservados, mas uma falha de clustering deixou o
 ranking vazio e ocultou seus links no relatório HTML. O hotfix mantém a tabela de
 ranking sem posições fictícias e adiciona uma seção escapada de candidatos sem
 ranking, com URLs canônicas, views do snapshot mais recente e dia de publicação.
-Métricas ausentes permanecem `indisponível`. A suíte completa passou com 77 testes.
+Métricas ausentes permanecem `indisponível`.
+
+As etapas inicial e final de clustering fazem no máximo cinco tentativas totais,
+com backoff exponencial e espera injetável. Falha de rede, HTTP 5xx/429/408 e
+saída estruturada inválida podem repetir; configuração inválida e HTTP 4xx falham
+imediatamente. Quantidade de tentativas e exaustão ficam persistidas sem conteúdo
+sensível. A suíte completa passou com 81 testes.
 
 O PR #22 foi aberto em 26/09/2026 com o hotfix restrito ao relatório, teste de
 regressão e registro documental.
