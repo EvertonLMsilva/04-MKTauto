@@ -77,6 +77,14 @@ export class TrendCatalogStore {
     }
   }
 
+  getOperation(idempotencyKey) {
+    requireKey(idempotencyKey);
+    const operation = this.db.prepare(
+      "SELECT trend_run_id FROM trend_operations WHERE idempotency_key = ?",
+    ).get(idempotencyKey);
+    return operation ? this.getRun(operation.trend_run_id) : null;
+  }
+
   getRun(runId) {
     const row = this.db.prepare("SELECT payload_json FROM trend_runs WHERE id = ?").get(runId);
     if (!row) return null;

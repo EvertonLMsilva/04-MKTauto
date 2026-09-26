@@ -14,8 +14,8 @@
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
-| R02B | PR ABERTO | M1 — histórico local e deduplicação | PR #16; catálogo SQLite v1 e suíte completa com 38 testes passando. |
-| R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
+| R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
+| R02C | PR ABERTO | M1 — coleta global do YouTube | PR #17; coleta oficial e suíte completa com 48 testes passando. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
@@ -304,6 +304,32 @@ deduplicação, promoção de identidade, histórico e velocidade, cobertura par
 bloqueada ou falha, imutabilidade, rollback, chaves estrangeiras e versão futura.
 Os 13 testes focados e a suíte completa com 38 testes passaram antes da abertura
 do PR #16.
+
+O PR #16 foi mergeado em 26/09/2026 (`f5fada9`) e desbloqueou R02C.
+
+### R02C — coleta global oficial do YouTube
+
+O adapter do radar consulta `videos.list` com `chart=mostPopular` nas regiões
+versionadas, solicita `snippet`, `contentDetails` e `statistics`, pagina dentro de
+limites explícitos e aceita somente durações ISO 8601 entre 15 e 180 segundos.
+Os resultados usam identidade `YOUTUBE + platformVideoId`, URL canônica oficial,
+métricas ausentes como `UNAVAILABLE` e persistência idempotente no catálogo v1.
+
+O `SourceRun` registra cobertura regional, páginas, tentativas, custo de quota
+conhecido, limitações e códigos sanitizados. Falhas são isoladas por região e
+produzem `SUCCESS`, `PARTIAL`, `BLOCKED_BY_PROVIDER` ou `FAILED` sem persistir
+chave, payload bruto ou cabeçalhos. Retry com a mesma chave retorna a operação
+existente sem nova chamada ao provedor.
+
+Evidência determinística: `test/youtube-radar.test.js` cobre as oito regiões,
+parâmetros oficiais, paginação, limites inclusivos, normalização, métricas
+ausentes, deduplicação, reaparição, retry e estados de falha. A validação real
+controlada não foi executada porque `YOUTUBE_API_KEY` não estava disponível no
+ambiente; nenhuma quota foi consumida e nenhuma credencial foi criada. Os 25
+testes focados e a suíte completa com 48 testes passaram em 26/09/2026.
+
+O PR #17 foi aberto em 26/09/2026 com diff restrito ao adapter, consulta
+idempotente do catálogo, testes e este roadmap.
 
 ## Backlog pós-MVP aprovado
 
