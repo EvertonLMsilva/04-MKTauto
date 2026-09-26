@@ -19,7 +19,7 @@
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
-| R02G | CORREÇÃO EM EXECUÇÃO | M1 — execução diária e catálogo local | PR #21 mergeado em 26/09/2026 (`d89c3ad`); hotfix preserva links quando o ranking está indisponível. |
+| R02G | CORREÇÃO EM PR | M1 — execução diária e catálogo local | PR #21 mergeado (`d89c3ad`); PR #22 preserva links quando o ranking está indisponível. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
@@ -471,6 +471,9 @@ candidatos do YouTube foram preservados, mas uma falha de clustering deixou o
 ranking vazio e ocultou seus links no relatório HTML. O hotfix mantém a tabela de
 ranking sem posições fictícias e adiciona uma seção escapada de candidatos sem
 ranking, com suas URLs canônicas. A suíte completa passou com 76 testes.
+
+O PR #22 foi aberto em 26/09/2026 com o hotfix restrito ao relatório, teste de
+regressão e registro documental.
 
 ## Backlog pós-MVP aprovado
 
