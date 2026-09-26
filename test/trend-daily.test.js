@@ -4,8 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RADAR_CONTRACT_VERSION, canonicalTrendIdentity } from "../src/domain/contracts.js";
-import { runDailyTrendCatalog } from "../src/trend-daily.js";
-import { exportDailyCatalog } from "../src/trend-export.js";
+import { retryClustering, runDailyTrendCatalog } from "../src/trend-daily.js";
+import { exportDailyCatalog, renderHtml } from "../src/trend-export.js";
 import { TrendCatalogStore, TrendStoreError } from "../src/trend-store.js";
 
 const DATE = "2026-09-26";
@@ -107,6 +107,113 @@ test("falha de escrita não substitui catálogo anterior", async () => {
     };
     assert.throws(() => exportDailyCatalog({ store, logicalDate: DATE, outputRoot: output, fileSystem }), /DISK_FULL/);
     assert.equal(readFileSync(join(output, DATE, "sentinel.txt"), "utf8"), "preservar");
+  });
+});
+
+test("relatório mantém links dos candidatos quando o ranking está indisponível", () => {
+  const candidate = observation({ platform: "YOUTUBE", id: "video-1", title: "Vídeo sem ranking <script>", capturedAt: AT, runId: "run" }).candidate;
+  const html = renderHtml({
+    dailyRun: { logicalDate: DATE, timezone: "UTC", state: "COMPLETED_WITH_GAPS", gaps: ["ANALYSIS_FAILED"] },
+    sourceRuns: [],
+    candidates: [candidate],
+    ranking: [],
+  });
+  assert.match(html, /Candidatos sem ranking/);
+  assert.match(html, /Vídeo sem ranking/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /https:\/\/youtube\.com\/watch\?v=video-1/);
+  assert.doesNotMatch(html, /<td>1<\/td>/);
+});
+
+test("relatório exibe views e dia publicado para candidatos ranqueados e sem ranking", () => {
+  const ranked = observation({ platform: "YOUTUBE", id: "video-1", title: "Ranqueado", capturedAt: AT, runId: "run" });
+  const unranked = observation({ platform: "TIKTOK", id: "90001", title: "Sem ranking", capturedAt: AT, runId: "run" });
+  ranked.snapshot.metrics.views = { availability: "AVAILABLE", value: 1_234_567 };
+  unranked.snapshot.metrics.views = { availability: "UNAVAILABLE", reason: "NOT_RETURNED" };
+  unranked.candidate.publishedAt = "2026-09-24T23:30:00.000Z";
+  const html = renderHtml({
+    dailyRun: { logicalDate: DATE, timezone: "UTC", state: "COMPLETED_WITH_GAPS", gaps: [] },
+    sourceRuns: [],
+    candidates: [ranked.candidate, unranked.candidate],
+    snapshots: [ranked.snapshot, unranked.snapshot],
+    ranking: [{
+      position: 1,
+      top5: true,
+      candidate: ranked.candidate,
+      score: { value: 80, confidence: 0.75 },
+    }],
+  });
+  assert.match(html, /Visualizações/);
+  assert.match(html, /Publicado em/);
+  assert.match(html, /1\.234\.567/);
+  assert.match(html, /indisponível/);
+  assert.match(html, /25\/09\/2026/);
+  assert.match(html, /24\/09\/2026/);
+});
+
+test("clustering usa no máximo cinco tentativas com backoff injetável", async () => {
+  let calls = 0;
+  const delays = [];
+  const result = await retryClustering(async () => {
+    calls += 1;
+    if (calls < 5) throw new SyntaxError("resposta estruturada inválida");
+    return "clusters válidos";
+  }, {
+    maxAttempts: 5,
+    baseDelayMs: 100,
+    sleep: async (delay) => delays.push(delay),
+  });
+  assert.deepEqual(result, { value: "clusters válidos", attempts: 5 });
+  assert.deepEqual(delays, [100, 200, 400, 800]);
+});
+
+test("clustering não repete erro de configuração ou HTTP 4xx", async () => {
+  let calls = 0;
+  await assert.rejects(retryClustering(async () => {
+    calls += 1;
+    throw new Error("Ollama respondeu 400");
+  }, { sleep: async () => assert.fail("não deve aguardar") }), /Ollama respondeu 400/);
+  assert.equal(calls, 1);
+});
+
+test("clustering registra exaustão após cinco tentativas", async () => {
+  let calls = 0;
+  await assert.rejects(retryClustering(async () => {
+    calls += 1;
+    throw new TypeError("fetch failed");
+  }, { sleep: async () => {} }), (error) => error.code === "OLLAMA_RETRY_EXHAUSTED" && error.attempts === 5);
+  assert.equal(calls, 5);
+});
+
+test("execução diária recupera clustering transitório e registra tentativas", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const calls = counters();
+    const dependencies = fixtureDependencies(calls);
+    const delays = [];
+    let attempts = 0;
+    const clusterer = async (input) => {
+      attempts += 1;
+      if (attempts === 1) {
+        const error = new Error("cluster incompleto");
+        error.code = "INVALID_CLUSTER_MEMBERSHIP";
+        error.retryFeedback = "Inclua os aliases ausentes: C002.";
+        throw error;
+      }
+      if (attempts === 2) assert.equal(input.validationFeedback, "Inclua os aliases ausentes: C002.");
+      if (attempts < 5) throw new SyntaxError("JSON incompleto");
+      return dependencies.clusterer(input);
+    };
+    const result = await runDailyTrendCatalog({
+      store, logicalDate: DATE, timezone: "UTC", outputRoot: output,
+      config: fullConfig(), collectors: dependencies.collectors, clusterer,
+      sleep: async (delay) => delays.push(delay), clock: fixedClock(),
+    });
+    assert.equal(result.catalog.scores.length, 2);
+    assert.equal(result.dailyRun.steps.find(({ stepKey }) => stepKey === "20-seed-clustering").result.clusteringAttempts, 5);
+    assert.equal(result.dailyRun.steps.find(({ stepKey }) => stepKey === "60-final-analysis").result.clusteringAttempts, 1);
+    assert.deepEqual(delays, [250, 500, 1000, 2000]);
+    assert.equal(attempts, 6);
   });
 });
 

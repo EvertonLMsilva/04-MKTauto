@@ -60,8 +60,7 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
     likelyAudience: "adultos brasileiros",
     narrativePattern: "explicação curta",
     ptBrLocalization: "usar exemplos brasileiros",
-    candidateIds: ["candidate-1"],
-    evidenceSnapshotIds: ["snapshot-1"],
+    candidateRefs: ["C001"],
     explanation: "O título sustenta o assunto.",
   };
   let request;
@@ -70,30 +69,70 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
     return { ok: true, json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }) };
   };
   const result = await proposeTopicClusters({ model: "qwen3:4b", evidence, fetchImpl });
-  assert.deepEqual(result, [proposal]);
+  const { candidateRefs: _candidateRefs, ...semanticProposal } = proposal;
+  assert.deepEqual(result, [{ ...semanticProposal, candidateIds: ["candidate-1"], evidenceSnapshotIds: ["snapshot-1"] }]);
   assert.equal(request.format.properties.clusters.items.additionalProperties, false);
-  assert.match(request.messages[0].content, /Não devolva IDs próprios, URLs, métricas, direitos, estados, scores, posições/);
+  assert.equal(Object.hasOwn(request.format.properties.clusters.items.properties, "candidateIds"), false);
+  assert.equal(Object.hasOwn(request.format.properties.clusters.items.properties, "candidateRefs"), true);
+  assert.equal(Object.hasOwn(request.format.properties.clusters.items.properties, "evidenceSnapshotIds"), false);
+  assert.match(request.messages[0].content, /Não devolva snapshotIds/);
+  assert.match(request.messages[0].content, /Aliases obrigatórios: C001/);
+  assert.equal(request.messages[0].content.includes("snapshot-1"), false);
+  assert.equal(request.messages[0].content.includes("candidate-1"), false);
 });
 
-test("rejeita snapshot conhecido quando associado ao candidato errado", async () => {
-  const evidence = [
-    { candidateId: "candidate-1", snapshots: [{ id: "snapshot-1" }] },
-    { candidateId: "candidate-2", snapshots: [{ id: "snapshot-2" }] },
-  ];
-  const proposal = {
+test("rejeita tentativa da IA de fornecer snapshot e deriva evidência pelo candidato", async () => {
+  const evidence = [{ candidateId: "candidate-1", snapshots: [{ id: "snapshot-1" }] }];
+  const forbiddenProposal = {
     label: "Assunto",
     niche: "educação",
     subtheme: "subtema",
     likelyAudience: "público",
     narrativePattern: "padrão",
     ptBrLocalization: "localização",
-    candidateIds: ["candidate-1"],
-    evidenceSnapshotIds: ["snapshot-2"],
+    candidateRefs: ["C001"],
+    evidenceSnapshotIds: ["snapshot-forged"],
     explanation: "Explicação",
   };
   const fetchImpl = async () => ({
     ok: true,
-    json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }),
+    json: async () => ({ message: { content: JSON.stringify({ clusters: [forbiddenProposal] }) } }),
   });
-  await assert.rejects(() => proposeTopicClusters({ model: "teste", evidence, fetchImpl }), /não pertence/);
+  await assert.rejects(
+    () => proposeTopicClusters({ model: "teste", evidence, fetchImpl }),
+    (error) => error.code === "AI_EVIDENCE_MUTATION",
+  );
+
+  const safeProposal = Object.fromEntries(Object.entries(forbiddenProposal).filter(([key]) => key !== "evidenceSnapshotIds"));
+  const safeFetch = async () => ({
+    ok: true,
+    json: async () => ({ message: { content: JSON.stringify({ clusters: [safeProposal] }) } }),
+  });
+  const [result] = await proposeTopicClusters({ model: "teste", evidence, fetchImpl: safeFetch });
+  assert.deepEqual(result.evidenceSnapshotIds, ["snapshot-1"]);
+});
+
+test("completa aliases ausentes em uma correção dirigida", async () => {
+  const evidence = [
+    { candidateId: "youtube:CaseSensitive", snapshots: [{ id: "snapshot-1" }] },
+    { candidateId: "youtube:other", snapshots: [{ id: "snapshot-2" }] },
+  ];
+  const incomplete = {
+    label: "Assunto", niche: "educação", subtheme: "subtema", likelyAudience: "público",
+    narrativePattern: "padrão", ptBrLocalization: "localização", candidateRefs: ["C001"], explanation: "Explicação",
+  };
+  const repair = { ...incomplete, label: "Outro assunto", candidateRefs: ["C002"] };
+  const requests = [];
+  const responses = [incomplete, repair];
+  const fetchImpl = async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    const proposal = responses.shift();
+    return { ok: true, json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }) };
+  };
+  const result = await proposeTopicClusters({ model: "teste", evidence, fetchImpl });
+  assert.equal(result.length, 2);
+  assert.deepEqual(result.flatMap(({ candidateIds }) => candidateIds), ["youtube:CaseSensitive", "youtube:other"]);
+  assert.match(requests[1].messages[0].content, /Aliases obrigatórios: C002/);
+  assert.equal(requests[1].messages[0].content.includes("C001"), false);
+  assert.equal(requests[1].messages[0].content.includes("youtube:other"), false);
 });

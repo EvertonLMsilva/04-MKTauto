@@ -103,11 +103,24 @@ function csvCell(value) {
 }
 
 function renderHtml(output) {
+  const latestSnapshots = latestSnapshotsByCandidate(output.snapshots ?? []);
   const rows = output.ranking.map(({ position, top5, candidate, score }) => `<tr>
 <td>${position}</td><td>${top5 ? "sim" : "não"}</td><td>${escapeHtml(candidate.platform)}</td>
 <td>${escapeHtml(candidate.title ?? "Título indisponível")}</td><td>${escapeHtml(candidate.state)}</td>
+<td>${escapeHtml(formatViews(latestSnapshots.get(candidate.id)))}</td><td>${escapeHtml(formatPublishedDay(candidate.publishedAt))}</td>
 <td>${score.value.toFixed(2)}</td><td>${Math.round(score.confidence * 100)}%</td>
 <td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
+  const rankedCandidateIds = new Set(output.ranking.map(({ candidate }) => candidate.id));
+  const unranked = (output.candidates ?? []).filter(({ id }) => !rankedCandidateIds.has(id));
+  const unrankedRows = unranked.map((candidate) => `<tr>
+<td>${escapeHtml(candidate.platform)}</td><td>${escapeHtml(candidate.title ?? "Título indisponível")}</td>
+<td>${escapeHtml(candidate.state)}</td><td>${escapeHtml(formatViews(latestSnapshots.get(candidate.id)))}</td>
+<td>${escapeHtml(formatPublishedDay(candidate.publishedAt))}</td><td>score indisponível</td>
+<td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
+  const unrankedSection = unranked.length === 0 ? "" : `<h2>Candidatos sem ranking</h2>
+<p>Estes candidatos foram coletados, mas não receberam posição porque a análise não foi concluída.</p>
+<table><thead><tr><th>Fonte</th><th>Título</th><th>Estado</th><th>Visualizações</th><th>Publicado em</th><th>Ranking</th><th>URL</th></tr></thead>
+<tbody>${unrankedRows}</tbody></table>`;
   const sources = output.sourceRuns.map((source) => `<li><strong>${escapeHtml(source.platform)}</strong>: ${escapeHtml(source.status)} — ${escapeHtml(source.capabilities.discovery)}; lacunas: ${escapeHtml(source.gaps.join(", ") || "nenhuma")}</li>`).join("\n");
   const gaps = output.dailyRun.gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("\n") || "<li>nenhuma</li>";
   return `<!doctype html>
@@ -118,8 +131,29 @@ body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.45;color:#1f2937
 <body><h1>Radar diário — ${escapeHtml(output.dailyRun.logicalDate)}</h1>
 <p>Timezone: <code>${escapeHtml(output.dailyRun.timezone)}</code>. Estado: <strong>${escapeHtml(output.dailyRun.state)}</strong>. Esta seleção não concede direitos de uso.</p>
 <h2>Cobertura</h2><ul>${sources}</ul><h2>Lacunas</h2><ul class="gap">${gaps}</ul>
-<h2>Ranking</h2><table><thead><tr><th>#</th><th>Top 5</th><th>Fonte</th><th>Título</th><th>Estado</th><th>Score</th><th>Confiança</th><th>URL</th></tr></thead>
-<tbody>${rows}</tbody></table></body></html>\n`;
+<h2>Ranking</h2><table><thead><tr><th>#</th><th>Top 5</th><th>Fonte</th><th>Título</th><th>Estado</th><th>Visualizações</th><th>Publicado em</th><th>Score</th><th>Confiança</th><th>URL</th></tr></thead>
+<tbody>${rows}</tbody></table>${unrankedSection}</body></html>\n`;
+}
+
+function latestSnapshotsByCandidate(snapshots) {
+  const latest = new Map();
+  for (const snapshot of snapshots) {
+    const prior = latest.get(snapshot.candidateId);
+    if (!prior || Date.parse(snapshot.capturedAt) > Date.parse(prior.capturedAt)) latest.set(snapshot.candidateId, snapshot);
+  }
+  return latest;
+}
+
+function formatViews(snapshot) {
+  const metric = snapshot?.metrics?.views;
+  if (metric?.availability !== "AVAILABLE") return "indisponível";
+  return new Intl.NumberFormat("pt-BR", { maximumFractionDigits: 0 }).format(metric.value);
+}
+
+function formatPublishedDay(value) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value))) return "indisponível";
+  const [year, month, day] = value.slice(0, 10).split("-");
+  return `${day}/${month}/${year}`;
 }
 
 function escapeHtml(value) {

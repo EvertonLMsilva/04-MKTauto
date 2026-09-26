@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { collectInstagramHashtagCoverage } from "./adapters/instagram.js";
+import { proposeTopicClusters } from "./adapters/ollama.js";
 import { collectTikTokOfficialCoverage } from "./adapters/tiktok.js";
 import { collectPopularYouTubeTrends } from "./adapters/youtube.js";
 import { RADAR_CONTRACT_VERSION } from "./domain/contracts.js";
@@ -28,6 +29,7 @@ export async function runDailyTrendCatalog({
   outputRoot = "data/trends",
   collectors = {},
   clusterer,
+  sleep = defaultSleep,
 }) {
   validateDailyInput({ store, logicalDate, timezone, config });
   const publicConfig = sanitizeConfig(config);
@@ -67,17 +69,21 @@ export async function runDailyTrendCatalog({
     try {
       const seed = await persistedStep(store, dailyId, STEP.seed, clock, async () => {
         const memory = memoryAnalysisStore(batchToCatalog(youtubeBatch));
-        const result = await (collectors.analyze ?? analyzeTrendRun)({
-          store: memory,
-          runId: youtubeBatch.run.id,
-          idempotencyKey: `${dailyId}:seed-analysis`,
-          model: config.ollama?.model,
-          config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
-          now: startedAt,
-          ...(clusterer ? { clusterer } : {}),
-          fetchImpl,
+        const retried = await analyzeWithClusteringRetries({
+          analyze: collectors.analyze ?? analyzeTrendRun,
+          clusterer,
+          sleep,
+          args: {
+            store: memory,
+            runId: youtubeBatch.run.id,
+            idempotencyKey: `${dailyId}:seed-analysis`,
+            model: config.ollama?.model,
+            config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
+            now: startedAt,
+            fetchImpl,
+          },
         });
-        return { topicClusters: result.catalog.topicClusters };
+        return { topicClusters: retried.value.catalog.topicClusters, clusteringAttempts: retried.attempts };
       });
       seedCatalog = { ...batchToCatalog(youtubeBatch), topicClusters: seed.topicClusters };
     } catch (error) {
@@ -151,17 +157,22 @@ export async function runDailyTrendCatalog({
   } else {
     try {
       ranking = await persistedStep(store, dailyId, STEP.analysis, clock, async () => {
-        const result = await (collectors.analyze ?? analyzeTrendRun)({
-          store,
-          runId: trendRunId,
-          idempotencyKey: `${dailyId}:final-analysis`,
-          model: config.ollama?.model,
-          config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
-          now: startedAt,
-          ...(clusterer ? { clusterer } : {}),
-          fetchImpl,
+        const retried = await analyzeWithClusteringRetries({
+          analyze: collectors.analyze ?? analyzeTrendRun,
+          clusterer,
+          sleep,
+          args: {
+            store,
+            runId: trendRunId,
+            idempotencyKey: `${dailyId}:final-analysis`,
+            model: config.ollama?.model,
+            config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
+            now: startedAt,
+            fetchImpl,
+          },
         });
-        return { ranked: result.ranked, top: result.top, gaps: result.gaps };
+        const result = retried.value;
+        return { ranked: result.ranked, top: result.top, gaps: result.gaps, clusteringAttempts: retried.attempts };
       });
       operationalGaps.push(...ranking.gaps);
     } catch (error) {
@@ -209,7 +220,10 @@ async function persistedStep(store, dailyRunId, stepKey, clock, operation) {
     return result;
   } catch (error) {
     const completedAt = iso(clock());
-    store.finishDailyStep({ dailyRunId, stepKey, state: "FAILED", completedAt, durationMs: elapsedMs(startedAt, completedAt), result: { errorCode: safeErrorCode(error) } });
+    store.finishDailyStep({
+      dailyRunId, stepKey, state: "FAILED", completedAt, durationMs: elapsedMs(startedAt, completedAt),
+      result: { errorCode: safeErrorCode(error), ...(Number.isInteger(error?.attempts) ? { attempts: error.attempts } : {}) },
+    });
     throw error;
   }
 }
@@ -423,6 +437,72 @@ function validateDailyInput({ store, logicalDate, timezone, config }) {
   if (typeof timezone !== "string" || timezone.trim() === "") throw new Error("timezone explícito é obrigatório");
   try { new Intl.DateTimeFormat("pt-BR", { timeZone: timezone }).format(); } catch { throw new Error("timezone IANA inválido"); }
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("config é obrigatória");
+}
+
+export async function retryClustering(operation, {
+  maxAttempts = 5,
+  baseDelayMs = 250,
+  sleep = defaultSleep,
+} = {}) {
+  if (typeof operation !== "function") throw new Error("operação de clustering obrigatória");
+  if (!Number.isInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 5) throw new Error("maxAttempts deve estar entre 1 e 5");
+  if (!Number.isInteger(baseDelayMs) || baseDelayMs < 0) throw new Error("baseDelayMs deve ser inteiro não negativo");
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return { value: await operation(), attempts: attempt };
+    } catch (error) {
+      lastError = error;
+      if (!isRetryableClusteringError(error)) throw error;
+      if (attempt === maxAttempts) break;
+      await sleep(baseDelayMs * (2 ** (attempt - 1)));
+    }
+  }
+  const exhausted = new Error(`clustering falhou após ${maxAttempts} tentativas`, { cause: lastError });
+  exhausted.code = "OLLAMA_RETRY_EXHAUSTED";
+  exhausted.attempts = maxAttempts;
+  throw exhausted;
+}
+
+async function analyzeWithClusteringRetries({ analyze, args, clusterer, sleep }) {
+  let validationFeedback;
+  const baseClusterer = clusterer ?? proposeTopicClusters;
+  return retryClustering(async () => {
+    try {
+      return await analyze({
+        ...args,
+        clusterer: (input) => baseClusterer({
+          ...input,
+          ...(validationFeedback ? { validationFeedback } : {}),
+        }),
+      });
+    } catch (error) {
+      validationFeedback = typeof error?.retryFeedback === "string" ? error.retryFeedback : undefined;
+      throw error;
+    }
+  }, { sleep });
+}
+
+function isRetryableClusteringError(error) {
+  if (error instanceof SyntaxError) return true;
+  if (error?.name === "ContractValidationError") return true;
+  if (["AI_EVIDENCE_MUTATION", "UNKNOWN_EVIDENCE", "INVALID_CLUSTER_MEMBERSHIP"].includes(error?.code)) return true;
+  const message = String(error?.message ?? "");
+  if (error instanceof TypeError && /fetch|network/i.test(message)) return true;
+  const httpStatus = /Ollama respondeu (\d{3})/.exec(message)?.[1];
+  if (httpStatus) return Number(httpStatus) === 408 || Number(httpStatus) === 429 || Number(httpStatus) >= 500;
+  return [
+    "message.content",
+    "clusters[]",
+    "não retornou clusters",
+    "Candidato presente em mais de um cluster",
+    "Candidatos sem cluster",
+    "não pertence aos candidatos",
+  ].some((fragment) => message.includes(fragment));
+}
+
+function defaultSleep(delayMs) {
+  return new Promise((resolvePromise) => setTimeout(resolvePromise, delayMs));
 }
 
 export { STEP as DAILY_STEPS };
