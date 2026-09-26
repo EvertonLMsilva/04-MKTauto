@@ -193,7 +193,7 @@ export const TREND_SCHEMAS = Object.freeze(Object.fromEntries([
   ["SourceRun", ["id", "trendRunId", "platform", "status", "startedAt", "completedAt", "capabilities", "coverage", "gaps"]],
   ["TrendCandidate", ["id", "identityKey", "platform", "canonicalUrl", "state", "firstSeenAt", "lastSeenAt", "reappearanceCount", "durationSeconds", "publishedAt", "usageCondition", "snapshotIds", "topicClusterIds"]],
   ["TrendSnapshot", ["id", "candidateId", "capturedAt", "metrics"]],
-  ["TopicCluster", ["id", "label", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation"]],
+  ["TopicCluster", ["id", "label", "niche", "subtheme", "likelyAudience", "narrativePattern", "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation"]],
   ["TrendScore", ["id", "candidateId", "formulaVersion", "calculatedAt", "value", "confidence", "components", "explanation"]],
 ].map(([name, required]) => [name, Object.freeze({
   $id: `mktauto/${name}/${RADAR_CONTRACT_VERSION}`,
@@ -235,7 +235,7 @@ export function validateTrendCandidate(value) {
     "schemaVersion", "id", "identityKey", "platform", "platformVideoId",
     "canonicalUrl", "state", "firstSeenAt", "lastSeenAt", "reappearanceCount",
     "durationSeconds", "publishedAt", "region", "language", "usageCondition",
-    "snapshotIds", "topicClusterIds", "author",
+    "snapshotIds", "topicClusterIds", "author", "title", "category",
   ], "candidate");
   requireSchemaVersion(value.schemaVersion, "candidate.schemaVersion");
   requireIdentifier(value.id, "candidate.id");
@@ -257,6 +257,8 @@ export function validateTrendCandidate(value) {
   optionalText(value.region, "candidate.region");
   optionalText(value.language, "candidate.language");
   optionalText(value.author, "candidate.author");
+  optionalText(value.title, "candidate.title");
+  optionalText(value.category, "candidate.category");
   requireEnum(value.usageCondition, ["REFERENCE_ONLY", "USAGE_UNKNOWN", "USAGE_CONFIRMED"], "candidate.usageCondition");
   requireIdentifierArray(value.snapshotIds, "candidate.snapshotIds");
   requireIdentifierArray(value.topicClusterIds, "candidate.topicClusterIds");
@@ -338,10 +340,19 @@ export function validateTrendRun(value, sourceRuns = []) {
 
 export function validateTopicCluster(value, knownCandidateIds = [], knownSnapshotIds = []) {
   requireRecord(value, "topicCluster");
-  requireExactKeys(value, ["schemaVersion", "id", "label", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation"], "topicCluster");
+  requireExactKeys(value, [
+    "schemaVersion", "id", "label", "niche", "subtheme", "likelyAudience",
+    "narrativePattern", "ptBrLocalization", "candidateIds", "evidenceSnapshotIds",
+    "createdBy", "explanation",
+  ], "topicCluster", true);
   requireSchemaVersion(value.schemaVersion, "topicCluster.schemaVersion");
   requireIdentifier(value.id, "topicCluster.id");
   requireTextContract(value.label, "topicCluster.label");
+  requireTextContract(value.niche, "topicCluster.niche");
+  requireTextContract(value.subtheme, "topicCluster.subtheme");
+  requireTextContract(value.likelyAudience, "topicCluster.likelyAudience");
+  requireTextContract(value.narrativePattern, "topicCluster.narrativePattern");
+  requireTextContract(value.ptBrLocalization, "topicCluster.ptBrLocalization");
   requireIdentifierArray(value.candidateIds, "topicCluster.candidateIds", true);
   requireIdentifierArray(value.evidenceSnapshotIds, "topicCluster.evidenceSnapshotIds", true);
   requireKnownIds(value.candidateIds, knownCandidateIds, "topicCluster.candidateIds");
@@ -374,11 +385,19 @@ export function validateTrendScore(value) {
 
 export function validateAiTopicProposal(value, knownCandidateIds, knownSnapshotIds) {
   requireRecord(value, "aiProposal");
-  const allowed = ["label", "candidateIds", "evidenceSnapshotIds", "explanation"];
+  const allowed = [
+    "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
+    "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "explanation",
+  ];
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) fail("AI_EVIDENCE_MUTATION", "aiProposal", `campos não permitidos: ${unknown.join(", ")}`);
   requireExactKeys(value, allowed, "aiProposal", true);
   requireTextContract(value.label, "aiProposal.label");
+  requireTextContract(value.niche, "aiProposal.niche");
+  requireTextContract(value.subtheme, "aiProposal.subtheme");
+  requireTextContract(value.likelyAudience, "aiProposal.likelyAudience");
+  requireTextContract(value.narrativePattern, "aiProposal.narrativePattern");
+  requireTextContract(value.ptBrLocalization, "aiProposal.ptBrLocalization");
   requireIdentifierArray(value.candidateIds, "aiProposal.candidateIds", true);
   requireIdentifierArray(value.evidenceSnapshotIds, "aiProposal.evidenceSnapshotIds", true);
   requireKnownIds(value.candidateIds, knownCandidateIds, "aiProposal.candidateIds");
@@ -400,13 +419,14 @@ export function serializePublicTrendCatalog(value) {
   const candidates = (value.candidates ?? []).map((item) => validateTrendCandidate(pick(item, [
     "schemaVersion", "id", "identityKey", "platform", "platformVideoId", "canonicalUrl",
     "state", "firstSeenAt", "lastSeenAt", "reappearanceCount", "durationSeconds",
-    "publishedAt", "region", "language", "usageCondition", "snapshotIds", "topicClusterIds", "author",
+    "publishedAt", "region", "language", "usageCondition", "snapshotIds", "topicClusterIds", "author", "title", "category",
   ])));
   const snapshots = (value.snapshots ?? []).map((item) => validateTrendSnapshot(pick(item, ["schemaVersion", "id", "candidateId", "capturedAt", "metrics"])));
   const candidateIds = candidates.map((item) => item.id);
   const snapshotIds = snapshots.map((item) => item.id);
   const topicClusters = (value.topicClusters ?? []).map((item) => validateTopicCluster(pick(item, [
-    "schemaVersion", "id", "label", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation",
+    "schemaVersion", "id", "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
+    "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation",
   ]), candidateIds, snapshotIds));
   const scores = (value.scores ?? []).map((item) => validateTrendScore(pick(item, [
     "schemaVersion", "id", "candidateId", "formulaVersion", "calculatedAt", "value",

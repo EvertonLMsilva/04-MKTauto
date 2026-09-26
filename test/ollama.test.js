@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { identifyCandidates } from "../src/adapters/ollama.js";
+import { identifyCandidates, proposeTopicClusters } from "../src/adapters/ollama.js";
 
 const signals = Array.from({ length: 20 }, (_, index) => ({
   id: `youtube:${index + 1}`,
@@ -44,4 +44,56 @@ test("usa schema estruturado local e força fonte verde para falso", async () =>
   assert.equal(result.length, 20);
   assert.equal(result[0].gates.greenSource, false);
   assert.equal(result[0].gates.multipleSignals, false);
+});
+
+test("propõe clusters somente com rótulos e referências de evidência conhecidas", async () => {
+  const evidence = [{
+    candidateId: "candidate-1",
+    title: "Título público",
+    category: "educação",
+    snapshots: [{ id: "snapshot-1", capturedAt: "2026-09-26T12:00:00.000Z", metrics: {} }],
+  }];
+  const proposal = {
+    label: "Educação prática",
+    niche: "educação",
+    subtheme: "aprendizado rápido",
+    likelyAudience: "adultos brasileiros",
+    narrativePattern: "explicação curta",
+    ptBrLocalization: "usar exemplos brasileiros",
+    candidateIds: ["candidate-1"],
+    evidenceSnapshotIds: ["snapshot-1"],
+    explanation: "O título sustenta o assunto.",
+  };
+  let request;
+  const fetchImpl = async (_url, options) => {
+    request = JSON.parse(options.body);
+    return { ok: true, json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }) };
+  };
+  const result = await proposeTopicClusters({ model: "qwen3:4b", evidence, fetchImpl });
+  assert.deepEqual(result, [proposal]);
+  assert.equal(request.format.properties.clusters.items.additionalProperties, false);
+  assert.match(request.messages[0].content, /Não devolva IDs próprios, URLs, métricas, direitos, estados, scores, posições/);
+});
+
+test("rejeita snapshot conhecido quando associado ao candidato errado", async () => {
+  const evidence = [
+    { candidateId: "candidate-1", snapshots: [{ id: "snapshot-1" }] },
+    { candidateId: "candidate-2", snapshots: [{ id: "snapshot-2" }] },
+  ];
+  const proposal = {
+    label: "Assunto",
+    niche: "educação",
+    subtheme: "subtema",
+    likelyAudience: "público",
+    narrativePattern: "padrão",
+    ptBrLocalization: "localização",
+    candidateIds: ["candidate-1"],
+    evidenceSnapshotIds: ["snapshot-2"],
+    explanation: "Explicação",
+  };
+  const fetchImpl = async () => ({
+    ok: true,
+    json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }),
+  });
+  await assert.rejects(() => proposeTopicClusters({ model: "teste", evidence, fetchImpl }), /não pertence/);
 });

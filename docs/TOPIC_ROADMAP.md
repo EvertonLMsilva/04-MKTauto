@@ -15,8 +15,8 @@
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
-| R02C | PR ABERTO | M1 — coleta global do YouTube | PR #17; coleta oficial e suíte completa com 48 testes passando. |
-| R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
+| R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
+| R02D | EM EXECUÇÃO | M1 — assuntos e ranking | Clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
@@ -330,6 +330,41 @@ testes focados e a suíte completa com 48 testes passaram em 26/09/2026.
 
 O PR #17 foi aberto em 26/09/2026 com diff restrito ao adapter, consulta
 idempotente do catálogo, testes e este roadmap.
+
+O PR #17 foi mergeado em 26/09/2026 (`bd6a0d6`) e desbloqueou R02D.
+
+### R02D — assuntos e ranking determinístico
+
+O adapter local do Ollama recebe somente evidências sanitizadas já persistidas e
+propõe rótulo, nicho, subtema, público provável, padrão narrativo e localização
+para `pt-BR`. O schema de saída não aceita IDs próprios, URLs, métricas, direitos,
+estados, scores ou posições. Candidatos e snapshots são validados contra o
+catálogo, inclusive o vínculo de cada snapshot aos candidatos do cluster.
+
+Título e categoria públicos do YouTube passam a ser preservados como campos
+opcionais do contrato existente; payload bruto continua descartado. A análise é
+anexada atomicamente à run coletada por chave idempotente, sem duplicar candidato
+ou snapshot e sem repetir a chamada ao modelo em retry concluído.
+
+`trend-score/1.0.0` calcula por regra fixa velocidade cronológica, engajamento
+somente com interações e visualizações disponíveis, recência com relógio
+injetável e recorrência observada entre vídeos, regiões e plataformas. Componentes
+sem base permanecem `UNAVAILABLE`; a confiança é a soma dos pesos disponíveis e
+o score repondera somente esses componentes. O desempate usa score, confiança,
+publicação e ID. A seleção aplica limites por plataforma, região e assunto; quando
+a cobertura disponível não permite completar a lista, relaxa os limites de modo
+determinístico e registra a lacuna, sem eliminar o YouTube por ausência das redes
+futuras nem criar candidatos artificiais.
+
+Evidência reproduzível: `test/trend-analysis.test.js`, `test/ollama.test.js`,
+`test/radar-contracts.test.js`, `test/radar-ranking.test.js`,
+`test/trend-store.test.js` e `test/youtube-radar.test.js` cobrem validação da IA,
+componentes ausentes, zero oficial, regressão de contador, ranking top 20/top 5,
+desempate, diversidade, persistência atômica e retry. A suíte completa passou com
+55 testes em 26/09/2026. O Ollama local respondeu e possuía um modelo instalado,
+mas a validação real controlada não foi executada porque `OLLAMA_MODEL` não estava
+configurado; nenhum modelo foi escolhido implicitamente e nenhuma evidência real
+foi persistida.
 
 ## Backlog pós-MVP aprovado
 

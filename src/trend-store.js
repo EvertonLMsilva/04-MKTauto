@@ -77,6 +77,59 @@ export class TrendCatalogStore {
     }
   }
 
+  recordAnalysis({ idempotencyKey, runId, topicClusters, scores }) {
+    requireKey(idempotencyKey);
+    const catalog = this.getRun(runId);
+    if (!catalog) throw new TrendStoreError("RUN_NOT_FOUND", `run inexistente: ${runId}`);
+    const candidateIds = catalog.candidates.map(({ id }) => id);
+    const candidateSet = new Set(candidateIds);
+    const histories = new Map(catalog.candidates.map(({ id }) => [id, this.getCandidateHistory(id)]));
+    const snapshotOwner = new Map([...histories.entries()].flatMap(([candidateId, history]) =>
+      history.snapshots.map(({ id }) => [id, candidateId])));
+    const snapshotIds = [...snapshotOwner.keys()];
+    for (const cluster of topicClusters) {
+      validateTopicCluster(cluster, candidateIds, snapshotIds);
+      for (const snapshotId of cluster.evidenceSnapshotIds) {
+        if (!cluster.candidateIds.includes(snapshotOwner.get(snapshotId))) {
+          throw new TrendStoreError("INVALID_REFERENCE", `snapshot ${snapshotId} não pertence aos candidatos do cluster`);
+        }
+      }
+    }
+    for (const score of scores) {
+      validateTrendScore(score);
+      if (!candidateSet.has(score.candidateId)) throw new TrendStoreError("INVALID_REFERENCE", `score referencia candidato fora da run: ${score.candidateId}`);
+      for (const [componentName, component] of Object.entries(score.components)) {
+        for (const snapshotId of component.evidenceSnapshotIds) {
+          if (!snapshotOwner.has(snapshotId) || (componentName !== "recurrence" && snapshotOwner.get(snapshotId) !== score.candidateId)) {
+            throw new TrendStoreError("INVALID_REFERENCE", `score usa snapshot de outro candidato: ${snapshotId}`);
+          }
+        }
+      }
+    }
+    const input = { runId, topicClusters, scores };
+    const payloadHash = stableHash(input);
+    const prior = this.db.prepare("SELECT payload_hash, trend_run_id FROM trend_operations WHERE idempotency_key = ?").get(idempotencyKey);
+    if (prior) {
+      if (prior.payload_hash !== payloadHash || prior.trend_run_id !== runId) {
+        throw new TrendStoreError("IDEMPOTENCY_KEY_REUSED", "a chave já foi usada com outro conteúdo");
+      }
+      return this.getRun(runId);
+    }
+    try {
+      this.db.exec("BEGIN IMMEDIATE");
+      for (const cluster of topicClusters) this.#insertCluster(runId, cluster);
+      for (const score of scores) this.#insertScore(runId, score);
+      this.db.prepare(`INSERT INTO trend_operations
+        (idempotency_key, payload_hash, trend_run_id, created_at) VALUES (?, ?, ?, ?)`)
+        .run(idempotencyKey, payloadHash, runId, new Date().toISOString());
+      this.db.exec("COMMIT");
+      return this.getRun(runId);
+    } catch (error) {
+      if (this.db.isTransaction) this.db.exec("ROLLBACK");
+      throw mapSqliteError(error);
+    }
+  }
+
   getOperation(idempotencyKey) {
     requireKey(idempotencyKey);
     const operation = this.db.prepare(
