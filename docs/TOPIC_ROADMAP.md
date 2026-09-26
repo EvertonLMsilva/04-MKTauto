@@ -19,7 +19,7 @@
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
-| R02G | EM EXECUÇÃO | M1 — execução diária e catálogo local | Run única por data/configuração, exportação local e seleção humana em validação. |
+| R02G | PR ABERTO | M1 — execução diária e catálogo local | PR #21; run única por data/configuração, exportação local, seleção humana e 75 testes passando. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
@@ -462,6 +462,9 @@ bloqueios sem chamada, ranking consolidado, sanitização, CSV/HTML, publicaçã
 atômica e transições auditáveis. Riscos residuais: APIs continuam dependentes de
 credenciais/eligibilidade reais; clustering depende do Ollama; e a troca de
 diretório pressupõe que banco e saída estejam no mesmo host local.
+
+O PR #21 foi aberto em 26/09/2026 com diff restrito ao orquestrador, exportador,
+migração aditiva, CLI manual, testes e documentação de R02G.
 
 ## Backlog pós-MVP aprovado
 
