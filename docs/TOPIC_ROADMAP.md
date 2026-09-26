@@ -16,8 +16,8 @@
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
-| R02D | PR ABERTO | M1 — assuntos e ranking | PR #18; clusters locais, score determinístico e persistência validados com 55 testes. |
-| R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
+| R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
+| R02E | PR ABERTO | M1 — cobertura oficial do Instagram | PR #19; cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
@@ -369,6 +369,32 @@ foi persistida.
 O PR #18 foi aberto em 26/09/2026 com diff restrito ao agrupamento semântico,
 ranking determinístico, persistência da análise, normalização mínima do YouTube,
 testes e este roadmap.
+
+O PR #18 foi mergeado em 26/09/2026 (`c63e16a`) e desbloqueou R02E.
+
+### R02E — cobertura oficial do Instagram
+
+A revalidação oficial confirmou busca de mídia pública associada a hashtags no
+Instagram API with Facebook Login para contas profissionais elegíveis, sem
+equivalente a ranking global ou filtro regional. Hashtags são derivadas somente
+dos clusters persistidos de R02D. Conta autorizada, mídia pública por hashtag e
+insights próprios permanecem capacidades semanticamente separadas.
+
+O adapter limita termos e páginas, usa token somente em `Authorization`, isola
+falhas por hashtag, sanitiza autenticação, permissão/revisão e quota, e persiste
+retry atomicamente sem repetir chamadas. A API de hashtags não expõe duração;
+por isso a mídia pública encontrada não pode satisfazer o gate de 15–180 segundos
+do contrato 1.0.0 e não entra no ranking. A cobertura correta é `PARTIAL` com
+lacuna explícita, enquanto ausência de conta, Página, permissões, revisão, token
+ou versão elegível gera `BLOCKED_BY_PROVIDER` antes de qualquer chamada.
+
+A matriz, a condição de desbloqueio e as fontes oficiais estão em
+`docs/INSTAGRAM_OFFICIAL_COVERAGE.md`. Nenhuma credencial elegível estava
+configurada; não houve validação externa nem persistência de evidência real.
+
+O PR #19 foi aberto em 26/09/2026 com diff restrito ao adapter oficial de
+hashtags, testes, matriz de capacidades e este roadmap. A suíte completa passou
+com 62 testes.
 
 ## Backlog pós-MVP aprovado
 
