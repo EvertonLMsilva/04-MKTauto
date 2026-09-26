@@ -19,14 +19,14 @@ test("execução diária consolida fontes, ranking e artefatos sem repetir etapa
     const first = await runDailyTrendCatalog(args);
     assert.equal(first.dailyRun.state, "COMPLETED_WITH_GAPS");
     assert.deepEqual(first.dailyRun.result.rankedCandidateIds, ["tiktok:90001", "youtube:video-1"]);
-    assert.equal(first.catalog.sourceRuns.length, 3);
-    assert.equal(first.catalog.candidates.length, 2);
-    assert.equal(first.catalog.scores.length, 2);
-    assert.deepEqual(calls, { youtube: 1, instagram: 1, tiktok: 1, clusters: 2 });
+    assert.equal(first.catalog.sourceRuns.length, 4);
+    assert.equal(first.catalog.candidates.length, 3);
+    assert.equal(first.catalog.scores.length, 3);
+    assert.deepEqual(calls, { youtube: 1, instagram: 1, threads: 1, tiktok: 1, clusters: 2 });
     for (const file of ["catalog.json", "ranking.csv", "report.html"]) assert.equal(existsSync(join(output, DATE, file)), true);
     assert.equal(existsSync(join(output, DATE, "candidates", "youtube%3Avideo-1", "candidate.json")), true);
     await runDailyTrendCatalog(args);
-    assert.deepEqual(calls, { youtube: 1, instagram: 1, tiktok: 1, clusters: 2 });
+    assert.deepEqual(calls, { youtube: 1, instagram: 1, threads: 1, tiktok: 1, clusters: 2 });
     assert.equal(store.getCandidateHistory("youtube:video-1").snapshots.length, 1);
   });
 });
@@ -51,10 +51,10 @@ test("fontes sem configuração não são chamadas e preservam resultado válido
       config: { youtube: { apiKey: "configured" }, ollama: { model: "local" }, regions: ["BR"] },
       ...dependencies, clock: fixedClock(),
     });
-    assert.deepEqual(calls, { youtube: 1, instagram: 0, tiktok: 0, clusters: 2 });
+    assert.deepEqual(calls, { youtube: 1, instagram: 0, threads: 0, tiktok: 0, clusters: 2 });
     assert.equal(result.catalog.candidates.length, 1);
     assert.equal(result.dailyRun.state, "COMPLETED_WITH_GAPS");
-    assert.deepEqual(result.catalog.sourceRuns.map(({ status }) => status), ["BLOCKED_BY_PROVIDER", "BLOCKED_BY_PROVIDER", "SUCCESS"]);
+    assert.deepEqual(result.catalog.sourceRuns.map(({ status }) => status), ["BLOCKED_BY_PROVIDER", "BLOCKED_BY_PROVIDER", "BLOCKED_BY_PROVIDER", "SUCCESS"]);
   });
 });
 
@@ -68,7 +68,7 @@ test("CSV neutraliza fórmula, HTML escapa conteúdo e catálogo não expõe seg
     assert.match(csv, /'=HYPERLINK/);
     assert.equal(html.includes("<script>alert(1)</script>"), false);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
-    for (const secret of ["youtube-secret", "instagram-secret", "tiktok-secret"]) assert.equal(catalog.includes(secret), false);
+    for (const secret of ["youtube-secret", "instagram-secret", "threads-secret", "tiktok-secret"]) assert.equal(catalog.includes(secret), false);
   });
 });
 
@@ -132,6 +132,7 @@ test("relatório exibe views e dia publicado para candidatos ranqueados e sem ra
   ranked.snapshot.metrics.views = { availability: "AVAILABLE", value: 1_234_567 };
   unranked.snapshot.metrics.views = { availability: "UNAVAILABLE", reason: "NOT_RETURNED" };
   unranked.candidate.publishedAt = "2026-09-24T23:30:00.000Z";
+  unranked.candidate.durationSeconds = { availability: "UNAVAILABLE", reason: "NOT_EXPOSED_BY_PROVIDER" };
   const html = renderHtml({
     dailyRun: { logicalDate: DATE, timezone: "UTC", state: "COMPLETED_WITH_GAPS", gaps: [] },
     sourceRuns: [],
@@ -150,6 +151,7 @@ test("relatório exibe views e dia publicado para candidatos ranqueados e sem ra
   assert.match(html, /indisponível/);
   assert.match(html, /25\/09\/2026/);
   assert.match(html, /24\/09\/2026/);
+  assert.match(html, /duração indisponível: NOT_EXPOSED_BY_PROVIDER/);
 });
 
 test("clustering usa no máximo cinco tentativas com backoff injetável", async () => {
@@ -209,7 +211,7 @@ test("execução diária recupera clustering transitório e registra tentativas"
       config: fullConfig(), collectors: dependencies.collectors, clusterer,
       sleep: async (delay) => delays.push(delay), clock: fixedClock(),
     });
-    assert.equal(result.catalog.scores.length, 2);
+    assert.equal(result.catalog.scores.length, 3);
     assert.equal(result.dailyRun.steps.find(({ stepKey }) => stepKey === "20-seed-clustering").result.clusteringAttempts, 5);
     assert.equal(result.dailyRun.steps.find(({ stepKey }) => stepKey === "60-final-analysis").result.clusteringAttempts, 1);
     assert.deepEqual(delays, [250, 500, 1000, 2000]);
@@ -226,6 +228,10 @@ function fixtureDependencies(calls, title = "Vídeo útil") {
     instagram: async ({ store, idempotencyKey, capturedAt }) => {
       calls.instagram += 1;
       return store.recordOperation(batch({ platform: "INSTAGRAM", idempotencyKey, capturedAt, status: "PARTIAL", noCandidate: true }));
+    },
+    threads: async ({ store, idempotencyKey, capturedAt }) => {
+      calls.threads += 1;
+      return store.recordOperation(batch({ platform: "THREADS", id: "18000000000000123", title: "Threads público", idempotencyKey, capturedAt, status: "PARTIAL" }));
     },
     tiktok: async ({ store, idempotencyKey, capturedAt }) => {
       calls.tiktok += 1;
@@ -270,14 +276,17 @@ function batch({ platform, id, title, idempotencyKey, capturedAt, status, noCand
 }
 
 function observation({ platform, id, title, capturedAt, runId }) {
-  const canonicalUrl = platform === "YOUTUBE" ? `https://youtube.com/watch?v=${id}` : `https://www.tiktok.com/@public/video/${id}`;
+  const canonicalUrl = platform === "YOUTUBE" ? `https://youtube.com/watch?v=${id}`
+    : platform === "THREADS" ? `https://www.threads.net/@public/post/${id}`
+      : `https://www.tiktok.com/@public/video/${id}`;
   const candidateId = `${platform.toLowerCase()}:${id}`;
   return {
     candidate: {
       schemaVersion: RADAR_CONTRACT_VERSION, id: candidateId,
       identityKey: canonicalTrendIdentity({ platform, platformVideoId: id, canonicalUrl }), platform, platformVideoId: id,
       canonicalUrl, state: "DISCOVERED", firstSeenAt: capturedAt, lastSeenAt: capturedAt, reappearanceCount: 1,
-      durationSeconds: 45, publishedAt: "2026-09-25T12:00:00.000Z", region: "BR", language: "pt-BR",
+      durationSeconds: platform === "THREADS" ? { availability: "UNAVAILABLE", reason: "NOT_EXPOSED_BY_THREADS_API" } : 45,
+      publishedAt: "2026-09-25T12:00:00.000Z", region: "BR", language: "pt-BR",
       usageCondition: "REFERENCE_ONLY", snapshotIds: [], topicClusterIds: [], title, author: "autor público",
     },
     snapshot: {
@@ -299,6 +308,10 @@ function fullConfig() {
       accessToken: "instagram-secret", igUserId: "12345", apiVersion: "v24.0",
       eligibility: { professionalAccount: true, facebookPageLinked: true, permissionsGranted: true, appAccessApproved: true },
     },
+    threads: {
+      accessToken: "threads-secret", apiVersion: "v1.0", searchType: "TOP",
+      eligibility: { basicGranted: true, keywordSearchGranted: true, appAccessApproved: true },
+    },
     tiktok: {
       product: "RESEARCH_API", accessToken: "tiktok-secret",
       eligibility: { eligibleOrganization: true, nonCommercialResearch: true, ethicalReviewApproved: true, researchProjectApproved: true, researchScopeGranted: true, retentionControlsApproved: true },
@@ -306,7 +319,7 @@ function fullConfig() {
   };
 }
 
-function counters() { return { youtube: 0, instagram: 0, tiktok: 0, clusters: 0 }; }
+function counters() { return { youtube: 0, instagram: 0, threads: 0, tiktok: 0, clusters: 0 }; }
 function fixedClock() { return () => new Date(AT); }
 
 async function withWorkspace(callback) {

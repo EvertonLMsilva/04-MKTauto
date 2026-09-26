@@ -19,8 +19,9 @@
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
-| R02G | CORREÇÃO EM PR | M1 — execução diária e catálogo local | PR #21 mergeado (`d89c3ad`); PR #22 preserva o relatório sem ranking e recupera o clustering/ranking local. |
-| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
+| R02G | CONCLUÍDO | M1 — execução diária e catálogo local | PR #21 e correção PR #22 mergeados (`0ddc630`); relatório e clustering/ranking real validados. |
+| R02H | EM EXECUÇÃO | M1 — listagem oficial multirrede | Listar Instagram, Threads e TikTok no catálogo, sem download e sem ranking fictício. |
+| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02H e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
 | R06 | PENDENTE | M5 — refino para engajamento | Depende de R05. |
@@ -74,7 +75,8 @@ Defaults aprovados:
 | R02E | Validar Instagram oficial | R02D | Adapter por hashtags funciona dentro das permissões ou registra cobertura parcial. |
 | R02F | Validar TikTok oficial | R02E | Acesso elegível funciona ou bloqueio do provedor fica explícito, sem scraping. |
 | R02G | Integrar radar diário | R02F | Run diária gera catálogo JSON/CSV/HTML mapeável, sem baixar mídia. |
-| R03 | Provar M2 — transcrição multimodal | R02G + arquivo local legítimo | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
+| R02H | Ampliar listagem oficial | R02G | Instagram, Threads e TikTok aparecem no catálogo quando a API autoriza; referências incompletas não recebem ranking fictício. |
+| R03 | Provar M2 — transcrição multimodal | R02H + arquivo local legítimo | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
 | R04 | Provar M3 — conteúdo | R03 | `ContentBrief` identifica tema, momentos, riscos e ângulos novos, todos ligados a evidências. |
 | R05 | Provar M4 — edição/montagem | R04 | `EditPlan` gera um corte narrado e legendado, com linhagem de cada trecho e evidencia G1. |
 | R06 | Provar M5 — refino | R05 | `EngagementReport` remove ruído e melhora ritmo/clareza sem perder fidelidade ou auditoria. |
@@ -82,7 +84,7 @@ Defaults aprovados:
 | R08 | Integrar Instagram | R07 | Conta profissional conecta; somente versão aprovada publica; estado e insights são reconciliados; exportação cobre falha externa. |
 | R09 | Entregar painel e piloto | R08 | Painel cruza perfil, vídeo, formato, visualizações, interações, custo, receita e lucro estimado; piloto decide `go`, `iterate` ou `stop`. |
 
-R02A–R02G provam M1 em fatias cumulativas; R03–R06 provam um módulo cada. R07
+R02A–R02H provam M1 em fatias cumulativas; R03–R06 provam um módulo cada. R07
 produz o primeiro pipeline utilizável, R08 entrega o produto conectado e R09
 encerra o MVP medido. Novos canais, parceiros e otimizações não interrompem essa
 sequência.
@@ -271,7 +273,7 @@ pulados e somente a versão exata aprovada pode avançar para efeito externo.
 Após o merge do PR #13, o usuário esclareceu que M1 deve descobrir vídeos em alta
 e não receber uploads. O plano em `docs/M1_VIDEO_IDENTIFICATION_PLAN.md` separa
 contratos, histórico, YouTube, ranking, Instagram, TikTok e catálogo diário em
-R02A–R02G. A coleta usa somente APIs oficiais, registra cobertura parcial e não
+R02A–R02H. A coleta usa somente APIs oficiais, registra cobertura parcial e não
 baixa mídia. R03 depende do catálogo completo e de um arquivo local obtido
 legitimamente após a seleção.
 
@@ -490,6 +492,31 @@ para a cobertura disponível. A suíte completa passou com 82 testes.
 
 O PR #22 foi aberto em 26/09/2026 com o hotfix de relatório e recuperação segura
 do clustering, testes de regressão e registro documental.
+
+O PR #22 foi mergeado em 26/09/2026 (`0ddc630`) e concluiu R02G/M1. R02H foi
+aprovado para ampliar somente a listagem oficial: Instagram e Threads podem
+persistir referências com duração indisponível fora do ranking, e TikTok Display
+lista conteúdo da conta autorizada sem apresentá-lo como tendência pública.
+Download, scraping e M2 permanecem fora do tópico.
+
+### R02H — listagem oficial multirrede
+
+O contrato `trend-contracts/1.1.0`, compatível para leitura com a versão 1.0.0,
+aceita Threads e duração explicitamente indisponível sem atribuir número falso.
+Essas referências são persistidas, exportadas e exibidas com link oficial, mas
+o ranking continua restrito a candidatos com duração elegível. Instagram passa
+a preservar vídeos retornados pela busca oficial de hashtags; Threads deriva
+consultas dos clusters e usa `keyword_search`; TikTok Display lista somente os
+vídeos da conta que autorizou o aplicativo e recebe exclusão determinística do
+ranking público. TikTok Research permanece condicionado à elegibilidade já
+documentada.
+
+A execução diária possui etapa estável para Threads, tolera cada fonte bloqueada
+sem afetar as demais e mantém tokens fora do catálogo. Testes usam respostas
+oficiais sanitizadas; nenhuma chamada real a Instagram, Threads ou TikTok foi
+feita porque tokens, escopos e aprovações não foram fornecidos. Download de mídia
+continua proibido neste tópico. A suíte completa passou com 87 testes; verificações
+de sintaxe e `git diff --check` também passaram.
 
 ## Backlog pós-MVP aprovado
 

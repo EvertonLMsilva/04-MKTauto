@@ -149,7 +149,8 @@ function booleanObject(keys) {
 
 // Radar M1 contracts are additive: the discovery contract above remains the
 // boundary for R01A while these versioned contracts define R02A.
-export const RADAR_CONTRACT_VERSION = "trend-contracts/1.0.0";
+export const RADAR_CONTRACT_VERSION = "trend-contracts/1.1.0";
+const SUPPORTED_RADAR_CONTRACT_VERSIONS = Object.freeze(["trend-contracts/1.0.0", RADAR_CONTRACT_VERSION]);
 export const TREND_SCORE_VERSION = "trend-score/1.0.0";
 export const TREND_SCORE_DEFINITION = Object.freeze({
   version: TREND_SCORE_VERSION,
@@ -163,7 +164,7 @@ export const TREND_SCORE_DEFINITION = Object.freeze({
   missingMetricPolicy: "UNAVAILABLE_REDUCES_CONFIDENCE",
   aiMayChangeEvidenceOrScore: false,
 });
-export const TREND_PLATFORMS = Object.freeze(["YOUTUBE", "INSTAGRAM", "TIKTOK"]);
+export const TREND_PLATFORMS = Object.freeze(["YOUTUBE", "INSTAGRAM", "THREADS", "TIKTOK"]);
 export const SOURCE_RUN_STATES = Object.freeze([
   "SUCCESS",
   "PARTIAL",
@@ -235,7 +236,7 @@ export function validateTrendCandidate(value) {
     "schemaVersion", "id", "identityKey", "platform", "platformVideoId",
     "canonicalUrl", "state", "firstSeenAt", "lastSeenAt", "reappearanceCount",
     "durationSeconds", "publishedAt", "region", "language", "usageCondition",
-    "snapshotIds", "topicClusterIds", "author", "title", "category",
+    "snapshotIds", "topicClusterIds", "author", "title", "category", "rankingExclusionReason",
   ], "candidate");
   requireSchemaVersion(value.schemaVersion, "candidate.schemaVersion");
   requireIdentifier(value.id, "candidate.id");
@@ -251,14 +252,13 @@ export function validateTrendCandidate(value) {
   requireDateTime(value.publishedAt, "candidate.publishedAt");
   if (Date.parse(value.lastSeenAt) < Date.parse(value.firstSeenAt)) fail("INVALID_DATETIME", "candidate.lastSeenAt", "anterior a firstSeenAt");
   if (!Number.isInteger(value.reappearanceCount) || value.reappearanceCount < 1) fail("INVALID_RANGE", "candidate.reappearanceCount", "deve ser inteiro positivo");
-  if (!Number.isFinite(value.durationSeconds) || value.durationSeconds < 15 || value.durationSeconds > 180) {
-    fail("INVALID_DURATION", "candidate.durationSeconds", "deve estar entre 15 e 180 segundos");
-  }
+  validateCandidateDuration(value.durationSeconds);
   optionalText(value.region, "candidate.region");
   optionalText(value.language, "candidate.language");
   optionalText(value.author, "candidate.author");
   optionalText(value.title, "candidate.title");
   optionalText(value.category, "candidate.category");
+  optionalText(value.rankingExclusionReason, "candidate.rankingExclusionReason");
   requireEnum(value.usageCondition, ["REFERENCE_ONLY", "USAGE_UNKNOWN", "USAGE_CONFIRMED"], "candidate.usageCondition");
   requireIdentifierArray(value.snapshotIds, "candidate.snapshotIds");
   requireIdentifierArray(value.topicClusterIds, "candidate.topicClusterIds");
@@ -419,7 +419,7 @@ export function serializePublicTrendCatalog(value) {
   const candidates = (value.candidates ?? []).map((item) => validateTrendCandidate(pick(item, [
     "schemaVersion", "id", "identityKey", "platform", "platformVideoId", "canonicalUrl",
     "state", "firstSeenAt", "lastSeenAt", "reappearanceCount", "durationSeconds",
-    "publishedAt", "region", "language", "usageCondition", "snapshotIds", "topicClusterIds", "author", "title", "category",
+    "publishedAt", "region", "language", "usageCondition", "snapshotIds", "topicClusterIds", "author", "title", "category", "rankingExclusionReason",
   ])));
   const snapshots = (value.snapshots ?? []).map((item) => validateTrendSnapshot(pick(item, ["schemaVersion", "id", "candidateId", "capturedAt", "metrics"])));
   const candidateIds = candidates.map((item) => item.id);
@@ -462,8 +462,21 @@ function validateAvailability(value, path, { max, code, extraKeys = [] }) {
   }
 }
 
+function validateCandidateDuration(value) {
+  if (Number.isFinite(value)) {
+    if (value < 15 || value > 180) fail("INVALID_DURATION", "candidate.durationSeconds", "deve estar entre 15 e 180 segundos");
+    return;
+  }
+  validateAvailability(value, "candidate.durationSeconds", { max: 180, code: "INVALID_DURATION" });
+  if (value.availability === "AVAILABLE" && value.value < 15) {
+    fail("INVALID_DURATION", "candidate.durationSeconds.value", "deve estar entre 15 e 180 segundos");
+  }
+}
+
 function requireSchemaVersion(value, path) {
-  if (value !== RADAR_CONTRACT_VERSION) fail("UNSUPPORTED_VERSION", path, `esperado ${RADAR_CONTRACT_VERSION}`);
+  if (!SUPPORTED_RADAR_CONTRACT_VERSIONS.includes(value)) {
+    fail("UNSUPPORTED_VERSION", path, `versões aceitas: ${SUPPORTED_RADAR_CONTRACT_VERSIONS.join(", ")}`);
+  }
 }
 
 function requireRecord(value, path) {
@@ -542,6 +555,7 @@ function normalizeCanonicalUrl(value, platform) {
   const hosts = {
     YOUTUBE: ["youtube.com", "youtu.be"],
     INSTAGRAM: ["instagram.com"],
+    THREADS: ["threads.net"],
     TIKTOK: ["tiktok.com"],
   };
   if (!hosts[platform]?.some((allowed) => host === allowed || host.endsWith(`.${allowed}`))) {

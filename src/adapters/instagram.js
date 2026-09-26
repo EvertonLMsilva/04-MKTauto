@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { RADAR_CONTRACT_VERSION } from "../domain/contracts.js";
+import { RADAR_CONTRACT_VERSION, canonicalTrendIdentity } from "../domain/contracts.js";
 import { TREND_RANKING_CONFIG_VERSION } from "../domain/ranking.js";
 
 const GRAPH_HOST = "graph.facebook.com";
@@ -93,6 +93,7 @@ export async function collectInstagramHashtagCoverage({
   let videoMediaWithoutDuration = 0;
   let nonVideoMedia = 0;
   let invalidMedia = 0;
+  const uniqueVideos = new Map();
 
   if (blockingConfiguration) {
     errors.push({ hashtag: "ALL", code: blockingConfiguration, blocking: true });
@@ -114,7 +115,10 @@ export async function collectInstagramHashtagCoverage({
           try {
             const media = normalizeInstagramHashtagMedia(item);
             normalizedMedia += 1;
-            if (media.mediaType === "VIDEO") videoMediaWithoutDuration += 1;
+            if (media.mediaType === "VIDEO") {
+              videoMediaWithoutDuration += 1;
+              if (!uniqueVideos.has(media.platformVideoId)) uniqueVideos.set(media.platformVideoId, media);
+            }
             else nonVideoMedia += 1;
           } catch {
             invalidMedia += 1;
@@ -135,6 +139,7 @@ export async function collectInstagramHashtagCoverage({
   }
 
   const status = sourceStatus(covered, errors);
+  const observations = [...uniqueVideos.values()].map((normalized) => toObservation({ normalized, capturedAt, runId }));
   const gaps = errors.map(({ hashtag, code }) => `HASHTAG_UNAVAILABLE:${hashtag}:${code}`);
   if (status === "PARTIAL") gaps.push("DURATION_UNAVAILABLE:INSTAGRAM_HASHTAG_MEDIA");
   const limitations = [
@@ -175,7 +180,7 @@ export async function collectInstagramHashtagCoverage({
     coverage: { requestedRegions: requested, coveredRegions: covered, complete: false },
     gaps,
     ...(status === "PARTIAL" ? {
-      errorCode: errors.length > 0 ? "INSTAGRAM_HASHTAG_PARTIAL_FAILURE" : "INSTAGRAM_PUBLIC_MEDIA_NOT_RANKABLE",
+      errorCode: errors.length > 0 ? "INSTAGRAM_HASHTAG_PARTIAL_FAILURE" : "INSTAGRAM_PUBLIC_MEDIA_DURATION_UNAVAILABLE",
     } : {}),
     ...(["BLOCKED_BY_PROVIDER", "FAILED"].includes(status) ? {
       errorCode: errors[0]?.code ?? "INSTAGRAM_PROVIDER_ERROR",
@@ -188,10 +193,44 @@ export async function collectInstagramHashtagCoverage({
     createdAt: capturedAt,
     updatedAt: capturedAt,
     sourceRunIds: [sourceRunId],
-    candidateIds: [],
+    candidateIds: observations.map(({ candidate }) => candidate.id),
     rankingConfigVersion: TREND_RANKING_CONFIG_VERSION,
   };
-  return store.recordOperation({ idempotencyKey, run, sourceRuns: [sourceRun] });
+  return store.recordOperation({ idempotencyKey, run, sourceRuns: [sourceRun], observations });
+}
+
+function toObservation({ normalized, capturedAt, runId }) {
+  const candidateId = `instagram:${normalized.platformVideoId}`;
+  return {
+    candidate: {
+      schemaVersion: RADAR_CONTRACT_VERSION,
+      id: candidateId,
+      identityKey: canonicalTrendIdentity({ platform: "INSTAGRAM", platformVideoId: normalized.platformVideoId, canonicalUrl: normalized.canonicalUrl }),
+      platform: "INSTAGRAM",
+      platformVideoId: normalized.platformVideoId,
+      canonicalUrl: normalized.canonicalUrl,
+      state: "DISCOVERED",
+      firstSeenAt: capturedAt,
+      lastSeenAt: capturedAt,
+      reappearanceCount: 1,
+      durationSeconds: normalized.durationSeconds,
+      publishedAt: normalized.publishedAt,
+      usageCondition: "REFERENCE_ONLY",
+      snapshotIds: [],
+      topicClusterIds: [],
+      ...(normalized.author ? { author: normalized.author } : {}),
+      ...(normalized.caption ? { title: normalized.caption } : {}),
+      category: normalized.mediaProductType ?? "INSTAGRAM_VIDEO",
+    },
+    snapshot: {
+      schemaVersion: RADAR_CONTRACT_VERSION,
+      id: stableId("instagram-snapshot", `${runId}:${normalized.platformVideoId}`),
+      candidateId,
+      capturedAt,
+      metrics: normalized.metrics,
+    },
+    reappearanceReason: "HASHTAG_PUBLIC_QUERY_MATCH",
+  };
 }
 
 async function findHashtagId({ hashtag, igUserId, apiVersion, accessToken, fetchImpl, onAttempt }) {

@@ -3,6 +3,7 @@ import { RADAR_CONTRACT_VERSION, canonicalTrendIdentity } from "../domain/contra
 import { TREND_RANKING_CONFIG_VERSION } from "../domain/ranking.js";
 
 const RESEARCH_VIDEO_URL = "https://open.tiktokapis.com/v2/research/video/query/";
+const DISPLAY_VIDEO_URL = "https://open.tiktokapis.com/v2/video/list/";
 const RESEARCH_FIELDS = [
   "id", "video_description", "create_time", "region_code", "share_count",
   "view_count", "like_count", "comment_count", "username", "video_duration",
@@ -72,6 +73,32 @@ export function normalizeTikTokResearchVideo(value) {
   }
 }
 
+export function normalizeTikTokDisplayVideo(value) {
+  try {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error();
+    const id = String(value.id ?? "");
+    if (!/^\d{5,32}$/.test(id)) throw new Error();
+    if (!Number.isSafeInteger(value.create_time) || value.create_time <= 0) throw new Error();
+    if (!Number.isFinite(value.duration) || value.duration <= 0) throw new Error();
+    const canonicalUrl = canonicalTikTokUrl(value.share_url);
+    return {
+      platformVideoId: id,
+      canonicalUrl,
+      publishedAt: new Date(value.create_time * 1000).toISOString(),
+      durationSeconds: value.duration,
+      ...(nonBlank(value.title) ? { title: value.title } : nonBlank(value.video_description) ? { title: value.video_description } : {}),
+      metrics: {
+        views: metric(value.view_count),
+        likes: metric(value.like_count),
+        comments: metric(value.comment_count),
+        shares: metric(value.share_count),
+      },
+    };
+  } catch {
+    throw new Error("vídeo TikTok Display inválido");
+  }
+}
+
 export async function collectTikTokOfficialCoverage({
   product = "RESEARCH_API",
   accessToken,
@@ -94,7 +121,10 @@ export async function collectTikTokOfficialCoverage({
   const prior = store.getOperation?.(idempotencyKey);
   if (prior) return prior;
   if (product === "DISPLAY_API") {
-    return recordDisplayCoverage({ displayAccess, authorizedAccountContext, store, idempotencyKey, capturedAt });
+    return collectDisplayCoverage({
+      accessToken, displayAccess, authorizedAccountContext, store, idempotencyKey, capturedAt,
+      maxResultsPerPage: Math.min(maxResultsPerPage, 20), maxPages: maxPagesPerQuery, fetchImpl,
+    });
   }
   if (product === "CONTENT_POSTING_API") {
     return recordNonDiscoveryProduct({ store, idempotencyKey, capturedAt });
@@ -285,28 +315,125 @@ function toObservation({ normalized, capturedAt, runId }) {
   };
 }
 
-function recordDisplayCoverage({ displayAccess, authorizedAccountContext, store, idempotencyKey, capturedAt }) {
+async function collectDisplayCoverage({
+  accessToken, displayAccess, authorizedAccountContext, store, idempotencyKey, capturedAt,
+  maxResultsPerPage, maxPages, fetchImpl,
+}) {
   const missing = [
     ["accountAuthorized", "TIKTOK_DISPLAY_ACCOUNT_AUTHORIZATION_REQUIRED"],
     ["appApproved", "TIKTOK_DISPLAY_APP_APPROVAL_REQUIRED"],
     ["videoListScopeGranted", "TIKTOK_DISPLAY_VIDEO_LIST_SCOPE_REQUIRED"],
   ].find(([field]) => displayAccess?.[field] !== true)?.[1];
   const context = safeContext(authorizedAccountContext);
-  const block = missing ?? (!context ? "TIKTOK_DISPLAY_ACCOUNT_CONTEXT_REQUIRED" : null);
-  return recordCoverageOnly({
-    store, idempotencyKey, capturedAt,
-    discovery: block ? "UNAVAILABLE" : "AUTHORIZED_ONLY",
-    status: block ? "BLOCKED_BY_PROVIDER" : "PARTIAL",
-    errorCode: block ?? "TIKTOK_AUTHORIZED_CONTENT_NOT_PUBLIC_TREND",
-    gap: block ?? "GLOBAL_DISCOVERY_UNAVAILABLE:DISPLAY_API_AUTHORIZED_ACCOUNT_ONLY",
-    limitations: [
-      "OFFICIAL_API_ONLY:TikTok_Display_API_v2",
-      "DISCOVERY_METHOD:AUTHORIZED_ACCOUNT_VIDEO_LIST_ONLY",
-      `AUTHORIZED_ACCOUNT_CONTEXT:${context ?? "UNAVAILABLE"}`,
-      "AUTHORIZED_CONTENT_MUST_NOT_BE_PRESENTED_AS_PUBLIC_OR_GLOBAL_TREND",
-      "NO_PROVIDER_REQUEST_PERFORMED:RADAR_DOES_NOT_INGEST_AUTHORIZED_ONLY_CONTENT",
-    ],
-  });
+  const block = !nonBlank(accessToken) ? "TIKTOK_DISPLAY_ACCESS_TOKEN_MISSING"
+    : missing ?? (!context ? "TIKTOK_DISPLAY_ACCOUNT_CONTEXT_REQUIRED" : null);
+  if (block) {
+    return recordCoverageOnly({
+      store, idempotencyKey, capturedAt, discovery: "UNAVAILABLE", status: "BLOCKED_BY_PROVIDER",
+      errorCode: block, gap: `SOURCE_UNAVAILABLE:${block}`,
+      limitations: ["OFFICIAL_API_ONLY:TikTok_Display_API_v2", "DISCOVERY_METHOD:AUTHORIZED_ACCOUNT_VIDEO_LIST_ONLY"],
+    });
+  }
+
+  const runId = stableId("tiktok-run", idempotencyKey);
+  const sourceRunId = stableId("tiktok-source", idempotencyKey);
+  const observations = [];
+  let cursor;
+  let requestsAttempted = 0;
+  let pagesFetched = 0;
+  let invalidVideos = 0;
+  let outsideDurationWindow = 0;
+  try {
+    for (let page = 0; page < maxPages; page += 1) {
+      const url = new URL(DISPLAY_VIDEO_URL);
+      url.searchParams.set("fields", "id,title,video_description,duration,share_url,create_time,view_count,like_count,comment_count,share_count");
+      requestsAttempted += 1;
+      const response = await fetchImpl(url, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ max_count: maxResultsPerPage, ...(cursor !== undefined ? { cursor } : {}) }),
+      });
+      const body = await safeJson(response);
+      if (!response.ok || (body?.error?.code && body.error.code !== "ok")) throw errorFromResponse(response.status, body);
+      pagesFetched += 1;
+      for (const item of Array.isArray(body?.data?.videos) ? body.data.videos : []) {
+        try {
+          const normalized = normalizeTikTokDisplayVideo(item);
+          if (normalized.durationSeconds < 15 || normalized.durationSeconds > 180) {
+            outsideDurationWindow += 1;
+            continue;
+          }
+          observations.push(toDisplayObservation({ normalized, capturedAt, runId, context }));
+        } catch {
+          invalidVideos += 1;
+        }
+      }
+      if (body?.data?.has_more !== true) break;
+      if (!Number.isSafeInteger(body?.data?.cursor)) throw providerError("TIKTOK_INVALID_PAGINATION", false);
+      cursor = body.data.cursor;
+    }
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    return recordCoverageOnly({
+      store, idempotencyKey, capturedAt, discovery: "AUTHORIZED_ONLY",
+      status: normalized.blocking ? "BLOCKED_BY_PROVIDER" : "FAILED", errorCode: normalized.code,
+      gap: `SOURCE_UNAVAILABLE:${normalized.code}`,
+      limitations: ["OFFICIAL_API_ONLY:TikTok_Display_API_v2", "DISCOVERY_METHOD:AUTHORIZED_ACCOUNT_VIDEO_LIST_ONLY"],
+    });
+  }
+
+  const sourceRun = {
+    schemaVersion: RADAR_CONTRACT_VERSION,
+    id: sourceRunId,
+    trendRunId: runId,
+    platform: "TIKTOK",
+    status: "PARTIAL",
+    startedAt: capturedAt,
+    completedAt: capturedAt,
+    capabilities: {
+      discovery: "AUTHORIZED_ONLY", metrics: ["VIEWS", "LIKES", "COMMENTS", "SHARES"], supportsRegions: false,
+      limitations: [
+        "OFFICIAL_API_ONLY:TikTok_Display_API_v2",
+        "DISCOVERY_METHOD:AUTHORIZED_ACCOUNT_VIDEO_LIST_ONLY",
+        `AUTHORIZED_ACCOUNT_CONTEXT:${context}`,
+        "AUTHORIZED_CONTENT_EXCLUDED_FROM_PUBLIC_TREND_RANKING",
+        `REQUESTS_ATTEMPTED:${requestsAttempted}`,
+        `PAGES_FETCHED:${pagesFetched}`,
+        ...(invalidVideos > 0 ? [`INVALID_VIDEOS_DISCARDED:${invalidVideos}`] : []),
+        ...(outsideDurationWindow > 0 ? [`OUTSIDE_DURATION_WINDOW:${outsideDurationWindow}`] : []),
+      ],
+    },
+    coverage: { requestedRegions: [`AUTHORIZED_ACCOUNT:${context}`], coveredRegions: [`AUTHORIZED_ACCOUNT:${context}`], complete: false },
+    gaps: ["GLOBAL_DISCOVERY_UNAVAILABLE:DISPLAY_API_AUTHORIZED_ACCOUNT_ONLY"],
+    errorCode: "TIKTOK_AUTHORIZED_CONTENT_NOT_PUBLIC_TREND",
+  };
+  const run = {
+    schemaVersion: RADAR_CONTRACT_VERSION, id: runId, state: "COMPLETED_WITH_GAPS",
+    createdAt: capturedAt, updatedAt: capturedAt, sourceRunIds: [sourceRunId],
+    candidateIds: observations.map(({ candidate }) => candidate.id), rankingConfigVersion: TREND_RANKING_CONFIG_VERSION,
+  };
+  return store.recordOperation({ idempotencyKey, run, sourceRuns: [sourceRun], observations });
+}
+
+function toDisplayObservation({ normalized, capturedAt, runId, context }) {
+  const candidateId = `tiktok:${normalized.platformVideoId}`;
+  return {
+    candidate: {
+      schemaVersion: RADAR_CONTRACT_VERSION, id: candidateId,
+      identityKey: canonicalTrendIdentity({ platform: "TIKTOK", platformVideoId: normalized.platformVideoId, canonicalUrl: normalized.canonicalUrl }),
+      platform: "TIKTOK", platformVideoId: normalized.platformVideoId, canonicalUrl: normalized.canonicalUrl,
+      state: "DISCOVERED", firstSeenAt: capturedAt, lastSeenAt: capturedAt, reappearanceCount: 1,
+      durationSeconds: normalized.durationSeconds, publishedAt: normalized.publishedAt,
+      usageCondition: "REFERENCE_ONLY", snapshotIds: [], topicClusterIds: [],
+      author: context, ...(normalized.title ? { title: normalized.title } : {}), category: "TIKTOK_AUTHORIZED_ACCOUNT",
+      rankingExclusionReason: "AUTHORIZED_ACCOUNT_CONTENT_NOT_PUBLIC_TREND",
+    },
+    snapshot: {
+      schemaVersion: RADAR_CONTRACT_VERSION, id: stableId("tiktok-snapshot", `${runId}:${normalized.platformVideoId}`),
+      candidateId, capturedAt, metrics: normalized.metrics,
+    },
+    reappearanceReason: "AUTHORIZED_ACCOUNT_VIDEO_LIST",
+  };
 }
 
 function recordNonDiscoveryProduct({ store, idempotencyKey, capturedAt }) {
@@ -408,6 +535,14 @@ function queryLabel({ region, hashtag }) {
 
 function safeContext(value) {
   return typeof value === "string" && /^[A-Za-z0-9._:-]{1,80}$/.test(value) ? value : undefined;
+}
+
+function canonicalTikTokUrl(value) {
+  const url = new URL(value);
+  const host = url.hostname.toLowerCase().replace(/^www\./, "");
+  if (url.protocol !== "https:" || host !== "tiktok.com" || url.username || url.password || url.port
+    || !/^\/@[A-Za-z0-9._]{1,24}\/video\/\d{5,32}\/?$/.test(url.pathname)) throw new Error();
+  return `https://www.tiktok.com${url.pathname.replace(/\/$/, "")}`;
 }
 
 function nonBlank(value) {

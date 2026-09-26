@@ -75,7 +75,7 @@ no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 ### Incluído
 
 1. Cadastrar vários perfis com nicho, público, idioma, tom e regras editoriais.
-2. Executar radar diário oficial em YouTube, Instagram e TikTok, com cobertura e
+2. Executar radar diário oficial em YouTube, Instagram, Threads e TikTok, com cobertura e
    limitações explícitas, e entregar 20 referências de 15 segundos a 3 minutos.
 3. Guardar histórico, métricas, assunto, ranking, URL e reaparições sem baixar
    mídia; após seleção, associar arquivo local obtido legitimamente.
@@ -181,7 +181,7 @@ A especificação operacional, os contratos e o modelo multiagente estão em
 |---|---|---|
 | Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
 | Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
-| M1 — radar de tendências | Runs diárias, referências internacionais, snapshots, assuntos e ranking. | APIs oficiais; cobertura parcial explícita; não baixa mídia. |
+| M1 — radar de tendências | Runs diárias, referências internacionais de YouTube, Instagram, Threads e TikTok, snapshots, assuntos e ranking. | APIs oficiais; cobertura parcial explícita; não baixa mídia. |
 | Aquisição e vínculo | Associa ao candidato selecionado um arquivo local obtido legitimamente. | Uma URL não libera M2; direitos não pertencem à IA. |
 | M2 — transcrição | Fala, OCR e observações visuais com timestamps. | Confiança e lacunas explícitas; mídia fora do Git. |
 | M3 — conteúdo | Tema, momentos, riscos, evidências e ângulos editoriais. | Toda conclusão referencia evidência do M2. |
@@ -197,7 +197,7 @@ A especificação operacional, os contratos e o modelo multiagente estão em
 
 ## 8. Arquitetura adiada por gate
 
-V04 mantém fila e fundação ampla adiadas. R02A–R02G provam M1 em fatias; R03–R06
+V04 mantém fila e fundação ampla adiadas. R02A–R02H provam M1 em fatias; R03–R06
 provam os outros quatro módulos com processo e ferramentas existentes. R07
 integra somente os contratos sustentados pela evidência. R01A permanece uma
 exceção pequena e reversível para descoberta, evidência e ranking.
@@ -410,7 +410,8 @@ está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
 | R02E | Instagram oficial | R02D | Hashtags permitidas funcionam ou a cobertura parcial fica registrada. |
 | R02F | TikTok oficial | R02E | Acesso elegível funciona ou o bloqueio do provedor fica explícito. |
 | R02G | Radar diário integrado | R02F | Catálogo local JSON/CSV/HTML é gerado sem baixar mídia. |
-| R03 | M2 — transcrição multimodal | R02G + aquisição legítima | `MediaTranscript` temporal combina fala, OCR e visão. |
+| R02H | Listagem oficial multirrede | R02G | Instagram, Threads e TikTok aparecem no catálogo conforme acesso oficial, sem ranking fictício nem download. |
+| R03 | M2 — transcrição multimodal | R02H + aquisição legítima | `MediaTranscript` temporal combina fala, OCR e visão. |
 | R04 | M3 — identificação de conteúdo | R03 | `ContentBrief` explicável liga tema e ângulos a evidências. |
 | R05 | M4 — edição/montagem | R04 | `EditPlan` e corte narrado/legendado demonstram valor criativo. |
 | R06 | M5 — refino | R05 | `EngagementReport` melhora a versão sem perder fidelidade. |

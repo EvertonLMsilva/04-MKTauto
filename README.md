@@ -27,6 +27,8 @@ npm start
 Acesse `http://localhost:3000`. Sem chaves, use **Carregar rodada 1**. Para uma
 execução atual, mantenha o Ollama ativo, copie `.env.example` para sua
 configuração local e forneça `YOUTUBE_API_KEY`; arquivos `.env` são ignorados.
+Instagram, Threads e TikTok entram somente quando seus tokens, escopos e
+aprovações oficiais correspondentes estiverem configurados.
 
 ### Radar diário local
 
@@ -45,6 +47,9 @@ concluídas, e a pasta `data/trends/<data>` é substituída somente após todos 
 artefatos estarem prontos. Credenciais permanecem apenas no ambiente; sem a
 configuração mínima de uma fonte, o relatório registra o bloqueio sem chamar o
 adapter. Shortlist ou seleção não concedem direitos nem iniciam download.
+Referências sem duração oficial continuam clicáveis na seção sem ranking. O
+TikTok Display lista apenas vídeos da conta autorizada e nunca os apresenta como
+tendência pública.
 
 ## Documentos principais
 
@@ -60,8 +65,8 @@ tópicos.
 
 ## Próximo passo
 
-Após V05, R02A–R02G implementam M1 em sete fatias: contratos, histórico,
-YouTube, ranking, Instagram, TikTok e catálogo diário. A divisão detalhada está em
+Após V05, R02A–R02G implementaram o núcleo do M1; R02H amplia a listagem oficial
+para referências de Instagram, Threads e TikTok sem baixar mídia. A divisão detalhada está em
 [`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`](docs/M1_VIDEO_IDENTIFICATION_PLAN.md).
 M1 registra links e dados sem baixar mídia. Transcrição, conteúdo, montagem e
 refino seguem separados; composição multivídeo e react permanecem no backlog.

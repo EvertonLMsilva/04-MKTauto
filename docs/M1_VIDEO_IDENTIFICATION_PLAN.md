@@ -3,7 +3,7 @@
 ## Decisão de produto
 
 M1 não recebe upload, não transcreve e não edita. Ele executa uma descoberta
-diária de vídeos públicos em alta no YouTube, Instagram e TikTok, em regiões e
+diária de vídeos públicos em alta no YouTube, Instagram, Threads e TikTok, em regiões e
 idiomas diversos, descobre os assuntos automaticamente e entrega 20 candidatos
 explicáveis para adaptação ao público brasileiro.
 
@@ -61,6 +61,7 @@ completo.
 |---|---|---|---|
 | YouTube | `videos.list` com `chart=mostPopular`, região, categoria, estatísticas e duração. | O chart não é exclusivo de Shorts; formato curto precisa ser filtrado por duração e outros sinais disponíveis. | Primeira fonte operacional e baseline reproduzível. |
 | Instagram | Busca oficial por hashtags e mídia pública associada, sujeita a conta profissional, permissões e revisão do app. | Não existe endpoint geral equivalente a “Reels em alta no mundo”; descoberta é parcial e orientada por hashtags. | Expandir hashtags a partir dos assuntos já observados e declarar cobertura limitada. |
+| Threads | Busca oficial de posts públicos por palavra-chave ou tópico, sujeita a token, escopo e revisão. | Não representa um ranking global; duração e métricas podem não estar disponíveis na busca. | Derivar consultas dos clusters e listar referências não ranqueáveis quando faltarem sinais. |
 | TikTok | Display API lista vídeos do usuário que autorizou o app; Research API consulta dados públicos apenas para pesquisadores elegíveis. | A API comercial comum não fornece feed global de tendências públicas. | Implementar adaptador somente com acesso oficial elegível; caso contrário registrar `BLOCKED_BY_PROVIDER`, sem scraping. |
 
 Referências oficiais verificadas em 26/09/2026:
@@ -73,6 +74,11 @@ Referências oficiais verificadas em 26/09/2026:
 “Todas as redes” significa tentar todos os adapters oficiais diariamente e
 registrar o resultado de cada um: `SUCCESS`, `PARTIAL`, `BLOCKED_BY_PROVIDER` ou
 `FAILED`. Não autoriza scraping nem dados fabricados para preencher uma fonte.
+
+R02H permite que referências oficiais sem duração permaneçam no catálogo e no
+relatório, com motivo explícito para não entrarem no ranking. TikTok Display é
+sempre `AUTHORIZED_ONLY` e seus vídeos não são apresentados como tendência
+pública. Download continua fora de M1.
 
 ## Identidade, histórico e reaparição
 

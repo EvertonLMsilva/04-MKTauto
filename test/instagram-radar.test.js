@@ -90,9 +90,14 @@ test("consulta hashtags derivadas, limita paginação e registra cobertura parci
     assert.ok(urls.every((url) => url.hostname === "graph.facebook.com"));
     assert.ok(urls.filter((url) => url.pathname.endsWith("/recent_media"))
       .every((url) => url.searchParams.get("fields") === "id,media_type,media_product_type,permalink,timestamp,username,caption,like_count,comments_count"));
-    assert.equal(catalog.candidates.length, 0);
+    assert.equal(catalog.candidates.length, 1);
+    assert.equal(catalog.candidates[0].platform, "INSTAGRAM");
+    assert.equal(catalog.candidates[0].canonicalUrl, "https://instagram.com/reel/ABC_123");
+    assert.deepEqual(catalog.candidates[0].durationSeconds, {
+      availability: "UNAVAILABLE", reason: "NOT_EXPOSED_BY_INSTAGRAM_HASHTAG_API",
+    });
     assert.equal(catalog.sourceRuns[0].status, "PARTIAL");
-    assert.equal(catalog.sourceRuns[0].errorCode, "INSTAGRAM_PUBLIC_MEDIA_NOT_RANKABLE");
+    assert.equal(catalog.sourceRuns[0].errorCode, "INSTAGRAM_PUBLIC_MEDIA_DURATION_UNAVAILABLE");
     assert.ok(catalog.sourceRuns[0].gaps.includes("DURATION_UNAVAILABLE:INSTAGRAM_HASHTAG_MEDIA"));
     assert.ok(catalog.sourceRuns[0].capabilities.limitations.includes("PUBLIC_MEDIA_NORMALIZED:2"));
     assert.ok(catalog.sourceRuns[0].capabilities.limitations.includes("UNRANKABLE_WITHOUT_DURATION:2"));

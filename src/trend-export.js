@@ -84,7 +84,7 @@ function publicRankingItem(candidate, score, position, top5) {
 function renderCsv(ranking) {
   const rows = ranking.map(({ position, top5, candidate, score }) => [
     position, top5, candidate.id, candidate.state, candidate.platform, candidate.title ?? "",
-    candidate.author ?? "", candidate.region ?? "", candidate.publishedAt, candidate.durationSeconds,
+    candidate.author ?? "", candidate.region ?? "", candidate.publishedAt, formatDuration(candidate.durationSeconds),
     candidate.canonicalUrl, candidate.usageCondition, score.value, score.confidence,
     componentCell(score.components.velocity), componentCell(score.components.engagement),
     componentCell(score.components.recency), componentCell(score.components.recurrence), score.explanation,
@@ -115,10 +115,10 @@ function renderHtml(output) {
   const unrankedRows = unranked.map((candidate) => `<tr>
 <td>${escapeHtml(candidate.platform)}</td><td>${escapeHtml(candidate.title ?? "Título indisponível")}</td>
 <td>${escapeHtml(candidate.state)}</td><td>${escapeHtml(formatViews(latestSnapshots.get(candidate.id)))}</td>
-<td>${escapeHtml(formatPublishedDay(candidate.publishedAt))}</td><td>score indisponível</td>
+<td>${escapeHtml(formatPublishedDay(candidate.publishedAt))}</td><td>${escapeHtml(unrankedReason(candidate))}</td>
 <td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
   const unrankedSection = unranked.length === 0 ? "" : `<h2>Candidatos sem ranking</h2>
-<p>Estes candidatos foram coletados, mas não receberam posição porque a análise não foi concluída.</p>
+<p>Estes candidatos foram coletados, mas não receberam posição. O motivo aparece em cada linha.</p>
 <table><thead><tr><th>Fonte</th><th>Título</th><th>Estado</th><th>Visualizações</th><th>Publicado em</th><th>Ranking</th><th>URL</th></tr></thead>
 <tbody>${unrankedRows}</tbody></table>`;
   const sources = output.sourceRuns.map((source) => `<li><strong>${escapeHtml(source.platform)}</strong>: ${escapeHtml(source.status)} — ${escapeHtml(source.capabilities.discovery)}; lacunas: ${escapeHtml(source.gaps.join(", ") || "nenhuma")}</li>`).join("\n");
@@ -154,6 +154,19 @@ function formatPublishedDay(value) {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T/.test(value) || !Number.isFinite(Date.parse(value))) return "indisponível";
   const [year, month, day] = value.slice(0, 10).split("-");
   return `${day}/${month}/${year}`;
+}
+
+function formatDuration(value) {
+  if (Number.isFinite(value)) return String(value);
+  if (value?.availability === "AVAILABLE" && Number.isFinite(value.value)) return String(value.value);
+  return "indisponível";
+}
+
+function unrankedReason(candidate) {
+  if (candidate.rankingExclusionReason) return `não elegível: ${candidate.rankingExclusionReason}`;
+  const duration = candidate.durationSeconds;
+  if (duration?.availability === "UNAVAILABLE") return `duração indisponível: ${duration.reason}`;
+  return "score indisponível";
 }
 
 function escapeHtml(value) {
