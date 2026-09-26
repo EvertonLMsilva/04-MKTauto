@@ -17,8 +17,8 @@
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
-| R02E | PR ABERTO | M1 — cobertura oficial do Instagram | PR #19; cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
-| R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
+| R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
+| R02F | EM EXECUÇÃO | M1 — cobertura oficial do TikTok | Research API condicionada à elegibilidade; Display API é `AUTHORIZED_ONLY`; Content Posting não é descoberta. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
@@ -395,6 +395,32 @@ configurada; não houve validação externa nem persistência de evidência real
 O PR #19 foi aberto em 26/09/2026 com diff restrito ao adapter oficial de
 hashtags, testes, matriz de capacidades e este roadmap. A suíte completa passou
 com 62 testes.
+
+O PR #19 foi mergeado em 26/09/2026 (`9ff9657`) e desbloqueou R02F.
+
+### R02F — cobertura oficial do TikTok
+
+A revalidação oficial separou três produtos. A Display API lista somente vídeos
+públicos da conta que autorizou o aplicativo e é `AUTHORIZED_ONLY`; a Content
+Posting API publica na conta autorizada e não é descoberta; a Research API é a
+única capacidade oficial confirmada para consultar conteúdo público por termo,
+hashtag e região. Seu acesso, porém, é restrito a projetos de pesquisa elegíveis,
+aprovados e não comerciais. Criadores, anunciantes e usuários comerciais não são
+elegíveis, de modo que a persona principal do MVP permanece
+`BLOCKED_BY_PROVIDER`.
+
+O adapter implementa o caminho Research API atrás de gates explícitos de
+organização, finalidade, revisão ética, projeto, scope e token. Consultas usam
+somente termos derivados deterministicamente dos clusters R02D, têm janela,
+paginação e limites locais, isolam falhas e normalizam somente campos oficiais.
+Vídeos válidos de 15–180 segundos entram no catálogo e no ranking existente;
+Display API nunca cria candidato de tendência. Retry usa a operação persistida e
+não repete chamadas nem duplica evidências.
+
+A matriz, as quotas, a defasagem dos dados, os códigos sanitizados e a condição
+exata de desbloqueio estão em `docs/TIKTOK_OFFICIAL_COVERAGE.md`. Nenhuma
+credencial ou aprovação elegível foi fornecida; portanto, não houve validação
+externa nem persistência de evidência real.
 
 ## Backlog pós-MVP aprovado
 
