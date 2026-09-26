@@ -194,6 +194,13 @@ test("execução diária recupera clustering transitório e registra tentativas"
     let attempts = 0;
     const clusterer = async (input) => {
       attempts += 1;
+      if (attempts === 1) {
+        const error = new Error("cluster incompleto");
+        error.code = "INVALID_CLUSTER_MEMBERSHIP";
+        error.retryFeedback = "Inclua os aliases ausentes: C002.";
+        throw error;
+      }
+      if (attempts === 2) assert.equal(input.validationFeedback, "Inclua os aliases ausentes: C002.");
       if (attempts < 5) throw new SyntaxError("JSON incompleto");
       return dependencies.clusterer(input);
     };

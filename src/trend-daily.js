@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { collectInstagramHashtagCoverage } from "./adapters/instagram.js";
+import { proposeTopicClusters } from "./adapters/ollama.js";
 import { collectTikTokOfficialCoverage } from "./adapters/tiktok.js";
 import { collectPopularYouTubeTrends } from "./adapters/youtube.js";
 import { RADAR_CONTRACT_VERSION } from "./domain/contracts.js";
@@ -68,16 +69,20 @@ export async function runDailyTrendCatalog({
     try {
       const seed = await persistedStep(store, dailyId, STEP.seed, clock, async () => {
         const memory = memoryAnalysisStore(batchToCatalog(youtubeBatch));
-        const retried = await retryClustering(() => (collectors.analyze ?? analyzeTrendRun)({
-          store: memory,
-          runId: youtubeBatch.run.id,
-          idempotencyKey: `${dailyId}:seed-analysis`,
-          model: config.ollama?.model,
-          config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
-          now: startedAt,
-          ...(clusterer ? { clusterer } : {}),
-          fetchImpl,
-        }), { sleep });
+        const retried = await analyzeWithClusteringRetries({
+          analyze: collectors.analyze ?? analyzeTrendRun,
+          clusterer,
+          sleep,
+          args: {
+            store: memory,
+            runId: youtubeBatch.run.id,
+            idempotencyKey: `${dailyId}:seed-analysis`,
+            model: config.ollama?.model,
+            config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
+            now: startedAt,
+            fetchImpl,
+          },
+        });
         return { topicClusters: retried.value.catalog.topicClusters, clusteringAttempts: retried.attempts };
       });
       seedCatalog = { ...batchToCatalog(youtubeBatch), topicClusters: seed.topicClusters };
@@ -152,16 +157,20 @@ export async function runDailyTrendCatalog({
   } else {
     try {
       ranking = await persistedStep(store, dailyId, STEP.analysis, clock, async () => {
-        const retried = await retryClustering(() => (collectors.analyze ?? analyzeTrendRun)({
-          store,
-          runId: trendRunId,
-          idempotencyKey: `${dailyId}:final-analysis`,
-          model: config.ollama?.model,
-          config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
-          now: startedAt,
-          ...(clusterer ? { clusterer } : {}),
-          fetchImpl,
-        }), { sleep });
+        const retried = await analyzeWithClusteringRetries({
+          analyze: collectors.analyze ?? analyzeTrendRun,
+          clusterer,
+          sleep,
+          args: {
+            store,
+            runId: trendRunId,
+            idempotencyKey: `${dailyId}:final-analysis`,
+            model: config.ollama?.model,
+            config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
+            now: startedAt,
+            fetchImpl,
+          },
+        });
         const result = retried.value;
         return { ranked: result.ranked, top: result.top, gaps: result.gaps, clusteringAttempts: retried.attempts };
       });
@@ -455,10 +464,29 @@ export async function retryClustering(operation, {
   throw exhausted;
 }
 
+async function analyzeWithClusteringRetries({ analyze, args, clusterer, sleep }) {
+  let validationFeedback;
+  const baseClusterer = clusterer ?? proposeTopicClusters;
+  return retryClustering(async () => {
+    try {
+      return await analyze({
+        ...args,
+        clusterer: (input) => baseClusterer({
+          ...input,
+          ...(validationFeedback ? { validationFeedback } : {}),
+        }),
+      });
+    } catch (error) {
+      validationFeedback = typeof error?.retryFeedback === "string" ? error.retryFeedback : undefined;
+      throw error;
+    }
+  }, { sleep });
+}
+
 function isRetryableClusteringError(error) {
   if (error instanceof SyntaxError) return true;
   if (error?.name === "ContractValidationError") return true;
-  if (["AI_EVIDENCE_MUTATION", "UNKNOWN_EVIDENCE"].includes(error?.code)) return true;
+  if (["AI_EVIDENCE_MUTATION", "UNKNOWN_EVIDENCE", "INVALID_CLUSTER_MEMBERSHIP"].includes(error?.code)) return true;
   const message = String(error?.message ?? "");
   if (error instanceof TypeError && /fetch|network/i.test(message)) return true;
   const httpStatus = /Ollama respondeu (\d{3})/.exec(message)?.[1];

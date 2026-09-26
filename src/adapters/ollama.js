@@ -21,7 +21,7 @@ const topicProposalSchema = {
         additionalProperties: false,
         required: [
           "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
-          "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "explanation",
+          "ptBrLocalization", "candidateRefs", "explanation",
         ],
         properties: {
           label: { type: "string" },
@@ -30,8 +30,7 @@ const topicProposalSchema = {
           likelyAudience: { type: "string" },
           narrativePattern: { type: "string" },
           ptBrLocalization: { type: "string" },
-          candidateIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
-          evidenceSnapshotIds: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string" } },
+          candidateRefs: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", pattern: "^C[0-9]{3}$" } },
           explanation: { type: "string" },
         },
       },
@@ -42,6 +41,7 @@ const topicProposalSchema = {
 export async function proposeTopicClusters({
   model,
   evidence,
+  validationFeedback,
   baseUrl = DEFAULT_BASE_URL,
   numCtx = 16_384,
   fetchImpl = fetch,
@@ -49,51 +49,128 @@ export async function proposeTopicClusters({
   if (!model) throw new Error("OLLAMA_MODEL não configurado");
   if (!Array.isArray(evidence) || evidence.length === 0) throw new Error("Nenhuma evidência disponível para agrupamento");
   if (!Number.isInteger(numCtx) || numCtx < 8_192) throw new Error("OLLAMA_NUM_CTX deve ser um inteiro de pelo menos 8192");
-
-  const response = await fetchImpl(new URL("/api/chat", baseUrl), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      stream: false,
-      think: false,
-      format: topicProposalSchema,
-      options: { temperature: 0, num_ctx: numCtx },
-      messages: [{
-        role: "user",
-        content: [
-          "Agrupe em pt-BR somente as evidências fornecidas por assunto editorial equivalente.",
-          "Rotule nicho, subtema, público provável, padrão narrativo e possibilidade de localização para o Brasil.",
-          "Use exclusivamente candidateId e snapshotIds existentes na entrada.",
-          "Inclua cada candidateId fornecido exatamente uma vez em um único cluster.",
-          "Não devolva IDs próprios, URLs, métricas, direitos, estados, scores, posições ou qualquer campo fora do schema.",
-          "Cada snapshot citado deve pertencer a um candidato citado no mesmo cluster.",
-          `Schema: ${JSON.stringify(topicProposalSchema)}`,
-          `Evidências: ${JSON.stringify(evidence)}`,
-        ].join(" "),
-      }],
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`Ollama respondeu ${response.status}`);
-  }
-  const body = await response.json();
-  const content = body.message?.content;
-  if (typeof content !== "string" || content.trim() === "") throw new Error("A resposta do Ollama não contém message.content");
-  const parsed = JSON.parse(content);
-  if (!parsed || !Array.isArray(parsed.clusters)) throw new Error("A resposta do Ollama não contém clusters[]");
   const candidateIds = evidence.map(({ candidateId }) => candidateId);
-  const snapshotOwner = new Map(evidence.flatMap(({ candidateId, snapshots }) => snapshots.map(({ id }) => [id, candidateId])));
-  const snapshotIds = [...snapshotOwner.keys()];
-  return parsed.clusters.map((proposal) => {
-    const value = validateAiTopicProposal(proposal, candidateIds, snapshotIds);
-    for (const snapshotId of value.evidenceSnapshotIds) {
-      if (!value.candidateIds.includes(snapshotOwner.get(snapshotId))) {
-        throw new Error(`UNKNOWN_EVIDENCE em aiProposal.evidenceSnapshotIds: ${snapshotId} não pertence aos candidatos do cluster`);
-      }
-    }
-    return value;
+  const candidateIdByRef = new Map(evidence.map(({ candidateId }, index) => [`C${String(index + 1).padStart(3, "0")}`, candidateId]));
+  const candidateRefById = new Map([...candidateIdByRef].map(([reference, candidateId]) => [candidateId, reference]));
+  const snapshotsByCandidate = new Map(evidence.map(({ candidateId, snapshots }) => [
+    candidateId,
+    (snapshots ?? []).map(({ id }) => id),
+  ]));
+  const snapshotIds = [...snapshotsByCandidate.values()].flat();
+  const clusteringEvidence = evidence.map(({ candidateId, snapshots: _snapshots, ...item }) => ({
+    candidateRef: candidateRefById.get(candidateId),
+    ...item,
+  }));
+
+  const requestClusters = async ({ items, requiredReferences, feedback }) => {
+    const response = await fetchImpl(new URL("/api/chat", baseUrl), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model,
+        stream: false,
+        think: false,
+        format: topicProposalSchema,
+        options: { temperature: 0, num_ctx: numCtx },
+        messages: [{
+          role: "user",
+          content: [
+            "Agrupe em pt-BR somente as evidências fornecidas por assunto editorial equivalente.",
+            "Rotule nicho, subtema, público provável, padrão narrativo e possibilidade de localização para o Brasil.",
+            "Use exclusivamente candidateRef existentes na entrada, preservando cada alias exatamente.",
+            "Inclua cada candidateRef fornecido exatamente uma vez em um único cluster.",
+            `Aliases obrigatórios: ${requiredReferences.join(", ")}.`,
+            "Não devolva snapshotIds; o sistema associa as evidências temporais deterministicamente.",
+            "Não devolva candidateIds, IDs próprios, URLs, métricas, direitos, estados, scores, posições ou qualquer campo fora do schema.",
+            ...(feedback ? [`Correção obrigatória da tentativa anterior: ${sanitizeFeedback(feedback)}`] : []),
+            `Schema: ${JSON.stringify(topicProposalSchema)}`,
+            `Evidências: ${JSON.stringify(items)}`,
+          ].join(" "),
+        }],
+      }),
+    });
+    if (!response.ok) throw new Error(`Ollama respondeu ${response.status}`);
+    const body = await response.json();
+    const content = body.message?.content;
+    if (typeof content !== "string" || content.trim() === "") throw new Error("A resposta do Ollama não contém message.content");
+    const parsed = JSON.parse(content);
+    if (!parsed || !Array.isArray(parsed.clusters)) throw new Error("A resposta do Ollama não contém clusters[]");
+    return parsed.clusters;
+  };
+
+  const knownReferences = [...candidateIdByRef.keys()];
+  let clusters = await requestClusters({
+    items: clusteringEvidence,
+    requiredReferences: knownReferences,
+    feedback: validationFeedback,
   });
+  const initialProblems = candidateRefProblems(clusters, knownReferences);
+  if (initialProblems.unknown.length > 0 || initialProblems.duplicated.length > 0) {
+    throwCandidateRefProblems(initialProblems);
+  }
+  if (initialProblems.missing.length > 0) {
+    const missing = initialProblems.missing;
+    const missingSet = new Set(missing);
+    const repair = await requestClusters({
+      items: clusteringEvidence.filter(({ candidateRef }) => missingSet.has(candidateRef)),
+      requiredReferences: missing,
+      feedback: `Complete somente os aliases ausentes: ${missing.join(", ")}.`,
+    });
+    validateCompleteCandidateRefs(repair, missing);
+    clusters = [...clusters, ...repair];
+  }
+  validateCompleteCandidateRefs(clusters, knownReferences);
+  return clusters.map((proposal) => {
+    if (proposal && (Object.hasOwn(proposal, "evidenceSnapshotIds") || Object.hasOwn(proposal, "candidateIds"))) {
+      const error = new Error("AI_EVIDENCE_MUTATION em aiProposal: IDs reais e snapshots são derivados pelo sistema");
+      error.code = "AI_EVIDENCE_MUTATION";
+      throw error;
+    }
+    const references = Array.isArray(proposal?.candidateRefs) ? proposal.candidateRefs : [];
+    const unknownReference = references.find((reference) => !candidateIdByRef.has(reference));
+    if (unknownReference) {
+      const error = new Error(`UNKNOWN_EVIDENCE em aiProposal.candidateRefs: alias desconhecido: ${unknownReference}`);
+      error.code = "UNKNOWN_EVIDENCE";
+      throw error;
+    }
+    const clusterCandidateIds = references.map((reference) => candidateIdByRef.get(reference));
+    const evidenceSnapshotIds = [...new Set(clusterCandidateIds.flatMap((candidateId) => snapshotsByCandidate.get(candidateId) ?? []))];
+    const { candidateRefs: _candidateRefs, ...semanticProposal } = proposal ?? {};
+    return validateAiTopicProposal({ ...semanticProposal, candidateIds: clusterCandidateIds, evidenceSnapshotIds }, candidateIds, snapshotIds);
+  });
+}
+
+function validateCompleteCandidateRefs(clusters, knownReferences) {
+  const problems = candidateRefProblems(clusters, knownReferences);
+  if (problems.unknown.length === 0 && problems.duplicated.length === 0 && problems.missing.length === 0) return;
+  throwCandidateRefProblems(problems);
+}
+
+function candidateRefProblems(clusters, knownReferences) {
+  const assigned = clusters.flatMap((proposal) => Array.isArray(proposal?.candidateRefs) ? proposal.candidateRefs : []);
+  const known = new Set(knownReferences);
+  const unknown = [...new Set(assigned.filter((reference) => !known.has(reference)))];
+  const counts = new Map();
+  for (const reference of assigned) counts.set(reference, (counts.get(reference) ?? 0) + 1);
+  const duplicated = [...counts].filter(([, count]) => count > 1).map(([reference]) => reference);
+  const assignedSet = new Set(assigned);
+  const missing = knownReferences.filter((reference) => !assignedSet.has(reference));
+  return { unknown, duplicated, missing };
+}
+
+function throwCandidateRefProblems({ unknown, duplicated, missing }) {
+  const parts = [];
+  if (unknown.length > 0) parts.push(`Remova aliases desconhecidos: ${unknown.join(", ")}.`);
+  if (duplicated.length > 0) parts.push(`Mantenha estes aliases em apenas um cluster: ${duplicated.join(", ")}.`);
+  if (missing.length > 0) parts.push(`Inclua os aliases ausentes: ${missing.join(", ")}.`);
+  const error = new Error(`INVALID_CLUSTER_MEMBERSHIP: ${parts.join(" ")}`);
+  error.code = "INVALID_CLUSTER_MEMBERSHIP";
+  error.retryFeedback = parts.join(" ");
+  throw error;
+}
+
+function sanitizeFeedback(value) {
+  return String(value).replace(/[^A-Za-z0-9 .,:-]/g, "").slice(0, 500);
 }
 
 export async function identifyCandidates({

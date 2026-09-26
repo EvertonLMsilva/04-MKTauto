@@ -19,7 +19,7 @@
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
-| R02G | CORREÇÃO EM PR | M1 — execução diária e catálogo local | PR #21 mergeado (`d89c3ad`); PR #22 preserva links, views e data de publicação sem ranking. |
+| R02G | CORREÇÃO EM PR | M1 — execução diária e catálogo local | PR #21 mergeado (`d89c3ad`); PR #22 preserva o relatório sem ranking e recupera o clustering/ranking local. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
@@ -477,10 +477,19 @@ As etapas inicial e final de clustering fazem no máximo cinco tentativas totais
 com backoff exponencial e espera injetável. Falha de rede, HTTP 5xx/429/408 e
 saída estruturada inválida podem repetir; configuração inválida e HTTP 4xx falham
 imediatamente. Quantidade de tentativas e exaustão ficam persistidas sem conteúdo
-sensível. A suíte completa passou com 81 testes.
+sensível. O prompt usa aliases opacos em vez de IDs reais; candidato e snapshots
+são associados deterministicamente pelo sistema. Quando uma proposta válida
+omite aliases, uma correção dirigida recebe somente as evidências ausentes, sem
+permitir que a IA altere propriedade ou invente evidência.
 
-O PR #22 foi aberto em 26/09/2026 com o hotfix restrito ao relatório, teste de
-regressão e registro documental.
+Uma execução real isolada em 26/09/2026, com `qwen3:4b` e 25 candidatos oficiais
+do YouTube, concluiu 9 clusters, ranking de 20 itens e top 5. A etapa inicial usou
+duas tentativas e a análise final concluiu na primeira; as lacunas restantes são
+somente as fontes Instagram/TikTok sem credenciais e o relaxamento de diversidade
+para a cobertura disponível. A suíte completa passou com 82 testes.
+
+O PR #22 foi aberto em 26/09/2026 com o hotfix de relatório e recuperação segura
+do clustering, testes de regressão e registro documental.
 
 ## Backlog pós-MVP aprovado
 
