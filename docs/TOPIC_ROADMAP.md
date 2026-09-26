@@ -20,7 +20,7 @@
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | CONCLUÍDO | M1 — cobertura oficial do TikTok | PR #20 mergeado em 26/09/2026 (`2928845`); Research API condicionada à elegibilidade e Display API `AUTHORIZED_ONLY`. |
 | R02G | CONCLUÍDO | M1 — execução diária e catálogo local | PR #21 e correção PR #22 mergeados (`0ddc630`); relatório e clustering/ranking real validados. |
-| R02H | EM EXECUÇÃO | M1 — listagem oficial multirrede | Listar Instagram, Threads e TikTok no catálogo, sem download e sem ranking fictício. |
+| R02H | PR ABERTO | M1 — listagem oficial multirrede | PR #23 lista Instagram, Threads e TikTok no catálogo, sem download e sem ranking fictício. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02H e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
@@ -517,6 +517,9 @@ oficiais sanitizadas; nenhuma chamada real a Instagram, Threads ou TikTok foi
 feita porque tokens, escopos e aprovações não foram fornecidos. Download de mídia
 continua proibido neste tópico. A suíte completa passou com 87 testes; verificações
 de sintaxe e `git diff --check` também passaram.
+
+O PR #23 foi aberto em 26/09/2026 com o contrato 1.1.0, adapters oficiais,
+orquestração diária, relatório, testes e documentação de R02H.
 
 ## Backlog pós-MVP aprovado
 
