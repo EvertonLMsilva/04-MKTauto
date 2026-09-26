@@ -1,7 +1,9 @@
 # Cobertura oficial do TikTok no radar M1
 
-**Revalidado em:** 26/09/2026  
-**Contrato:** `trend-contracts/1.0.0`  
+**Revalidado em:** 26/09/2026
+
+**Contrato:** `trend-contracts/1.0.0`
+
 **Decisão:** `BLOCKED_BY_PROVIDER` para o operador comercial do MVP; execução
 condicional pela Research API somente para projeto de pesquisa elegível e
 aprovado. Display API é `AUTHORIZED_ONLY` e Content Posting não é descoberta.

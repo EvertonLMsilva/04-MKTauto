@@ -18,7 +18,7 @@
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | CONCLUÍDO | M1 — cobertura oficial do Instagram | PR #19 mergeado em 26/09/2026 (`9ff9657`); cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
-| R02F | EM EXECUÇÃO | M1 — cobertura oficial do TikTok | Research API condicionada à elegibilidade; Display API é `AUTHORIZED_ONLY`; Content Posting não é descoberta. |
+| R02F | PR ABERTO | M1 — cobertura oficial do TikTok | PR #20; Research API condicionada à elegibilidade, Display API `AUTHORIZED_ONLY` e 69 testes passando. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
@@ -421,6 +421,10 @@ A matriz, as quotas, a defasagem dos dados, os códigos sanitizados e a condiç�
 exata de desbloqueio estão em `docs/TIKTOK_OFFICIAL_COVERAGE.md`. Nenhuma
 credencial ou aprovação elegível foi fornecida; portanto, não houve validação
 externa nem persistência de evidência real.
+
+O PR #20 foi aberto em 26/09/2026 com diff restrito ao adapter oficial do
+TikTok, evolução aditiva do contrato de cobertura, testes, matriz de capacidades
+e este roadmap. A suíte completa passou com 69 testes.
 
 ## Backlog pós-MVP aprovado
 
