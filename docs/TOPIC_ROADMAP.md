@@ -10,7 +10,7 @@
 | R01 | CONCLUÍDO | Fluxo real e baseline interno | PR #10 mergeado; três cortes aprovados e decisão `iterar R01` pela lacuna de tempo ativo. |
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
-| V03 | EM EXECUÇÃO | Estrutura futura para vídeos de react | Define duas faixas sincronizadas, layouts, áudio, legendas e direitos. |
+| V03 | EM REVISÃO | Estrutura futura para vídeos de react | PR #12 aberto; define duas faixas sincronizadas, layouts, áudio, legendas e direitos. |
 | R02 | PENDENTE | Ingestão e compreensão do vídeo enviado | Depende de V02; usa evidência de R01 sem repetir descoberta. |
 | R03 | PENDENTE | Experimento criativo upload-first | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |

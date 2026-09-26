@@ -1,6 +1,6 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V02 concluído no PR #11; V03 em execução
+**Status:** V02 concluído no PR #11; V03 em revisão no PR #12
 **Fase atual:** estruturação do formato react no backlog pós-MVP
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-25
