@@ -16,7 +16,7 @@
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
-| R02D | EM EXECUÇÃO | M1 — assuntos e ranking | Clusters locais, score determinístico e persistência validados com 55 testes. |
+| R02D | PR ABERTO | M1 — assuntos e ranking | PR #18; clusters locais, score determinístico e persistência validados com 55 testes. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
@@ -365,6 +365,10 @@ desempate, diversidade, persistência atômica e retry. A suíte completa passou
 mas a validação real controlada não foi executada porque `OLLAMA_MODEL` não estava
 configurado; nenhum modelo foi escolhido implicitamente e nenhuma evidência real
 foi persistida.
+
+O PR #18 foi aberto em 26/09/2026 com diff restrito ao agrupamento semântico,
+ranking determinístico, persistência da análise, normalização mínima do YouTube,
+testes e este roadmap.
 
 ## Backlog pós-MVP aprovado
 
