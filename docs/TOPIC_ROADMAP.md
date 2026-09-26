@@ -12,7 +12,7 @@
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
-| V05 | EM EXECUÇÃO | Decomposição técnica do M1 | Divide identificação em seis tópicos pequenos, seguros e ordenados. |
+| V05 | EM REVISÃO | Decomposição técnica do M1 | PR #14 aberto; divide identificação em seis tópicos pequenos, seguros e ordenados. |
 | R02A | PENDENTE | M1 — contrato, estados e limites | Depende de V05. |
 | R02B | PENDENTE | M1 — upload privado em streaming | Depende de R02A. |
 | R02C | PENDENTE | M1 — identidade e inspeção técnica | Depende de R02B. |
