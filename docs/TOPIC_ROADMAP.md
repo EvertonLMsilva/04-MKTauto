@@ -13,8 +13,8 @@
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
-| R02A | PR ABERTO | M1 — contratos e critérios de tendência | PR #15; contratos versionados e suíte completa com 25 testes passando. |
-| R02B | PENDENTE | M1 — histórico local e deduplicação | Depende de R02A. |
+| R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
+| R02B | PR ABERTO | M1 — histórico local e deduplicação | PR #16; catálogo SQLite v1 e suíte completa com 38 testes passando. |
 | R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
@@ -288,6 +288,22 @@ Evidência: os testes focados em `test/radar-contracts.test.js` e
 reaparição, códigos de erro, proteção de evidência/score contra mutação por IA e
 serialização pública sanitizada. A suíte completa passou com 25 testes antes da
 abertura do PR #15.
+
+O PR #15 foi mergeado em 26/09/2026 (`b93527f`) e desbloqueou R02B.
+
+### R02B — histórico local e deduplicação do radar M1
+
+O catálogo local usa `node:sqlite` e uma migração v1 reproduzível para preservar
+runs, fontes, candidatos, snapshots, clusters e scores. Operações possuem chave
+idempotente explícita e são atômicas; IDs de plataforma têm precedência, enquanto
+URLs canônicas válidas deduplicam candidatos sem ID. Reaparições mantêm a mesma
+identidade, acrescentam snapshots imutáveis e registram motivo e posição.
+
+Evidência: `test/trend-store.test.js` cobre migração e reabertura, retry,
+deduplicação, promoção de identidade, histórico e velocidade, cobertura parcial,
+bloqueada ou falha, imutabilidade, rollback, chaves estrangeiras e versão futura.
+Os 13 testes focados e a suíte completa com 38 testes passaram antes da abertura
+do PR #16.
 
 ## Backlog pós-MVP aprovado
 
