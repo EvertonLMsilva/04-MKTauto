@@ -35,4 +35,4 @@ tópicos.
 
 V02 reprioriza o MVP para entrada por upload. Após seu merge, R02 valida extração
 de áudio, transcrição local e análise visual quando necessária; composição a
-partir de vários vídeos permanece no backlog pós-MVP.
+partir de vários vídeos e o formato react permanecem no backlog pós-MVP.

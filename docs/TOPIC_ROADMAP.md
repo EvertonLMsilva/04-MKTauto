@@ -9,7 +9,8 @@
 | V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
 | R01 | CONCLUÍDO | Fluxo real e baseline interno | PR #10 mergeado; três cortes aprovados e decisão `iterar R01` pela lacuna de tempo ativo. |
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
-| V02 | EM REVISÃO | Repriorização para entrada por upload | PR #11 aberto; define compreensão local e corte novo a partir de um vídeo enviado. |
+| V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
+| V03 | EM REVISÃO | Estrutura futura para vídeos de react | PR #12 aberto; define duas faixas sincronizadas, layouts, áudio, legendas e direitos. |
 | R02 | PENDENTE | Ingestão e compreensão do vídeo enviado | Depende de V02; usa evidência de R01 sem repetir descoberta. |
 | R03 | PENDENTE | Experimento criativo upload-first | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
@@ -53,6 +54,7 @@ Defaults aprovados:
 | R01 | Medir o fluxo interno | V01 | Um operador executa 3 lotes reais; etapas, tempo ativo, espera, retrabalho, custo e resultado são registrados sem mídia no Git. |
 | R01A | Instrumentar a descoberta | Rodada 1 de R01 | Aplicação local coleta sinais oficiais, usa IA para sugerir candidatos e calcula ranking explicável por regras testadas. |
 | V02 | Reposicionar entrada do MVP | PR #10 | Documentos tornam upload único o fluxo principal e composição multivídeo um item explícito de backlog. |
+| V03 | Estruturar react no backlog | V02 | Fonte e reação possuem faixas, sincronização, layouts, áudio, legendas e direitos rastreáveis. |
 | R02 | Validar ingestão e compreensão | V02 | Um upload válido produz hash, metadados, áudio, transcrição com timestamps e análise visual quando necessária, sem mídia no Git. |
 | R03 | Provar criação upload-first | R02 | Processo concierge cria roteiro novo, plano de trechos, narração e legendas para um corte feito somente com o vídeo enviado. |
 | R04 | Definir domínio e adaptadores | R03 | Estados, invariantes e contratos mínimos de fonte, IA, renderização, publicação, insights, monetização e parceiros são testáveis. |
@@ -214,6 +216,29 @@ A composição de um único vídeo a partir de vários uploads do mesmo assunto 
 adicionada ao backlog pós-MVP. Essa evolução deverá validar direitos e hash de
 cada entrada, preservar a origem por trecho e impedir que um arquivo rejeitado
 participe da montagem.
+
+### V03 — estrutura futura para vídeos de react
+
+Em 26/09/2026, vídeos de react foram adicionados ao backlog pós-MVP. O formato
+terá dois ativos independentes: o vídeo-fonte e uma faixa de reação/comentário
+fornecida pelo operador. Ambos exigem origem, hash, condição de uso, transcrição
+e aprovação próprias.
+
+A timeline deverá alternar eventos de fonte e reação sem perder sincronização,
+com layouts `fonte em tela cheia`, `reação em tela cheia`, `picture-in-picture`
+e `dividido`. O mixer deverá aplicar prioridade da fala e redução controlada do
+áudio-fonte; as legendas identificarão o locutor. Cada trecho renderizado deverá
+preservar referência ao ativo e intervalo de origem.
+
+React não cria autorização automática sobre o vídeo-fonte. Direitos, contexto,
+atribuição, segurança e aprovação humana da versão exata continuam gates.
+
+## Backlog pós-MVP aprovado
+
+| ID | Capacidade | Dependência | Aceite futuro |
+|---|---|---|---|
+| P01 | Composição multivídeo por assunto | R09 e G4 | Vários uploads aprovados formam um vídeo novo com origem por trecho. |
+| P02 | Vídeo de react | R09, G4 e captura de reação | Fonte e reação sincronizadas geram uma versão revisável com layouts, áudio e legendas por locutor. |
 
 ## Riscos residuais
 
