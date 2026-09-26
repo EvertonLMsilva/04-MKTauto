@@ -14,7 +14,7 @@
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
-| R02B | EM EXECUÇÃO | M1 — histórico local e deduplicação | Catálogo SQLite v1 e testes focados implementados; falta abrir o PR. |
+| R02B | PR ABERTO | M1 — histórico local e deduplicação | PR #16; catálogo SQLite v1 e suíte completa com 38 testes passando. |
 | R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
@@ -303,7 +303,7 @@ Evidência: `test/trend-store.test.js` cobre migração e reabertura, retry,
 deduplicação, promoção de identidade, histórico e velocidade, cobertura parcial,
 bloqueada ou falha, imutabilidade, rollback, chaves estrangeiras e versão futura.
 Os 13 testes focados e a suíte completa com 38 testes passaram antes da abertura
-do PR.
+do PR #16.
 
 ## Backlog pós-MVP aprovado
 
