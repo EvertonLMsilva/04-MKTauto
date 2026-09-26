@@ -11,7 +11,7 @@
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
-| V04 | EM EXECUÇÃO | Pipeline modular e multiagente | Define cinco módulos sequenciais, contratos, agentes e gates. |
+| V04 | EM REVISÃO | Pipeline modular e multiagente | PR #13 aberto; define cinco módulos sequenciais, contratos, agentes e gates. |
 | R02 | PENDENTE | M1 — identificação de vídeos | Depende de V04. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |

@@ -1,6 +1,6 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V03 concluído no PR #12; V04 em execução
+**Status:** V03 concluído no PR #12; V04 em revisão no PR #13
 **Fase atual:** modularização sequencial e arquitetura multiagente
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-25
