@@ -13,7 +13,7 @@
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
-| R02A | EM EXECUÇÃO | M1 — contratos e critérios de tendência | Contratos e testes implementados na branch `codex/r02a-trend-contracts`; PR pendente. |
+| R02A | PR ABERTO | M1 — contratos e critérios de tendência | PR #15; contratos versionados e suíte completa com 25 testes passando. |
 | R02B | PENDENTE | M1 — histórico local e deduplicação | Depende de R02A. |
 | R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
@@ -286,8 +286,8 @@ top 5, duração de 15–180 segundos, regiões iniciais e diversidade configur�
 Evidência: os testes focados em `test/radar-contracts.test.js` e
 `test/radar-ranking.test.js` cobrem as três plataformas, lacunas de cobertura,
 reaparição, códigos de erro, proteção de evidência/score contra mutação por IA e
-serialização pública sanitizada. A suíte completa deve permanecer verde antes
-da abertura do PR.
+serialização pública sanitizada. A suíte completa passou com 25 testes antes da
+abertura do PR #15.
 
 ## Backlog pós-MVP aprovado
 
