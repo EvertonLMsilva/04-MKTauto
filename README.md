@@ -41,6 +41,8 @@ tópicos.
 
 ## Próximo passo
 
-Após V04, R02 implementa somente M1 — identificação do vídeo e manifesto de
-origem/direitos. Transcrição, conteúdo, montagem e refino seguem em tópicos
-separados; composição multivídeo e react permanecem no backlog pós-MVP.
+Após V05, R02A–R02F implementam M1 em seis fatias: contrato, upload privado,
+inspeção, direitos, persistência e prova integrada. A divisão detalhada está em
+[`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`](docs/M1_VIDEO_IDENTIFICATION_PLAN.md).
+Transcrição, conteúdo, montagem e refino seguem separados; composição multivídeo
+e react permanecem no backlog pós-MVP.

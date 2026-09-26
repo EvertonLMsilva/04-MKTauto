@@ -11,9 +11,15 @@
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
-| V04 | EM REVISÃO | Pipeline modular e multiagente | PR #13 aberto; define cinco módulos sequenciais, contratos, agentes e gates. |
-| R02 | PENDENTE | M1 — identificação de vídeos | Depende de V04. |
-| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02. |
+| V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
+| V05 | EM EXECUÇÃO | Decomposição técnica do M1 | Divide identificação em seis tópicos pequenos, seguros e ordenados. |
+| R02A | PENDENTE | M1 — contrato, estados e limites | Depende de V05. |
+| R02B | PENDENTE | M1 — upload privado em streaming | Depende de R02A. |
+| R02C | PENDENTE | M1 — identidade e inspeção técnica | Depende de R02B. |
+| R02D | PENDENTE | M1 — persistência, deduplicação e recuperação | Depende de R02C. |
+| R02E | PENDENTE | M1 — origem, direitos e revisão | Depende de R02D. |
+| R02F | PENDENTE | M1 — integração e prova ponta a ponta | Depende de R02E. |
+| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02F. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
 | R06 | PENDENTE | M5 — refino para engajamento | Depende de R05. |
@@ -57,8 +63,14 @@ Defaults aprovados:
 | V02 | Reposicionar entrada do MVP | PR #10 | Documentos tornam upload único o fluxo principal e composição multivídeo um item explícito de backlog. |
 | V03 | Estruturar react no backlog | V02 | Fonte e reação possuem faixas, sincronização, layouts, áudio, legendas e direitos rastreáveis. |
 | V04 | Modularizar o pipeline | V03 | Cinco módulos têm entradas, saídas, agentes, regras determinísticas e ordem obrigatória documentados. |
-| R02 | Provar M1 — identificação | V04 | Upload produz `VideoAssetManifest` válido com hash, metadados, origem, direitos e deduplicação. |
-| R03 | Provar M2 — transcrição multimodal | R02 | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
+| V05 | Decompor M1 | V04 | Contrato, segurança, inspeção, direitos, persistência e prova são tópicos ordenados com aceite próprio. |
+| R02A | Definir contrato e estados | V05 | Schema, limites e máquina de estados impedem avanço sem validação e revisão. |
+| R02B | Receber upload privado | R02A | Streaming aplica limites e mantém temporários fora do Git e da pasta pública. |
+| R02C | Identificar tecnicamente | R02B | Hash, assinatura e `ffprobe` geram metadados reproduzíveis ou rejeição estável. |
+| R02D | Persistir e deduplicar | R02C | Retries, hashes repetidos, reinício e limpeza mantêm estado consistente. |
+| R02E | Confirmar origem e direitos | R02D | Declaração e revisão humana determinística controlam o gate verde. |
+| R02F | Integrar e provar M1 | R02E | UI e API entregam `VideoAssetManifest` aprovado ao limite do M2 com métricas sanitizadas. |
+| R03 | Provar M2 — transcrição multimodal | R02F | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
 | R04 | Provar M3 — conteúdo | R03 | `ContentBrief` identifica tema, momentos, riscos e ângulos novos, todos ligados a evidências. |
 | R05 | Provar M4 — edição/montagem | R04 | `EditPlan` gera um corte narrado e legendado, com linhagem de cada trecho e evidencia G1. |
 | R06 | Provar M5 — refino | R05 | `EngagementReport` remove ruído e melhora ritmo/clareza sem perder fidelidade ou auditoria. |
@@ -66,9 +78,10 @@ Defaults aprovados:
 | R08 | Integrar Instagram | R07 | Conta profissional conecta; somente versão aprovada publica; estado e insights são reconciliados; exportação cobre falha externa. |
 | R09 | Entregar painel e piloto | R08 | Painel cruza perfil, vídeo, formato, visualizações, interações, custo, receita e lucro estimado; piloto decide `go`, `iterate` ou `stop`. |
 
-Cada tópico R02–R06 prova exatamente um módulo. R07 produz o primeiro pipeline
-utilizável, R08 entrega o produto conectado e R09 encerra o MVP medido. Novos
-canais, parceiros e otimizações não interrompem essa sequência.
+R02A–R02F provam M1 em fatias cumulativas; R03–R06 provam um módulo cada. R07
+produz o primeiro pipeline utilizável, R08 entrega o produto conectado e R09
+encerra o MVP medido. Novos canais, parceiros e otimizações não interrompem essa
+sequência.
 
 ## Gates de decisão
 
@@ -248,6 +261,14 @@ Ollama e agentes especializados podem acelerar tarefas independentes dentro de
 cada módulo. Um orquestrador determinístico controla a ordem, schemas, evidências,
 estados, custos e falhas. Direitos não são decididos por IA, módulos não podem ser
 pulados e somente a versão exata aprovada pode avançar para efeito externo.
+
+### V05 — decomposição técnica do M1
+
+Após o merge do PR #13, a análise detalhada mostrou que R02 reunia seis riscos
+independentes. O plano em `docs/M1_VIDEO_IDENTIFICATION_PLAN.md` separa contrato,
+upload, inspeção, direitos, persistência e integração em R02A–R02F. O fluxo usa
+upload binário em streaming, armazenamento privado e revisão humana; IA não é
+necessária no M1. R03 passa a depender da prova completa de R02F.
 
 ## Backlog pós-MVP aprovado
 

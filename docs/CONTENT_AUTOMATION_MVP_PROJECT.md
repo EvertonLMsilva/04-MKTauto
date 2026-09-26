@@ -1,9 +1,9 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V03 concluído no PR #12; V04 em revisão no PR #13
-**Fase atual:** modularização sequencial e arquitetura multiagente
+**Status:** V04 concluído no PR #13; V05 decompõe tecnicamente o M1
+**Fase atual:** decomposição técnica do módulo de identificação
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
-**Última atualização:** 2026-09-25
+**Última atualização:** 2026-09-26
 
 ## 1. Resumo executivo
 
@@ -190,10 +190,10 @@ A especificação operacional, os contratos e o modelo multiagente estão em
 
 ## 8. Arquitetura adiada por gate
 
-V04 mantém fila e fundação ampla adiadas. R02–R06 provam os cinco módulos com
-processo e ferramentas existentes; R07 integra somente os contratos sustentados
-pela evidência. R01A permanece uma exceção pequena e reversível para descoberta,
-evidência e ranking.
+V04 mantém fila e fundação ampla adiadas. R02A–R02F provam M1 em fatias; R03–R06
+provam os outros quatro módulos com processo e ferramentas existentes. R07
+integra somente os contratos sustentados pela evidência. R01A permanece uma
+exceção pequena e reversível para descoberta, evidência e ranking.
 
 Continuam válidos como restrições, não como escolha de tecnologia:
 
@@ -378,12 +378,14 @@ Cada fase depende de dados da anterior e nova revisão de políticas:
 
 O sistema nunca deve evoluir para automação irrestrita de cópia ou publicação sem responsabilização.
 
-## 17. Roadmap mínimo repriorizado no V04
+## 17. Roadmap mínimo repriorizado no V05
 
 V01 substituiu o recorte `metadados-only/export-only`, V02 tornou upload único a
-entrada principal, V03 estruturou react no backlog e V04 dividiu o pipeline em
-cinco módulos sequenciais. A matriz de gates está em `docs/TOPIC_ROADMAP.md` e a
-arquitetura modular em `docs/MODULAR_VIDEO_PIPELINE.md`.
+entrada principal, V03 estruturou react no backlog, V04 dividiu o pipeline em
+cinco módulos sequenciais e V05 separou M1 em seis entregas. A matriz de gates
+está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
+`docs/MODULAR_VIDEO_PIPELINE.md` e o recorte de M1 em
+`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`.
 
 | ID | Entrega | Depende de | Resultado mínimo |
 |---|---|---|---|
@@ -393,8 +395,14 @@ arquitetura modular em `docs/MODULAR_VIDEO_PIPELINE.md`.
 | V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
 | V03 | Estrutura de react | V02 | Fonte e reação ganham faixas, timeline, layouts, mixagem, legendas e linhagem próprias. |
 | V04 | Pipeline modular multiagente | V03 | Cinco módulos, contratos, agentes e ordem obrigatória ficam explícitos. |
-| R02 | M1 — identificação | V04 | `VideoAssetManifest` reproduzível e aprovado. |
-| R03 | M2 — transcrição multimodal | R02 | `MediaTranscript` temporal combina fala, OCR e visão. |
+| V05 | Decomposição de M1 | V04 | Seis tópicos isolam contrato, upload, inspeção, direitos, persistência e integração. |
+| R02A | Contrato, estados e limites | V05 | Domínio versionado impede avanço inválido. |
+| R02B | Upload privado em streaming | R02A | Um binário é recebido sem buffer integral nem exposição pública. |
+| R02C | Identidade e inspeção | R02B | Hash e `ffprobe` produzem metadados reproduzíveis. |
+| R02D | Persistência e deduplicação | R02C | Retries, duplicatas e recuperação mantêm consistência. |
+| R02E | Origem, direitos e revisão | R02D | Revisão humana controla o gate verde. |
+| R02F | Integração e prova de M1 | R02E | `VideoAssetManifest` aprovado chega ao limite do M2. |
+| R03 | M2 — transcrição multimodal | R02F | `MediaTranscript` temporal combina fala, OCR e visão. |
 | R04 | M3 — identificação de conteúdo | R03 | `ContentBrief` explicável liga tema e ângulos a evidências. |
 | R05 | M4 — edição/montagem | R04 | `EditPlan` e corte narrado/legendado demonstram valor criativo. |
 | R06 | M5 — refino | R05 | `EngagementReport` melhora a versão sem perder fidelidade. |
@@ -402,8 +410,8 @@ arquitetura modular em `docs/MODULAR_VIDEO_PIPELINE.md`.
 | R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
 | R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
 
-R02 fica pronto para execução somente após o merge de V04. Um tópico pode ser
-dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
+R02A fica pronto para execução somente após o merge de V05. R02B–R02F seguem em
+ordem e não ampliam o MVP; apenas reduzem o risco do antigo R02 monolítico.
 
 ## 18. Definition of Ready e Done
 
@@ -470,6 +478,6 @@ R01 registrou evidência e lacunas para:
 6. origem e condição de uso registradas, sem mídia no Git.
 
 O merge do PR #10 encerrou R01 com decisão `iterar R01` pela lacuna de tempo
-ativo. V04 autoriza apenas o próximo spike de M1 em R02; os módulos seguintes,
+ativo. V05 autoriza apenas R02A após seu merge; R02B–R02F, módulos seguintes,
 integração, produção completa e efeitos externos continuam bloqueados pelas
 dependências e gates correspondentes.

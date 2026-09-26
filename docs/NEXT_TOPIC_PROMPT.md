@@ -1,17 +1,16 @@
-# Próximo tópico — R02 Módulo 1: identificação de vídeos
+# Próximo tópico — R02A Contrato, estados e limites do M1
 
-> Executar somente após o merge de V04. Este tópico implementa e prova apenas o
-> primeiro módulo; transcrição, compreensão e edição pertencem aos módulos
-> seguintes.
+> Executar somente após o merge de V05. Este tópico define o domínio de M1 sem
+> receber, armazenar ou inspecionar mídia real.
 
 ## Resultado
 
-- Problema: o sistema ainda não recebe um arquivo de vídeo com identidade,
-  origem, direitos e metadados técnicos reproduzíveis.
-- Resultado observável: um upload local válido produz um `VideoAssetManifest`
-  versionado, persistido e aprovado para seguir ao M2.
-- Valor esperado: impedir que arquivos duplicados, inválidos ou sem condição de
-  uso conhecida consumam transcrição e IA.
+- Problema: M1 possui limites e estados descritos, mas ainda não tem contrato de
+  código que impeça transições inválidas ou dados privados na API.
+- Resultado observável: schemas versionados, máquina de estados e configuração
+  validada tornam explícito o que R02B–R02F devem obedecer.
+- Valor: reduzir retrabalho e testar direitos, segurança e idempotência antes de
+  manipular arquivos grandes.
 
 ## Persona principal
 
@@ -20,53 +19,46 @@ vídeo próprio, licenciado ou autorizado e declarar sua origem.
 
 ## Escopo
 
-1. Criar entrada local de um vídeo por item, mantendo a mídia em diretório
-   privado e ignorado pelo Git.
-2. Exigir declaração de origem e condição de uso; decisão verde continua humana
-   e determinística.
-3. Validar nome, extensão, assinatura/MIME, contêiner, codecs, duração, resolução,
-   tamanho e integridade com regras locais e `ffprobe`.
-4. Calcular SHA-256 em streaming, detectar duplicação e atribuir ID interno.
-5. Impedir path traversal, sobrescrita, exposição pela pasta pública e arquivos
-   acima dos limites configurados.
-6. Persistir `VideoAssetManifest` versionado sem caminho privado exposto pela API.
-7. Modelar estados mínimos `UPLOADED`, `VALIDATING`, `READY_FOR_TRANSCRIPTION`,
-   `VALIDATION_FAILED` e `REJECTED` com transições testadas e idempotentes.
-8. Registrar tempo ativo, espera, custo, falhas, retrabalho e motivo de rejeição.
-9. Reutilizar store, revisão humana e contratos existentes sempre que o limite
-   do módulo permitir.
+1. Criar contratos versionados para manifesto técnico, declaração de origem,
+   revisão humana, alertas e erros sanitizados.
+2. Implementar e testar os estados `CREATED`, `UPLOADING`, `UPLOADED`,
+   `VALIDATING`, `AWAITING_RIGHTS_REVIEW`, `READY_FOR_TRANSCRIPTION`,
+   `UPLOAD_FAILED`, `VALIDATION_FAILED` e `REJECTED`.
+3. Impedir `READY_FOR_TRANSCRIPTION` sem validação técnica e revisão humana
+   verdes.
+4. Invalidar revisão anterior quando declaração ou referência de prova mudar.
+5. Definir configuração validada para tamanho, duração, dimensões, contêineres,
+   codecs, timeout e retenção de temporários, sem executar `ffprobe`.
+6. Garantir que serialização pública rejeite/remova caminhos absolutos, prova
+   privada, mídia, segredos e campos desconhecidos.
+7. Registrar threat model e política de retenção mínimos para orientar R02B.
+
+## Reuso
+
+- padrões de validação de `src/domain/contracts.js`;
+- padrão de revisão humana de `src/store.js`, sem acoplar ativos às runs de
+  descoberta;
+- convenções atuais de configuração e testes Node.
 
 ## Fora de escopo
 
-- Extrair áudio, transcrever, executar OCR ou analisar quadros; isso é M2/R03.
-- Identificar tema, fatos, momentos ou ângulos editoriais; isso é M3/R04.
-- Criar roteiro, narração, legenda ou renderização; isso é M4/R05.
-- Otimizar hook, ritmo ou metadados; isso é M5/R06.
-- Receber vários arquivos no mesmo item, criar react, publicar ou integrar
-  Instagram.
-- Colocar mídia, provas privadas, caminhos locais ou dados pessoais no Git.
+- endpoint ou interface de upload;
+- criação de diretório, streaming ou persistência de mídia;
+- hash, assinatura, MIME, `ffprobe` ou deduplicação;
+- tabelas SQLite de ativos e auditoria;
+- transcrição, OCR, visão, conteúdo, roteiro, edição ou publicação;
+- agentes de IA: todas as decisões deste tópico são determinísticas.
 
-## Contrato mínimo
+## Testes e aceite
 
-`VideoAssetManifest` deve conter somente dados sanitizados:
+- [ ] Schemas aceitam um manifesto mínimo válido e rejeitam campos/tipos
+      inválidos com códigos estáveis.
+- [ ] Toda transição permitida e proibida possui teste focado.
+- [ ] Direitos pendentes/rejeitados ou validação falha bloqueiam o M2.
+- [ ] Alteração de declaração/prova invalida aprovação anterior.
+- [ ] Configuração fora dos limites falha na inicialização.
+- [ ] Serialização pública não expõe caminho ou dado privado.
+- [ ] Testes existentes continuam passando e o roadmap registra a evidência.
 
-- versão do schema e ID interno;
-- SHA-256, tamanho, MIME/contêiner e codecs;
-- duração, largura, altura, fps e presença de áudio;
-- origem e condição de uso declaradas, estado de direitos e revisão;
-- estado do item, alertas técnicos e timestamps de criação/validação;
-- referência opaca ao armazenamento privado, nunca caminho absoluto na API.
-
-## Aceite
-
-- [ ] Upload válido chega a `READY_FOR_TRANSCRIPTION` com manifesto reproduzível.
-- [ ] Mesmo conteúdo não cria segundo ativo silenciosamente.
-- [ ] Arquivo inválido, grande demais ou com caminho malicioso é rejeitado.
-- [ ] Direitos pendentes impedem avanço ao M2.
-- [ ] Transições, idempotência e contrato possuem testes focados.
-- [ ] API não expõe caminho privado nem serve a mídia como arquivo público.
-- [ ] Métricas do módulo são registradas sem mídia ou dados privados no Git.
-- [ ] M2 recebe somente manifestos aprovados e tecnicamente válidos.
-
-Este prompt autoriza somente M1. Não autoriza iniciar transcrição, agentes de
-conteúdo, edição, refino, publicação ou os itens pós-MVP.
+Este prompt autoriza somente R02A. R02B começa apenas após o merge do PR de
+R02A.
