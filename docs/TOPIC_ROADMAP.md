@@ -15,7 +15,7 @@
 | V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
 | R02A | CONCLUÍDO | M1 — contratos e critérios de tendência | PR #15 mergeado em 26/09/2026 (`b93527f`). |
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
-| R02C | EM EXECUÇÃO | M1 — coleta global do YouTube | Coleta oficial implementada; validação final e PR pendentes. |
+| R02C | PR ABERTO | M1 — coleta global do YouTube | PR #17; coleta oficial e suíte completa com 48 testes passando. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
 | R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
@@ -327,6 +327,9 @@ ausentes, deduplicação, reaparição, retry e estados de falha. A validação 
 controlada não foi executada porque `YOUTUBE_API_KEY` não estava disponível no
 ambiente; nenhuma quota foi consumida e nenhuma credencial foi criada. Os 25
 testes focados e a suíte completa com 48 testes passaram em 26/09/2026.
+
+O PR #17 foi aberto em 26/09/2026 com diff restrito ao adapter, consulta
+idempotente do catálogo, testes e este roadmap.
 
 ## Backlog pós-MVP aprovado
 
