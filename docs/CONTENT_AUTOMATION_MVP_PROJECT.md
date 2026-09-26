@@ -1,6 +1,6 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V02 em execução; PR #10 de R01 mergeado
+**Status:** V02 em revisão no PR #11; PR #10 de R01 mergeado
 **Fase atual:** repriorização do fluxo para entrada por upload
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-25

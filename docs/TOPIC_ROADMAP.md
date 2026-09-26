@@ -9,7 +9,7 @@
 | V01 | CONCLUÍDO | Repriorização para estúdio de cortes dinâmicos | PR #5 mergeado em 24/09/2026 (`fb1fd5d`). |
 | R01 | CONCLUÍDO | Fluxo real e baseline interno | PR #10 mergeado; três cortes aprovados e decisão `iterar R01` pela lacuna de tempo ativo. |
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
-| V02 | EM EXECUÇÃO | Repriorização para entrada por upload | Define compreensão local e corte novo a partir de um vídeo enviado. |
+| V02 | EM REVISÃO | Repriorização para entrada por upload | PR #11 aberto; define compreensão local e corte novo a partir de um vídeo enviado. |
 | R02 | PENDENTE | Ingestão e compreensão do vídeo enviado | Depende de V02; usa evidência de R01 sem repetir descoberta. |
 | R03 | PENDENTE | Experimento criativo upload-first | Depende de R02. |
 | R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
