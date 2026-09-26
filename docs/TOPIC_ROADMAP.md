@@ -11,9 +11,16 @@
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
-| V04 | EM REVISÃO | Pipeline modular e multiagente | PR #13 aberto; define cinco módulos sequenciais, contratos, agentes e gates. |
-| R02 | PENDENTE | M1 — identificação de vídeos | Depende de V04. |
-| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02. |
+| V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
+| V05 | EM REVISÃO | Decomposição técnica do M1 | PR #14 aberto; redefine M1 como radar diário internacional. |
+| R02A | PENDENTE | M1 — contratos e critérios de tendência | Depende de V05. |
+| R02B | PENDENTE | M1 — histórico local e deduplicação | Depende de R02A. |
+| R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
+| R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
+| R02E | PENDENTE | M1 — cobertura oficial do Instagram | Depende de R02D. |
+| R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
+| R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
+| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
 | R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
 | R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
 | R06 | PENDENTE | M5 — refino para engajamento | Depende de R05. |
@@ -29,16 +36,18 @@ demonstrável.
 ## Corte aprovado do MVP
 
 Permitir que um operador individual administre vários perfis temáticos em
-`pt-BR`, envie um vídeo próprio/licenciado e o transforme em um novo corte
-vertical autoral, narrado, legendado, revisado e mensurável. O fluxo termina com
-publicação aprovada no Instagram e painel de desempenho; exportação manual
-permanece como fallback.
+`pt-BR`, descubra referências internacionais em alta, selecione uma oportunidade
+e transforme mídia obtida legitimamente em um novo corte vertical autoral,
+narrado, legendado, revisado e mensurável. O fluxo termina com publicação
+aprovada no Instagram e painel de desempenho; exportação manual permanece como
+fallback.
 
 Defaults aprovados:
 
 - uma persona: operador individual de um portfólio de perfis temáticos;
 - vários perfis, mas um perfil e um lote processados por vez;
-- upload manual como entrada principal, com origem e condição de uso declaradas;
+- radar diário internacional como entrada de M1, sem download automático;
+- aquisição local posterior, com origem e condição de uso declaradas;
 - transcrição local; análise visual local quando a fala não explicar o vídeo;
 - um corte por entrada, com roteiro novo, narração e legendas sincronizadas;
 - revisão humana da versão renderizada antes de qualquer publicação;
@@ -57,8 +66,15 @@ Defaults aprovados:
 | V02 | Reposicionar entrada do MVP | PR #10 | Documentos tornam upload único o fluxo principal e composição multivídeo um item explícito de backlog. |
 | V03 | Estruturar react no backlog | V02 | Fonte e reação possuem faixas, sincronização, layouts, áudio, legendas e direitos rastreáveis. |
 | V04 | Modularizar o pipeline | V03 | Cinco módulos têm entradas, saídas, agentes, regras determinísticas e ordem obrigatória documentados. |
-| R02 | Provar M1 — identificação | V04 | Upload produz `VideoAssetManifest` válido com hash, metadados, origem, direitos e deduplicação. |
-| R03 | Provar M2 — transcrição multimodal | R02 | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
+| V05 | Decompor M1 | V04 | Radar, histórico, fontes, ranking e catálogo são tópicos ordenados com aceite próprio. |
+| R02A | Definir contratos de tendência | V05 | Schemas distinguem métricas reais, ausências, cobertura e explicações. |
+| R02B | Preservar histórico | R02A | Snapshots permitem calcular crescimento e reaparição sem duplicar vídeo. |
+| R02C | Coletar YouTube global | R02B | API oficial produz referências curtas de regiões configuradas. |
+| R02D | Descobrir assuntos e ranquear | R02C | IA agrupa evidências e regras entregam top 20/top 5 diversos. |
+| R02E | Validar Instagram oficial | R02D | Adapter por hashtags funciona dentro das permissões ou registra cobertura parcial. |
+| R02F | Validar TikTok oficial | R02E | Acesso elegível funciona ou bloqueio do provedor fica explícito, sem scraping. |
+| R02G | Integrar radar diário | R02F | Run diária gera catálogo JSON/CSV/HTML mapeável, sem baixar mídia. |
+| R03 | Provar M2 — transcrição multimodal | R02G + arquivo local legítimo | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
 | R04 | Provar M3 — conteúdo | R03 | `ContentBrief` identifica tema, momentos, riscos e ângulos novos, todos ligados a evidências. |
 | R05 | Provar M4 — edição/montagem | R04 | `EditPlan` gera um corte narrado e legendado, com linhagem de cada trecho e evidencia G1. |
 | R06 | Provar M5 — refino | R05 | `EngagementReport` remove ruído e melhora ritmo/clareza sem perder fidelidade ou auditoria. |
@@ -66,9 +82,10 @@ Defaults aprovados:
 | R08 | Integrar Instagram | R07 | Conta profissional conecta; somente versão aprovada publica; estado e insights são reconciliados; exportação cobre falha externa. |
 | R09 | Entregar painel e piloto | R08 | Painel cruza perfil, vídeo, formato, visualizações, interações, custo, receita e lucro estimado; piloto decide `go`, `iterate` ou `stop`. |
 
-Cada tópico R02–R06 prova exatamente um módulo. R07 produz o primeiro pipeline
-utilizável, R08 entrega o produto conectado e R09 encerra o MVP medido. Novos
-canais, parceiros e otimizações não interrompem essa sequência.
+R02A–R02G provam M1 em fatias cumulativas; R03–R06 provam um módulo cada. R07
+produz o primeiro pipeline utilizável, R08 entrega o produto conectado e R09
+encerra o MVP medido. Novos canais, parceiros e otimizações não interrompem essa
+sequência.
 
 ## Gates de decisão
 
@@ -248,6 +265,15 @@ Ollama e agentes especializados podem acelerar tarefas independentes dentro de
 cada módulo. Um orquestrador determinístico controla a ordem, schemas, evidências,
 estados, custos e falhas. Direitos não são decididos por IA, módulos não podem ser
 pulados e somente a versão exata aprovada pode avançar para efeito externo.
+
+### V05 — decomposição técnica do M1
+
+Após o merge do PR #13, o usuário esclareceu que M1 deve descobrir vídeos em alta
+e não receber uploads. O plano em `docs/M1_VIDEO_IDENTIFICATION_PLAN.md` separa
+contratos, histórico, YouTube, ranking, Instagram, TikTok e catálogo diário em
+R02A–R02G. A coleta usa somente APIs oficiais, registra cobertura parcial e não
+baixa mídia. R03 depende do catálogo completo e de um arquivo local obtido
+legitimamente após a seleção.
 
 ## Backlog pós-MVP aprovado
 

@@ -7,8 +7,8 @@ com contratos versionados entre eles. IA pode acelerar análise e criação, mas
 orquestrador determinístico valida entradas, saídas, estados, limites e gates.
 
 ```text
-M1 Identificação
-      ↓ VideoAssetManifest
+M1 Radar de tendências
+      ↓ TrendCatalog → aquisição legítima e vínculo local
 M2 Transcrição multimodal
       ↓ MediaTranscript
 M3 Identificação de conteúdo
@@ -19,29 +19,34 @@ M5 Refino para engajamento
       ↓ FinalCandidate → revisão humana
 ```
 
-Cada módulo recebe o contrato aprovado do módulo anterior. Quando mídia original
-for necessária, o orquestrador concede acesso pela referência opaca do M1; isso
-não autoriza pular contratos intermediários. Falha de contrato interrompe o
-item; revisão pede nova versão ao módulo responsável, sem corrigir
-silenciosamente dados anteriores.
+Cada módulo recebe o contrato aprovado do módulo anterior. Como M1 entrega
+referências, a transição para M2 exige que o operador obtenha legitimamente o
+arquivo e o associe ao candidato selecionado. Uma URL remota não satisfaz a
+entrada de M2. Falha de contrato interrompe o item; revisão pede nova versão ao
+módulo responsável, sem corrigir silenciosamente dados anteriores.
 
-## M1 — identificação de vídeos
+## M1 — radar de vídeos em alta
 
-Responsabilidade: receber o upload, identificar tecnicamente o ativo e preservar
-origem e condição de uso antes de qualquer processamento criativo.
+Responsabilidade: consultar diariamente fontes sociais oficiais, descobrir
+assuntos sem nicho informado e formar um catálogo internacional de referências
+curtas com ranking explicável.
 
-- validar contêiner, MIME, duração, resolução, tamanho e integridade;
-- calcular SHA-256, detectar duplicação e criar ID interno;
-- registrar proprietário/origem, licença/autorização declarada e restrições;
-- classificar estado de direitos por regra, nunca somente por IA;
-- aceitar futuramente vários ativos, mas processar um no primeiro MVP.
+- consultar YouTube, Instagram e TikTok somente pelas capacidades oficiais;
+- aceitar cobertura parcial e registrar bloqueio do provedor sem scraping;
+- filtrar candidatos entre 15 segundos e 3 minutos;
+- guardar snapshots para medir velocidade, engajamento, recência e recorrência;
+- agrupar temas com IA local sem permitir que ela invente métricas;
+- deduplicar por plataforma/ID e explicar reaparições no ranking;
+- entregar 20 candidatos diversos e top 5 destacado uma vez ao dia;
+- registrar links e dados localmente, sem baixar os vídeos.
 
-Saída: `VideoAssetManifest`, com metadados técnicos, hash, origem, estado de
-direitos, alertas e caminho privado opaco.
+Saída: `TrendCatalog`, com runs, candidatos, snapshots, clusters, scores,
+explicações, cobertura das fontes e condição de uso conhecida. A especificação
+detalhada está em `M1_VIDEO_IDENTIFICATION_PLAN.md`.
 
-Reuso atual: estados de fonte, revisão humana, armazenamento SQLite, validações e
-adapters de YouTube/Wikimedia como fontes opcionais de pauta. Download de mídia
-externa não faz parte do fluxo upload-first.
+Reuso atual: coleta oficial do YouTube, Ollama estruturado, ranking explicável,
+SQLite e UI de top 5. Wikimedia pode servir futuramente como busca de alternativa
+licenciada, mas não representa tendência em rede social.
 
 ## M2 — transcrição multimodal
 
@@ -86,13 +91,13 @@ Responsabilidade: transformar o briefing aprovado em conteúdo novo, sem inventa
 trechos inexistentes nem perder a origem.
 
 - criar hook, roteiro novo, estrutura e plano de cortes;
-- selecionar intervalos existentes do vídeo enviado;
+- selecionar intervalos existentes do arquivo local associado;
 - gerar narração e legendas sincronizadas com a nova narração;
 - compor o template vertical, mixar áudio e renderizar uma versão;
 - preservar linhagem entre cada trecho e o ativo de origem.
 
 Saídas: `EditPlan` e `RenderCandidate`, ambos versionados. No primeiro MVP, todo
-o visual vem de um único upload. Multivídeo e react reutilizarão os mesmos
+o visual vem de um único arquivo local associado. Multivídeo e react reutilizarão os mesmos
 contratos com múltiplas faixas somente após o MVP.
 
 Agentes candidatos: roteirista, planejador de cortes e diretor de montagem. O
@@ -128,20 +133,20 @@ A aprovação final permanece humana e se aplica ao hash exato renderizado.
   código determinístico.
 - O orquestrador rejeita saída fora do schema, referência temporal inexistente e
   tentativa de pular módulo.
-- Humano confirma direitos após M1, pode revisar o briefing após M3 e aprova a
-  versão exata após M5.
+- Humano seleciona candidatos após M1, confirma aquisição/direitos antes de M2,
+  pode revisar o briefing após M3 e aprova a versão exata após M5.
 
 ## Reaproveitamento do que já existe
 
 | Componente atual | Reuso planejado |
 |---|---|
-| Store SQLite e revisão humana | Persistência, idempotência e gate de direitos do M1. |
-| YouTube/Wikimedia adapters | Pauta e candidatos opcionais no M1; nunca substituem upload/licença. |
+| Store SQLite e revisão humana | Runs diárias, snapshots, deduplicação, shortlist e seleção do M1. |
+| YouTube/Wikimedia adapters | YouTube inicia o radar; Wikimedia pode sugerir alternativa licenciada. |
 | Contratos e validação de evidências | Schemas e referências controladas em M2–M5. |
 | Ollama com saída estruturada | Agentes de visão, análise, roteiro e QA conforme o módulo. |
 | Ranking e rubric explicáveis | Priorização de momentos no M3 e avaliação no M5. |
-| Experiência local com FFmpeg/ffprobe | Inspeção no M1, extração no M2 e renderização/QA em M4–M5. |
-| Estados de aprovação | Gates humanos após M1 e M5, sem efeitos externos automáticos. |
+| Experiência local com FFmpeg/ffprobe | Validação do arquivo adquirido e extração no limite de M2; renderização/QA em M4–M5. |
+| Estados de aprovação | Seleção após M1 e aprovação após M5, sem efeitos externos automáticos. |
 
 O protótipo de renderização de R01 serviu como evidência, mas seus arquivos
 locais não foram versionados; M4 deverá implementar apenas o mínimo reproduzível
@@ -149,7 +154,7 @@ sustentado pelos contratos anteriores.
 
 ## Prioridade e estratégia de entrega
 
-1. Provar M1 isoladamente com upload e manifesto reproduzível.
+1. Provar M1 isoladamente com radar diário e catálogo reproduzível.
 2. Provar M2 com fala, texto em tela e um caso visual sem fala suficiente.
 3. Provar M3 com briefing explicável e totalmente ligado a evidências.
 4. Provar M4 com um corte narrado e legendado baseado em um upload.

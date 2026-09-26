@@ -1,72 +1,64 @@
-# Próximo tópico — R02 Módulo 1: identificação de vídeos
+# Próximo tópico — R02A Contratos e critérios do radar M1
 
-> Executar somente após o merge de V04. Este tópico implementa e prova apenas o
-> primeiro módulo; transcrição, compreensão e edição pertencem aos módulos
-> seguintes.
+> Executar somente após o merge de V05. Este tópico define o domínio do radar
+> sem chamar redes sociais, executar IA ou agendar coleta.
 
 ## Resultado
 
-- Problema: o sistema ainda não recebe um arquivo de vídeo com identidade,
-  origem, direitos e metadados técnicos reproduzíveis.
-- Resultado observável: um upload local válido produz um `VideoAssetManifest`
-  versionado, persistido e aprovado para seguir ao M2.
-- Valor esperado: impedir que arquivos duplicados, inválidos ou sem condição de
-  uso conhecida consumam transcrição e IA.
+- Problema: os dados e métricas variam entre YouTube, Instagram e TikTok; sem um
+  contrato comum, o ranking esconderia lacunas ou compararia sinais incompatíveis.
+- Resultado observável: schemas versionados representam runs, fontes, candidatos,
+  snapshots, assuntos, score, explicação e cobertura parcial.
+- Valor: permitir que cada adapter futuro entre sem inventar campos e que a mesma
+  evidência produza ranking reproduzível.
 
 ## Persona principal
 
-Operador individual de perfis temáticos em `pt-BR`, responsável por enviar um
-vídeo próprio, licenciado ou autorizado e declarar sua origem.
+Operador individual de perfis temáticos em `pt-BR` que procura diariamente
+oportunidades internacionais e brasileiras para criar conteúdo novo.
 
 ## Escopo
 
-1. Criar entrada local de um vídeo por item, mantendo a mídia em diretório
-   privado e ignorado pelo Git.
-2. Exigir declaração de origem e condição de uso; decisão verde continua humana
-   e determinística.
-3. Validar nome, extensão, assinatura/MIME, contêiner, codecs, duração, resolução,
-   tamanho e integridade com regras locais e `ffprobe`.
-4. Calcular SHA-256 em streaming, detectar duplicação e atribuir ID interno.
-5. Impedir path traversal, sobrescrita, exposição pela pasta pública e arquivos
-   acima dos limites configurados.
-6. Persistir `VideoAssetManifest` versionado sem caminho privado exposto pela API.
-7. Modelar estados mínimos `UPLOADED`, `VALIDATING`, `READY_FOR_TRANSCRIPTION`,
-   `VALIDATION_FAILED` e `REJECTED` com transições testadas e idempotentes.
-8. Registrar tempo ativo, espera, custo, falhas, retrabalho e motivo de rejeição.
-9. Reutilizar store, revisão humana e contratos existentes sempre que o limite
-   do módulo permitir.
+1. Criar contratos versionados para `TrendRun`, `SourceRun`, `TrendCandidate`,
+   `TrendSnapshot`, `TopicCluster` e `TrendScore`.
+2. Definir chave canônica `platform + platformVideoId`, com URL canônica como
+   fallback validado.
+3. Representar métricas ausentes como indisponíveis, nunca como zero estimado.
+4. Modelar capacidades e estados `SUCCESS`, `PARTIAL`, `BLOCKED_BY_PROVIDER` e
+   `FAILED` para cada fonte.
+5. Definir estados da run e do candidato, incluindo reaparição sem duplicação.
+6. Especificar duração elegível de 15 segundos a 3 minutos, 20 candidatos e top
+   5, com diversidade configurável por plataforma, região e assunto.
+7. Versionar os componentes do score: velocidade, engajamento, recência e
+   recorrência, sem implementar coleta ou classificação por IA.
+8. Definir serialização pública sanitizada e o layout lógico do catálogo local.
+
+## Reuso
+
+- validadores em `src/domain/contracts.js`;
+- fórmula e gates explicáveis de `src/domain/ranking.js`;
+- contratos de evidência que impedem o Ollama de criar IDs ou métricas;
+- fixtures e testes Node existentes.
 
 ## Fora de escopo
 
-- Extrair áudio, transcrever, executar OCR ou analisar quadros; isso é M2/R03.
-- Identificar tema, fatos, momentos ou ângulos editoriais; isso é M3/R04.
-- Criar roteiro, narração, legenda ou renderização; isso é M4/R05.
-- Otimizar hook, ritmo ou metadados; isso é M5/R06.
-- Receber vários arquivos no mesmo item, criar react, publicar ou integrar
-  Instagram.
-- Colocar mídia, provas privadas, caminhos locais ou dados pessoais no Git.
+- chamadas às APIs de YouTube, Instagram ou TikTok;
+- OAuth, novas chaves ou revisão de aplicativo;
+- SQLite, histórico real ou agendamento diário;
+- agrupamento por Ollama e cálculo do ranking final;
+- download, upload, mídia local, transcrição ou edição;
+- scraping ou automação de navegador.
 
-## Contrato mínimo
+## Testes e aceite
 
-`VideoAssetManifest` deve conter somente dados sanitizados:
+- [ ] Contratos aceitam candidatos válidos das três plataformas.
+- [ ] Métrica ausente permanece ausente e reduz confiança sem virar zero falso.
+- [ ] ID, URL, duração, data e valores inválidos são rejeitados com código estável.
+- [ ] Cobertura parcial/bloqueada é visível no resultado da run.
+- [ ] O mesmo vídeo pode receber vários snapshots sem criar nova identidade.
+- [ ] Limites de 20/top 5 e diversidade possuem configuração validada.
+- [ ] IA não pode alterar evidências nem score determinístico.
+- [ ] Testes existentes continuam passando e o roadmap registra a evidência.
 
-- versão do schema e ID interno;
-- SHA-256, tamanho, MIME/contêiner e codecs;
-- duração, largura, altura, fps e presença de áudio;
-- origem e condição de uso declaradas, estado de direitos e revisão;
-- estado do item, alertas técnicos e timestamps de criação/validação;
-- referência opaca ao armazenamento privado, nunca caminho absoluto na API.
-
-## Aceite
-
-- [ ] Upload válido chega a `READY_FOR_TRANSCRIPTION` com manifesto reproduzível.
-- [ ] Mesmo conteúdo não cria segundo ativo silenciosamente.
-- [ ] Arquivo inválido, grande demais ou com caminho malicioso é rejeitado.
-- [ ] Direitos pendentes impedem avanço ao M2.
-- [ ] Transições, idempotência e contrato possuem testes focados.
-- [ ] API não expõe caminho privado nem serve a mídia como arquivo público.
-- [ ] Métricas do módulo são registradas sem mídia ou dados privados no Git.
-- [ ] M2 recebe somente manifestos aprovados e tecnicamente válidos.
-
-Este prompt autoriza somente M1. Não autoriza iniciar transcrição, agentes de
-conteúdo, edição, refino, publicação ou os itens pós-MVP.
+Este prompt autoriza somente R02A. R02B começa apenas após o merge do PR de
+R02A.
