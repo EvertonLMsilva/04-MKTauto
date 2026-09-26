@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RADAR_CONTRACT_VERSION, canonicalTrendIdentity } from "../src/domain/contracts.js";
 import { runDailyTrendCatalog } from "../src/trend-daily.js";
-import { exportDailyCatalog } from "../src/trend-export.js";
+import { exportDailyCatalog, renderHtml } from "../src/trend-export.js";
 import { TrendCatalogStore, TrendStoreError } from "../src/trend-store.js";
 
 const DATE = "2026-09-26";
@@ -108,6 +108,22 @@ test("falha de escrita não substitui catálogo anterior", async () => {
     assert.throws(() => exportDailyCatalog({ store, logicalDate: DATE, outputRoot: output, fileSystem }), /DISK_FULL/);
     assert.equal(readFileSync(join(output, DATE, "sentinel.txt"), "utf8"), "preservar");
   });
+});
+
+test("relatório mantém links dos candidatos quando o ranking está indisponível", () => {
+  const candidate = observation({ platform: "YOUTUBE", id: "video-1", title: "Vídeo sem ranking <script>", capturedAt: AT, runId: "run" }).candidate;
+  const html = renderHtml({
+    dailyRun: { logicalDate: DATE, timezone: "UTC", state: "COMPLETED_WITH_GAPS", gaps: ["ANALYSIS_FAILED"] },
+    sourceRuns: [],
+    candidates: [candidate],
+    ranking: [],
+  });
+  assert.match(html, /Candidatos sem ranking/);
+  assert.match(html, /Vídeo sem ranking/);
+  assert.doesNotMatch(html, /<script>/);
+  assert.match(html, /&lt;script&gt;/);
+  assert.match(html, /https:\/\/youtube\.com\/watch\?v=video-1/);
+  assert.doesNotMatch(html, /<td>1<\/td>/);
 });
 
 function fixtureDependencies(calls, title = "Vídeo útil") {

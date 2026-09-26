@@ -108,6 +108,16 @@ function renderHtml(output) {
 <td>${escapeHtml(candidate.title ?? "Título indisponível")}</td><td>${escapeHtml(candidate.state)}</td>
 <td>${score.value.toFixed(2)}</td><td>${Math.round(score.confidence * 100)}%</td>
 <td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
+  const rankedCandidateIds = new Set(output.ranking.map(({ candidate }) => candidate.id));
+  const unranked = (output.candidates ?? []).filter(({ id }) => !rankedCandidateIds.has(id));
+  const unrankedRows = unranked.map((candidate) => `<tr>
+<td>${escapeHtml(candidate.platform)}</td><td>${escapeHtml(candidate.title ?? "Título indisponível")}</td>
+<td>${escapeHtml(candidate.state)}</td><td>score indisponível</td>
+<td><a href="${escapeAttribute(candidate.canonicalUrl)}">abrir fonte oficial</a></td></tr>`).join("\n");
+  const unrankedSection = unranked.length === 0 ? "" : `<h2>Candidatos sem ranking</h2>
+<p>Estes candidatos foram coletados, mas não receberam posição porque a análise não foi concluída.</p>
+<table><thead><tr><th>Fonte</th><th>Título</th><th>Estado</th><th>Ranking</th><th>URL</th></tr></thead>
+<tbody>${unrankedRows}</tbody></table>`;
   const sources = output.sourceRuns.map((source) => `<li><strong>${escapeHtml(source.platform)}</strong>: ${escapeHtml(source.status)} — ${escapeHtml(source.capabilities.discovery)}; lacunas: ${escapeHtml(source.gaps.join(", ") || "nenhuma")}</li>`).join("\n");
   const gaps = output.dailyRun.gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("\n") || "<li>nenhuma</li>";
   return `<!doctype html>
@@ -119,7 +129,7 @@ body{font-family:system-ui,sans-serif;margin:2rem;line-height:1.45;color:#1f2937
 <p>Timezone: <code>${escapeHtml(output.dailyRun.timezone)}</code>. Estado: <strong>${escapeHtml(output.dailyRun.state)}</strong>. Esta seleção não concede direitos de uso.</p>
 <h2>Cobertura</h2><ul>${sources}</ul><h2>Lacunas</h2><ul class="gap">${gaps}</ul>
 <h2>Ranking</h2><table><thead><tr><th>#</th><th>Top 5</th><th>Fonte</th><th>Título</th><th>Estado</th><th>Score</th><th>Confiança</th><th>URL</th></tr></thead>
-<tbody>${rows}</tbody></table></body></html>\n`;
+<tbody>${rows}</tbody></table>${unrankedSection}</body></html>\n`;
 }
 
 function escapeHtml(value) {
