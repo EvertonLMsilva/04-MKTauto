@@ -10,13 +10,14 @@
 | R01 | CONCLUÍDO | Fluxo real e baseline interno | PR #10 mergeado; três cortes aprovados e decisão `iterar R01` pela lacuna de tempo ativo. |
 | R01A | CONCLUÍDO | Instrumento local de descoberta assistida | PR #8 mergeado em 25/09/2026 (`6706ba6`). |
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
-| V03 | EM REVISÃO | Estrutura futura para vídeos de react | PR #12 aberto; define duas faixas sincronizadas, layouts, áudio, legendas e direitos. |
-| R02 | PENDENTE | Ingestão e compreensão do vídeo enviado | Depende de V02; usa evidência de R01 sem repetir descoberta. |
-| R03 | PENDENTE | Experimento criativo upload-first | Depende de R02. |
-| R04 | PENDENTE | Contratos determinísticos e adaptadores | Depende de R03 e G1. |
-| R05 | PENDENTE | Fundação e múltiplos perfis | Depende de R04 e G2. |
-| R06 | PENDENTE | Ingestão e preparação | Depende de R05. |
-| R07 | PENDENTE | Produção dinâmica e exportação | Depende de R06. |
+| V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
+| V04 | EM REVISÃO | Pipeline modular e multiagente | PR #13 aberto; define cinco módulos sequenciais, contratos, agentes e gates. |
+| R02 | PENDENTE | M1 — identificação de vídeos | Depende de V04. |
+| R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02. |
+| R04 | PENDENTE | M3 — identificação de conteúdo | Depende de R03. |
+| R05 | PENDENTE | M4 — edição e montagem | Depende de R04. |
+| R06 | PENDENTE | M5 — refino para engajamento | Depende de R05. |
+| R07 | PENDENTE | Orquestração, revisão e exportação | Depende de R06 e G2. |
 | R08 | PENDENTE | Instagram: publicação e insights | Depende de R07 e G3. |
 | R09 | PENDENTE | Painel, piloto e decisão | Depende de R08. |
 
@@ -55,18 +56,19 @@ Defaults aprovados:
 | R01A | Instrumentar a descoberta | Rodada 1 de R01 | Aplicação local coleta sinais oficiais, usa IA para sugerir candidatos e calcula ranking explicável por regras testadas. |
 | V02 | Reposicionar entrada do MVP | PR #10 | Documentos tornam upload único o fluxo principal e composição multivídeo um item explícito de backlog. |
 | V03 | Estruturar react no backlog | V02 | Fonte e reação possuem faixas, sincronização, layouts, áudio, legendas e direitos rastreáveis. |
-| R02 | Validar ingestão e compreensão | V02 | Um upload válido produz hash, metadados, áudio, transcrição com timestamps e análise visual quando necessária, sem mídia no Git. |
-| R03 | Provar criação upload-first | R02 | Processo concierge cria roteiro novo, plano de trechos, narração e legendas para um corte feito somente com o vídeo enviado. |
-| R04 | Definir domínio e adaptadores | R03 | Estados, invariantes e contratos mínimos de fonte, IA, renderização, publicação, insights, monetização e parceiros são testáveis. |
-| R05 | Criar fundação | R04 | Aplicação reproduzível para um operador e múltiplos perfis, com configuração editorial e auditoria mínima. |
-| R06 | Implementar ingestão e preparação | R05 | Upload, validação, transcrição, análise visual e marcação de trechos funcionam no fluxo principal. |
-| R07 | Implementar produção dinâmica | R06 | Roteiro novo, narração, legendas, composição vertical, revisão, renderização e exportação completam um corte. |
+| V04 | Modularizar o pipeline | V03 | Cinco módulos têm entradas, saídas, agentes, regras determinísticas e ordem obrigatória documentados. |
+| R02 | Provar M1 — identificação | V04 | Upload produz `VideoAssetManifest` válido com hash, metadados, origem, direitos e deduplicação. |
+| R03 | Provar M2 — transcrição multimodal | R02 | Fala, texto em tela e observações visuais formam `MediaTranscript` temporal e reproduzível. |
+| R04 | Provar M3 — conteúdo | R03 | `ContentBrief` identifica tema, momentos, riscos e ângulos novos, todos ligados a evidências. |
+| R05 | Provar M4 — edição/montagem | R04 | `EditPlan` gera um corte narrado e legendado, com linhagem de cada trecho e evidencia G1. |
+| R06 | Provar M5 — refino | R05 | `EngagementReport` remove ruído e melhora ritmo/clareza sem perder fidelidade ou auditoria. |
+| R07 | Integrar o pipeline | R06/G2 | Orquestrador executa M1→M5, registra falhas, permite revisão e exporta a versão aprovada. |
 | R08 | Integrar Instagram | R07 | Conta profissional conecta; somente versão aprovada publica; estado e insights são reconciliados; exportação cobre falha externa. |
 | R09 | Entregar painel e piloto | R08 | Painel cruza perfil, vídeo, formato, visualizações, interações, custo, receita e lucro estimado; piloto decide `go`, `iterate` ou `stop`. |
 
-R07 produz o primeiro gerador utilizável, R08 entrega o produto conectado e R09
-encerra o MVP medido. Novos canais, parceiros e otimizações não interrompem essa
-sequência.
+Cada tópico R02–R06 prova exatamente um módulo. R07 produz o primeiro pipeline
+utilizável, R08 entrega o produto conectado e R09 encerra o MVP medido. Novos
+canais, parceiros e otimizações não interrompem essa sequência.
 
 ## Gates de decisão
 
@@ -90,9 +92,11 @@ O domínio não dependerá diretamente da Meta, de uma rede de afiliados ou de u
 provedor de IA. Os contratos entram somente quando exigidos pelo fluxo comprovado:
 
 - `Source`: receber o arquivo enviado e preservar origem, hash e condição de uso;
-- `ContentIntelligence`: transcrever, analisar quadros quando necessário,
-  sugerir trechos e criar roteiro novo;
+- `Transcriber`: produzir fala, OCR e observações visuais temporais;
+- `ContentIntelligence`: identificar conteúdo, evidências, riscos e ângulos;
+- `Editor`: criar roteiro e plano de trechos sem executar efeitos externos;
 - `Renderer`: compor e renderizar a versão revisável;
+- `EngagementReviewer`: avaliar hook, ritmo, clareza, fidelidade e qualidade;
 - `Publisher`: publicar a versão exata aprovada;
 - `Insights`: coletar e reconciliar métricas;
 - `Monetization`: registrar receitas e custos;
@@ -233,6 +237,18 @@ preservar referência ao ativo e intervalo de origem.
 React não cria autorização automática sobre o vídeo-fonte. Direitos, contexto,
 atribuição, segurança e aprovação humana da versão exata continuam gates.
 
+### V04 — pipeline modular e multiagente
+
+Em 26/09/2026, o usuário definiu cinco processos obrigatoriamente sequenciais:
+identificação de vídeos, transcrição multimodal, identificação de conteúdo,
+edição/montagem e refino para engajamento. A especificação e os contratos estão
+em `docs/MODULAR_VIDEO_PIPELINE.md`.
+
+Ollama e agentes especializados podem acelerar tarefas independentes dentro de
+cada módulo. Um orquestrador determinístico controla a ordem, schemas, evidências,
+estados, custos e falhas. Direitos não são decididos por IA, módulos não podem ser
+pulados e somente a versão exata aprovada pode avançar para efeito externo.
+
 ## Backlog pós-MVP aprovado
 
 | ID | Capacidade | Dependência | Aceite futuro |
@@ -249,8 +265,9 @@ atribuição, segurança e aprovação humana da versão exata continuam gates.
 - Receita pode vir de fontes que o Instagram não expõe; o MVP aceita entrada
   manual/CSV antes de novos adaptadores.
 - Conteúdo dinâmico pode não gerar audiência ou lucro; R09 mede, não promete.
-- Transcrição e visão local podem inviabilizar custo ou latência; R02 mede antes
-  do experimento criativo. R03 mede roteiro, voz, legenda e renderização.
+- Transcrição e visão local podem inviabilizar custo ou latência; R03 mede antes
+  da identificação de conteúdo. R05 mede roteiro, voz, legenda e renderização;
+  R06 mede o custo adicional do refino.
 - Metabase OSS tem obrigações e limites de customização; R09 pode preferir painel
   nativo pequeno.
 - Publicação real permanece bloqueada por G4, mesmo que a integração técnica já

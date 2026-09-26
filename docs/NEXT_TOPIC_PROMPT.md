@@ -1,67 +1,72 @@
-# Próximo tópico — R02 Ingestão e compreensão do vídeo enviado
+# Próximo tópico — R02 Módulo 1: identificação de vídeos
 
-> Executar somente após o merge de V02. Este tópico prova a entrada upload-first
-> antes de automatizar roteiro, narração, legendas ou renderização final.
+> Executar somente após o merge de V04. Este tópico implementa e prova apenas o
+> primeiro módulo; transcrição, compreensão e edição pertencem aos módulos
+> seguintes.
 
 ## Resultado
 
-- Problema: o sistema ainda não recebe um vídeo e não produz um contexto local,
-  estruturado e reproduzível para a criação editorial.
-- Resultado observável: um vídeo fornecido pelo operador gera validação técnica,
-  hash, transcrição com timestamps e análise visual quando a fala não for
-  suficiente.
-- Valor esperado: dar ao Ollama contexto confiável para criar conteúdo novo no
-  tópico seguinte, sem enviar mídia privada a um provedor externo.
+- Problema: o sistema ainda não recebe um arquivo de vídeo com identidade,
+  origem, direitos e metadados técnicos reproduzíveis.
+- Resultado observável: um upload local válido produz um `VideoAssetManifest`
+  versionado, persistido e aprovado para seguir ao M2.
+- Valor esperado: impedir que arquivos duplicados, inválidos ou sem condição de
+  uso conhecida consumam transcrição e IA.
 
 ## Persona principal
 
-Operador individual de perfis temáticos em `pt-BR`, responsável por fornecer um
-vídeo próprio, licenciado ou autorizado e revisar o contexto extraído.
+Operador individual de perfis temáticos em `pt-BR`, responsável por enviar um
+vídeo próprio, licenciado ou autorizado e declarar sua origem.
 
 ## Escopo
 
-1. Receber um vídeo local mantido fora do Git e uma declaração de origem/direito.
-2. Validar allowlist de contêiner/MIME, duração, tamanho e integridade; calcular
-   SHA-256 e impedir duplicação acidental.
-3. Extrair áudio mono 16 kHz com FFmpeg para área temporária ignorada.
-4. Transcrever localmente com `faster-whisper`, incluindo idioma e timestamps por
-   segmento; timestamps por palavra entram somente se custo e precisão permitirem.
-5. Definir um critério determinístico de transcrição insuficiente ou ausência de
-   fala.
-6. Para esse caso, amostrar quadros e avaliar um modelo de visão local no Ollama,
-   sem enviar o vídeo completo ao modelo.
-7. Produzir um pacote JSON versionado com metadados, transcrição, descrição
-   visual, alertas e referências temporais.
-8. Medir tempo ativo, espera, CPU/GPU, memória, falhas e retrabalho.
+1. Criar entrada local de um vídeo por item, mantendo a mídia em diretório
+   privado e ignorado pelo Git.
+2. Exigir declaração de origem e condição de uso; decisão verde continua humana
+   e determinística.
+3. Validar nome, extensão, assinatura/MIME, contêiner, codecs, duração, resolução,
+   tamanho e integridade com regras locais e `ffprobe`.
+4. Calcular SHA-256 em streaming, detectar duplicação e atribuir ID interno.
+5. Impedir path traversal, sobrescrita, exposição pela pasta pública e arquivos
+   acima dos limites configurados.
+6. Persistir `VideoAssetManifest` versionado sem caminho privado exposto pela API.
+7. Modelar estados mínimos `UPLOADED`, `VALIDATING`, `READY_FOR_TRANSCRIPTION`,
+   `VALIDATION_FAILED` e `REJECTED` com transições testadas e idempotentes.
+8. Registrar tempo ativo, espera, custo, falhas, retrabalho e motivo de rejeição.
+9. Reutilizar store, revisão humana e contratos existentes sempre que o limite
+   do módulo permitir.
 
 ## Fora de escopo
 
-- Criar roteiro, narração, legenda final ou renderizar o corte; isso pertence a
-  R03.
-- Receber vários vídeos no mesmo item; composição multivídeo está no backlog
-  pós-MVP.
-- Buscar ou baixar vídeos da internet.
-- Publicar, integrar Instagram ou criar armazenamento público.
-- Colocar mídia, áudio, transcrição privada, modelos ou dados pessoais no Git.
+- Extrair áudio, transcrever, executar OCR ou analisar quadros; isso é M2/R03.
+- Identificar tema, fatos, momentos ou ângulos editoriais; isso é M3/R04.
+- Criar roteiro, narração, legenda ou renderização; isso é M4/R05.
+- Otimizar hook, ritmo ou metadados; isso é M5/R06.
+- Receber vários arquivos no mesmo item, criar react, publicar ou integrar
+  Instagram.
+- Colocar mídia, provas privadas, caminhos locais ou dados pessoais no Git.
 
-## Base mínima
+## Contrato mínimo
 
-- Git em `main` após o merge de V02.
-- FFmpeg disponível localmente.
-- Python isolado para `faster-whisper` e Ollama local ativo.
-- Um vídeo com fala e um vídeo sem fala suficiente, ambos com direito de uso
-  declarado pelo operador.
+`VideoAssetManifest` deve conter somente dados sanitizados:
+
+- versão do schema e ID interno;
+- SHA-256, tamanho, MIME/contêiner e codecs;
+- duração, largura, altura, fps e presença de áudio;
+- origem e condição de uso declaradas, estado de direitos e revisão;
+- estado do item, alertas técnicos e timestamps de criação/validação;
+- referência opaca ao armazenamento privado, nunca caminho absoluto na API.
 
 ## Aceite
 
-- [ ] Upload válido produz hash e metadados técnicos reproduzíveis.
-- [ ] Vídeo com fala produz transcrição local com timestamps úteis.
-- [ ] Vídeo sem fala suficiente aciona análise visual local e registra o motivo.
-- [ ] O pacote de contexto referencia somente intervalos existentes na entrada.
-- [ ] Tempos, recursos, falhas e retrabalho são medidos.
-- [ ] Nenhuma mídia, transcrição privada ou segredo entra no Git.
-- [ ] R03 recebe contrato e evidência suficientes para criar roteiro e plano de
-      corte novos.
+- [ ] Upload válido chega a `READY_FOR_TRANSCRIPTION` com manifesto reproduzível.
+- [ ] Mesmo conteúdo não cria segundo ativo silenciosamente.
+- [ ] Arquivo inválido, grande demais ou com caminho malicioso é rejeitado.
+- [ ] Direitos pendentes impedem avanço ao M2.
+- [ ] Transições, idempotência e contrato possuem testes focados.
+- [ ] API não expõe caminho privado nem serve a mídia como arquivo público.
+- [ ] Métricas do módulo são registradas sem mídia ou dados privados no Git.
+- [ ] M2 recebe somente manifestos aprovados e tecnicamente válidos.
 
-Este prompt autoriza somente o spike de ingestão e compreensão local. Não
-autoriza publicação nem implementação antecipada do motor completo.
+Este prompt autoriza somente M1. Não autoriza iniciar transcrição, agentes de
+conteúdo, edição, refino, publicação ou os itens pós-MVP.
