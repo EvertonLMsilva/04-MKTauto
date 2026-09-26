@@ -1,198 +1,247 @@
-# M1 — plano de identificação de vídeos
+# M1 — radar diário de vídeos em alta
 
-## Objetivo e limite
+## Decisão de produto
 
-M1 recebe **um upload local por item**, comprova sua identidade técnica e reúne
-a declaração de origem/direitos antes de liberar qualquer processamento de
-conteúdo. Sua única saída aceita pelo M2 é um `VideoAssetManifest` válido no
-estado `READY_FOR_TRANSCRIPTION`.
+M1 não recebe upload, não transcreve e não edita. Ele executa uma descoberta
+diária de vídeos públicos em alta no YouTube, Instagram e TikTok, em regiões e
+idiomas diversos, descobre os assuntos automaticamente e entrega 20 candidatos
+explicáveis para adaptação ao público brasileiro.
 
-M1 não interpreta o assunto do vídeo, não transcreve, não cria roteiro e não
-edita. A IA não é necessária neste módulo: identidade, limites, direitos,
-estados e deduplicação são regras determinísticas com revisão humana.
+O módulo registra referências e metadados, mas não baixa mídia. Um vídeo sem
+permissão continua útil como referência editorial; isso não autoriza cópia,
+repostagem ou download. O arquivo necessário aos módulos seguintes deverá ser
+obtido legitimamente e associado ao candidato em uma etapa posterior.
 
-## Decisões de desenho
+## Resultado diário
 
-### Entrada e armazenamento
+Cada execução produz um `TrendCatalog` versionado contendo:
 
-O menor fluxo seguro é uma criação em duas etapas:
+- 20 candidatos entre 15 segundos e 3 minutos, com top 5 destacado;
+- plataforma, ID canônico, URL pública, autor/canal quando a API disponibilizar,
+  data, duração, idioma, país/região, texto público e miniatura permitida;
+- métricas brutas disponíveis: visualizações, curtidas, comentários e
+  compartilhamentos;
+- snapshots históricos para calcular crescimento e velocidade;
+- assunto, nicho, subtema, público provável, padrão narrativo e possibilidade de
+  criar abordagem nova para o Brasil;
+- score, posição, evidências e explicação de por que o item está em alta;
+- disponibilidade de uso: `REFERENCE_ONLY`, `USAGE_UNKNOWN` ou
+  `USAGE_CONFIRMED`, sem decisão automática de direitos;
+- capacidade da fonte e lacunas de dados explícitas, sem inventar métricas;
+- histórico de reaparição do mesmo vídeo sem novo download ou novo cadastro.
 
-1. `POST /api/video-assets` recebe metadados sanitizados e a declaração de
-   origem/condição de uso, cria o item e devolve ID e endpoint de upload;
-2. `PUT /api/video-assets/:id/content` recebe somente o corpo binário e o grava
-   em streaming em um arquivo temporário privado.
+O ranking combina sinais disponíveis, normalizados por plataforma:
 
-Isso evita carregar o vídeo em memória e dispensa parser multipart no primeiro
-corte. O nome fornecido pelo usuário é apenas metadado; o nome físico é um ID
-gerado pelo sistema. O arquivo temporário usa sufixo `.part`, fica fora de
-`public/` e do Git e só é promovido atomicamente após validação.
+1. crescimento de visualizações entre snapshots;
+2. visualizações por hora/dia desde a publicação;
+3. taxas de curtidas, comentários e compartilhamentos;
+4. recência;
+5. recorrência do assunto em vídeos, regiões e plataformas diferentes.
 
-Os limites são configuráveis. Tamanho é conferido no cabeçalho, quando presente,
-e durante o streaming. O servidor nunca aceita caminho enviado pelo cliente nem
-expõe caminho absoluto na resposta.
+Um sinal ausente reduz a confiança; não recebe valor zero nem estimativa criada
+por IA. O score é determinístico. IA local pode agrupar assuntos e explicar
+padrões somente a partir das evidências coletadas.
 
-### Identidade, duplicação e direitos
+## Cobertura internacional
 
-SHA-256 é calculado durante a gravação e identifica o conteúdo binário. Um hash
-já conhecido não cria outro ativo silenciosamente: a API retorna conflito com o
-ID existente. Reutilização explícita e múltiplas declarações para o mesmo ativo
-podem ser adicionadas depois, se o uso real exigir; direitos nunca são herdados
-automaticamente de outro envio.
+A coleta começa com regiões representativas e configuráveis, incluindo Brasil,
+Estados Unidos, México, Reino Unido, Espanha, Índia, Japão e Coreia do Sul. A
+lista pode crescer sem mudar o contrato. Idioma não restringe a entrada; cada
+candidato registra idioma detectado/declarado e potencial de localização para
+`pt-BR`.
 
-A declaração usa `OWN`, `LICENSED` ou `AUTHORIZED`, com origem e referência de
-prova obrigatórias conforme a opção. A referência aponta para evidência mantida
-fora do Git e não contém o documento privado. Somente revisão humana pode marcar
-o item como verde. Popularidade, autoria de roteiro novo ou uso de um trecho não
-substituem licença/autorização.
+O top 20 evita domínio de uma única rede, região ou assunto por meio de limites
+configuráveis de diversidade. A cobertura real de cada rede permanece visível:
+uma fonte limitada nunca é apresentada como se tivesse sido pesquisada por
+completo.
 
-### Inspeção técnica
+## Limites reais das APIs oficiais
 
-Validação combina assinatura do arquivo, MIME declarado, extensão apenas como
-sinal auxiliar e `ffprobe` invocado sem shell, com timeout e saída limitada. O
-manifesto normaliza contêiner, codecs, duração, dimensões, FPS e presença de
-áudio. Arquivo corrompido, sem stream de vídeo, fora dos limites ou incompatível
-com a allowlist é rejeitado e não avança.
+| Rede | Capacidade oficial útil | Limite para M1 | Estratégia |
+|---|---|---|---|
+| YouTube | `videos.list` com `chart=mostPopular`, região, categoria, estatísticas e duração. | O chart não é exclusivo de Shorts; formato curto precisa ser filtrado por duração e outros sinais disponíveis. | Primeira fonte operacional e baseline reproduzível. |
+| Instagram | Busca oficial por hashtags e mídia pública associada, sujeita a conta profissional, permissões e revisão do app. | Não existe endpoint geral equivalente a “Reels em alta no mundo”; descoberta é parcial e orientada por hashtags. | Expandir hashtags a partir dos assuntos já observados e declarar cobertura limitada. |
+| TikTok | Display API lista vídeos do usuário que autorizou o app; Research API consulta dados públicos apenas para pesquisadores elegíveis. | A API comercial comum não fornece feed global de tendências públicas. | Implementar adaptador somente com acesso oficial elegível; caso contrário registrar `BLOCKED_BY_PROVIDER`, sem scraping. |
 
-Antivírus e transcodificação de normalização ficam adiados. O MVP reduz o risco
-mantendo staging privado, não executável e não servido; essa decisão deve ser
-revista antes de aceitar uploads de usuários não confiáveis pela internet.
+Referências oficiais verificadas em 26/09/2026:
 
-## Contrato de saída
+- [YouTube `videos.list`](https://developers.google.com/youtube/v3/docs/videos/list);
+- [Instagram Hashtag Search](https://developers.facebook.com/docs/instagram-platform/instagram-graph-api/reference/ig-hashtag-search);
+- [TikTok Display API](https://developers.tiktok.com/docs/en/display-api-overview);
+- [TikTok Research Tools](https://developers.tiktok.com/docs/en/about-research-api).
 
-`VideoAssetManifest` é versionado e contém somente dados sanitizados:
+“Todas as redes” significa tentar todos os adapters oficiais diariamente e
+registrar o resultado de cada um: `SUCCESS`, `PARTIAL`, `BLOCKED_BY_PROVIDER` ou
+`FAILED`. Não autoriza scraping nem dados fabricados para preencher uma fonte.
 
-- `schemaVersion`, `assetId`, `sha256`, `byteSize` e referência opaca privada;
-- MIME detectado, contêiner, codecs, duração, largura, altura, FPS e áudio;
-- nome original sanitizado apenas para exibição;
-- origem declarada, condição de uso, referência de prova e revisão humana;
-- estado, alertas/códigos de erro e timestamps relevantes;
-- versão das regras e da ferramenta de inspeção usadas.
+## Identidade, histórico e reaparição
 
-O manifesto não contém caminho absoluto, mídia, prova privada, segredo, prompt
-ou texto extraído do vídeo.
+A chave é `platform + platformVideoId`; URL canônica é fallback. Cada coleta cria
+um snapshot imutável de métricas. Se o vídeo reaparecer:
 
-## Estados e transições
+- não cria outro candidato nem tenta baixar mídia;
+- atualiza `lastSeenAt` e acrescenta novo snapshot;
+- recalcula velocidade, posição e confiança;
+- explica a nova indicação, por exemplo crescimento renovado, permanência no
+  ranking ou retorno do assunto em outras redes.
+
+Conteúdo semelhante não é tratado como duplicata do vídeo. Similaridade serve
+para formar clusters de assunto e detectar tendências cruzadas.
+
+## Armazenamento local e mapeamento
+
+SQLite guarda runs, candidatos, snapshots, clusters, scores e estado dos
+adapters. Uma pasta por execução oferece artefatos fáceis de usar:
 
 ```text
-CREATED -> UPLOADING -> UPLOADED -> VALIDATING
-                                      |       |
-                                      |       -> VALIDATION_FAILED
-                                      v
-                              AWAITING_RIGHTS_REVIEW
-                                  |           |
-                                  |           -> REJECTED
-                                  v
-                         READY_FOR_TRANSCRIPTION
-
-UPLOADING -> UPLOAD_FAILED
+data/trends/2026-09-26/
+├── catalog.json
+├── ranking.csv
+├── report.html
+└── candidates/
+    └── <candidate-id>/
+        ├── candidate.json
+        └── thumbnail.<ext>  # somente quando a API permitir persistência
 ```
 
-- reenvio só é aceito após `UPLOAD_FAILED`, antes de existir conteúdo válido;
-- validação repetida com o mesmo hash e versão de regras é idempotente;
-- mudança na declaração ou prova invalida a revisão anterior;
-- `REJECTED` e `READY_FOR_TRANSCRIPTION` não mudam sem uma nova versão auditada;
-- somente `READY_FOR_TRANSCRIPTION` satisfaz o contrato de entrada do M2.
+`candidate.json` é a fonte de ligação com os módulos posteriores. Não há arquivo
+de vídeo nessa pasta. Depois da escolha, um processo de aquisição ainda a definir
+associa um arquivo local legítimo ao `candidateId`, registra hash/origem e só
+então libera transcrição. M2 jamais recebe somente uma URL remota.
+
+## Estados
+
+### Execução diária
+
+`CREATED → COLLECTING → NORMALIZING → CLUSTERING → RANKING → COMPLETED`
+
+Falhas terminam em `COMPLETED_WITH_GAPS` ou `FAILED`. Uma rede indisponível não
+apaga resultados válidos das demais.
+
+### Candidato
+
+`DISCOVERED → ACTIVE → SHORTLISTED → SELECTED`
+
+`STALE` indica que deixou a janela de tendência; `REFERENCE_ONLY` é uma condição
+de uso, não um estado editorial. Seleção humana não equivale a autorização de
+download ou publicação.
 
 ## Divisão de R02
 
-Cada fatia abaixo é um tópico e um PR. A ordem reduz risco sem criar arquitetura
-de fila ou processamento criativo antecipado.
+Cada linha é um tópico e um PR independente, executado na ordem.
 
-| ID | Tópico | Entrega observável | Depende de |
+| ID | Entrega | Resultado observável | Depende de |
 |---|---|---|---|
-| R02A | Contrato, estados e limites | Schema versionado, transições, códigos de erro, configuração e testes de domínio definem o M1 sem receber mídia. | V05 |
-| R02B | Upload privado em streaming | Criação em duas etapas grava um arquivo `.part` privado, aplica limite durante o stream e bloqueia caminho/sobrescrita/exposição pública. | R02A |
-| R02C | Identidade e inspeção técnica | SHA-256, assinatura e `ffprobe` produzem metadados normalizados; inválidos são descartados com motivo estável. | R02B |
-| R02D | Persistência, deduplicação e recuperação | SQLite preserva manifesto, auditoria e idempotência; duplicatas, retries e resíduos parciais têm comportamento testado. | R02C |
-| R02E | Origem, direitos e revisão | Declaração, referência externa de prova e decisão humana determinística controlam o gate verde. | R02D |
-| R02F | Integração e prova ponta a ponta | Interface local envia um vídeo, mostra progresso/estado, registra métricas sanitizadas e entrega manifesto aprovado ao limite do M2. | R02E |
+| R02A | Contratos e critérios | `TrendRun`, `TrendCandidate`, `TrendSnapshot`, capacidades das fontes, estados e fórmula de ranking possuem schemas e testes. | V05 |
+| R02B | Histórico local e deduplicação | SQLite guarda snapshots diários; reaparições atualizam histórico e explicação sem duplicar candidato. | R02A |
+| R02C | Coleta global do YouTube | Adapter oficial coleta charts de regiões configuradas, filtra 15 s–3 min e normaliza métricas. | R02B |
+| R02D | Assuntos e ranking | IA local agrupa evidências; regras determinísticas entregam top 20 diverso e top 5 explicável. | R02C |
+| R02E | Cobertura oficial do Instagram | Spike prova a cobertura permitida por hashtags ou registra bloqueio/limitação reproduzível. | R02D |
+| R02F | Cobertura oficial do TikTok | Spike usa acesso oficial elegível ou registra `BLOCKED_BY_PROVIDER`, sem scraping. | R02E |
+| R02G | Execução diária e catálogo local | Uma execução manual/agendada por dia consulta todos os adapters e gera JSON, CSV e relatório HTML mapeáveis. | R02F |
 
-### R02A — contrato, estados e limites
+### R02A — contratos e critérios
 
-- criar tipos/validadores de `VideoAssetManifest`, declaração e erros;
-- implementar a máquina de estados e invariantes sem I/O de mídia;
-- definir allowlist e limites por configuração, com defaults documentados;
-- testar transições válidas, rejeições, revisão invalidada e sanitização;
-- registrar ameaça e política de retenção mínima do staging.
+- substituir o contrato de upload pelo catálogo de tendências;
+- definir campos obrigatórios, opcionais e disponibilidade por plataforma;
+- versionar fórmula, normalização, diversidade e explicações;
+- testar estados, dados ausentes, IDs canônicos e serialização sanitizada;
+- definir as regiões iniciais e duração de 15 segundos a 3 minutos.
 
-Aceite: o domínio rejeita qualquer tentativa de chegar a
-`READY_FOR_TRANSCRIPTION` sem validação técnica e revisão humana verdes.
+Aceite: um conjunto de snapshots válido produz candidatos comparáveis sem
+inventar sinal ausente; nenhuma URL ou métrica arbitrária passa pelo contrato.
 
-### R02B — upload privado em streaming
+### R02B — histórico local e deduplicação
 
-- criar item e receber corpo binário sem buffer integral;
-- gerar referência opaca e nome físico interno;
-- limitar bytes no preflight e no streaming;
-- remover parcial em cancelamento/falha e impedir traversal/sobrescrita;
-- garantir que a mídia não seja servida por rota pública.
+- persistir runs, adapters, candidatos, snapshots e ranking;
+- reutilizar candidato por chave canônica e preservar snapshots imutáveis;
+- calcular velocidade somente com observações comparáveis;
+- registrar motivo de reaparição e mudança de posição;
+- tornar nova tentativa da mesma run idempotente.
 
-Aceite: upload válido termina em `UPLOADED`; arquivo grande, interrompido ou
-malicioso termina em estado de falha sem resíduo utilizável.
+Aceite: o mesmo vídeo observado em dias diferentes aparece uma vez, com histórico
+e explicação atualizados.
 
-### R02C — identidade e inspeção técnica
+### R02C — coleta global do YouTube
 
-- calcular SHA-256 durante o stream e comparar sinais do formato;
-- executar `ffprobe` com argumentos fixos, timeout e limite de saída;
-- normalizar metadados e aplicar allowlist/limites;
-- promover atomicamente somente o arquivo tecnicamente válido;
-- usar fixtures mínimas próprias/licenciadas fora do Git ou geradas em teste.
+- reutilizar o adapter e a chave do YouTube já existentes;
+- coletar `mostPopular` nas regiões configuradas;
+- normalizar estatísticas, duração, idioma/região e URLs;
+- filtrar a janela de 15 segundos a 3 minutos;
+- registrar quota, páginas, falhas regionais e cobertura real.
 
-Aceite: o mesmo arquivo gera a mesma identidade e metadados; corrupção e formato
-incompatível produzem códigos reproduzíveis.
+Aceite: uma execução real produz candidatos internacionais reproduzíveis sem
+scraping e sem baixar mídia.
 
-### R02D — persistência, deduplicação e recuperação
+### R02D — assuntos e ranking
 
-- adicionar persistência SQLite específica de ativos e eventos;
-- tratar hash repetido como conflito explícito, sem herdar direitos;
-- tornar criação, upload e validação idempotentes onde o contrato permitir;
-- recuperar estado consistente após reinício e limpar temporários órfãos;
-- não acoplar o novo domínio ao JSON de runs da descoberta.
+- usar Ollama para rotular nicho, subtema, público, padrão e localização `pt-BR`;
+- impedir que a IA altere métricas, IDs, URLs ou score;
+- formar clusters por evidência e recorrência cruzada;
+- calcular score por velocidade, engajamento, recência e recorrência;
+- aplicar diversidade e entregar 20 candidatos, com top 5 explicado.
 
-Aceite: retries não duplicam ativo nem eventos de transição e reinício não perde
-o manifesto aceito.
+Aceite: repetir a classificação validada gera o mesmo ranking e toda explicação
+referencia snapshots reais.
 
-### R02E — origem, direitos e revisão
+### R02E — cobertura oficial do Instagram
 
-- validar declaração `OWN`, `LICENSED` ou `AUTHORIZED`;
-- guardar apenas referência sanitizada à prova externa;
-- reutilizar o padrão atual de revisão humana sem copiar o modelo de descoberta;
-- bloquear avanço enquanto a revisão estiver pendente ou rejeitada;
-- auditar ator, decisão, motivo e timestamp sem armazenar prova privada.
+- validar conta, permissões, revisão e endpoints oficiais disponíveis;
+- descobrir mídia pública somente dentro dos usos e hashtags permitidos;
+- alimentar hashtags por clusters já conhecidos, sem scraping;
+- normalizar apenas campos realmente retornados;
+- registrar cobertura `PARTIAL` ou bloqueio com motivo acionável.
 
-Aceite: nenhuma regra ou agente marca direitos verdes automaticamente.
+Aceite: evidência real sustenta o adapter ou uma decisão explícita de adiamento;
+a falta de acesso não bloqueia YouTube nem o avanço do MVP.
 
-### R02F — integração e prova ponta a ponta
+### R02F — cobertura oficial do TikTok
 
-- adicionar seletor de arquivo, declaração, progresso, erros e revisão local;
-- exibir somente manifesto e estado sanitizados;
-- medir espera, processamento, falhas e retrabalho, sem conteúdo privado em log;
-- provar um vídeo válido, uma duplicata, um inválido e direitos pendentes;
-- disponibilizar ao M2 somente ID e manifesto em `READY_FOR_TRANSCRIPTION`.
+- verificar elegibilidade e acesso aprovado às APIs oficiais;
+- distinguir Display API autorizada de pesquisa de tendências públicas;
+- implementar coleta somente se o uso for permitido para este produto;
+- registrar `BLOCKED_BY_PROVIDER` quando não houver endpoint apropriado;
+- manter contrato pronto para futura ativação sem scraping.
 
-Aceite: um operador conclui o M1 de forma reproduzível e o limite com M2 é
-demonstrado sem iniciar transcrição.
+Aceite: o sistema não apresenta vídeos de contas autorizadas como se fossem um
+ranking global e não contorna restrições da plataforma.
 
-## Reuso e preservações
+### R02G — execução diária e catálogo local
 
-- reutilizar o padrão de SQLite de `src/store.js`, mas com tabelas e métodos de
-  ativos próprios;
-- reutilizar validação e testes de contratos de `src/domain/contracts.js` sem
-  misturar o schema de descoberta com o de mídia;
-- reutilizar o padrão de revisão humana de `RunStore`, adaptado às transições de
-  direitos do ativo;
-- reutilizar o servidor HTTP atual apenas enquanto streaming, limites e limpeza
-  puderem ser implementados com segurança;
-- não usar os adapters de YouTube/Wikimedia para baixar o arquivo do M1;
-- não introduzir agentes de IA no M1, pois não há subproblema criativo ou
-  probabilístico que justifique custo e risco adicionais.
+- executar no máximo uma run lógica por data, com retry idempotente;
+- chamar todos os adapters e tolerar lacunas declaradas;
+- gerar `catalog.json`, `ranking.csv`, `report.html` e registros por candidato;
+- permitir marcar top 5, shortlist e seleção humana;
+- registrar tempo, quota, custo, falhas e cobertura sem conteúdo privado.
 
-## Riscos residuais e gatilhos de mudança
+Aceite: o operador abre a pasta diária, entende quais vídeos estão em alta, por
+que foram listados e quais dados estarão disponíveis para o próximo estágio.
 
-- uploads externos não confiáveis exigirão antivírus, isolamento adicional,
-  autenticação forte e quotas antes de exposição pública;
-- fila/jobs só entram se R02F demonstrar bloqueio, concorrência ou recuperação
-  incompatíveis com o fluxo síncrono;
-- object storage só entra quando execução remota, volume ou retenção tornarem o
-  disco local insuficiente;
-- múltiplos vídeos, react e composição continuam pós-MVP e não alteram o modelo
-  de um ativo por item deste corte.
+## Reuso
+
+- `src/adapters/youtube.js`: ponto inicial da coleta oficial;
+- `src/adapters/ollama.js`: classificação estruturada, nunca criação de métricas;
+- `src/domain/ranking.js`: padrão de score e gates explicáveis;
+- `src/store.js`: padrão SQLite, ampliado para snapshots normalizados;
+- UI de top 5 e revisão: base para relatório e shortlist;
+- Wikimedia: fora do radar social, mas poderá oferecer alternativa licenciada
+  semelhante depois da descoberta.
+
+## Fora de escopo do M1
+
+- upload, download, armazenamento ou reprodução do arquivo de vídeo;
+- transcrição, OCR, visão quadro a quadro ou identificação de cenas;
+- criação de roteiro, narração, legenda, cortes ou renderização;
+- decisão automática de direitos ou garantia de monetização;
+- scraping, automação de navegador ou contorno de API;
+- publicação em qualquer rede.
+
+## Riscos residuais
+
+- Instagram e TikTok podem não oferecer descoberta geral compatível com o
+  produto; o resultado correto é cobertura parcial explícita, não scraping;
+- métricas entre redes não são equivalentes e exigem normalização por fonte;
+- API pode omitir compartilhamentos, idioma ou autor; confiança precisa refletir
+  cada lacuna;
+- catálogo não é mídia processável. A aquisição legítima e o vínculo do arquivo
+  local precisam ser definidos antes de implementar M2.

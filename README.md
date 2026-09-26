@@ -1,16 +1,17 @@
 # MKTauto — estúdio de cortes dinâmicos
 
 Repositório de planejamento de um sistema para um operador administrar vários
-perfis temáticos, enviar um vídeo próprio/licenciado e produzir um novo corte
-vertical com roteiro, narração e legendas.
+perfis temáticos, descobrir vídeos em alta, selecionar uma oportunidade e
+produzir um novo corte vertical com roteiro, narração e legendas a partir de
+mídia obtida legitimamente.
 
 O projeto possui uma primeira aplicação local de descoberta assistida. Ela usa a
 rodada 1 como demonstração e, quando configurada, combina sinais da YouTube Data
 API com sugestões estruturadas do Ollama local. Scores, gates e
 diversidade permanecem determinísticos.
 
-O fluxo de produção planejado possui cinco módulos sequenciais: identificação do
-vídeo, transcrição multimodal, identificação de conteúdo, edição/montagem e
+O fluxo de produção planejado possui cinco módulos sequenciais: radar de
+tendências, transcrição multimodal, identificação de conteúdo, edição/montagem e
 refino para engajamento. Agentes de IA podem acelerar tarefas internas, mas os
 contratos e gates entre módulos são determinísticos.
 
@@ -41,8 +42,8 @@ tópicos.
 
 ## Próximo passo
 
-Após V05, R02A–R02F implementam M1 em seis fatias: contrato, upload privado,
-inspeção, direitos, persistência e prova integrada. A divisão detalhada está em
+Após V05, R02A–R02G implementam M1 em sete fatias: contratos, histórico,
+YouTube, ranking, Instagram, TikTok e catálogo diário. A divisão detalhada está em
 [`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`](docs/M1_VIDEO_IDENTIFICATION_PLAN.md).
-Transcrição, conteúdo, montagem e refino seguem separados; composição multivídeo
-e react permanecem no backlog pós-MVP.
+M1 registra links e dados sem baixar mídia. Transcrição, conteúdo, montagem e
+refino seguem separados; composição multivídeo e react permanecem no backlog.

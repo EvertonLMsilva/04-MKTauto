@@ -19,9 +19,10 @@ parceiros entram depois do MVP por contratos pequenos e comprovados.
 
 O MVP deve responder a uma pergunta central:
 
-> Um operador consegue transformar um vídeo enviado em conteúdo vertical novo e
-> dinâmico, publicá-lo com controle e identificar quais formatos merecem
-> continuar, com muito menos trabalho manual?
+> Um operador consegue descobrir referências em alta, escolher uma oportunidade,
+> transformar mídia obtida legitimamente em conteúdo vertical novo e dinâmico,
+> publicá-lo com controle e identificar quais formatos merecem continuar, com
+> muito menos trabalho manual?
 
 Não tentaremos provar, no mesmo ciclo, crescimento garantido, atribuição completa
 de vendas, otimização autônoma, múltiplas plataformas e múltiplos parceiros.
@@ -37,14 +38,16 @@ revisar → publicar → medir**.
 ### Usuário inicial
 
 Um operador individual que administra um portfólio de perfis temáticos em
-português, envia vídeos próprios/licenciados e hoje combina manualmente roteiro,
-trechos, narração, texto, legendas, renderização, publicação e métricas.
+português e hoje pesquisa tendências internacionais, obtém mídia utilizável e
+combina manualmente roteiro, trechos, narração, texto, legendas, renderização,
+publicação e métricas.
 
 ### Promessa do MVP
 
-Para um upload válido, gerar um corte vertical revisável com abordagem e roteiro
-novos, narração e legendas sincronizadas, preservar a origem, publicar a versão
-aprovada no Instagram e mostrar desempenho, custo, receita e lucro estimado.
+Descobrir referências em alta e, para um arquivo local legitimamente associado a
+uma delas, gerar um corte vertical revisável com abordagem e roteiro novos,
+narração e legendas sincronizadas, preservar a origem, publicar a versão aprovada
+no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 
 ### Princípios
 
@@ -60,7 +63,7 @@ aprovada no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 
 | ID | Hipótese | Evidência necessária | Decisão se falsa |
 |---|---|---|---|
-| H1 | Upload, transcrição e análise local extraem contexto suficiente para criar um roteiro novo. | Três vídeos com fala e ao menos um caso que exija análise visual. | Manter briefing e marcação humana como entrada obrigatória. |
+| H1 | Descoberta, transcrição e análise local extraem contexto suficiente para criar um roteiro novo. | Três referências selecionadas, com arquivos legítimos, fala e ao menos um caso visual. | Manter briefing e marcação humana como entrada obrigatória. |
 | H2 | Assistência reduz pelo menos 50% do tempo ativo até um corte revisável. | Comparação cronometrada manual versus assistida. | Reduzir automação e focar templates/workflow. |
 | H3 | Pelo menos 70% dos cortes ficam utilizáveis com edição leve. | Avaliação humana em 30 cortes; rubric definida previamente. | Melhorar contexto, seleção e templates antes de integrar publicação. |
 | H4 | Um corte narrado e legendado cobre o primeiro portfólio. | Três vídeos avaliados por qualidade, fidelidade e retrabalho. | Ajustar roteiro, voz, legenda ou template antes de ampliar formatos. |
@@ -72,15 +75,17 @@ aprovada no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 ### Incluído
 
 1. Cadastrar vários perfis com nicho, público, idioma, tom e regras editoriais.
-2. Receber upload manual de vídeo próprio, licenciado ou autorizado.
-3. Manter origem declarada, hash, condição de uso e dados técnicos do arquivo.
+2. Executar radar diário oficial em YouTube, Instagram e TikTok, com cobertura e
+   limitações explícitas, e entregar 20 referências de 15 segundos a 3 minutos.
+3. Guardar histórico, métricas, assunto, ranking, URL e reaparições sem baixar
+   mídia; após seleção, associar arquivo local obtido legitimamente.
 4. Extrair áudio com FFmpeg e transcrever localmente com `faster-whisper`,
    preservando timestamps.
 5. Amostrar quadros e usar visão local no Ollama quando a transcrição não
    explicar suficientemente o conteúdo.
 6. Usar o Ollama para gerar abordagem, roteiro novo, plano de trechos, título,
    legenda de publicação, hashtags, CTA e alertas.
-7. Criar um corte com imagens somente do vídeo enviado, narração nova e legendas
+7. Criar um corte com imagens somente do arquivo local associado, narração nova e legendas
    sincronizadas com essa narração.
 8. Compor e renderizar vídeo vertical em templates pequenos e testados.
 9. Revisar a versão exata, editar, aprovar/rejeitar e exportar.
@@ -91,9 +96,9 @@ aprovada no Instagram e mostrar desempenho, custo, receita e lucro estimado.
 ### Corte vertical proposto
 
 Um único operador, `pt-BR`, vários perfis cadastráveis e somente um perfil/lote
-processado por vez. O fluxo começa com upload manual e produz um corte narrado e
-legendado, seguido por publicação e insights no Instagram e painel mínimo. Busca
-assistida permanece um instrumento opcional; não é dependência do fluxo principal.
+processado por vez. O fluxo começa com radar internacional diário, seleção e
+aquisição legítima manual; depois produz um corte narrado e legendado, seguido
+por publicação e insights no Instagram e painel mínimo.
 
 ### Fora do MVP (explícito)
 
@@ -139,12 +144,14 @@ Sucesso do MVP valida eficiência e controle do workflow, não crescimento, vira
 ## 6. Workflow e estados
 
 ```text
-Perfil temático + declaração de origem/direitos
+Radar diário internacional por APIs oficiais
       ↓
-upload + hash + validação técnica ── falha → correção/rejeição
+M1 catálogo de tendências → seleção humana
+      ↓
+aquisição legítima + vínculo local + direitos ── falha → correção/rejeição
       ↓
 Processamento síncrono no primeiro corte
-  M1 identificação → M2 transcrição multimodal → M3 conteúdo
+  M2 transcrição multimodal → M3 conteúdo
       → M4 edição/montagem → M5 refino para engajamento
       ↓
 versão vertical renderizada
@@ -158,7 +165,7 @@ insights + custo + receita + painel
 
 Estados mínimos do item:
 
-`UPLOADED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
+`DISCOVERED → SELECTED → ACQUIRED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
 
 Saídas laterais: `VALIDATION_FAILED`, `PROCESSING_FAILED`, `RENDER_FAILED`,
 `REJECTED`, `EXPORT_FAILED` e `PUBLISH_FAILED`, com tentativa controlada quando segura. Transições são
@@ -174,8 +181,8 @@ A especificação operacional, os contratos e o modelo multiagente estão em
 |---|---|---|
 | Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
 | Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
-| Descoberta de fontes | Sugestões opcionais de pauta e origem. | Não fornece o arquivo do fluxo principal. |
-| M1 — identificação | Upload, validação, hash, origem, direitos e deduplicação. | Um vídeo por item; decisão de direitos não pertence à IA. |
+| M1 — radar de tendências | Runs diárias, referências internacionais, snapshots, assuntos e ranking. | APIs oficiais; cobertura parcial explícita; não baixa mídia. |
+| Aquisição e vínculo | Associa ao candidato selecionado um arquivo local obtido legitimamente. | Uma URL não libera M2; direitos não pertencem à IA. |
 | M2 — transcrição | Fala, OCR e observações visuais com timestamps. | Confiança e lacunas explícitas; mídia fora do Git. |
 | M3 — conteúdo | Tema, momentos, riscos, evidências e ângulos editoriais. | Toda conclusão referencia evidência do M2. |
 | M4 — edição/montagem | Roteiro, plano de cortes, narração, legendas e renderização. | Somente intervalos existentes e linhagem preservada. |
@@ -190,7 +197,7 @@ A especificação operacional, os contratos e o modelo multiagente estão em
 
 ## 8. Arquitetura adiada por gate
 
-V04 mantém fila e fundação ampla adiadas. R02A–R02F provam M1 em fatias; R03–R06
+V04 mantém fila e fundação ampla adiadas. R02A–R02G provam M1 em fatias; R03–R06
 provam os outros quatro módulos com processo e ferramentas existentes. R07
 integra somente os contratos sustentados pela evidência. R01A permanece uma
 exceção pequena e reversível para descoberta, evidência e ranking.
@@ -380,9 +387,9 @@ O sistema nunca deve evoluir para automação irrestrita de cópia ou publicaç�
 
 ## 17. Roadmap mínimo repriorizado no V05
 
-V01 substituiu o recorte `metadados-only/export-only`, V02 tornou upload único a
-entrada principal, V03 estruturou react no backlog, V04 dividiu o pipeline em
-cinco módulos sequenciais e V05 separou M1 em seis entregas. A matriz de gates
+V01 substituiu o recorte `metadados-only/export-only`, V02 definiu o processamento
+de um arquivo por vez, V03 estruturou react no backlog, V04 dividiu o pipeline em
+cinco módulos sequenciais e V05 redefiniu M1 como radar em sete entregas. A matriz de gates
 está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
 `docs/MODULAR_VIDEO_PIPELINE.md` e o recorte de M1 em
 `docs/M1_VIDEO_IDENTIFICATION_PLAN.md`.
@@ -395,14 +402,15 @@ está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
 | V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
 | V03 | Estrutura de react | V02 | Fonte e reação ganham faixas, timeline, layouts, mixagem, legendas e linhagem próprias. |
 | V04 | Pipeline modular multiagente | V03 | Cinco módulos, contratos, agentes e ordem obrigatória ficam explícitos. |
-| V05 | Decomposição de M1 | V04 | Seis tópicos isolam contrato, upload, inspeção, direitos, persistência e integração. |
-| R02A | Contrato, estados e limites | V05 | Domínio versionado impede avanço inválido. |
-| R02B | Upload privado em streaming | R02A | Um binário é recebido sem buffer integral nem exposição pública. |
-| R02C | Identidade e inspeção | R02B | Hash e `ffprobe` produzem metadados reproduzíveis. |
-| R02D | Persistência e deduplicação | R02C | Retries, duplicatas e recuperação mantêm consistência. |
-| R02E | Origem, direitos e revisão | R02D | Revisão humana controla o gate verde. |
-| R02F | Integração e prova de M1 | R02E | `VideoAssetManifest` aprovado chega ao limite do M2. |
-| R03 | M2 — transcrição multimodal | R02F | `MediaTranscript` temporal combina fala, OCR e visão. |
+| V05 | Decomposição de M1 | V04 | Sete tópicos isolam contrato, histórico, redes, ranking e catálogo diário. |
+| R02A | Contratos e critérios | V05 | Schemas distinguem métricas reais, lacunas, cobertura e explicações. |
+| R02B | Histórico e deduplicação | R02A | Snapshots medem crescimento e reaparição sem duplicar vídeo. |
+| R02C | YouTube global | R02B | API oficial coleta referências curtas em regiões configuradas. |
+| R02D | Assuntos e ranking | R02C | IA agrupa evidências e regras entregam top 20/top 5 diversos. |
+| R02E | Instagram oficial | R02D | Hashtags permitidas funcionam ou a cobertura parcial fica registrada. |
+| R02F | TikTok oficial | R02E | Acesso elegível funciona ou o bloqueio do provedor fica explícito. |
+| R02G | Radar diário integrado | R02F | Catálogo local JSON/CSV/HTML é gerado sem baixar mídia. |
+| R03 | M2 — transcrição multimodal | R02G + aquisição legítima | `MediaTranscript` temporal combina fala, OCR e visão. |
 | R04 | M3 — identificação de conteúdo | R03 | `ContentBrief` explicável liga tema e ângulos a evidências. |
 | R05 | M4 — edição/montagem | R04 | `EditPlan` e corte narrado/legendado demonstram valor criativo. |
 | R06 | M5 — refino | R05 | `EngagementReport` melhora a versão sem perder fidelidade. |
@@ -410,8 +418,9 @@ está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
 | R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
 | R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
 
-R02A fica pronto para execução somente após o merge de V05. R02B–R02F seguem em
-ordem e não ampliam o MVP; apenas reduzem o risco do antigo R02 monolítico.
+R02A fica pronto para execução somente após o merge de V05. R02B–R02G seguem em
+ordem. Limitação de Instagram ou TikTok não bloqueia o valor já provado pelo
+YouTube; deve aparecer como cobertura parcial, nunca ser ocultada ou contornada.
 
 ## 18. Definition of Ready e Done
 
@@ -443,13 +452,14 @@ Decisões aprovadas:
 7. Antes dos gates de fluxo, valor e construção, somente instrumentos locais,
    reversíveis e explicitamente aprovados podem ser implementados para reduzir
    custo ou erro da validação; efeitos externos continuam bloqueados.
-8. Upload de um vídeo próprio/licenciado é a entrada principal do MVP.
+8. Esta decisão foi substituída em V05: M1 começa com radar diário e não recebe
+   upload; o arquivo local entra somente após seleção e aquisição legítima.
 9. A IA cria roteiro e narração novos; as legendas sincronizam a nova narração.
 10. Composição a partir de vários uploads do mesmo assunto fica no backlog
     pós-MVP e deverá preservar origem e direitos por trecho.
 11. Vídeos de react ficam no backlog pós-MVP e deverão manter vídeo-fonte e
     reação como ativos independentes, sincronizados e aprovados separadamente.
-12. A produção segue obrigatoriamente M1 identificação, M2 transcrição, M3
+12. A produção segue obrigatoriamente M1 radar, aquisição/vínculo local, M2 transcrição, M3
     conteúdo, M4 edição/montagem e M5 refino para engajamento.
 13. Agentes especializados podem acelerar cada módulo, mas regras, estados,
     direitos, referências temporais e efeitos externos permanecem determinísticos.
@@ -478,6 +488,6 @@ R01 registrou evidência e lacunas para:
 6. origem e condição de uso registradas, sem mídia no Git.
 
 O merge do PR #10 encerrou R01 com decisão `iterar R01` pela lacuna de tempo
-ativo. V05 autoriza apenas R02A após seu merge; R02B–R02F, módulos seguintes,
+ativo. V05 autoriza apenas R02A após seu merge; R02B–R02G, módulos seguintes,
 integração, produção completa e efeitos externos continuam bloqueados pelas
 dependências e gates correspondentes.
