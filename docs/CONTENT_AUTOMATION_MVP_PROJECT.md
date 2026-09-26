@@ -1,7 +1,7 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V02 concluído no PR #11; V03 em revisão no PR #12
-**Fase atual:** estruturação do formato react no backlog pós-MVP
+**Status:** V03 concluído no PR #12; V04 em execução
+**Fase atual:** modularização sequencial e arquitetura multiagente
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-25
 
@@ -31,8 +31,8 @@ de vendas, otimização autônoma, múltiplas plataformas e múltiplos parceiros
 ### Visão
 
 Ser o espaço de trabalho que converte oportunidades de conteúdo em uma operação
-editorial repetível: **upload → compreensão → criação → corte → revisão →
-publicação → medição**.
+editorial repetível: **identificar → transcrever → entender → montar → refinar →
+revisar → publicar → medir**.
 
 ### Usuário inicial
 
@@ -144,10 +144,8 @@ Perfil temático + declaração de origem/direitos
 upload + hash + validação técnica ── falha → correção/rejeição
       ↓
 Processamento síncrono no primeiro corte
-  áudio → transcrição ─┬→ roteiro novo → trechos → narração → legendas
-                       └→ quadros + visão local quando necessário
-                                             ↓
-                                         composição
+  M1 identificação → M2 transcrição multimodal → M3 conteúdo
+      → M4 edição/montagem → M5 refino para engajamento
       ↓
 versão vertical renderizada
       ↓
@@ -169,15 +167,20 @@ cria nova versão e invalida a aprovação anterior.
 
 ## 7. Módulos do produto
 
+A especificação operacional, os contratos e o modelo multiagente estão em
+`docs/MODULAR_VIDEO_PIPELINE.md`.
+
 | Módulo | Responsabilidade no MVP | Limite importante |
 |---|---|---|
 | Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
 | Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
 | Descoberta de fontes | Sugestões opcionais de pauta e origem. | Não fornece o arquivo do fluxo principal. |
-| Ingestão e origem | Upload, validação, hash e condição de uso declarada. | Um vídeo por item; mídia e evidências privadas fora do Git. |
+| M1 — identificação | Upload, validação, hash, origem, direitos e deduplicação. | Um vídeo por item; decisão de direitos não pertence à IA. |
+| M2 — transcrição | Fala, OCR e observações visuais com timestamps. | Confiança e lacunas explícitas; mídia fora do Git. |
+| M3 — conteúdo | Tema, momentos, riscos, evidências e ângulos editoriais. | Toda conclusão referencia evidência do M2. |
+| M4 — edição/montagem | Roteiro, plano de cortes, narração, legendas e renderização. | Somente intervalos existentes e linhagem preservada. |
+| M5 — refino | Hook, ritmo, clareza, áudio, legendas e metadados. | Não apaga auditoria nem promete viralização. |
 | Fluxo de processamento | Estados, falhas e progresso do processamento síncrono inicial. | Fila/jobs somente se medições provarem necessidade. |
-| Content Intelligence | Transcrição, visão local quando necessária, trechos, roteiro novo e metadados. | Saída não é fato nem autorização. |
-| Composição e renderização | Narração, legendas e saída vertical baseada no upload. | Templates pequenos; sem editor genérico. |
 | Policy Engine | Regras de schema, proibições, alertas e bloqueios. | Não depende apenas de moderação por IA. |
 | Review Workspace | Visualização, edição, versionamento, aprovação e rejeição. | Aprovação da versão renderizada exata. |
 | Publicação | Exportação e adaptador oficial do Instagram. | Falha externa não elimina o fallback manual. |
@@ -187,11 +190,10 @@ cria nova versão e invalida a aprovação anterior.
 
 ## 8. Arquitetura adiada por gate
 
-V02 mantém fila e fundação ampla adiadas. R01–R03 validam o fluxo com processo e
-ferramentas existentes. R01A é uma exceção pequena e reversível: instrumenta
-somente descoberta, evidência e ranking, sem antecipar a arquitetura completa.
-R04 define os demais contratos exigidos pela evidência; R05 cria a fundação
-técnica após G2.
+V04 mantém fila e fundação ampla adiadas. R02–R06 provam os cinco módulos com
+processo e ferramentas existentes; R07 integra somente os contratos sustentados
+pela evidência. R01A permanece uma exceção pequena e reversível para descoberta,
+evidência e ranking.
 
 Continuam válidos como restrições, não como escolha de tecnologia:
 
@@ -199,6 +201,8 @@ Continuam válidos como restrições, não como escolha de tecnologia:
   auditáveis;
 - mídia deve permanecer privada e segredos não podem entrar em logs/repositório;
 - saída de IA deve obedecer schema versionado e revisão humana;
+- agentes especializados podem paralelizar subtarefas independentes dentro do
+  módulo, mas um orquestrador determinístico impõe M1 → M2 → M3 → M4 → M5;
 - adaptadores devem evitar acoplamento desnecessário a provedores;
 - processamento começa síncrono e fila/jobs dependem de evidência de latência,
   volume ou falha.
@@ -374,11 +378,12 @@ Cada fase depende de dados da anterior e nova revisão de políticas:
 
 O sistema nunca deve evoluir para automação irrestrita de cópia ou publicação sem responsabilização.
 
-## 17. Roadmap mínimo repriorizado no V02
+## 17. Roadmap mínimo repriorizado no V04
 
-V01 substituiu o recorte `metadados-only/export-only` por dez tópicos pequenos,
-e V02 tornou upload único a entrada principal sem antecipar a fundação. A matriz
-de gates e evidências está em `docs/TOPIC_ROADMAP.md`.
+V01 substituiu o recorte `metadados-only/export-only`, V02 tornou upload único a
+entrada principal, V03 estruturou react no backlog e V04 dividiu o pipeline em
+cinco módulos sequenciais. A matriz de gates está em `docs/TOPIC_ROADMAP.md` e a
+arquitetura modular em `docs/MODULAR_VIDEO_PIPELINE.md`.
 
 | ID | Entrega | Depende de | Resultado mínimo |
 |---|---|---|---|
@@ -387,16 +392,17 @@ de gates e evidências está em `docs/TOPIC_ROADMAP.md`.
 | R01A | Instrumento de descoberta | Rodada 1 de R01 | Sinais oficiais, sugestões de IA e ranking determinístico funcionam localmente. |
 | V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
 | V03 | Estrutura de react | V02 | Fonte e reação ganham faixas, timeline, layouts, mixagem, legendas e linhagem próprias. |
-| R02 | Ingestão e compreensão | V02 | Arquivo, áudio, transcrição e contexto visual formam entrada reproduzível. |
-| R03 | Experimento criativo | R02 | Um corte com roteiro novo, narração e legendas é avaliado por rubric. |
-| R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
-| R05 | Fundação | R04/G2 | Aplicação reproduzível para vários perfis. |
-| R06 | Ingestão e preparação | R05 | Upload, validação, transcrição, visão e trechos funcionam. |
-| R07 | Produção dinâmica | R06 | Roteiro, composição, revisão, renderização e exportação funcionam. |
+| V04 | Pipeline modular multiagente | V03 | Cinco módulos, contratos, agentes e ordem obrigatória ficam explícitos. |
+| R02 | M1 — identificação | V04 | `VideoAssetManifest` reproduzível e aprovado. |
+| R03 | M2 — transcrição multimodal | R02 | `MediaTranscript` temporal combina fala, OCR e visão. |
+| R04 | M3 — identificação de conteúdo | R03 | `ContentBrief` explicável liga tema e ângulos a evidências. |
+| R05 | M4 — edição/montagem | R04 | `EditPlan` e corte narrado/legendado demonstram valor criativo. |
+| R06 | M5 — refino | R05 | `EngagementReport` melhora a versão sem perder fidelidade. |
+| R07 | Orquestração | R06/G2 | M1→M5, revisão, estados, auditoria e exportação funcionam. |
 | R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
 | R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
 
-R02 fica pronto para execução somente após o merge de V02. Um tópico pode ser
+R02 fica pronto para execução somente após o merge de V04. Um tópico pode ser
 dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
 
 ## 18. Definition of Ready e Done
@@ -416,7 +422,7 @@ dividido quando isso reduzir risco ou antecipar valor, sem ampliar o MVP.
 - Métricas/logs necessários presentes e sanitizados.
 - Riscos residuais e próximo tópico desbloqueado registrados.
 
-## 19. Decisões de V01/V02 e evidências de R01
+## 19. Decisões de produto e evidências de R01
 
 Decisões aprovadas:
 
@@ -435,6 +441,10 @@ Decisões aprovadas:
     pós-MVP e deverá preservar origem e direitos por trecho.
 11. Vídeos de react ficam no backlog pós-MVP e deverão manter vídeo-fonte e
     reação como ativos independentes, sincronizados e aprovados separadamente.
+12. A produção segue obrigatoriamente M1 identificação, M2 transcrição, M3
+    conteúdo, M4 edição/montagem e M5 refino para engajamento.
+13. Agentes especializados podem acelerar cada módulo, mas regras, estados,
+    direitos, referências temporais e efeitos externos permanecem determinísticos.
 
 ### Estrutura futura do formato react
 
@@ -460,6 +470,6 @@ R01 registrou evidência e lacunas para:
 6. origem e condição de uso registradas, sem mídia no Git.
 
 O merge do PR #10 encerrou R01 com decisão `iterar R01` pela lacuna de tempo
-ativo. V02 autoriza apenas o próximo spike local de ingestão e compreensão em
-R02; fundação, produção completa e efeitos externos continuam bloqueados pelos
-gates correspondentes.
+ativo. V04 autoriza apenas o próximo spike de M1 em R02; os módulos seguintes,
+integração, produção completa e efeitos externos continuam bloqueados pelas
+dependências e gates correspondentes.
