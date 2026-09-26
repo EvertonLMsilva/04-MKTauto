@@ -17,7 +17,7 @@
 | R02B | CONCLUÍDO | M1 — histórico local e deduplicação | PR #16 mergeado em 26/09/2026 (`f5fada9`). |
 | R02C | CONCLUÍDO | M1 — coleta global do YouTube | PR #17 mergeado em 26/09/2026 (`bd6a0d6`). |
 | R02D | CONCLUÍDO | M1 — assuntos e ranking | PR #18 mergeado em 26/09/2026 (`c63e16a`); clusters locais, score determinístico e persistência validados com 55 testes. |
-| R02E | EM EXECUÇÃO | M1 — cobertura oficial do Instagram | Capacidade oficial por hashtags confirmada; implementação registra cobertura parcial ou bloqueio sem scraping. |
+| R02E | PR ABERTO | M1 — cobertura oficial do Instagram | PR #19; cobertura parcial/bloqueada, limites oficiais e adapter sanitizado validados com 62 testes. |
 | R02F | PENDENTE | M1 — cobertura oficial do TikTok | Depende de R02E. |
 | R02G | PENDENTE | M1 — execução diária e catálogo local | Depende de R02F. |
 | R03 | PENDENTE | M2 — transcrição multimodal | Depende de R02G e de arquivo local adquirido legitimamente. |
@@ -391,6 +391,10 @@ ou versão elegível gera `BLOCKED_BY_PROVIDER` antes de qualquer chamada.
 A matriz, a condição de desbloqueio e as fontes oficiais estão em
 `docs/INSTAGRAM_OFFICIAL_COVERAGE.md`. Nenhuma credencial elegível estava
 configurada; não houve validação externa nem persistência de evidência real.
+
+O PR #19 foi aberto em 26/09/2026 com diff restrito ao adapter oficial de
+hashtags, testes, matriz de capacidades e este roadmap. A suíte completa passou
+com 62 testes.
 
 ## Backlog pós-MVP aprovado
 
