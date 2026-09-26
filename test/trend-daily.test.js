@@ -126,6 +126,32 @@ test("relatório mantém links dos candidatos quando o ranking está indisponív
   assert.doesNotMatch(html, /<td>1<\/td>/);
 });
 
+test("relatório exibe views e dia publicado para candidatos ranqueados e sem ranking", () => {
+  const ranked = observation({ platform: "YOUTUBE", id: "video-1", title: "Ranqueado", capturedAt: AT, runId: "run" });
+  const unranked = observation({ platform: "TIKTOK", id: "90001", title: "Sem ranking", capturedAt: AT, runId: "run" });
+  ranked.snapshot.metrics.views = { availability: "AVAILABLE", value: 1_234_567 };
+  unranked.snapshot.metrics.views = { availability: "UNAVAILABLE", reason: "NOT_RETURNED" };
+  unranked.candidate.publishedAt = "2026-09-24T23:30:00.000Z";
+  const html = renderHtml({
+    dailyRun: { logicalDate: DATE, timezone: "UTC", state: "COMPLETED_WITH_GAPS", gaps: [] },
+    sourceRuns: [],
+    candidates: [ranked.candidate, unranked.candidate],
+    snapshots: [ranked.snapshot, unranked.snapshot],
+    ranking: [{
+      position: 1,
+      top5: true,
+      candidate: ranked.candidate,
+      score: { value: 80, confidence: 0.75 },
+    }],
+  });
+  assert.match(html, /Visualizações/);
+  assert.match(html, /Publicado em/);
+  assert.match(html, /1\.234\.567/);
+  assert.match(html, /indisponível/);
+  assert.match(html, /25\/09\/2026/);
+  assert.match(html, /24\/09\/2026/);
+});
+
 function fixtureDependencies(calls, title = "Vídeo útil") {
   const collectors = {
     youtube: async ({ store, idempotencyKey, capturedAt }) => {
