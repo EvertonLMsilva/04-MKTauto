@@ -295,7 +295,7 @@ export function validateSourceRun(value) {
   requireDateTime(value.completedAt, "sourceRun.completedAt");
   requireRecord(value.capabilities, "sourceRun.capabilities");
   requireExactKeys(value.capabilities, ["discovery", "metrics", "supportsRegions", "limitations"], "sourceRun.capabilities", true);
-  requireEnum(value.capabilities.discovery, ["GLOBAL_TRENDS", "HASHTAG_SEARCH", "AUTHORIZED_ONLY", "UNAVAILABLE"], "sourceRun.capabilities.discovery");
+  requireEnum(value.capabilities.discovery, ["GLOBAL_TRENDS", "PUBLIC_QUERY", "HASHTAG_SEARCH", "AUTHORIZED_ONLY", "UNAVAILABLE"], "sourceRun.capabilities.discovery");
   requireEnumArray(value.capabilities.metrics, ["VIEWS", "LIKES", "COMMENTS", "SHARES"], "sourceRun.capabilities.metrics");
   if (typeof value.capabilities.supportsRegions !== "boolean") fail("INVALID_TYPE", "sourceRun.capabilities.supportsRegions", "deve ser booleano");
   requireTextArray(value.capabilities.limitations, "sourceRun.capabilities.limitations");
