@@ -12,8 +12,8 @@
 | V02 | CONCLUÍDO | Repriorização para entrada por upload | PR #11 mergeado em 26/09/2026 (`b7c921e`). |
 | V03 | CONCLUÍDO | Estrutura futura para vídeos de react | PR #12 mergeado em 26/09/2026 (`ab2de6d`). |
 | V04 | CONCLUÍDO | Pipeline modular e multiagente | PR #13 mergeado em 26/09/2026 (`89a2135`). |
-| V05 | EM REVISÃO | Decomposição técnica do M1 | PR #14 aberto; redefine M1 como radar diário internacional. |
-| R02A | PENDENTE | M1 — contratos e critérios de tendência | Depende de V05. |
+| V05 | CONCLUÍDO | Decomposição técnica do M1 | PR #14 mergeado em 26/09/2026 (`d88918b`). |
+| R02A | PR ABERTO | M1 — contratos e critérios de tendência | PR #15; contratos versionados e suíte completa com 25 testes passando. |
 | R02B | PENDENTE | M1 — histórico local e deduplicação | Depende de R02A. |
 | R02C | PENDENTE | M1 — coleta global do YouTube | Depende de R02B. |
 | R02D | PENDENTE | M1 — assuntos e ranking | Depende de R02C. |
@@ -274,6 +274,20 @@ contratos, histórico, YouTube, ranking, Instagram, TikTok e catálogo diário e
 R02A–R02G. A coleta usa somente APIs oficiais, registra cobertura parcial e não
 baixa mídia. R03 depende do catálogo completo e de um arquivo local obtido
 legitimamente após a seleção.
+
+### R02A — contratos e critérios do radar M1
+
+O contrato `trend-contracts/1.0.0` define runs, fontes, candidatos, snapshots,
+assuntos e scores com validadores determinísticos em `src/domain/contracts.js`.
+Métricas ausentes usam `UNAVAILABLE`, identidade prioriza plataforma + ID e o
+fallback por URL valida o host oficial. `trend-ranking/1.0.0` fixa 20 candidatos,
+top 5, duração de 15–180 segundos, regiões iniciais e diversidade configurável.
+
+Evidência: os testes focados em `test/radar-contracts.test.js` e
+`test/radar-ranking.test.js` cobrem as três plataformas, lacunas de cobertura,
+reaparição, códigos de erro, proteção de evidência/score contra mutação por IA e
+serialização pública sanitizada. A suíte completa passou com 25 testes antes da
+abertura do PR #15.
 
 ## Backlog pós-MVP aprovado
 

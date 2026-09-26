@@ -151,6 +151,11 @@ Cada linha é um tópico e um PR independente, executado na ordem.
 Aceite: um conjunto de snapshots válido produz candidatos comparáveis sem
 inventar sinal ausente; nenhuma URL ou métrica arbitrária passa pelo contrato.
 
+Implementação contratual: `trend-contracts/1.0.0` e `trend-score/1.0.0` em
+`src/domain/contracts.js`; configuração `trend-ranking/1.0.0` em
+`src/domain/ranking.js`. O catálogo público usa allowlist e declara logicamente
+`data/trends/<YYYY-MM-DD>` sem criar diretórios, banco ou coleta neste tópico.
+
 ### R02B — histórico local e deduplicação
 
 - persistir runs, adapters, candidatos, snapshots e ranking;
