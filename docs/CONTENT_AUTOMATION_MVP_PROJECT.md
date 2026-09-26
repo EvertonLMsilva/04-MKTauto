@@ -1,7 +1,7 @@
 # MKTauto — estúdio de cortes dinâmicos
 
-**Status:** V02 em revisão no PR #11; PR #10 de R01 mergeado
-**Fase atual:** repriorização do fluxo para entrada por upload
+**Status:** V02 concluído no PR #11; V03 em execução
+**Fase atual:** estruturação do formato react no backlog pós-MVP
 **Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
 **Última atualização:** 2026-09-25
 
@@ -101,6 +101,8 @@ assistida permanece um instrumento opcional; não é dependência do fluxo princ
 - Geração integral de vídeo por IA, clonagem de voz ou avatares.
 - Composição de um único vídeo a partir de múltiplos uploads; item registrado no
   backlog pós-MVP.
+- Vídeo de react com captura do operador, composição em duas faixas e layouts
+  picture-in-picture/dividido; item registrado no backlog pós-MVP.
 - Editor genérico, templates complexos e renderização em escala.
 - TikTok, YouTube, Facebook, X ou publicação multicanal.
 - Publicação sem revisão humana e postagem real antes do gate de lançamento.
@@ -363,7 +365,8 @@ Cada fase depende de dados da anterior e nova revisão de políticas:
 1. **Operação ampliada:** calendário, webhooks, reconciliação e mais contas.
 2. **Produção ampliada:** novos templates, formatos e renderização em escala;
    composição de um vídeo novo a partir de vários uploads do mesmo assunto, com
-   rastreabilidade de origem por trecho.
+   rastreabilidade de origem por trecho; vídeos de react com fonte e comentário
+   em faixas sincronizadas, layouts alternáveis e legendas por locutor.
 3. **Inteligência de desempenho:** cohorts, sugestões explicáveis e testes A/B aprovados.
 4. **Descoberta ampliada:** mais fontes oficiais/licenciadas e sinais de tendência.
 5. **Parceiros:** catálogos oficiais, disclosure, links, atribuição e aprovação humana.
@@ -383,6 +386,7 @@ de gates e evidências está em `docs/TOPIC_ROADMAP.md`.
 | R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
 | R01A | Instrumento de descoberta | Rodada 1 de R01 | Sinais oficiais, sugestões de IA e ranking determinístico funcionam localmente. |
 | V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
+| V03 | Estrutura de react | V02 | Fonte e reação ganham faixas, timeline, layouts, mixagem, legendas e linhagem próprias. |
 | R02 | Ingestão e compreensão | V02 | Arquivo, áudio, transcrição e contexto visual formam entrada reproduzível. |
 | R03 | Experimento criativo | R02 | Um corte com roteiro novo, narração e legendas é avaliado por rubric. |
 | R04 | Contratos e adaptadores | R03/G1 | Domínio e contratos mínimos testáveis. |
@@ -429,6 +433,22 @@ Decisões aprovadas:
 9. A IA cria roteiro e narração novos; as legendas sincronizam a nova narração.
 10. Composição a partir de vários uploads do mesmo assunto fica no backlog
     pós-MVP e deverá preservar origem e direitos por trecho.
+11. Vídeos de react ficam no backlog pós-MVP e deverão manter vídeo-fonte e
+    reação como ativos independentes, sincronizados e aprovados separadamente.
+
+### Estrutura futura do formato react
+
+- `sourceAsset`: vídeo-fonte, origem, direitos, hash e intervalos usados;
+- `reactionAsset`: vídeo/áudio do operador, consentimento, hash e transcrição;
+- `timeline`: eventos de fonte, reação e composição com timestamps explícitos;
+- `layout`: fonte cheia, reação cheia, picture-in-picture ou dividido;
+- `audioMix`: prioridade da fala, redução do áudio-fonte e limites de volume;
+- `captions`: texto sincronizado e identificação do locutor;
+- `lineage`: ativo e intervalo de origem para cada trecho renderizado;
+- `approval`: revisão humana da versão exata, invalidada por qualquer edição.
+
+A transformação editorial de um react não substitui licença, autorização ou
+outra base de uso aplicável ao vídeo-fonte.
 
 R01 registrou evidência e lacunas para:
 
