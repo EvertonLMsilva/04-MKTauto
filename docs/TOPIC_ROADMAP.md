@@ -16,7 +16,8 @@
 | R02A–R02G | CONCLUÍDO | Contratos, histórico, fontes, ranking e catálogo | PRs #15–#22 mergeados. |
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
 | V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
-| PC01 | PR ABERTO | Contrato de Project/Channel | PR #25; contrato versionado e imutável, 96 testes passaram. |
+| PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
+| PC02 | PR ABERTO | Persistência e versionamento de Project/Channel | PR #26; migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -103,6 +104,19 @@ PC02, e novas redes ou formatos exigirão evolução explícita do contrato.
 
 Aceite: create/read/version/archive são transacionais e reproduzíveis; migration,
 rollback de transação e compatibilidade possuem testes.
+
+Implementação PC02: a migração aditiva `003_project_catalog` mantém a sequência
+do catálogo SQLite e cria projetos com arquivamento lógico e snapshots por versão.
+O repositório valida pelo contrato antes da escrita e novamente após a leitura,
+exige versão esperada nas mutações e usa transações imediatas para impedir updates
+perdidos. Triggers bloqueiam `UPDATE` e `DELETE` dos snapshots persistidos; falhas
+de migração ou de qualquer etapa de escrita revertem integralmente a transação.
+
+Evidência: 21 testes focados de Project/Channel e a suíte completa de 108 testes
+passaram em 27/09/2026, junto de `git diff --check`; o PR #26 foi aberto. O risco residual fica
+deliberadamente limitado ao escopo: chaves idempotentes, ator e instante de
+comandos mutáveis pertencem ao PC03; contenção prolongada entre processos pode
+resultar em erro de ocupação do SQLite após o timeout, sem escrita parcial.
 
 ### PC03 — serviço de aplicação idempotente
 
