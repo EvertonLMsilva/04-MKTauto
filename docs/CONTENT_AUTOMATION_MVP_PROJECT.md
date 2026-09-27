@@ -1,494 +1,310 @@
-# MKTauto — estúdio de cortes dinâmicos
+# MKTauto — plataforma modular de conteúdo social
 
-**Status:** V04 concluído no PR #13; V05 decompõe tecnicamente o M1
-**Fase atual:** decomposição técnica do módulo de identificação
-**Fonte conceitual:** transcrição `snapinsta-1790258748879.txt`, fornecida pelo usuário
-**Última atualização:** 2026-09-26
+## 1. Visão
 
-## 1. Resumo executivo
+O MKTauto permite que um operador individual administre um portfólio de canais
+temáticos e transforme uma estratégia editorial configurada em conteúdo original,
+revisável, publicável e mensurável. O produto evolui em etapas: primeiro gera um
+vídeo vertical completo para preview; depois publica, automatiza a rotina, coleta
+métricas e usa o histórico para melhorar sugestões futuras.
 
-A operação-alvo administra perfis temáticos próprios: envia vídeos com origem e
-direito de uso conhecidos, cria uma abordagem editorial, produz cortes verticais,
-publica no Instagram e aprende com desempenho, custo e receita.
+A persona principal é **o operador individual de um portfólio de canais
+temáticos**. Várias configurações podem coexistir, mas cada execução processa um
+projeto e um conteúdo por vez no MVP.
 
-O produto preserva o valor operacional — **enviar, compreender, criar, revisar,
-publicar e medir conteúdo em lote** — sem depender de scraping irregular nem de
-promessa de renda. Cada versão renderizada passa por revisão humana antes de
-exportação ou publicação. Instagram é o primeiro adaptador; outros canais e
-parceiros entram depois do MVP por contratos pequenos e comprovados.
+Não há promessa de viralidade ou renda. IA sugere e produz artefatos; regras de
+estado, direitos, validação, aprovação, idempotência e efeitos externos permanecem
+determinísticas.
 
-O MVP deve responder a uma pergunta central:
+## 2. Princípios invariantes
 
-> Um operador consegue descobrir referências em alta, escolher uma oportunidade,
-> transformar mídia obtida legitimamente em conteúdo vertical novo e dinâmico,
-> publicá-lo com controle e identificar quais formatos merecem continuar, com
-> muito menos trabalho manual?
+- preservar e expandir incrementalmente o software existente;
+- usar APIs oficiais e registrar cobertura parcial ou bloqueio sem scraping;
+- criar conteúdo original, sem copiar roteiro, voz, identidade ou mídia protegida;
+- usar somente mídia própria, licenciada ou expressamente autorizada;
+- exigir aprovação humana da versão exata antes de qualquer publicação no MVP;
+- manter exportação manual como fallback de publicação;
+- isolar fornecedores atrás de interfaces pequenas e versionadas;
+- registrar linhagem, versões, transições e decisões relevantes;
+- manter tokens, mídia privada, transcrições, payloads e runtime fora do Git;
+- implementar somente o necessário para a fase ativa.
 
-Não tentaremos provar, no mesmo ciclo, crescimento garantido, atribuição completa
-de vendas, otimização autônoma, múltiplas plataformas e múltiplos parceiros.
+## 3. Estado atual e reaproveitamento
 
-## 2. Visão e princípios
+O núcleo existente cobre o início de `Research`, não publicação. Ele já oferece:
 
-### Visão
+| Componente | Reuso na nova arquitetura |
+|---|---|
+| Radar diário e catálogo | Descoberta de temas e referências para um projeto. |
+| YouTube, Instagram, Threads e TikTok | Adapters de pesquisa oficial com capacidades explícitas. |
+| Wikimedia Commons | Fonte futura de alternativas com licença permitida. |
+| Contratos versionados | Base para artefatos e fronteiras entre módulos. |
+| Ranking determinístico | Base do `IdeaScorer` e de decisões explicáveis. |
+| Ollama estruturado | Primeiro adapter local de inteligência de conteúdo. |
+| SQLite e migrações | Persistência local incremental. |
+| Idempotência e deduplicação | Padrão para runs, jobs e efeitos externos. |
+| Estados e eventos | Base para histórico de conteúdo e publicação. |
+| CLI, servidor e exportação | Interfaces locais e fallback operacional. |
 
-Ser o espaço de trabalho que converte oportunidades de conteúdo em uma operação
-editorial repetível: **identificar → transcrever → entender → montar → refinar →
-revisar → publicar → medir**.
+Os adapters sociais existentes consultam referências; eles **não** implementam
+`SocialPublisher`. Publicação, agendamento e analytics serão portas e adapters
+separados para impedir que pesquisa adquira efeitos externos por acidente.
 
-### Usuário inicial
+O pipeline anterior de cortes derivados de upload permanece como evidência e
+capacidade futura. Os tópicos concluídos não são descartados; radar, direitos,
+linhagem, transcrição e composição podem ser reutilizados quando o produto voltar
+a aceitar mídia-fonte. O primeiro MVP da visão V06 prioriza geração original.
 
-Um operador individual que administra um portfólio de perfis temáticos em
-português e hoje pesquisa tendências internacionais, obtém mídia utilizável e
-combina manualmente roteiro, trechos, narração, texto, legendas, renderização,
-publicação e métricas.
+## 4. Configuração de projeto/canal
 
-### Promessa do MVP
+`Project` é a raiz de configuração que alimenta todo o pipeline. Um snapshot
+imutável da versão usada acompanha cada execução.
 
-Descobrir referências em alta e, para um arquivo local legitimamente associado a
-uma delas, gerar um corte vertical revisável com abordagem e roteiro novos,
-narração e legendas sincronizadas, preservar a origem, publicar a versão aprovada
-no Instagram e mostrar desempenho, custo, receita e lucro estimado.
-
-### Princípios
-
-- Autorização e rastreabilidade antes de automação.
-- Humano no circuito antes de qualquer efeito externo.
-- APIs oficiais e aderência aos termos das plataformas.
-- IA para sugestão; código determinístico para regras e efeitos.
-- Monólito modular antes de microserviços.
-- Medir o fluxo antes de criar um motor de aprendizado.
-- Promessas de produtividade verificáveis; nenhuma promessa de viralização ou renda.
-
-## 3. Hipóteses a validar
-
-| ID | Hipótese | Evidência necessária | Decisão se falsa |
-|---|---|---|---|
-| H1 | Descoberta, transcrição e análise local extraem contexto suficiente para criar um roteiro novo. | Três referências selecionadas, com arquivos legítimos, fala e ao menos um caso visual. | Manter briefing e marcação humana como entrada obrigatória. |
-| H2 | Assistência reduz pelo menos 50% do tempo ativo até um corte revisável. | Comparação cronometrada manual versus assistida. | Reduzir automação e focar templates/workflow. |
-| H3 | Pelo menos 70% dos cortes ficam utilizáveis com edição leve. | Avaliação humana em 30 cortes; rubric definida previamente. | Melhorar contexto, seleção e templates antes de integrar publicação. |
-| H4 | Um corte narrado e legendado cobre o primeiro portfólio. | Três vídeos avaliados por qualidade, fidelidade e retrabalho. | Ajustar roteiro, voz, legenda ou template antes de ampliar formatos. |
-| H5 | A API oficial do Instagram atende conexão, publicação, revisão e insights do piloto. | Spike atual e conta profissional de teste. | Preservar exportação e métricas manuais como fallback. |
-| H6 | Custos, receita informada e insights permitem decisão por vídeo e perfil. | Painel usado no piloto para decidir continuar, iterar ou parar. | Simplificar métricas antes de adicionar parceiros. |
-
-## 4. Escopo do MVP
-
-### Incluído
-
-1. Cadastrar vários perfis com nicho, público, idioma, tom e regras editoriais.
-2. Executar radar diário oficial em YouTube, Instagram, Threads e TikTok, com cobertura e
-   limitações explícitas, e entregar 20 referências de 15 segundos a 3 minutos.
-3. Guardar histórico, métricas, assunto, ranking, URL e reaparições sem baixar
-   mídia; após seleção, associar arquivo local obtido legitimamente.
-4. Extrair áudio com FFmpeg e transcrever localmente com `faster-whisper`,
-   preservando timestamps.
-5. Amostrar quadros e usar visão local no Ollama quando a transcrição não
-   explicar suficientemente o conteúdo.
-6. Usar o Ollama para gerar abordagem, roteiro novo, plano de trechos, título,
-   legenda de publicação, hashtags, CTA e alertas.
-7. Criar um corte com imagens somente do arquivo local associado, narração nova e legendas
-   sincronizadas com essa narração.
-8. Compor e renderizar vídeo vertical em templates pequenos e testados.
-9. Revisar a versão exata, editar, aprovar/rejeitar e exportar.
-10. Publicar a versão aprovada no Instagram por API oficial, com fallback manual.
-11. Coletar insights e registrar custos, receita informada e lucro estimado.
-12. Exibir painel mínimo por perfil, vídeo e formato.
-
-### Corte vertical proposto
-
-Um único operador, `pt-BR`, vários perfis cadastráveis e somente um perfil/lote
-processado por vez. O fluxo começa com radar internacional diário, seleção e
-aquisição legítima manual; depois produz um corte narrado e legendado, seguido
-por publicação e insights no Instagram e painel mínimo.
-
-### Fora do MVP (explícito)
-
-- Download/repostagem irregular, scraping e descoberta autônoma irrestrita.
-- Geração integral de vídeo por IA, clonagem de voz ou avatares.
-- Composição de um único vídeo a partir de múltiplos uploads; item registrado no
-  backlog pós-MVP.
-- Vídeo de react com captura do operador, composição em duas faixas e layouts
-  picture-in-picture/dividido; item registrado no backlog pós-MVP.
-- Editor genérico, templates complexos e renderização em escala.
-- TikTok, YouTube, Facebook, X ou publicação multicanal.
-- Publicação sem revisão humana e postagem real antes do gate de lançamento.
-- Stories automáticos e inserção automática de links de afiliados.
-- Catálogo, matching, comissão, atribuição ou payout de parceiros.
-- Aprendizado autônomo, experimentos A/B automáticos e recomendação de horário.
-- Equipes, organizações, cobrança, marketplace de templates e aplicativo móvel.
-- Promessas ou otimização direta de receita/viralização.
-
-Qualquer item acima exige um novo tópico aprovado, validação jurídica/plataforma e critérios próprios.
-
-## 5. Critérios de sucesso e guardrails
-
-### Métricas de resultado do piloto
-
-- O operador conclui 3 lotes representativos no fluxo completo.
-- Tempo mediano entre seleção válida e corte revisável é pelo menos 50% menor que o baseline manual.
-- Redução mediana de pelo menos 50% no tempo ativo de preparação contra baseline manual.
-- Pelo menos 70% dos 30 cortes avaliados são aprovados após no máximo edição leve, segundo rubric acordada.
-- Pelo menos 95% dos itens mantém origem, declaração de direitos e histórico de revisão rastreáveis.
-- 100% dos efeitos externos são precedidos por aprovação humana registrável.
-- Publicação e insights do Instagram funcionam em conta profissional de teste, com exportação manual como fallback.
-- O painel permite comparar visualizações, interações, custo, receita informada e lucro estimado por perfil e formato.
-
-### Guardrails operacionais
-
-- Zero publicação de item rejeitado, sem autorização de direitos ou fora do estado permitido.
-- Zero segredo em repositório/log e zero token de integração armazenado em texto puro.
-- Custos e falhas por provedor visíveis por lote.
-- Conteúdo sinalizado por política não pode avançar sem resolução humana.
-
-Sucesso do MVP valida eficiência e controle do workflow, não crescimento, viralidade ou renda.
-
-## 6. Workflow e estados
-
-```text
-Radar diário internacional por APIs oficiais
-      ↓
-M1 catálogo de tendências → seleção humana
-      ↓
-aquisição legítima + vínculo local + direitos ── falha → correção/rejeição
-      ↓
-Processamento síncrono no primeiro corte
-  M2 transcrição multimodal → M3 conteúdo
-      → M4 edição/montagem → M5 refino para engajamento
-      ↓
-versão vertical renderizada
-      ↓
-edição humana → aprovação explícita
-      ↓
-exportação ou publicação no Instagram
-      ↓
-insights + custo + receita + painel
+```yaml
+project:
+  id: project_curiosidades_ia
+  name: Curiosidades IA
+  niche: inteligencia_artificial
+  subniches: [ferramentas, curiosidades, produtividade]
+  audience:
+    language: pt-BR
+    profile: pessoas interessadas em tecnologia
+  references:
+    - platform: instagram
+      handle: perfilA
+      purpose: strategic_reference
+  content:
+    format: short_video
+    aspect_ratio: "9:16"
+    min_duration_seconds: 25
+    max_duration_seconds: 45
+    voice_style: informativa
+    visual_style: dinamico
+  publishing:
+    contents_per_day: 2
+    networks: [instagram, facebook, threads, tiktok]
+    timezone: America/Sao_Paulo
+    times: ["10:00", "18:00"]
 ```
 
-Estados mínimos do item:
+Referências servem para identificar temas, hooks, estrutura, ritmo, CTA,
+frequência e linguagem visual. Elas nunca concedem direito de uso nem autorizam
+reprodução de materiais ou identidade.
 
-`DISCOVERED → SELECTED → ACQUIRED → VALIDATING → PROCESSING → RENDERING → NEEDS_REVIEW → APPROVED → PUBLISHING → PUBLISHED`
+## 5. Módulos
 
-Saídas laterais: `VALIDATION_FAILED`, `PROCESSING_FAILED`, `RENDER_FAILED`,
-`REJECTED`, `EXPORT_FAILED` e `PUBLISH_FAILED`, com tentativa controlada quando segura. Transições são
-determinísticas, autorizadas, idempotentes e auditadas. Editar um item aprovado
-cria nova versão e invalida a aprovação anterior.
+```text
+Project Configuration
+        ↓ ProjectSnapshot
+Research
+        ↓ TopicCandidates / ReferenceInsights
+Content Intelligence
+        ↓ IdeaCandidate / IdeaScore
+Content Production
+        ↓ Script / Voice / Media / Video / Subtitles / Metadata
+Quality Control
+        ↓ ValidationReport
+Preview and Human Approval
+        ↓ ApprovedContentVersion
+Scheduler
+        ↓ PublishingJob
+Social Publisher
+        ↓ Publication
+Analytics
+        ↓ MetricSnapshot
+Optimization Engine
+        ↓ OptimizationRecommendation
+```
 
-## 7. Módulos do produto
+Cada módulo consome contratos validados e produz artefatos rastreáveis. Falha
+obrigatória interrompe o item; nenhum módulo corrige silenciosamente a saída de
+outro ou pula uma aprovação.
 
-A especificação operacional, os contratos e o modelo multiagente estão em
+## 6. Entidades principais
+
+| Entidade | Responsabilidade mínima |
+|---|---|
+| `Project` | Identidade, nicho, público e versão da configuração. |
+| `ChannelProfile` | Preferências editoriais e destinos de um projeto. |
+| `ReferenceProfile` | Referência estratégica, origem e finalidade permitida. |
+| `ContentItem` | Identidade estável da unidade de conteúdo e estado atual. |
+| `ContentVersion` | Versão imutável dos artefatos que formam um preview. |
+| `PipelineRun` | Execução, snapshot do projeto, etapas, custos e falhas. |
+| `Artifact` | Saída versionada com tipo, hash, origem, direitos e localização. |
+| `Approval` | Decisão humana sobre o hash exato de uma versão. |
+| `StateTransition` | Estado anterior/seguinte, ator, motivo e instante. |
+| `PublishingJob` | Plataforma, agenda, tentativas e chave de idempotência. |
+| `Publication` | ID externo, estado reconciliado e versão publicada. |
+| `MetricSnapshot` | Métricas opcionais observadas em um instante. |
+| `OptimizationDecision` | Recomendação explicável, evidências e aplicação. |
+
+Artefatos iniciais incluem `TopicCandidate`, `IdeaCandidate`, `IdeaScore`,
+`Script`, `VoiceTrack`, `MediaAsset`, `VideoRender`, `SubtitleTrack`,
+`ContentMetadata` e `ValidationReport`.
+
+## 7. Estados
+
+Fluxo normal de conteúdo:
+
+```text
+DRAFT → IDEA_APPROVED → SCRIPT_READY → MEDIA_READY → VIDEO_READY
+      → VALIDATED → APPROVED → SCHEDULED → PUBLISHED → ANALYZED
+```
+
+Estados terminais ou de exceção: `FAILED`, `REJECTED` e `CANCELLED`.
+
+Regras:
+
+- transições permitidas são enumeradas e testadas;
+- toda transição registra ator, instante e motivo;
+- alterar qualquer artefato após aprovação cria nova versão e invalida aprovação;
+- somente `APPROVED` pode originar agendamento;
+- falha de publicação não altera nem elimina a versão aprovada;
+- retry usa a mesma identidade lógica e não pode duplicar publicação.
+
+Jobs de publicação usam `PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`,
+`RETRYING` e `CANCELLED`.
+
+## 8. Portas entre módulos
+
+As interfaces representam capacidades, não fornecedores:
+
+- `TrendSource.discover(projectSnapshot)`;
+- `ReferenceAnalyzer.analyze(reference, projectSnapshot)`;
+- `IdeaGenerator.generate(context)`;
+- `IdeaScorer.score(ideas, policy)`;
+- `ScriptGenerator.generate(approvedIdea, projectSnapshot)`;
+- `VoiceProvider.synthesize(script, voiceProfile)`;
+- `MediaProvider.provide(mediaRequest)`;
+- `VideoComposer.compose(compositionPlan)`;
+- `SubtitleGenerator.generate(script, voiceTrack)`;
+- `MetadataGenerator.generate(contentVersion, platformContext)`;
+- `QualityValidator.validate(contentVersion, policy)`;
+- `SocialPublisher.publish(request)`, `getStatus(reference)` e
+  `deletePublication(reference)` quando a plataforma permitir;
+- `AnalyticsProvider.collect(publication, cursor)`;
+- `OptimizationPolicy.recommend(history, projectSnapshot)`.
+
+Operações de publicação específicas por formato podem existir nas capacidades do
+adapter, mas o domínio não deve presumir que todas as redes aceitam vídeo, imagem,
+texto, exclusão ou as mesmas métricas.
+
+## 9. Estrutura futura
+
+Esta é uma direção de organização, não uma autorização para mover arquivos antes
+de haver uma entrega que exija a mudança:
+
+```text
+src/
+├── domain/
+│   ├── projects/
+│   ├── content/
+│   ├── publishing/
+│   └── analytics/
+├── application/
+│   ├── project-configuration/
+│   ├── content-pipeline/
+│   └── publishing/
+├── ports/
+│   ├── intelligence/
+│   ├── media/
+│   ├── social/
+│   └── storage/
+├── adapters/
+│   ├── research/
+│   ├── generation/
+│   ├── publishing/
+│   └── analytics/
+├── infrastructure/db/
+└── interfaces/
+    ├── cli/
+    └── http/
+```
+
+Os arquivos atuais permanecem em seus locais até uma alteração pequena demonstrar
+valor e possuir testes que tornem a movimentação segura.
+
+## 10. Fases do produto
+
+### MVP 1 — Content Generator
+
+Entrada: projeto, nicho, tema e referências estratégicas. Saída: ideia, roteiro,
+narração, mídia autorizada ou gerada, vídeo vertical, legenda, hashtags e preview.
+Não publica automaticamente.
+
+### MVP 2 — Publishing
+
+Adiciona validação, aprovação humana, agenda e um publisher por vez: Instagram,
+Facebook, Threads e TikTok, sempre condicionado à capacidade oficial disponível.
+
+### MVP 3 — Automação diária
+
+Executa pesquisa, geração, validação e preparação de agenda em horários
+configuráveis. Conteúdo continua aguardando aprovação humana antes de publicar.
+
+### MVP 4 — Analytics
+
+Coleta métricas opcionais por `content_id`, `project_id`, plataforma e publicação,
+preservando snapshots históricos e indisponibilidades explícitas.
+
+### MVP 5 — Optimization Engine
+
+Relaciona tema, hook, duração, CTA, horário, estilo e estrutura a métricas. Começa
+com médias, comparações históricas, regras e scoring. Toda recomendação é
+explicável; nenhuma altera regras estruturais ou publica conteúdo por conta própria.
+
+## 11. Quality Control
+
+Antes de aprovação, validadores verificam pelo menos existência dos artefatos,
+duração, resolução, proporção, áudio, legendas, texto, limites conhecidos da
+plataforma, formato, duplicidade, renderização, mídia ausente, direitos declarados
+e sinais de conteúdo potencialmente inadequado.
+
+Validações obrigatórias falhas impedem aprovação. Alertas revisáveis permanecem
+visíveis ao operador e integram a decisão registrada.
+
+## 12. Segurança, direitos e privacidade
+
+- credenciais entram somente por configuração segura e com menor privilégio;
+- logs e erros não incluem tokens, URLs privadas ou payloads sensíveis;
+- artefatos privados usam storage fora do Git, hashes e acesso temporário;
+- origem, licença e consentimento acompanham cada mídia;
+- referência pública não equivale a licença de reutilização;
+- publicação e exclusão são efeitos externos auditáveis e idempotentes;
+- retenção, takedown e operação pública exigem gate específico antes do lançamento.
+
+## 13. Estratégia de testes
+
+- TDD para entidades, transições, permissões, idempotência e contratos;
+- testes de contrato para cada adapter com respostas sanitizadas;
+- integração local para persistência, retry e recuperação de falhas;
+- fixtures próprias ou autorizadas para mídia e renderização;
+- smoke test em conta oficial de teste antes de habilitar cada plataforma;
+- publicação real nunca faz parte de uma suíte automática sem ambiente isolado e
+  autorização explícita.
+
+## 14. Riscos principais
+
+| Risco | Mitigação inicial |
+|---|---|
+| Escopo crescer antes do primeiro preview | Fases e tópicos pequenos com gates. |
+| Conteúdo copiar referências | Linhagem, instruções de originalidade e revisão humana. |
+| Mídia sem direito de uso | Origem/licença obrigatórias e bloqueio determinístico. |
+| Custo ou latência de IA inviável | Orçamento por run, cache seguro e medição por provider. |
+| Dependência de fornecedor | Portas pequenas, capacidades explícitas e fallback. |
+| Duplicação de publicação | Chave idempotente, reconciliação e estado persistido. |
+| Métricas incompatíveis | Modelo opcional por plataforma e snapshots brutos sanitizados. |
+| Vazamento de segredo ou mídia | Storage privado, menor privilégio e Git restrito. |
+| Otimização opaca ou nociva | Recomendações explicáveis, auditáveis e reversíveis. |
+
+## 15. Decisão V06
+
+V06 substitui a prioridade futura de transformar mídia-fonte pela prioridade de
+gerar conteúdo original a partir de uma configuração de projeto/canal. Ela não
+remove entregas concluídas nem autoriza antecipar módulos. O radar implementado
+torna-se a primeira capacidade do módulo `Research`; publicação e analytics
+continuam inexistentes até seus tópicos próprios.
+
+O roadmap executável e a decomposição do primeiro épico estão em
+`docs/TOPIC_ROADMAP.md`. Os artefatos, estados e regras de pipeline estão em
 `docs/MODULAR_VIDEO_PIPELINE.md`.
-
-| Módulo | Responsabilidade no MVP | Limite importante |
-|---|---|---|
-| Identidade e acesso | Sessão, proprietário e autorização básica. | Sem organizações ou RBAC complexo. |
-| Perfis editoriais | Nicho, público, idioma, tom, regras e defaults. | Vários perfis; um perfil/lote ativo por vez. |
-| M1 — radar de tendências | Runs diárias, referências internacionais de YouTube, Instagram, Threads e TikTok, snapshots, assuntos e ranking. | APIs oficiais; cobertura parcial explícita; não baixa mídia. |
-| Aquisição e vínculo | Associa ao candidato selecionado um arquivo local obtido legitimamente. | Uma URL não libera M2; direitos não pertencem à IA. |
-| M2 — transcrição | Fala, OCR e observações visuais com timestamps. | Confiança e lacunas explícitas; mídia fora do Git. |
-| M3 — conteúdo | Tema, momentos, riscos, evidências e ângulos editoriais. | Toda conclusão referencia evidência do M2. |
-| M4 — edição/montagem | Roteiro, plano de cortes, narração, legendas e renderização. | Somente intervalos existentes e linhagem preservada. |
-| M5 — refino | Hook, ritmo, clareza, áudio, legendas e metadados. | Não apaga auditoria nem promete viralização. |
-| Fluxo de processamento | Estados, falhas e progresso do processamento síncrono inicial. | Fila/jobs somente se medições provarem necessidade. |
-| Policy Engine | Regras de schema, proibições, alertas e bloqueios. | Não depende apenas de moderação por IA. |
-| Review Workspace | Visualização, edição, versionamento, aprovação e rejeição. | Aprovação da versão renderizada exata. |
-| Publicação | Exportação e adaptador oficial do Instagram. | Falha externa não elimina o fallback manual. |
-| Insights e monetização | Métricas, custos, receita e lucro estimado. | Receita começa manual/CSV; sem promessa de retorno. |
-| Painel | Comparação por perfil, vídeo e formato. | Metabase OSS ou painel nativo somente após spike. |
-| Auditoria e observabilidade | Eventos, erros, custo e correlação. | Sem armazenar prompts/conteúdo sensível por padrão. |
-
-## 8. Arquitetura adiada por gate
-
-V04 mantém fila e fundação ampla adiadas. R02A–R02H provam M1 em fatias; R03–R06
-provam os outros quatro módulos com processo e ferramentas existentes. R07
-integra somente os contratos sustentados pela evidência. R01A permanece uma
-exceção pequena e reversível para descoberta, evidência e ranking.
-
-Continuam válidos como restrições, não como escolha de tecnologia:
-
-- versões, direitos, aprovação e exportação precisam ser determinísticos e
-  auditáveis;
-- mídia deve permanecer privada e segredos não podem entrar em logs/repositório;
-- saída de IA deve obedecer schema versionado e revisão humana;
-- agentes especializados podem paralelizar subtarefas independentes dentro do
-  módulo, mas um orquestrador determinístico impõe M1 → M2 → M3 → M4 → M5;
-- adaptadores devem evitar acoplamento desnecessário a provedores;
-- processamento começa síncrono e fila/jobs dependem de evidência de latência,
-  volume ou falha.
-
-## 9. Integrações e APIs a validar
-
-Não assumir disponibilidade com base em material promocional. Cada integração precisa de documentação oficial atual, conta de teste e registro de limites.
-
-### Instagram / Meta
-
-Validar antes de implementar:
-
-- tipos de conta suportados e vínculo necessário;
-- fluxo OAuth, permissões, revisão do app e modo de desenvolvimento;
-- formatos de Reels aceitos, hospedagem temporária do arquivo e etapas de criação/publicação;
-- agendamento nativo versus agendamento pelo nosso worker;
-- limites, expiração de token, webhooks, insights disponíveis e retenção;
-- exigências de exclusão de dados, branding e termos de automação.
-
-**Gate:** R08 implementa o primeiro adaptador somente após G3; falha ou falta de
-acesso preserva exportação manual e impede publicação real.
-
-### Parceiros e monetização
-
-Shopee é apenas um candidato. Cada parceiro futuro deve validar disponibilidade
-oficial, elegibilidade, autenticação, catálogo, links, divulgação, atribuição,
-limites e permissão para automação.
-
-**Gate:** nenhuma integração de parceiro entra no MVP. Receita manual/CSV permite
-validar o painel sem bloquear o fluxo principal.
-
-### IA, transcrição e moderação
-
-Comparar provedores por qualidade em `pt-BR`, structured output, política de retenção/treinamento, região, latência, limites, custo, moderação e tratamento de falhas. Criar dataset autorizado de avaliação antes de escolher.
-
-### Infraestrutura
-
-Validar armazenamento privado, fila/jobs, banco, criptografia/KMS, antivírus ou varredura de arquivo, limites de upload e observabilidade. Priorizar o menor conjunto operacional que satisfaça os guardrails.
-
-## 10. IA versus responsabilidades determinísticas
-
-### IA pode
-
-- transcrever áudio;
-- classificar assunto e sugerir trechos relevantes;
-- sugerir roteiro, hook, título, legenda, hashtags e CTA;
-- sugerir variação narrada, textual, legendada ou multitrecho;
-- traduzir/localizar com contexto;
-- apontar riscos e duplicidade semântica como sinal auxiliar.
-
-### Código determinístico deve
-
-- validar formato, tamanho, hash, campos obrigatórios e schema;
-- aplicar regras de direitos, expiração, aprovação e transição de estado;
-- controlar permissões, rate limit, retries e idempotência;
-- impedir publicação sem aprovação válida;
-- versionar conteúdo e preservar a trilha de auditoria;
-- calcular métricas e custo a partir de eventos conhecidos;
-- executar exportação/publicação apenas por comando autorizado.
-
-### Controles de IA
-
-- Prompts e schemas versionados; modelo/versão/latência/custo registrados.
-- Conteúdo enviado pelo usuário é dado não confiável, nunca instrução de sistema.
-- Saída passa por parsing, limites de tamanho, regras proibidas e revisão humana.
-- Não apresentar alegações factuais geradas como verificadas.
-- Dataset de avaliação sem dados de terceiros não autorizados.
-- Fallback explícito para timeout, recusa, saída inválida e indisponibilidade.
-
-## 11. Direitos autorais, plataforma e segurança editorial
-
-1. Exigir origem (`próprio`, `licenciado`, `autorizado`) e prova/referência de autorização quando aplicável.
-2. Registrar titular, escopo, territórios, plataformas, expiração e observações; bloquear uso vencido ou incompatível.
-3. Proibir no produto rotas de download/scraping de terceiros sem base contratual e técnica aprovada.
-4. Exibir atribuição quando a licença exigir; preservar fonte e hash do original.
-5. Oferecer remoção e bloqueio de republicação por hash em caso de disputa/takedown.
-6. Exigir revisão de marcas, música, imagem de pessoas, alegações comerciais e disclosure publicitário.
-7. Identificar conteúdo sintético quando lei ou plataforma exigir.
-8. Usar apenas APIs oficiais e respeitar rate limits, termos e restrições de automação.
-
-Uma declaração do usuário reduz ambiguidade operacional, mas não substitui revisão jurídica. Antes de produção pública ou afiliados, termos de uso, política de privacidade, política de takedown e regras locais de publicidade precisam de revisão profissional.
-
-## 12. Segurança e privacidade
-
-- Modelo de ameaça antes da primeira integração externa.
-- Menor privilégio em contas, tokens e service accounts; segredos em cofre e criptografia em trânsito/repouso.
-- Tokens OAuth separados por ambiente, rotacionáveis e revogáveis.
-- Upload por URL temporária, allowlist de formatos, limites de tamanho, inspeção de MIME e varredura de malware.
-- Isolamento por proprietário em toda consulta; testes contra IDOR e acesso cruzado.
-- Proteção CSRF/SSRF, validação de URL e nenhum fetch arbitrário fornecido pelo usuário.
-- Logs sem tokens, URLs assinadas, PII desnecessária ou conteúdo integral.
-- Retenção configurada para mídia, transcrições, logs e backups; exclusão verificável.
-- Auditoria append-only para upload, direitos, edição, aprovação, exportação, publicação e revogação.
-- Runbook para token comprometido, publicação indevida, vazamento e takedown.
-
-## 13. Dados e observabilidade
-
-### Eventos mínimos
-
-`candidate_discovered/selected`, `asset_received/validated`,
-`generation_started/completed/failed`, `render_completed/failed`,
-`review_edited`, `review_approved/rejected`, `export_completed/failed`,
-`publication_completed/failed`, `insights_synced/failed` e `rights_revoked`.
-
-Cada evento leva `correlation_id`, ator, perfil, item, versão, timestamp e
-resultado; nunca segredo. Eventos de produto e auditoria podem compartilhar
-origem, mas têm políticas de acesso e retenção distintas.
-
-### Métricas
-
-- conversão e tempo por etapa do funil;
-- taxa de falha/tentativa por etapa e provedor;
-- aceitação sem edição, edição leve, rejeição e motivo;
-- latência e custo de IA por item/lote;
-- taxa de renderização, exportação, publicação e sincronização bem-sucedida;
-- visualizações e interações por perfil, vídeo e formato;
-- custo, receita informada e lucro estimado;
-- violações bloqueadas pelos guardrails.
-
-### Alertas e SLO piloto
-
-No piloto, registrar crescimento de falhas externas, publicação inconsistente e
-aumento anormal de custo. O painel mínimo entra em R09; alertas e SLO completos
-só entram após volume que os justifique.
-
-## 14. Estratégia de testes e TDD
-
-### Pirâmide prática
-
-- **Unidade/TDD:** estados, permissões, direitos, expiração, idempotência, custo e regras editoriais.
-- **Contrato:** schemas de IA, armazenamento, transcrição e Meta; fixtures sanitizadas e fakes locais.
-- **Integração:** banco, fila, objeto, outbox e worker em ambiente efêmero.
-- **E2E:** candidato → importação → geração fake → renderização → revisão → exportação; publicação só em conta profissional de teste.
-- **Segurança:** isolamento entre usuários, upload malicioso, URLs, segredos em logs e autorização de efeitos.
-- **Avaliação de IA:** conjunto versionado, rubric humana, regressão de qualidade, segurança e custo.
-
-### Regras
-
-- Escrever primeiro o teste para regras de domínio e bugs reproduzíveis.
-- Testes reais contra provedores são opt-in, nunca requisito da suíte local rápida.
-- Não usar snapshots opacos para aprovar conteúdo de IA; validar schema e propriedades, e avaliar qualidade separadamente.
-- Relógio, IDs e provedores devem ser controláveis nos testes.
-- Critérios de aceite viram cenários demonstráveis; cobertura percentual sozinha não define qualidade.
-
-## 15. Riscos e mitigação
-
-| Risco | Impacto | Mitigação/Gate |
-|---|---|---|
-| Violação de copyright, música ou imagem | Crítico | Ingestão autorizada, prova, bloqueio por expiração, takedown e revisão. |
-| Suspensão por termos da plataforma | Alto | API oficial, spike documental, conta de teste, rate limit e kill switch. |
-| Publicação errada/duplicada | Alto | Aprovação versionada, idempotência, outbox, confirmação e auditoria. |
-| Conteúdo inadequado ou alucinado | Alto | Schema, policy engine, revisão humana e avaliação de IA. |
-| Vazamento de mídia/tokens | Crítico | Storage privado, URLs temporárias, cofre, menor privilégio e logs sanitizados. |
-| Custo/latência de IA inviável | Médio/alto | Limites por lote, orçamento, cache seguro, métricas e comparação de provedores. |
-| Dependência de provedor/API | Alto | Adaptadores, exportação como fallback e decisões por evidência. |
-| Produto não economiza tempo | Alto | Baseline manual, piloto cedo e gate antes de publicação/analytics. |
-| Expectativa de renda/viralidade | Médio/alto | Posicionamento explícito, métricas operacionais e nenhuma alegação garantida. |
-| Parceiro sem API adequada | Médio | Manter parceiros fora do MVP e validar cada adaptador separadamente. |
-
-## 16. Roadmap pós-MVP
-
-Cada fase depende de dados da anterior e nova revisão de políticas:
-
-1. **Operação ampliada:** calendário, webhooks, reconciliação e mais contas.
-2. **Produção ampliada:** novos templates, formatos e renderização em escala;
-   composição de um vídeo novo a partir de vários uploads do mesmo assunto, com
-   rastreabilidade de origem por trecho; vídeos de react com fonte e comentário
-   em faixas sincronizadas, layouts alternáveis e legendas por locutor.
-3. **Inteligência de desempenho:** cohorts, sugestões explicáveis e testes A/B aprovados.
-4. **Descoberta ampliada:** mais fontes oficiais/licenciadas e sinais de tendência.
-5. **Parceiros:** catálogos oficiais, disclosure, links, atribuição e aprovação humana.
-6. **Multicanal e equipes:** novos adaptadores, papéis, aprovação em equipe e billing.
-
-O sistema nunca deve evoluir para automação irrestrita de cópia ou publicação sem responsabilização.
-
-## 17. Roadmap mínimo repriorizado no V05
-
-V01 substituiu o recorte `metadados-only/export-only`, V02 definiu o processamento
-de um arquivo por vez, V03 estruturou react no backlog, V04 dividiu o pipeline em
-cinco módulos sequenciais e V05 redefiniu M1 como radar em sete entregas. A matriz de gates
-está em `docs/TOPIC_ROADMAP.md`, a arquitetura em
-`docs/MODULAR_VIDEO_PIPELINE.md` e o recorte de M1 em
-`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`.
-
-| ID | Entrega | Depende de | Resultado mínimo |
-|---|---|---|---|
-| V01 | Repriorização | V00 | Visão, persona, fluxo, integração inicial e roadmap coerentes. |
-| R01 | Fluxo e baseline | V01 | Um operador executa 3 lotes e mede tempo, custo e retrabalho. |
-| R01A | Instrumento de descoberta | Rodada 1 de R01 | Sinais oficiais, sugestões de IA e ranking determinístico funcionam localmente. |
-| V02 | Entrada por upload | PR #10 | Upload único vira fluxo principal; composição multivídeo entra no backlog. |
-| V03 | Estrutura de react | V02 | Fonte e reação ganham faixas, timeline, layouts, mixagem, legendas e linhagem próprias. |
-| V04 | Pipeline modular multiagente | V03 | Cinco módulos, contratos, agentes e ordem obrigatória ficam explícitos. |
-| V05 | Decomposição de M1 | V04 | Sete tópicos isolam contrato, histórico, redes, ranking e catálogo diário. |
-| R02A | Contratos e critérios | V05 | Schemas distinguem métricas reais, lacunas, cobertura e explicações. |
-| R02B | Histórico e deduplicação | R02A | Snapshots medem crescimento e reaparição sem duplicar vídeo. |
-| R02C | YouTube global | R02B | API oficial coleta referências curtas em regiões configuradas. |
-| R02D | Assuntos e ranking | R02C | IA agrupa evidências e regras entregam top 20/top 5 diversos. |
-| R02E | Instagram oficial | R02D | Hashtags permitidas funcionam ou a cobertura parcial fica registrada. |
-| R02F | TikTok oficial | R02E | Acesso elegível funciona ou o bloqueio do provedor fica explícito. |
-| R02G | Radar diário integrado | R02F | Catálogo local JSON/CSV/HTML é gerado sem baixar mídia. |
-| R02H | Listagem oficial multirrede | R02G | Instagram, Threads e TikTok aparecem no catálogo conforme acesso oficial, sem ranking fictício nem download. |
-| R03 | M2 — transcrição multimodal | R02H + aquisição legítima | `MediaTranscript` temporal combina fala, OCR e visão. |
-| R04 | M3 — identificação de conteúdo | R03 | `ContentBrief` explicável liga tema e ângulos a evidências. |
-| R05 | M4 — edição/montagem | R04 | `EditPlan` e corte narrado/legendado demonstram valor criativo. |
-| R06 | M5 — refino | R05 | `EngagementReport` melhora a versão sem perder fidelidade. |
-| R07 | Orquestração | R06/G2 | M1→M5, revisão, estados, auditoria e exportação funcionam. |
-| R08 | Instagram | R07/G3 | Publicação aprovada e insights oficiais funcionam com fallback. |
-| R09 | Painel e piloto | R08 | Desempenho, custo, receita e lucro estimado suportam decisão final. |
-
-R02A fica pronto para execução somente após o merge de V05. R02B–R02G seguem em
-ordem. Limitação de Instagram ou TikTok não bloqueia o valor já provado pelo
-YouTube; deve aparecer como cobertura parcial, nunca ser ocultada ou contornada.
-
-## 18. Definition of Ready e Done
-
-### Ready
-
-- Problema, resultado, fora de escopo e critérios de aceite estão claros.
-- Dependências concluídas e decisão bloqueadora registrada.
-- Riscos de direitos, segurança e efeitos externos avaliados.
-- Plano de teste e observabilidade proporcional definido.
-
-### Done
-
-- Critérios demonstrados e testes relevantes passando.
-- Mudança pequena, revisada e sem escopo incidental.
-- Documentação/ADR atualizados; segredos e dados sensíveis ausentes.
-- Métricas/logs necessários presentes e sanitizados.
-- Riscos residuais e próximo tópico desbloqueado registrados.
-
-## 19. Decisões de produto e evidências de R01
-
-Decisões aprovadas:
-
-1. O operador administra perfis próprios de diferentes nichos.
-2. O MVP produz cortes dinâmicos e não somente metadados.
-3. O processo começa concierge/manual e síncrono.
-4. Instagram é o primeiro adaptador obrigatório, com exportação como fallback.
-5. O painel combina insights, custos e receita manual/importada.
-6. Outros canais e parceiros ficam pós-MVP e entram por adaptadores.
-7. Antes dos gates de fluxo, valor e construção, somente instrumentos locais,
-   reversíveis e explicitamente aprovados podem ser implementados para reduzir
-   custo ou erro da validação; efeitos externos continuam bloqueados.
-8. Esta decisão foi substituída em V05: M1 começa com radar diário e não recebe
-   upload; o arquivo local entra somente após seleção e aquisição legítima.
-9. A IA cria roteiro e narração novos; as legendas sincronizam a nova narração.
-10. Composição a partir de vários uploads do mesmo assunto fica no backlog
-    pós-MVP e deverá preservar origem e direitos por trecho.
-11. Vídeos de react ficam no backlog pós-MVP e deverão manter vídeo-fonte e
-    reação como ativos independentes, sincronizados e aprovados separadamente.
-12. A produção segue obrigatoriamente M1 radar, aquisição/vínculo local, M2 transcrição, M3
-    conteúdo, M4 edição/montagem e M5 refino para engajamento.
-13. Agentes especializados podem acelerar cada módulo, mas regras, estados,
-    direitos, referências temporais e efeitos externos permanecem determinísticos.
-
-### Estrutura futura do formato react
-
-- `sourceAsset`: vídeo-fonte, origem, direitos, hash e intervalos usados;
-- `reactionAsset`: vídeo/áudio do operador, consentimento, hash e transcrição;
-- `timeline`: eventos de fonte, reação e composição com timestamps explícitos;
-- `layout`: fonte cheia, reação cheia, picture-in-picture ou dividido;
-- `audioMix`: prioridade da fala, redução do áudio-fonte e limites de volume;
-- `captions`: texto sincronizado e identificação do locutor;
-- `lineage`: ativo e intervalo de origem para cada trecho renderizado;
-- `approval`: revisão humana da versão exata, invalidada por qualquer edição.
-
-A transformação editorial de um react não substitui licença, autorização ou
-outra base de uso aplicável ao vídeo-fonte.
-
-R01 registrou evidência e lacunas para:
-
-1. baseline do operador interno em três lotes;
-2. nichos e fontes representativos;
-3. formatos, duração, tamanho e quantidade do lote inicial;
-4. definição mensurável de edição leve e qualidade aceitável;
-5. orçamento e prazo aceitáveis por lote;
-6. origem e condição de uso registradas, sem mídia no Git.
-
-O merge do PR #10 encerrou R01 com decisão `iterar R01` pela lacuna de tempo
-ativo. V05 autoriza apenas R02A após seu merge; R02B–R02G, módulos seguintes,
-integração, produção completa e efeitos externos continuam bloqueados pelas
-dependências e gates correspondentes.
