@@ -17,7 +17,7 @@
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
 | V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
 | PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
-| PC02 | EM EXECUÇÃO | Persistência e versionamento de Project/Channel | Migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
+| PC02 | PR ABERTO | Persistência e versionamento de Project/Channel | PR #26; migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -113,7 +113,7 @@ perdidos. Triggers bloqueiam `UPDATE` e `DELETE` dos snapshots persistidos; falh
 de migração ou de qualquer etapa de escrita revertem integralmente a transação.
 
 Evidência: 21 testes focados de Project/Channel e a suíte completa de 108 testes
-passaram em 27/09/2026, junto de `git diff --check`. O risco residual fica
+passaram em 27/09/2026, junto de `git diff --check`; o PR #26 foi aberto. O risco residual fica
 deliberadamente limitado ao escopo: chaves idempotentes, ator e instante de
 comandos mutáveis pertencem ao PC03; contenção prolongada entre processos pode
 resultar em erro de ocupação do SQLite após o timeout, sem escrita parcial.
