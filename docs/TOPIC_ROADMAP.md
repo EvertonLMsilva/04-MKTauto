@@ -20,7 +20,8 @@
 | PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 | PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
 | PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
-| PC05 | PR ABERTO | Handoff de ProjectSnapshot para o pipeline | PR #30 aberto; contrato `pipeline-handoff/1.0.0`, 8 testes focados e suíte completa de 133 testes passando. |
+| PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
+| E02-R01 | PR ABERTO | Entrada versionada de Research | PR #31 aberto; contrato `research-input/1.0.0`, 14 testes focados e suíte completa de 139 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -192,11 +193,34 @@ imutável após nova versão e arquivamento, retry determinístico, propagação
 artefato, erros públicos sanitizados e ausência de efeitos. O risco residual é
 deliberado: execução e artefato permanecem apenas na saída estruturada até um
 tópico futuro implementar a persistência completa de `PipelineRun`.
-O PR #30 foi aberto em 27/09/2026.
+O PR #30 foi mergeado em 27/09/2026.
 
 PC02 só começa após o merge de PC01, e assim sucessivamente. A divisão pode ser
 reduzida se a análise de Ready demonstrar que duas fatias não entregam valor
 isolado, mas nenhum tópico pode antecipar outro épico.
+
+## Segundo épico — E02 Research & Reference Analysis
+
+### E02-R01 — entrada versionada de Research
+
+- receber somente a seleção explícita produzida pelo handoff PC05;
+- criar `ResearchInput` imutável com execução, janela e `ProjectSnapshot` exato;
+- impedir consulta implícita a `latest` e efeitos de radar ou provider;
+- preservar referências estratégicas e seus direitos restritos.
+
+Implementação E02-R01: `research-input/1.0.0` exige `pipelineRunId`, `projectId`,
+`projectVersion`, `startedAt`, `logicalDate` e o `ProjectSnapshot` completo. O
+serviço reutiliza a resolução exata extraída do PC05, faz uma única leitura por
+projeto e versão, revalida o snapshot e entrega uma cópia profundamente imutável.
+Configurações de provider, adapters, catálogo e persistência de `PipelineRun`
+permanecem fora do contrato e nenhum campo `latest` é aceito.
+
+Evidência: 14 testes focados de handoff e entrada de Research e a suíte completa
+de 139 testes passaram em 27/09/2026, junto de `git diff --check`; o PR #31 foi
+aberto. O risco residual é deliberado: identidade diária multi-projeto,
+propagação aos artefatos do radar e uso editorial de nicho, público, idioma e
+redes pertencem ao E02-R02; análise de handles estratégicos permanece em tópico
+posterior separado.
 
 ## Ordem após E01
 
