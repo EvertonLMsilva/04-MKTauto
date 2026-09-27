@@ -18,7 +18,8 @@
 | V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
 | PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
 | PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
-| PC03 | PR ABERTO | Serviço de aplicação idempotente de Project/Channel | Comandos explícitos, registro atômico, retries reproduzíveis e snapshots históricos; 117 testes passaram. |
+| PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
+| PC04 | EM EXECUÇÃO | Interface local de Project/Channel | CLI única para comandos, consultas, seleção em memória e exportação sanitizada. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -151,6 +152,20 @@ SQLite; nesse caso, nenhuma escrita parcial é confirmada. O PR #28 foi aberto e
 
 Aceite: operador cria, revisa e seleciona um projeto localmente; segredos e
 artefatos privados não aparecem na exportação.
+
+Implementação PC04: uma única CLI local expõe criação, nova versão e arquivamento
+por meio exclusivo do `ProjectApplicationService`; consultas usam o repositório e
+os contratos existentes. `latest`, `get`, `review`, `select` e `export` não criam
+comandos ou versões, e seleção permanece em memória. Entradas são JSON por
+allowlist, falhas públicas preservam código e campo sem detalhes internos e a
+exportação contém somente o snapshot normalizado em ordem determinística.
+
+Evidência: 8 testes focados da interface e a suíte completa de 125 testes passaram
+em 27/09/2026, junto de `git diff --check`. Os testes cobrem retries, conflito de
+versão, histórico imutável, ausência de efeitos em leitura/seleção, rejeição de
+segredos antes da abertura do banco e exportação sanitizada. O risco residual é
+operacional: o arquivo indicado explicitamente por `--output` pode ser substituído;
+o banco de dados é bloqueado como destino de exportação.
 
 ### PC05 — handoff para o pipeline
 
