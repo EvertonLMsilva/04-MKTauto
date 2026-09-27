@@ -13,11 +13,12 @@ import {
 } from "./domain/contracts.js";
 import { calculateHistoricalVelocity } from "./domain/velocity.js";
 
-const CATALOG_SCHEMA_VERSION = 3;
+const CATALOG_SCHEMA_VERSION = 4;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
   [3, ["003_project_catalog", readFileSync(new URL("./db/migrations/003_project_catalog.sql", import.meta.url), "utf8")]],
+  [4, ["004_project_commands", readFileSync(new URL("./db/migrations/004_project_commands.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {
