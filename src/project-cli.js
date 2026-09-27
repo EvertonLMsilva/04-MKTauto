@@ -3,11 +3,17 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { ContractValidationError } from "./domain/contracts.js";
 import { ProjectApplicationError, ProjectApplicationService } from "./project-application-service.js";
+import {
+  PipelineHandoffError,
+  ProjectPipelineHandoffService,
+  validatePipelineHandoffRequest,
+} from "./project-pipeline-handoff.js";
 import { ProjectRepository, ProjectRepositoryError } from "./project-repository.js";
 
 const MUTATIONS = new Set(["create", "version", "archive"]);
+const INPUT_COMMANDS = new Set([...MUTATIONS, "handoff"]);
 const VERSIONED_READS = new Set(["get", "review", "select", "export"]);
-const COMMANDS = new Set([...MUTATIONS, "latest", ...VERSIONED_READS]);
+const COMMANDS = new Set([...MUTATIONS, "latest", ...VERSIONED_READS, "handoff"]);
 const COMMON_OPTIONS = new Set(["database"]);
 const COMMAND_OPTIONS = Object.freeze({
   create: new Set(["input"]),
@@ -18,6 +24,7 @@ const COMMAND_OPTIONS = Object.freeze({
   review: new Set(["project-id", "version"]),
   select: new Set(["project-id", "version"]),
   export: new Set(["project-id", "version", "output"]),
+  handoff: new Set(["input"]),
 });
 
 export function runProjectCli(argv, dependencies = {}) {
@@ -26,11 +33,11 @@ export function runProjectCli(argv, dependencies = {}) {
     const invocation = parseInvocation(argv);
     const readText = dependencies.readText ?? ((path) => readFileSync(path, "utf8"));
     const writeText = dependencies.writeText ?? ((path, content) => writeFileSync(path, content, "utf8"));
-    const commandPayload = MUTATIONS.has(invocation.command)
+    const commandPayload = INPUT_COMMANDS.has(invocation.command)
       ? readCommandInput(invocation.options.input, readText)
       : undefined;
-    if (commandPayload) preflightMutation(invocation.command, commandPayload);
-    if (!commandPayload && !existsSync(invocation.options.database)) {
+    if (commandPayload) preflightInput(invocation.command, commandPayload);
+    if (!MUTATIONS.has(invocation.command) && !existsSync(invocation.options.database)) {
       throw cliFailure("DATABASE_NOT_FOUND", "database", "o catálogo de projetos ainda não existe");
     }
     const repositoryFactory = dependencies.repositoryFactory ?? ((path) => new ProjectRepository(path));
@@ -54,7 +61,11 @@ export function runProjectCli(argv, dependencies = {}) {
   }
 }
 
-function preflightMutation(command, payload) {
+function preflightInput(command, payload) {
+  if (command === "handoff") {
+    validatePipelineHandoffRequest(payload);
+    return;
+  }
   const validated = Symbol("validated");
   const service = new ProjectApplicationService({ executeCommand: () => validated });
   const result = command === "create"
@@ -66,6 +77,9 @@ function preflightMutation(command, payload) {
 }
 
 function execute({ command, options }, commandPayload, repository) {
+  if (command === "handoff") {
+    return new ProjectPipelineHandoffService(repository).start(commandPayload);
+  }
   if (MUTATIONS.has(command)) {
     const service = new ProjectApplicationService(repository);
     if (command === "create") return service.createProject(commandPayload);
@@ -89,7 +103,7 @@ function execute({ command, options }, commandPayload, repository) {
 function parseInvocation(argv) {
   const [command, ...values] = argv;
   if (!COMMANDS.has(command)) {
-    throw cliFailure("INVALID_COMMAND", "command", "use create, version, archive, latest, get, review, select ou export");
+    throw cliFailure("INVALID_COMMAND", "command", "use create, version, archive, latest, get, review, select, export ou handoff");
   }
   if (values.length % 2 !== 0) throw cliFailure("INVALID_OPTION", "options", "toda opção exige um valor");
 
@@ -107,7 +121,7 @@ function parseInvocation(argv) {
   }
 
   options.database = resolve(options.database ?? "data/mktauto.sqlite");
-  if (MUTATIONS.has(command)) options.input = resolve(requiredText(options.input, "input"));
+  if (INPUT_COMMANDS.has(command)) options.input = resolve(requiredText(options.input, "input"));
   if (command === "export") {
     options.output = resolve(requiredText(options.output, "output"));
     if (options.output === options.database) {
@@ -157,7 +171,7 @@ function failureResult(caught) {
 }
 
 function publicError(caught) {
-  if (caught instanceof ProjectApplicationError || caught instanceof ProjectRepositoryError) {
+  if (caught instanceof ProjectApplicationError || caught instanceof ProjectRepositoryError || caught instanceof PipelineHandoffError) {
     return { code: caught.code, field: caught.field, message: actionableMessage(caught.code) };
   }
   if (caught instanceof ContractValidationError) {
