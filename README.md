@@ -1,19 +1,28 @@
-# MKTauto — estúdio de cortes dinâmicos
+# MKTauto
 
-Repositório de planejamento de um sistema para um operador administrar vários
-perfis temáticos, descobrir vídeos em alta, selecionar uma oportunidade e
-produzir um novo corte vertical com roteiro, narração e legendas a partir de
-mídia obtida legitimamente.
+Plataforma modular para um operador individual configurar canais temáticos e
+criar, revisar, publicar e melhorar conteúdo original para redes sociais.
 
-O projeto possui uma primeira aplicação local de descoberta assistida. Ela usa a
-rodada 1 como demonstração e, quando configurada, combina sinais da YouTube Data
-API com sugestões estruturadas do Ollama local. Scores, gates e
-diversidade permanecem determinísticos.
+O primeiro MVP recebe projeto, nicho, tema e referências estratégicas e produz
+ideia, roteiro, narração, mídia autorizada ou gerada, vídeo vertical, legendas,
+metadados e preview. Publicação, automação diária, analytics e otimização entram
+em fases posteriores. Toda publicação do MVP exige aprovação humana da versão
+exata.
 
-O fluxo de produção planejado possui cinco módulos sequenciais: radar de
-tendências, transcrição multimodal, identificação de conteúdo, edição/montagem e
-refino para engajamento. Agentes de IA podem acelerar tarefas internas, mas os
-contratos e gates entre módulos são determinísticos.
+## O que já funciona
+
+O repositório possui uma aplicação local de pesquisa de tendências:
+
+- catálogo diário e histórico SQLite;
+- adapters oficiais para YouTube, Instagram, Threads e TikTok;
+- cobertura parcial e bloqueios explícitos, sem scraping;
+- agrupamento estruturado com Ollama local;
+- ranking, diversidade, estados e idempotência determinísticos;
+- exportação JSON, CSV e HTML;
+- shortlist e seleção humana sem download de mídia.
+
+Esses componentes formam o início do módulo `Research`. Os adapters atuais não
+publicam conteúdo.
 
 ## Executar
 
@@ -24,49 +33,36 @@ npm test
 npm start
 ```
 
-Acesse `http://localhost:3000`. Sem chaves, use **Carregar rodada 1**. Para uma
-execução atual, mantenha o Ollama ativo, copie `.env.example` para sua
-configuração local e forneça `YOUTUBE_API_KEY`; arquivos `.env` são ignorados.
-Instagram, Threads e TikTok entram somente quando seus tokens, escopos e
-aprovações oficiais correspondentes estiverem configurados.
+A aplicação local fica em `http://localhost:3000`. Sem chaves, use a rodada de
+demonstração. Para dados atuais, mantenha o Ollama ativo e configure somente as
+credenciais oficiais necessárias no arquivo `.env`, que não entra no Git.
 
-### Radar diário local
-
-O M1 também possui uma interface manual adequada a agendadores externos. Ela
-não instala nem altera tarefas do sistema operacional:
+### Radar diário
 
 ```powershell
-npm run trend:daily -- --date 2026-09-26 --timezone America/Sao_Paulo
-npm run trend:export -- --date 2026-09-26
-node --env-file-if-exists=.env src/trend-cli.js shortlist --date 2026-09-26 --candidate youtube:ID --actor operador
-node --env-file-if-exists=.env src/trend-cli.js select --date 2026-09-26 --candidate youtube:ID --actor operador
+npm run trend:daily -- --date 2026-09-27 --timezone America/Sao_Paulo
+npm run trend:export -- --date 2026-09-27
+node --env-file-if-exists=.env src/trend-cli.js shortlist --date 2026-09-27 --candidate youtube:ID --actor operador
+node --env-file-if-exists=.env src/trend-cli.js select --date 2026-09-27 --candidate youtube:ID --actor operador
 ```
 
-Cada data aceita uma única configuração material. Retry recupera etapas
-concluídas, e a pasta `data/trends/<data>` é substituída somente após todos os
-artefatos estarem prontos. Credenciais permanecem apenas no ambiente; sem a
-configuração mínima de uma fonte, o relatório registra o bloqueio sem chamar o
-adapter. Shortlist ou seleção não concedem direitos nem iniciam download.
-Referências sem duração oficial continuam clicáveis na seção sem ranking. O
-TikTok Display lista apenas vídeos da conta autorizada e nunca os apresenta como
-tendência pública.
+Referências encontradas não concedem direitos e não são baixadas. Instagram,
+Threads e TikTok só são consultados quando tokens, escopos e aprovações oficiais
+compatíveis estiverem configurados. Falta de acesso aparece como cobertura
+parcial ou bloqueada.
 
-## Documentos principais
+## Arquitetura e planejamento
 
-Leia [docs/CONTENT_AUTOMATION_MVP_PROJECT.md](docs/CONTENT_AUTOMATION_MVP_PROJECT.md) para conhecer visão, escopo, arquitetura proposta, riscos, critérios de sucesso e backlog priorizado.
+- `docs/CONTENT_AUTOMATION_MVP_PROJECT.md`: visão, domínio, módulos, interfaces,
+  estrutura futura, fases, segurança e riscos;
+- `docs/MODULAR_VIDEO_PIPELINE.md`: artefatos, etapas, estados, validação,
+  publicação idempotente e observabilidade;
+- `docs/TOPIC_ROADMAP.md`: histórico, épicos, gates e tópicos pequenos do E01;
+- `docs/PROJECT_WORKFLOW.md`: processo de análise, aprovação e entrega;
+- `AGENTS.md`: regras obrigatórias do repositório.
 
-O pipeline de cinco módulos está em
-[docs/MODULAR_VIDEO_PIPELINE.md](docs/MODULAR_VIDEO_PIPELINE.md).
+## Próximo tópico
 
-As regras estão em [AGENTS.md](AGENTS.md). O trabalho usa o
-[fluxo econômico](docs/PROJECT_WORKFLOW.md), o
-[roadmap](docs/TOPIC_ROADMAP.md), que concentra estado, evidências e gates dos
-tópicos.
-
-## Próximo passo
-
-Após V05, R02A–R02G implementaram o núcleo do M1; R02H amplia a listagem oficial
-para referências de Instagram, Threads e TikTok sem baixar mídia. A divisão detalhada está em
-[`docs/M1_VIDEO_IDENTIFICATION_PLAN.md`](docs/M1_VIDEO_IDENTIFICATION_PLAN.md).
-M1 registra links e dados sem baixar mídia. Transcrição, conteúdo, montagem e
-refino seguem separados; composição multivídeo e react permanecem no backlog.
+Após o merge de V06, `PC01` define e testa apenas o contrato de domínio de
+Project/Channel. Persistência, interface, geração de conteúdo e integrações
+continuam fora desse tópico.

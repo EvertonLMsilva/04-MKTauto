@@ -1,165 +1,243 @@
-# Pipeline modular e multiagente de vídeo
+# Pipeline modular de conteúdo
 
 ## Objetivo
 
-Organizar a criação de cada vídeo em cinco módulos obrigatoriamente sequenciais,
-com contratos versionados entre eles. IA pode acelerar análise e criação, mas um
-orquestrador determinístico valida entradas, saídas, estados, limites e gates.
+Definir a sequência, os artefatos e as fronteiras do MKTauto sem acoplar o domínio
+a um fornecedor. Cada etapa recebe um contrato validado, produz uma nova versão
+rastreável e não executa efeitos pertencentes à etapa seguinte.
 
 ```text
-M1 Radar de tendências
-      ↓ TrendCatalog → aquisição legítima e vínculo local
-M2 Transcrição multimodal
-      ↓ MediaTranscript
-M3 Identificação de conteúdo
-      ↓ ContentBrief
-M4 Edição e montagem
-      ↓ RenderCandidate
-M5 Refino para engajamento
-      ↓ FinalCandidate → revisão humana
+ProjectSnapshot
+       ↓
+Topic Discovery → Reference Analysis
+       ↓
+Idea Generation → Idea Scoring → Human Idea Selection
+       ↓
+Script Generation
+       ↓
+Voice Generation + Media Provision
+       ↓
+Video Composition → Subtitle Generation → Metadata Generation
+       ↓
+Quality Validation → Preview → Human Approval
+       ↓
+Scheduling → Publishing → Analytics → Optimization Recommendation
 ```
 
-Cada módulo recebe o contrato aprovado do módulo anterior. Como M1 entrega
-referências, a transição para M2 exige que o operador obtenha legitimamente o
-arquivo e o associe ao candidato selecionado. Uma URL remota não satisfaz a
-entrada de M2. Falha de contrato interrompe o item; revisão pede nova versão ao
-módulo responsável, sem corrigir silenciosamente dados anteriores.
+No MVP 1 o fluxo termina em `Preview`. Pesquisa existente pode sugerir temas,
+mas o operador também pode informar um tema diretamente.
 
-## M1 — radar de vídeos em alta
+## Envelope comum dos artefatos
 
-Responsabilidade: consultar diariamente fontes sociais oficiais, descobrir
-assuntos sem nicho informado e formar um catálogo internacional de referências
-curtas com ranking explicável.
+Todo artefato persistido deve possuir, quando aplicável:
 
-- consultar YouTube, Instagram, Threads e TikTok somente pelas capacidades oficiais;
-- aceitar cobertura parcial e registrar bloqueio do provedor sem scraping;
-- filtrar candidatos entre 15 segundos e 3 minutos;
-- guardar snapshots para medir velocidade, engajamento, recência e recorrência;
-- agrupar temas com IA local sem permitir que ela invente métricas;
-- deduplicar por plataforma/ID e explicar reaparições no ranking;
-- entregar 20 candidatos diversos e top 5 destacado uma vez ao dia;
-- registrar links e dados localmente, sem baixar os vídeos.
+```text
+artifact_id
+content_id
+project_id
+project_version
+pipeline_run_id
+artifact_type
+schema_version
+revision
+created_at
+created_by
+provider
+input_artifact_ids
+content_hash
+rights
+storage_reference
+```
 
-Saída: `TrendCatalog`, com runs, candidatos, snapshots, clusters, scores,
-explicações, cobertura das fontes e condição de uso conhecida. A especificação
-detalhada está em `M1_VIDEO_IDENTIFICATION_PLAN.md`.
+Arquivos de mídia ficam fora do Git. `storage_reference` nunca expõe token ou URL
+privada permanente. Um artefato substituído não é alterado: cria-se nova revisão.
 
-Reuso atual: coleta oficial do YouTube, Ollama estruturado, ranking explicável,
-SQLite e UI de top 5. Wikimedia pode servir futuramente como busca de alternativa
-licenciada, mas não representa tendência em rede social.
+## 1. Project Configuration
 
-## M2 — transcrição multimodal
+Entrada: dados fornecidos pelo operador. Saída: `ProjectSnapshot` imutável.
 
-Responsabilidade: converter o que é falado, escrito e visualmente observável em
-evidência temporal estruturada.
+O snapshot contém nicho, subnichos, público, idioma, referências, formato,
+limites de duração, voz, visual, frequência, destinos e horários. Defaults são
+aplicados de forma determinística e erros apontam o campo inválido.
 
-- FFmpeg extrai áudio mono 16 kHz e quadros amostrados;
-- `faster-whisper` produz fala, idioma e timestamps;
-- OCR local captura texto relevante na tela;
-- visão local no Ollama descreve eventos quando fala/OCR forem insuficientes;
-- cada observação referencia intervalo e método de extração;
-- confiança baixa permanece explícita e não vira fato confirmado.
+Nenhuma execução em andamento muda quando o projeto é editado; a próxima run usa
+uma nova versão do snapshot.
 
-Saída: `MediaTranscript`, com segmentos de fala, texto em tela, observações
-visuais, confiança, lacunas e referências temporais válidas.
+## 2. Research
 
-Agentes candidatos: transcritor, leitor de tela e observador visual. Eles podem
-rodar em paralelo após a extração determinística, pois não editam a mesma saída;
-um agregador apenas combina resultados que passam pelo schema.
+Entradas: `ProjectSnapshot`, janela e capacidades oficiais disponíveis. Saídas:
+`TopicCandidate[]` e `ReferenceInsight[]`.
 
-## M3 — identificação de conteúdo
+- reutiliza radar, adapters, histórico, clustering e ranking atuais;
+- consulta apenas APIs oficiais;
+- registra cobertura, lacunas e bloqueios por fonte;
+- não baixa ou republica mídia encontrada;
+- distingue métrica observada, inferência e dado indisponível;
+- analisa padrões agregados, não copia material protegido.
 
-Responsabilidade: entender o assunto e produzir um briefing editorial baseado
-somente nas evidências do M2.
+`TrendSource` e `ReferenceAnalyzer` são portas distintas. Uma rede pode suportar
+uma capacidade e não a outra.
 
-- identificar tema, subtemas, entidades, acontecimentos e momentos-chave;
-- separar afirmação da fonte, inferência da IA e informação não verificada;
-- sugerir ângulos novos, promessa editorial e público provável;
-- marcar riscos de contexto, política, marca, pessoa, música e direitos;
-- referenciar os IDs temporais que sustentam cada conclusão.
+## 3. Content Intelligence
 
-Saída: `ContentBrief`, com resumo, mapa de tópicos, momentos, riscos, possíveis
-ângulos e cobertura de evidência.
+Entradas: snapshot, tema, insights e políticas editoriais. Saídas:
+`IdeaCandidate[]` e `IdeaScore[]`.
 
-Agentes candidatos: analista de conteúdo, verificador de evidência e revisor de
-segurança. Divergência entre agentes vira alerta; não é resolvida por votação
-opaca.
+O gerador propõe ideias originais. O scorer determinístico considera adequação ao
+nicho, novidade relativa, evidências, viabilidade, risco, custo e diversidade.
+IA não inventa métricas ou decide direitos. No MVP, o operador seleciona uma ideia
+antes da geração de roteiro.
 
-## M4 — edição e montagem
+## 4. Script and Metadata
 
-Responsabilidade: transformar o briefing aprovado em conteúdo novo, sem inventar
-trechos inexistentes nem perder a origem.
+Entrada: ideia aprovada. Saídas: `Script` e, após o vídeo existir,
+`ContentMetadata` por plataforma.
 
-- criar hook, roteiro novo, estrutura e plano de cortes;
-- selecionar intervalos existentes do arquivo local associado;
-- gerar narração e legendas sincronizadas com a nova narração;
-- compor o template vertical, mixar áudio e renderizar uma versão;
-- preservar linhagem entre cada trecho e o ativo de origem.
+O roteiro contém hook, blocos narrativos, texto da narração, indicações visuais,
+CTA e duração estimada. Afirmações sensíveis indicam origem ou revisão necessária.
 
-Saídas: `EditPlan` e `RenderCandidate`, ambos versionados. No primeiro MVP, todo
-o visual vem de um único arquivo local associado. Multivídeo e react reutilizarão os mesmos
-contratos com múltiplas faixas somente após o MVP.
+Metadados incluem título, descrição, CTA e hashtags, respeitando limites e
+capacidades da plataforma. Metadados nunca são tratados como publicados.
 
-Agentes candidatos: roteirista, planejador de cortes e diretor de montagem. O
-renderizador é determinístico; agente nenhum executa publicação.
+## 5. Voice Generation
 
-## M5 — refino para engajamento
+Entrada: roteiro e perfil de voz. Saída: `VoiceTrack`.
 
-“Limpar dados” significa refinar conteúdo e técnica, não apagar origem, direitos,
-auditoria ou metadados necessários.
+`VoiceProvider` recebe texto, idioma, estilo e limites. A saída registra duração,
+formato, hash, provider e direitos de uso. Clonagem ou imitação de voz não entra no
+MVP sem consentimento e revisão próprios.
 
-- remover silêncio, repetição e trechos sem função editorial;
-- revisar hook, ritmo, duração, densidade e legibilidade das legendas;
-- normalizar áudio e detectar cortes, enquadramentos ou sobreposições ruins;
-- limpar título, descrição, CTA e hashtags de redundância ou promessa enganosa;
-- comparar a versão com o briefing e sinalizar perda de contexto;
-- propor edição leve ou rejeição, sem prometer viralização.
+## 6. Media Provision
 
-Saídas: `EngagementReport` e `FinalCandidate`. Qualquer alteração de mídia volta
-ao M4, cria nova versão e invalida aprovação anterior.
+Entrada: necessidades visuais do roteiro. Saída: `MediaAsset[]`.
 
-Agentes candidatos: editor de retenção, QA audiovisual e revisor de fidelidade.
-A aprovação final permanece humana e se aplica ao hash exato renderizado.
+Um adapter pode gerar imagem/vídeo ou localizar mídia autorizada. Cada ativo deve
+declarar origem, tipo de direito, restrições e hash. Ausência de direito conhecido
+bloqueia composição. Referências sociais não são banco de mídia.
 
-## Orquestração multiagente
+## 7. Video Composition and Subtitles
 
-- A ordem M1 → M2 → M3 → M4 → M5 é obrigatória.
-- Agentes paralelos só atuam dentro do módulo quando as subtarefas são
-  independentes.
-- Cada agente recebe objetivo, schema, evidências permitidas e limite de custo.
-- Toda saída inclui versão do prompt/modelo, IDs de evidência, duração e falhas;
-  conteúdo privado não entra em logs nem no Git.
-- Regras de direitos, intervalos, estados, idempotência e efeitos externos são
-  código determinístico.
-- O orquestrador rejeita saída fora do schema, referência temporal inexistente e
-  tentativa de pular módulo.
-- Humano seleciona candidatos após M1, confirma aquisição/direitos antes de M2,
-  pode revisar o briefing após M3 e aprova a versão exata após M5.
+Entradas: roteiro, voz, mídia e configuração visual. Saídas: `CompositionPlan`,
+`VideoRender` e `SubtitleTrack`.
 
-## Reaproveitamento do que já existe
+O composer é determinístico: monta canvas vertical, timeline, transições, áudio e
+legendas a partir do plano validado. O primeiro formato é `9:16`; outros entram
+somente quando um tópico exigir. Alterar plano, mídia, áudio ou legenda gera novo
+render e invalida validações e aprovações anteriores.
 
-| Componente atual | Reuso planejado |
-|---|---|
-| Store SQLite e revisão humana | Runs diárias, snapshots, deduplicação, shortlist e seleção do M1. |
-| YouTube/Wikimedia adapters | YouTube inicia o radar; Wikimedia pode sugerir alternativa licenciada. |
-| Contratos e validação de evidências | Schemas e referências controladas em M2–M5. |
-| Ollama com saída estruturada | Agentes de visão, análise, roteiro e QA conforme o módulo. |
-| Ranking e rubric explicáveis | Priorização de momentos no M3 e avaliação no M5. |
-| Experiência local com FFmpeg/ffprobe | Validação do arquivo adquirido e extração no limite de M2; renderização/QA em M4–M5. |
-| Estados de aprovação | Seleção após M1 e aprovação após M5, sem efeitos externos automáticos. |
+## 8. Quality Control
 
-O protótipo de renderização de R01 serviu como evidência, mas seus arquivos
-locais não foram versionados; M4 deverá implementar apenas o mínimo reproduzível
-sustentado pelos contratos anteriores.
+Entrada: versão completa. Saída: `ValidationReport`.
 
-## Prioridade e estratégia de entrega
+Checks obrigatórios:
 
-1. Provar M1 isoladamente com radar diário e catálogo reproduzível.
-2. Provar M2 com fala, texto em tela e um caso visual sem fala suficiente.
-3. Provar M3 com briefing explicável e totalmente ligado a evidências.
-4. Provar M4 com um corte narrado e legendado baseado em um upload.
-5. Provar M5 com rubric, edição leve e comparação antes/depois.
-6. Somente então integrar os cinco módulos no orquestrador e medir o fluxo.
+- vídeo, áudio, legendas e metadados existem;
+- duração, resolução, proporção e formatos são válidos;
+- render pode ser lido integralmente;
+- arquivos e textos não estão vazios;
+- limites conhecidos da plataforma são respeitados;
+- mídia possui origem e direito declarados;
+- hashes e referências são consistentes;
+- não há duplicação conhecida da versão;
+- riscos editoriais e conteúdo potencialmente inadequado estão sinalizados.
 
-Esse fatiamento reutiliza o que existe, reduz retrabalho e permite parar ou trocar
-uma tecnologia sem reescrever o pipeline inteiro.
+Um relatório separa `ERROR`, `WARNING` e `INFO`. Qualquer `ERROR` impede
+aprovação. Correção cria nova revisão e exige nova validação.
+
+## 9. Preview and Approval
+
+O preview apresenta a versão exata e seu relatório. `Approval` registra
+`content_version_id`, hash do render, ator, instante e decisão.
+
+Somente aprovação humana é válida no MVP. Qualquer mutação posterior invalida a
+aprovação. Aprovação automática é possibilidade pós-MVP condicionada a novo gate,
+política explícita e trilha auditável; não faz parte da arquitetura executável
+atual.
+
+## 10. Scheduler and Publishing
+
+Entrada: versão aprovada e agenda. Saídas: `PublishingJob` e `Publication`.
+
+```text
+PublishingJob
+├── content_version_id
+├── platform
+├── scheduled_at
+├── state
+├── attempts
+├── idempotency_key
+├── last_error_code
+├── published_at
+└── external_post_id
+```
+
+O scheduler persiste o job antes do efeito externo. Timeout leva a reconciliação
+por chave/estado externo antes de retry. Nunca cria uma segunda publicação apenas
+porque a resposta foi perdida.
+
+`SocialPublisher` expõe capacidades declaradas, como vídeo, imagem, texto, status
+e exclusão. Instagram, Facebook, Threads e TikTok são adapters separados. O
+publisher recebe a versão exata aprovada e não gera ou altera conteúdo.
+
+## 11. Analytics
+
+Entrada: publicação reconciliada. Saída: `MetricSnapshot`.
+
+Views, likes, comentários, compartilhamentos, salvamentos, alcance, watch time,
+retenção e seguidores ganhos são opcionais. O snapshot registra quais métricas a
+plataforma forneceu, janela, instante e cursor. Ausência não vira zero.
+
+## 12. Optimization
+
+Entradas: histórico de conteúdo, características e métricas. Saída:
+`OptimizationRecommendation`.
+
+O primeiro mecanismo usa estatísticas, médias, comparações e regras explícitas.
+Recomendações podem aumentar ou reduzir prioridade de temas, hooks, duração, CTA,
+horário, voz ou estilo, mas não alteram configuração nem disparam efeitos sem uma
+ação registrada do operador.
+
+## Estados e transições
+
+```text
+DRAFT
+  → IDEA_APPROVED
+  → SCRIPT_READY
+  → MEDIA_READY
+  → VIDEO_READY
+  → VALIDATED
+  → APPROVED
+  → SCHEDULED
+  → PUBLISHED
+  → ANALYZED
+```
+
+`FAILED`, `REJECTED` e `CANCELLED` exigem motivo. Recuperação de `FAILED` retoma
+a etapa falha ou cria nova run; não reescreve o histórico.
+
+Invariantes:
+
+1. uma transição precisa constar da tabela permitida;
+2. ator e instante são obrigatórios;
+3. `APPROVED` referencia o hash validado;
+4. apenas `APPROVED` pode avançar para `SCHEDULED`;
+5. apenas um publisher executa um job por chave idempotente;
+6. métricas só referenciam publicação reconciliada;
+7. otimização registra evidências e versão da regra.
+
+## Falhas e observabilidade
+
+Cada etapa registra início, término, duração, estado, código de erro sanitizado,
+tentativas, provider e consumo conhecido. Conteúdo privado, prompts completos com
+dados do usuário, mídia e credenciais não entram em logs.
+
+Falha de provider não deve apagar artefatos válidos. Se houver fallback, a troca
+de provider fica registrada e gera um novo artefato. Cobertura parcial permanece
+explícita na saída.
+
+## Reuso do pipeline anterior
+
+O antigo M1 vira `Research`. Seus contratos, catálogo, ranking e histórico
+continuam válidos. Conceitos planejados de transcrição, linhagem, renderização e
+QA podem ser reaproveitados em tópicos futuros, sem obrigar o MVP 1 a depender de
+uma mídia-fonte. Composição de cortes e react permanece backlog pós-MVP.
