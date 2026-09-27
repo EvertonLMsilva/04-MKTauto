@@ -19,7 +19,8 @@
 | PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
 | PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 | PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
-| PC04 | PR ABERTO | Interface local de Project/Channel | PR #29 aberto; CLI única, 8 testes focados e suíte completa de 125 testes passando. |
+| PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
+| PC05 | PR ABERTO | Handoff de ProjectSnapshot para o pipeline | PR #30 aberto; contrato `pipeline-handoff/1.0.0`, 8 testes focados e suíte completa de 133 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -176,6 +177,22 @@ o banco de dados é bloqueado como destino de exportação. O PR #29 foi aberto 
 
 Aceite: um stub consumidor recebe snapshot válido e rastreável; edição posterior
 do projeto não altera a execução já iniciada.
+
+Implementação PC05: `pipeline-handoff/1.0.0` exige `pipelineRunId`, `projectId`,
+`projectVersion` e `startedAt` explícitos, consulta somente a versão informada e
+revalida o snapshot pelo contrato PC01 antes de entregá-lo ao consumidor stub. A
+execução e o artefato stub são profundamente imutáveis, compartilham a mesma
+referência de projeto e possuem serialização determinística. O comando local
+`handoff` recebe JSON por allowlist, rejeita segredos antes de abrir o catálogo e
+não cria banco, projeto, versão, comando ou outro estado de pipeline.
+
+Evidência: 8 testes focados do handoff e a suíte completa de 133 testes passaram
+em 27/09/2026. Os testes cobrem seleção explícita, revalidação, referência
+imutável após nova versão e arquivamento, retry determinístico, propagação ao
+artefato, erros públicos sanitizados e ausência de efeitos. O risco residual é
+deliberado: execução e artefato permanecem apenas na saída estruturada até um
+tópico futuro implementar a persistência completa de `PipelineRun`.
+O PR #30 foi aberto em 27/09/2026.
 
 PC02 só começa após o merge de PC01, e assim sucessivamente. A divisão pode ser
 reduzida se a análise de Ready demonstrar que duas fatias não entregam valor
