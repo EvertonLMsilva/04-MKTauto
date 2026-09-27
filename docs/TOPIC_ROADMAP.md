@@ -140,8 +140,8 @@ Evidência: 29 testes focados de Project/Channel e a suíte completa de 117 test
 passaram em 27/09/2026, junto de `git diff --check`. Falhas forçadas no registro
 reverteram criação, nova versão e arquivamento sem deixar efeitos parciais. O risco
 residual permanece a contenção prolongada entre processos exceder o timeout do
-SQLite; nesse caso, nenhuma escrita parcial é confirmada. O PR será registrado
-após sua abertura.
+SQLite; nesse caso, nenhuma escrita parcial é confirmada. O PR #28 foi aberto em
+27/09/2026.
 
 ### PC04 — interface local
 
