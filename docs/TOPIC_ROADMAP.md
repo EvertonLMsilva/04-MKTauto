@@ -15,13 +15,18 @@
 | V05 | CONCLUÍDO | Decomposição do radar | PR #14 mergeado. |
 | R02A–R02G | CONCLUÍDO | Contratos, histórico, fontes, ranking e catálogo | PRs #15–#22 mergeados. |
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
-| V06 | EM EXECUÇÃO | Plataforma modular de conteúdo | Reposicionar arquitetura, domínio, pipeline e roadmap sem implementar módulos. |
+| V06 | PR ABERTO | Plataforma modular de conteúdo | PR #24 reposiciona arquitetura, domínio, pipeline e roadmap sem implementar módulos; 87 testes passaram. |
 | PC01 | PENDENTE | Contrato de Project/Channel | Depende do merge de V06. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
 react, publicação Instagram e painel serão retomados pelos épicos correspondentes
 quando suas dependências voltarem a ser prioritárias.
+
+V06 foi validado com a suíte completa de 87 testes, `git diff --check` e revisão
+do diff restrito a `README.md` e aos três documentos arquiteturais equivalentes.
+O PR #24 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
+foram preservados e não integram a entrega.
 
 ## Corte aprovado em V06
 
