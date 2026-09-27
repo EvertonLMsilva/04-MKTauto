@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   collectTikTokOfficialCoverage,
   deriveTikTokResearchQueries,
+  normalizeTikTokDisplayVideo,
   normalizeTikTokResearchVideo,
 } from "../src/adapters/tiktok.js";
 import { RADAR_CONTRACT_VERSION } from "../src/domain/contracts.js";
@@ -62,6 +63,13 @@ test("normaliza somente campos oficiais, mantém zero e rejeita identidade inven
   assert.throws(() => normalizeTikTokResearchVideo({
     id: "7412345678901234567", username: "../conta", region_code: "BR", create_time: 1790413200, video_duration: 30,
   }), /vídeo TikTok inválido/);
+});
+
+test("normaliza vídeo da conta autorizada pela Display API", () => {
+  const value = normalizeTikTokDisplayVideo(displayVideo("7412345678901234567"));
+  assert.equal(value.canonicalUrl, "https://www.tiktok.com/@conta.oficial/video/7412345678901234567");
+  assert.equal(value.durationSeconds, 30);
+  assert.deepEqual(value.metrics.views, { availability: "AVAILABLE", value: 100 });
 });
 
 test("Research API pagina, persiste candidatos oficiais e os torna elegíveis ao ranking determinístico", async () => {
@@ -176,22 +184,32 @@ test("Research API sem elegibilidade registra BLOCKED_BY_PROVIDER antes de chama
   }
 });
 
-test("Display API é registrada como AUTHORIZED_ONLY e nunca vira tendência pública", async () => {
+test("Display API lista vídeos autorizados sem colocá-los no ranking público", async () => {
   await withStore(async (store) => {
     const catalog = await collectTikTokOfficialCoverage({
       product: "DISPLAY_API",
+      accessToken: "display-ultrassecreto",
       displayAccess: { accountAuthorized: true, appApproved: true, videoListScopeGranted: true },
       authorizedAccountContext: "account:configured",
       store,
       idempotencyKey: "tiktok-display-only",
       capturedAt: CAPTURED_AT,
-      fetchImpl: async () => assert.fail("Display API não é consultada pelo radar"),
+      fetchImpl: async (input, options) => {
+        assert.equal(new URL(input).pathname, "/v2/video/list/");
+        assert.equal(JSON.parse(options.body).max_count, 20);
+        return response({ data: { videos: [displayVideo("7412345678901234567")], has_more: false }, error: { code: "ok" } });
+      },
     });
     assert.equal(catalog.sourceRuns[0].status, "PARTIAL");
     assert.equal(catalog.sourceRuns[0].capabilities.discovery, "AUTHORIZED_ONLY");
     assert.equal(catalog.sourceRuns[0].errorCode, "TIKTOK_AUTHORIZED_CONTENT_NOT_PUBLIC_TREND");
-    assert.equal(catalog.candidates.length, 0);
+    assert.equal(catalog.candidates.length, 1);
+    assert.equal(catalog.candidates[0].rankingExclusionReason, "AUTHORIZED_ACCOUNT_CONTENT_NOT_PUBLIC_TREND");
+    const histories = new Map(catalog.candidates.map((candidate) => [candidate.id, store.getCandidateHistory(candidate.id)]));
+    const scores = calculateTrendScores({ candidates: catalog.candidates, histories, clusters: [], now: CAPTURED_AT });
+    assert.equal(rankTrendCandidates({ candidates: catalog.candidates, scores, clusters: [] }).ranked.length, 0);
     assert.ok(catalog.sourceRuns[0].capabilities.limitations.includes("AUTHORIZED_ACCOUNT_CONTEXT:account:configured"));
+    assert.doesNotMatch(JSON.stringify(catalog), /ultrassecreto|Authorization/);
   });
 });
 
@@ -227,6 +245,21 @@ function researchVideo(id, overrides = {}) {
     view_count: 100,
     like_count: 8,
     comment_count: 2,
+    ...overrides,
+  };
+}
+
+function displayVideo(id, overrides = {}) {
+  return {
+    id,
+    title: `Vídeo ${id}`,
+    create_time: 1790413200,
+    duration: 30,
+    share_url: `https://www.tiktok.com/@conta.oficial/video/${id}`,
+    view_count: 100,
+    like_count: 8,
+    comment_count: 2,
+    share_count: 1,
     ...overrides,
   };
 }

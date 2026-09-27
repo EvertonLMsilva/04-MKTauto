@@ -31,7 +31,7 @@ Responsabilidade: consultar diariamente fontes sociais oficiais, descobrir
 assuntos sem nicho informado e formar um catálogo internacional de referências
 curtas com ranking explicável.
 
-- consultar YouTube, Instagram e TikTok somente pelas capacidades oficiais;
+- consultar YouTube, Instagram, Threads e TikTok somente pelas capacidades oficiais;
 - aceitar cobertura parcial e registrar bloqueio do provedor sem scraping;
 - filtrar candidatos entre 15 segundos e 3 minutos;
 - guardar snapshots para medir velocidade, engajamento, recência e recorrência;

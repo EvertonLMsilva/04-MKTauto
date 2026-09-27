@@ -65,17 +65,22 @@ function sourceRun(platform, status = "SUCCESS") {
   };
 }
 
-test("aceita candidatos válidos das três plataformas", () => {
+test("aceita candidatos válidos das quatro plataformas e duração indisponível", () => {
   const values = [
     candidate("YOUTUBE", "yt_1", "https://www.youtube.com/watch?v=yt_1"),
     candidate("INSTAGRAM", "ig_1", "https://www.instagram.com/reel/ig_1/"),
+    candidate("THREADS", "th_1", "https://www.threads.net/@autor/post/th_1", {
+      durationSeconds: { availability: "UNAVAILABLE", reason: "NOT_EXPOSED_BY_THREADS_API" },
+    }),
     candidate("TIKTOK", "tt_1", "https://www.tiktok.com/@autor/video/tt_1"),
   ];
   assert.deepEqual(values.map((value) => validateTrendCandidate(value).platform), [
     "YOUTUBE",
     "INSTAGRAM",
+    "THREADS",
     "TIKTOK",
   ]);
+  assert.equal(validateTrendCandidate({ ...values[0], schemaVersion: "trend-contracts/1.0.0" }).platform, "YOUTUBE");
 });
 
 test("usa platform + platformVideoId e aceita URL canônica validada como fallback", () => {

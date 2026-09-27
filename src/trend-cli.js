@@ -51,6 +51,12 @@ function configFromEnvironment(env) {
       apiVersion: env.INSTAGRAM_API_VERSION,
       eligibility: flags(env, "INSTAGRAM", ["PROFESSIONAL_ACCOUNT", "FACEBOOK_PAGE_LINKED", "PERMISSIONS_GRANTED", "APP_ACCESS_APPROVED"]),
     },
+    threads: {
+      accessToken: env.THREADS_ACCESS_TOKEN,
+      apiVersion: env.THREADS_API_VERSION ?? "v1.0",
+      searchType: env.THREADS_SEARCH_TYPE ?? "TOP",
+      eligibility: flags(env, "THREADS", ["BASIC_GRANTED", "KEYWORD_SEARCH_GRANTED", "APP_ACCESS_APPROVED"]),
+    },
     tiktok: {
       product: env.TIKTOK_PRODUCT ?? "RESEARCH_API",
       accessToken: env.TIKTOK_ACCESS_TOKEN,

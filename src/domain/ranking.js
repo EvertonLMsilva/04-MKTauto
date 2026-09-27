@@ -136,8 +136,9 @@ export function rankTrendCandidates({
   const scoreByCandidate = new Map(scores.map((score) => [score.candidateId, score]));
   const topicByCandidate = new Map(clusters.flatMap((cluster) => cluster.candidateIds.map((id) => [id, cluster.id])));
   const eligible = candidates
-    .filter((candidate) => candidate.durationSeconds >= config.eligibleDurationSeconds.min
-      && candidate.durationSeconds <= config.eligibleDurationSeconds.max
+    .filter((candidate) => candidate.rankingExclusionReason === undefined)
+    .filter((candidate) => durationValue(candidate.durationSeconds) >= config.eligibleDurationSeconds.min
+      && durationValue(candidate.durationSeconds) <= config.eligibleDurationSeconds.max
       && scoreByCandidate.has(candidate.id))
     .map((candidate) => ({ candidate, score: scoreByCandidate.get(candidate.id), topicId: topicByCandidate.get(candidate.id) ?? `unclustered:${candidate.id}` }))
     .sort((left, right) => right.score.value - left.score.value
@@ -174,6 +175,11 @@ export function rankTrendCandidates({
       ["topic", item.topicId, config.diversity.maxPerTopic],
     ];
   }
+}
+
+function durationValue(value) {
+  if (Number.isFinite(value)) return value;
+  return value?.availability === "AVAILABLE" && Number.isFinite(value.value) ? value.value : Number.NaN;
 }
 
 function velocityComponent(snapshots) {

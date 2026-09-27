@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { collectInstagramHashtagCoverage } from "./adapters/instagram.js";
 import { proposeTopicClusters } from "./adapters/ollama.js";
+import { collectThreadsKeywordCoverage } from "./adapters/threads.js";
 import { collectTikTokOfficialCoverage } from "./adapters/tiktok.js";
 import { collectPopularYouTubeTrends } from "./adapters/youtube.js";
 import { RADAR_CONTRACT_VERSION } from "./domain/contracts.js";
@@ -12,6 +13,7 @@ const STEP = Object.freeze({
   youtube: "10-youtube",
   seed: "20-seed-clustering",
   instagram: "30-instagram",
+  threads: "35-threads",
   tiktok: "40-tiktok",
   consolidate: "50-consolidate",
   analysis: "60-final-analysis",
@@ -106,6 +108,21 @@ export async function runDailyTrendCatalog({
     }),
   });
 
+  const threadsBatch = await providerStep({
+    store, dailyId, stepKey: STEP.threads, platform: "THREADS", clock, capturedAt: startedAt,
+    ready: threadsReady(config.threads) && Boolean(seedCatalog),
+    blockCode: seedCatalog ? threadsBlock(config.threads) : "DEPENDENCY_CLUSTERING_UNAVAILABLE",
+    discovery: "PUBLIC_QUERY",
+    collect: () => captureOperation(collectors.threads ?? collectThreadsKeywordCoverage, {
+      ...config.threads,
+      store,
+      clusterRunId: youtubeBatch.run.id,
+      idempotencyKey: `${dailyId}:threads`,
+      capturedAt: startedAt,
+      fetchImpl,
+    }),
+  });
+
   const tiktokNeedsClusters = (config.tiktok?.product ?? "RESEARCH_API") === "RESEARCH_API";
   const tiktokBatch = await providerStep({
     store, dailyId, stepKey: STEP.tiktok, platform: "TIKTOK", clock, capturedAt: startedAt,
@@ -125,7 +142,7 @@ export async function runDailyTrendCatalog({
     }),
   });
 
-  const batches = [youtubeBatch, instagramBatch, tiktokBatch];
+  const batches = [youtubeBatch, instagramBatch, threadsBatch, tiktokBatch];
   const trendRunId = `trend:${logicalDate}:${configHash.slice(0, 16)}`;
   const consolidated = await persistedStep(store, dailyId, STEP.consolidate, clock, async () => {
     const sourceRuns = batches.flatMap((batch) => batch.sourceRuns).map((source) => ({ ...source, trendRunId }));
@@ -305,7 +322,7 @@ function blockedBatch({ platform, dailyId, capturedAt, blockCode, discovery, fai
     capabilities: {
       discovery: "UNAVAILABLE",
       metrics: [],
-      supportsRegions: platform !== "INSTAGRAM",
+      supportsRegions: !["INSTAGRAM", "THREADS"].includes(platform),
       limitations: [`REQUEST_SKIPPED:${blockCode}`, `INTENDED_DISCOVERY:${discovery}`],
     },
     coverage: { requestedRegions: [discovery], coveredRegions: [], complete: false },
@@ -346,6 +363,10 @@ function sanitizeConfig(config) {
       configured: instagramReady(config.instagram), apiVersion: config.instagram?.apiVersion ?? "UNAVAILABLE",
       eligibility: booleanMap(config.instagram?.eligibility),
     },
+    threads: {
+      configured: threadsReady(config.threads), apiVersion: config.threads?.apiVersion ?? "v1.0",
+      searchType: config.threads?.searchType ?? "TOP", eligibility: booleanMap(config.threads?.eligibility),
+    },
     tiktok: {
       configured: tiktokReady(config.tiktok), product: config.tiktok?.product ?? "RESEARCH_API",
       eligibility: booleanMap(config.tiktok?.eligibility), displayAccess: booleanMap(config.tiktok?.displayAccess),
@@ -359,6 +380,7 @@ function configFingerprint(config) {
     credentials: {
       youtube: secretMarker(config.youtube?.apiKey),
       instagram: secretMarker(config.instagram?.accessToken),
+      threads: secretMarker(config.threads?.accessToken),
       tiktok: secretMarker(config.tiktok?.accessToken),
       instagramAccount: secretMarker(config.instagram?.igUserId),
       tiktokAccount: secretMarker(config.tiktok?.authorizedAccountContext),
@@ -382,10 +404,25 @@ function instagramBlock(value = {}) {
   return null;
 }
 
+function threadsReady(value) { return threadsBlock(value) === null; }
+function threadsBlock(value = {}) {
+  if (!value.accessToken) return "THREADS_ACCESS_TOKEN_MISSING";
+  if (!/^v\d+\.\d+$/.test(value.apiVersion ?? "v1.0")) return "THREADS_API_VERSION_INVALID";
+  for (const [field, code] of [
+    ["basicGranted", "THREADS_BASIC_PERMISSION_REQUIRED"],
+    ["keywordSearchGranted", "THREADS_KEYWORD_SEARCH_PERMISSION_REQUIRED"],
+    ["appAccessApproved", "THREADS_APP_ACCESS_NOT_APPROVED"],
+  ]) {
+    if (value.eligibility?.[field] !== true) return code;
+  }
+  return null;
+}
+
 function tiktokReady(value) { return tiktokBlock(value) === null; }
 function tiktokBlock(value = {}) {
   const product = value.product ?? "RESEARCH_API";
   if (product === "DISPLAY_API") {
+    if (!value.accessToken) return "TIKTOK_DISPLAY_ACCESS_TOKEN_MISSING";
     for (const [field, code] of [
       ["accountAuthorized", "TIKTOK_DISPLAY_ACCOUNT_AUTHORIZATION_REQUIRED"],
       ["appApproved", "TIKTOK_DISPLAY_APP_APPROVAL_REQUIRED"],
