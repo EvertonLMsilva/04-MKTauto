@@ -63,7 +63,9 @@ test("handoff revalida e entrega exatamente o snapshot versionado ao consumidor 
   const result = new ProjectPipelineHandoffService(repository, consumer).start(request());
 
   assert.deepEqual(reads, [["project_curiosidades_ia", 1]]);
-  assert.strictEqual(consumed.projectSnapshot, snapshot);
+  assert.deepEqual(consumed.projectSnapshot, snapshot);
+  assert.notStrictEqual(consumed.projectSnapshot, snapshot);
+  assert.equal(Object.isFrozen(consumed.projectSnapshot), true);
   assert.deepEqual(result.execution, {
     pipelineRunId: "run_pc05_001",
     projectId: "project_curiosidades_ia",

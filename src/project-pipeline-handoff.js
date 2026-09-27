@@ -44,33 +44,10 @@ export class ProjectPipelineHandoffService {
 
   start(value) {
     try {
-      const request = validatePipelineHandoffRequest(value);
-      const selectedSnapshot = this.repository.get(request.projectId, request.projectVersion);
-      if (!selectedSnapshot) {
-        throw failure(
-          "PROJECT_SNAPSHOT_NOT_FOUND",
-          "projectVersion",
-          "snapshot não encontrado para o projeto e versão explícitos",
-        );
-      }
-
-      const validatedSnapshot = validateProjectSnapshot(selectedSnapshot);
-      if (validatedSnapshot.project.id !== request.projectId) {
-        throw failure("SNAPSHOT_PROJECT_MISMATCH", "projectId", "snapshot não corresponde ao projeto selecionado");
-      }
-      if (validatedSnapshot.project.version !== request.projectVersion) {
-        throw failure("SNAPSHOT_VERSION_MISMATCH", "projectVersion", "snapshot não corresponde à versão selecionada");
-      }
-
-      const execution = deepFreeze({
-        pipelineRunId: request.pipelineRunId,
-        projectId: request.projectId,
-        projectVersion: request.projectVersion,
-        startedAt: request.startedAt,
-      });
+      const { execution, projectSnapshot } = resolvePipelineHandoff(this.repository, value);
       const artifact = validateArtifact(this.consumer.consume(deepFreeze({
         execution,
-        projectSnapshot: selectedSnapshot,
+        projectSnapshot,
       })), execution);
 
       return deepFreeze({
@@ -81,6 +58,43 @@ export class ProjectPipelineHandoffService {
     } catch (caught) {
       throw asHandoffError(caught);
     }
+  }
+}
+
+export function resolvePipelineHandoff(repository, value) {
+  try {
+    if (!repository || typeof repository.get !== "function") {
+      throw failure("INVALID_REPOSITORY", "repository", "repositório de projetos obrigatório");
+    }
+    const request = validatePipelineHandoffRequest(value);
+    const selectedSnapshot = repository.get(request.projectId, request.projectVersion);
+    if (!selectedSnapshot) {
+      throw failure(
+        "PROJECT_SNAPSHOT_NOT_FOUND",
+        "projectVersion",
+        "snapshot não encontrado para o projeto e versão explícitos",
+      );
+    }
+
+    const projectSnapshot = validateProjectSnapshot(selectedSnapshot);
+    if (projectSnapshot.project.id !== request.projectId) {
+      throw failure("SNAPSHOT_PROJECT_MISMATCH", "projectId", "snapshot não corresponde ao projeto selecionado");
+    }
+    if (projectSnapshot.project.version !== request.projectVersion) {
+      throw failure("SNAPSHOT_VERSION_MISMATCH", "projectVersion", "snapshot não corresponde à versão selecionada");
+    }
+
+    return deepFreeze({
+      execution: {
+        pipelineRunId: request.pipelineRunId,
+        projectId: request.projectId,
+        projectVersion: request.projectVersion,
+        startedAt: request.startedAt,
+      },
+      projectSnapshot,
+    });
+  } catch (caught) {
+    throw asHandoffError(caught);
   }
 }
 
