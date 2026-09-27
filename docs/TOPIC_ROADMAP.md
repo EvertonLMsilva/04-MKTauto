@@ -20,7 +20,7 @@
 | PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 | PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
 | PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
-| PC05 | EM EXECUÇÃO | Handoff de ProjectSnapshot para o pipeline | Contrato `pipeline-handoff/1.0.0`, consumidor stub e integração local implementados; 133 testes passam. |
+| PC05 | PR ABERTO | Handoff de ProjectSnapshot para o pipeline | PR #30 aberto; contrato `pipeline-handoff/1.0.0`, 8 testes focados e suíte completa de 133 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -192,6 +192,7 @@ imutável após nova versão e arquivamento, retry determinístico, propagação
 artefato, erros públicos sanitizados e ausência de efeitos. O risco residual é
 deliberado: execução e artefato permanecem apenas na saída estruturada até um
 tópico futuro implementar a persistência completa de `PipelineRun`.
+O PR #30 foi aberto em 27/09/2026.
 
 PC02 só começa após o merge de PC01, e assim sucessivamente. A divisão pode ser
 reduzida se a análise de Ready demonstrar que duas fatias não entregam valor
