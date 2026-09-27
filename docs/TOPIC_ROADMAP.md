@@ -16,7 +16,7 @@
 | R02A–R02G | CONCLUÍDO | Contratos, histórico, fontes, ranking e catálogo | PRs #15–#22 mergeados. |
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
 | V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
-| PC01 | EM EXECUÇÃO | Contrato de Project/Channel | Contrato e testes implementados sobre V06; preparação do PR em andamento. |
+| PC01 | PR ABERTO | Contrato de Project/Channel | PR #25; contrato versionado e imutável, 96 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
