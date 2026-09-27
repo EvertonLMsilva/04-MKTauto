@@ -17,7 +17,8 @@
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
 | V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
 | PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
-| PC02 | PR ABERTO | Persistência e versionamento de Project/Channel | PR #26; migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
+| PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
+| PC03 | PR ABERTO | Serviço de aplicação idempotente de Project/Channel | Comandos explícitos, registro atômico, retries reproduzíveis e snapshots históricos; 117 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -127,6 +128,20 @@ resultar em erro de ocupação do SQLite após o timeout, sem escrita parcial.
 
 Aceite: retry idêntico retorna o mesmo resultado; reutilização divergente da
 chave falha; snapshot usado por run não muda retroativamente.
+
+Implementação PC03: `ProjectApplicationService` valida comandos de criação,
+versionamento e arquivamento antes da escrita, normaliza a entrada pelo contrato
+PC01 e compara retries por serialização canônica e SHA-256. A migração aditiva
+`004_project_commands` registra chave, tipo, hash, ator, instante, referência e
+resultado imutável; a extensão transacional do repositório PC02 persiste comando,
+projeto e snapshot na mesma transação, preservando a versão esperada.
+
+Evidência: 29 testes focados de Project/Channel e a suíte completa de 117 testes
+passaram em 27/09/2026, junto de `git diff --check`. Falhas forçadas no registro
+reverteram criação, nova versão e arquivamento sem deixar efeitos parciais. O risco
+residual permanece a contenção prolongada entre processos exceder o timeout do
+SQLite; nesse caso, nenhuma escrita parcial é confirmada. O PR será registrado
+após sua abertura.
 
 ### PC04 — interface local
 
