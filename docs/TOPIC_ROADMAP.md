@@ -15,8 +15,8 @@
 | V05 | CONCLUÍDO | Decomposição do radar | PR #14 mergeado. |
 | R02A–R02G | CONCLUÍDO | Contratos, histórico, fontes, ranking e catálogo | PRs #15–#22 mergeados. |
 | R02H | CONCLUÍDO | Listagem oficial multirrede | PR #23 mergeado em 27/09/2026 (`c0454cd`). |
-| V06 | PR ABERTO | Plataforma modular de conteúdo | PR #24 reposiciona arquitetura, domínio, pipeline e roadmap sem implementar módulos; 87 testes passaram. |
-| PC01 | PENDENTE | Contrato de Project/Channel | Depende do merge de V06. |
+| V06 | CONCLUÍDO | Plataforma modular de conteúdo | PR #24 mergeado em 27/09/2026 (`95491bd`); 87 testes passaram. |
+| PC01 | PR ABERTO | Contrato de Project/Channel | PR #25; contrato versionado e imutável, 96 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -79,6 +79,20 @@ MVP 4 entrega E11; MVP 5 entrega E12.
 
 Aceite: fixtures válidas produzem snapshot normalizado e imutável; configurações
 inválidas falham com código/campo estáveis; nenhum segredo é aceito no contrato.
+
+Implementação PC01: `project-contracts/1.0.0` produz um snapshot profundamente
+imutável por allowlist e rejeita campos sensíveis antes da normalização. Os
+defaults reproduzíveis são versão `1`, idioma `pt-BR`, vídeo curto `9:16`, duração
+de 25–45 segundos, estilos editorial e de voz `informative`, visual `dynamic`,
+frequência diária `1`, timezone `America/Sao_Paulo` e horário `10:00`; ao menos
+uma rede continua obrigatória, pois escolher um provider implicitamente não é um
+default seguro. Referências recebem uso `strategic_reference_only` e
+`grantsUsageRights: false`.
+
+Evidência: 9 testes focados e a suíte completa de 96 testes passaram em
+27/09/2026, junto de `git diff --check`. O risco residual é deliberadamente
+limitado ao escopo: persistência e histórico de versões só serão tratados em
+PC02, e novas redes ou formatos exigirão evolução explícita do contrato.
 
 ### PC02 — persistência e versionamento
 
