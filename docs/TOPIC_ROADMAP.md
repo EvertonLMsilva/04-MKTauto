@@ -19,7 +19,7 @@
 | PC01 | CONCLUÍDO | Contrato de Project/Channel | PR #25 mergeado em 27/09/2026 (`8c6ea64`); 96 testes passaram. |
 | PC02 | CONCLUÍDO | Persistência e versionamento de Project/Channel | PR #26 mergeado em 27/09/2026 (`d2e6b06`); migração SQLite aditiva, histórico imutável e concorrência otimista; 108 testes passaram. |
 | PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
-| PC04 | EM EXECUÇÃO | Interface local de Project/Channel | CLI única para comandos, consultas, seleção em memória e exportação sanitizada. |
+| PC04 | PR ABERTO | Interface local de Project/Channel | PR #29 aberto; CLI única, 8 testes focados e suíte completa de 125 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -165,7 +165,8 @@ em 27/09/2026, junto de `git diff --check`. Os testes cobrem retries, conflito d
 versão, histórico imutável, ausência de efeitos em leitura/seleção, rejeição de
 segredos antes da abertura do banco e exportação sanitizada. O risco residual é
 operacional: o arquivo indicado explicitamente por `--output` pode ser substituído;
-o banco de dados é bloqueado como destino de exportação.
+o banco de dados é bloqueado como destino de exportação. O PR #29 foi aberto em
+27/09/2026.
 
 ### PC05 — handoff para o pipeline
 
