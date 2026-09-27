@@ -90,6 +90,37 @@ export function createProjectSnapshot(value) {
   });
 }
 
+export function validateProjectSnapshot(value) {
+  rejectSensitiveFields(value);
+  requireRecord(value, "snapshot");
+  requireExactKeys(value, ["schemaVersion", "project", "channel", "references"], "snapshot");
+  if (value.schemaVersion !== PROJECT_CONTRACT_VERSION) {
+    fail("UNSUPPORTED_SCHEMA_VERSION", "schemaVersion", "versão do contrato não suportada");
+  }
+
+  requireRecord(value.project, "project");
+  requireExactKeys(value.project, ["id", "name", "version", "niche", "subniches", "audience"], "project");
+  const project = validateProject(value.project);
+  const channel = validateChannelProfile(value.channel);
+  if (!Array.isArray(value.references)) fail("INVALID_TYPE", "references", "deve ser uma lista");
+  const references = value.references.map((reference, index) => {
+    const path = `references[${index}]`;
+    requireRecord(reference, path);
+    requireExactKeys(reference, ["platform", "handle", "purpose", "usage", "grantsUsageRights"], path);
+    if (reference.usage !== "strategic_reference_only" || reference.grantsUsageRights !== false) {
+      fail("INVALID_REFERENCE_RIGHTS", path, "referência persistida deve permanecer somente estratégica e sem direito de uso");
+    }
+    return validateReferenceProfile({
+      platform: reference.platform,
+      handle: reference.handle,
+      purpose: reference.purpose,
+    }, path);
+  });
+  ensureUnique(references.map(({ platform, handle }) => `${platform}:${handle.toLocaleLowerCase("en-US")}`), "references");
+
+  return deepFreeze({ schemaVersion: PROJECT_CONTRACT_VERSION, project, channel, references });
+}
+
 export function validateProject(value) {
   rejectSensitiveFields(value);
   requireRecord(value, "project");

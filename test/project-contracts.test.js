@@ -7,6 +7,7 @@ import {
   createProjectSnapshot,
   validateChannelProfile,
   validateProject,
+  validateProjectSnapshot,
   validateReferenceProfile,
 } from "../src/domain/project-contracts.js";
 import { ContractValidationError } from "../src/domain/contracts.js";
@@ -66,6 +67,18 @@ test("produz ProjectSnapshot normalizado, versionado e profundamente imutável",
   assert.equal(Object.isFrozen(snapshot.project.audience), true);
   assert.equal(Object.isFrozen(snapshot.channel.publishing.times), true);
   assert.throws(() => snapshot.project.name = "alterado", TypeError);
+});
+
+test("revalida o envelope normalizado de ProjectSnapshot", () => {
+  const snapshot = createProjectSnapshot(validProject());
+  assert.deepEqual(validateProjectSnapshot(JSON.parse(JSON.stringify(snapshot))), snapshot);
+
+  const altered = JSON.parse(JSON.stringify(snapshot));
+  altered.references[0].grantsUsageRights = true;
+  assert.throws(
+    () => validateProjectSnapshot(altered),
+    (error) => error.code === "INVALID_REFERENCE_RIGHTS" && error.path === "references[0]",
+  );
 });
 
 test("aplica defaults determinísticos documentados", () => {
