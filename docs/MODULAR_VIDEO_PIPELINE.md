@@ -292,16 +292,117 @@ Automação exige política e gate próprios.
 
 Domínio e aplicação dependem de capacidades (`IdeaGenerator`, `ScriptGenerator`,
 `ContentAnalyzer`, `OptimizationAdvisor`, `EmbeddingProvider`, `LLMProvider`),
-nunca de SDKs. Para a geração do pipeline, OpenAI/GPT será o primeiro adapter:
+nunca de SDKs ou nomes de modelos. Para a geração do pipeline, OpenAI/GPT será o
+primeiro provider e a seleção ocorrerá atrás de uma política configurável:
 
 ```text
-Application → AI Port → OpenAI Adapter → GPT
+Domain
+  ↑
+Application
+  ↓
+AI Port
+  ↓
+AIModelRouter
+  ↓
+Provider Adapter
+  ↓
+Model
 ```
 
+A aplicação pede uma capacidade; a política da tarefa informa o perfil necessário;
+o `AIModelRouter` escolhe provider e modelo; o adapter traduz o contrato. Nomes de
+provider e modelo existem somente em configuração e adapters, nunca em regras de
+domínio.
+
+```text
+AI Port
+  └── AIModelRouter
+        ├── OpenAIAdapter → GPT-6 Luna / Sol / Astra
+        ├── LocalModelAdapter
+        ├── SelfHostedAdapter
+        └── SpecializedModelAdapter
+```
+
+Somente o `OpenAIAdapter` e sua configuração pertencem à fase inicial; os demais
+adapters representam pontos de substituição futuros.
+
+### Política inicial
+
+```text
+default_model   = gpt-6-luna
+complex_model   = gpt-6-sol
+exception_model = gpt-6-astra
+```
+
+`gpt-6-luna` atende por padrão tarefas de alto volume e complexidade baixa ou
+média: classificação, transformação estruturada, resumo, extração, análise
+preliminar, ideias iniciais, hooks, hashtags, CTA, metadados, normalização,
+comparação simples, agrupamento semântico e variações. `gpt-6-sol` atende tarefas
+que exigem raciocínio mais forte, como revisão crítica, roteiro complexo, análise
+de evidências conflitantes, avaliação editorial profunda, performance,
+comportamento, Content Economics, Optimization Engine e estratégia de portfólio.
+`gpt-6-astra` fica reservado a falhas reiteradas, múltiplas restrições complexas
+e decisões excepcionais de alto impacto; seu uso deve ser raro, rastreável e
+justificado.
+
+A política inicial por tarefa é determinística e configurável:
+
+| Tarefa | Perfil inicial |
+|---|---|
+| `generate_metadata`, `generate_hashtags`, `generate_hooks` | default |
+| `generate_ideas`, `summarize_research`, `classify_content` | default |
+| `generate_script` | default |
+| `deep_script_review`, `deep_content_review` | complex |
+| `optimization_analysis`, `revenue_analysis`, `portfolio_strategy` | complex |
+| `exceptional_reasoning` | exceptional |
+
+Esses mappings são política versionada, não regra imutável. O princípio econômico
+é usar o menor modelo capaz de entregar qualidade suficiente e escalar somente
+quando o ganho esperado justificar custo e latência adicionais. A decisão futura
+poderá considerar tipo, complexidade, criticidade, orçamento, latência, contexto,
+reasoning, qualidade histórica e disponibilidade. Ela otimiza custo, qualidade e
+impacto no resultado, não apenas preço.
+
+### Escalonamento e experimentação futuros
+
+```text
+Luna → resultado suficiente? → sim: aceitar
+                         └──→ não: Sol → suficiente? → sim: aceitar
+                                                   └──→ não: Astra
+```
+
+O escalonamento automático não integra o MVP atual. Quando houver critérios de
+qualidade validados, cada fallback deverá registrar motivo e nova chamada. Um
+`AI Model Experiment` futuro poderá comparar modelos mantendo ideia, nicho,
+formato, público, estilo e duração constantes. A avaliação relacionará custo e
+latência a qualidade editorial, aprovação humana, retenção, engajamento,
+conversão, receita, lucro e ROI, sem publicar ou escolher vencedor automaticamente.
+
+### Custos, observabilidade e evolução
+
+Cada chamada futura deve ser correlacionável à `PipelineRun`, às entradas e saídas
+da linhagem e a um evento do `CostLedger`, registrando quando aplicável:
+
+```text
+provider, model, task_type, prompt_version
+input_tokens, output_tokens, cached_tokens
+cost, latency, timestamp, success, fallback_used
+input_hash, output_hash
+```
+
+Segredos e prompts privados permanecem fora dos registros. Esses dados formarão
+datasets que conectam provider, modelo, tarefa e prompt ao conteúdo, resultado
+editorial, métricas, receita, custo e lucro.
+
 O Ollama já usado em Research permanece uma implementação isolada e não muda
-essa fronteira. Local models, self-hosted e modelos especializados são opções
-futuras. Não se implementam agora novos adapters, GPU, fine-tuning ou modelos
-próprios.
+essa fronteira. A transição prevista começa com os três modelos OpenAI, adiciona
+modelos locais experimentais, evolui para modelos próprios especializados com
+OpenAI como fallback e só então considera roteamento por qualidade, custo,
+latência e ROI históricos. Hook, ranking de ideias e roteiros, classificação,
+previsão de performance e otimização são candidatos a modelos especializados;
+um LLM geral próprio não é prioridade inicial. Não se implementam agora novos
+adapters, fallback sofisticado, GPU, fine-tuning, treinamento, ML routing ou
+experimentos de modelos.
 
 ## 17. Horizontes
 

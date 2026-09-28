@@ -110,6 +110,8 @@ stack trace ou detalhes internos.
 
 ## Estado e próximo tópico
 
-Project Configuration e a entrada de Research por projeto estão concluídos. O
-roadmap define `FND01 — persistência de PipelineRun` como próxima entrega técnica,
-que só começa após o merge da atualização documental V07.
+Project Configuration, a entrada de Research por projeto e a estratégia
+Portfolio-First V07 estão concluídos. A atualização documental V08 formaliza
+OpenAI multimodelo atrás de portas e roteamento configurável, sem implementar IA.
+O roadmap mantém `FND01 — persistência de PipelineRun` como próxima entrega
+técnica, iniciada somente após o merge da V08.
