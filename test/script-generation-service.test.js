@@ -127,6 +127,36 @@ test("retry de falha observada não chama novamente o provider", async () => {
   assert.equal(repository.failed.length, 0);
 });
 
+test("falha com custo conhecido atribui custo à chamada sem artefato ou detalhe privado", async () => {
+  const repository = fakeRepository();
+  const providerFailure = new Error("PRIVATE raw provider response with stack detail");
+  providerFailure.code = "PROVIDER_RATE_LIMITED";
+  providerFailure.field = "provider";
+  providerFailure.telemetry = observation({
+    inputTokens: 80, outputTokens: 0, cachedInputTokens: null,
+    usageOrigin: "provider_response", costAmount: "0.0075", currency: "USD",
+    costOrigin: "provider_reported", outputHash: null,
+  });
+
+  await assert.rejects(
+    new ScriptGenerationService(repository, fakeGenerator({}, providerFailure), {
+      now: () => "2026-09-28T18:00:01.000Z",
+    }).generate(request()),
+    generationError("PROVIDER_RATE_LIMITED", "provider"),
+  );
+
+  const failed = repository.failed[0];
+  assert.equal(failed.telemetry.artifactId, null);
+  assert.equal(failed.telemetry.failureCode, "PROVIDER_RATE_LIMITED");
+  assert.equal(failed.costEvent.artifactId, null);
+  assert.equal(failed.costEvent.amount, "0.0075");
+  assert.equal(failed.costEvent.costEventId, "cost:ai_call:generation_ai01_001");
+  const persistedShape = JSON.stringify(failed);
+  assert.equal(persistedShape.includes("PRIVATE"), false);
+  assert.equal(persistedShape.includes("stack"), false);
+  assert.equal(persistedShape.includes("raw provider"), false);
+});
+
 test("cancelamento anterior à chamada não invoca o provider", async () => {
   const repository = fakeRepository();
   const generator = fakeGenerator();
