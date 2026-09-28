@@ -223,20 +223,20 @@ test("leitura rejeita quando a ideia selecionada deixa de preservar o hash exato
   });
 });
 
-test("migrações 013 a 018 são aditivas e preservam seleção existente", () => {
+test("migrações 013 a 019 são aditivas e preservam seleção existente", () => {
   withDatabase((path) => {
     const { repository, selected } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
+    before.exec("DROP TABLE media_acquisition_requests; DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 19; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
     before.close();
     const migrated = new ScriptRepository(path);
     assert.equal(migrated.getSelection(selected.ideaSelectionId).ideaSelectionId, selected.ideaSelectionId);
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 18);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 18);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 19);
     raw.close();
   });
 });

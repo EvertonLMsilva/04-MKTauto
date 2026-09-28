@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
 import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
+import { MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestHash } from "../src/domain/media-acquisition-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { MediaAssetRepository, MediaAssetRepositoryError } from "../src/media-asset-repository.js";
 import { MediaAssetService } from "../src/media-asset-service.js";
@@ -97,17 +98,81 @@ test("falha na escrita reverte ativo e linhagem integralmente", () => {
   });
 });
 
+test("persiste solicitação, ativo e linhagem na mesma transação", () => {
+  withService(({ repository, script, path }) => {
+    const request = acquisitionRequest(script);
+    const asset = mediaAsset(script, {
+      mediaAssetId: `media_asset:${request.mediaAcquisitionRequestId}`,
+      createdAt: request.requestedAt,
+    });
+    assert.deepEqual(repository.registerAcquiredMediaAsset({ request, mediaAsset: asset }), asset);
+    assert.deepEqual(repository.registerAcquiredMediaAsset({ request, mediaAsset: asset }), asset);
+    assert.deepEqual(repository.getMediaAcquisition(request.mediaAcquisitionRequestId), {
+      requestHash: request.contentHash, mediaAsset: asset,
+    });
+    assert.equal(count(path, "media_acquisition_requests"), 1);
+    assert.equal(count(path, "media_assets"), 1);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'media_asset'"), 1);
+  });
+});
+
+test("falha da identidade reverte solicitação, ativo e linhagem", () => {
+  withService(({ repository, script, path }) => {
+    const request = acquisitionRequest(script);
+    const asset = mediaAsset(script, {
+      mediaAssetId: `media_asset:${request.mediaAcquisitionRequestId}`,
+      createdAt: request.requestedAt,
+    });
+    repository.db.exec("CREATE TRIGGER reject_acquisition BEFORE INSERT ON media_acquisition_requests BEGIN SELECT RAISE(ABORT, 'PRIVATE acquisition payload'); END;");
+    assert.throws(() => repository.registerAcquiredMediaAsset({ request, mediaAsset: asset }));
+    assert.equal(count(path, "media_acquisition_requests"), 0);
+    assert.equal(count(path, "media_assets"), 0);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'media_asset'"), 0);
+  });
+});
+
+test("migração 019 é aditiva e preserva ativos existentes", () => {
+  withDatabase((path) => {
+    const { repository, script } = setup(path);
+    repository.registerMediaAsset(mediaAsset(script));
+    repository.close();
+    const before = new DatabaseSync(path);
+    before.exec(`
+      DROP TRIGGER media_acquisition_requests_no_delete;
+      DROP TRIGGER media_acquisition_requests_no_update;
+      DROP TRIGGER media_acquisition_requests_validate_scope;
+      DROP TABLE media_acquisition_requests;
+      DELETE FROM schema_migrations WHERE version = 19;
+      PRAGMA user_version = 18;
+    `);
+    before.close();
+    const migrated = new MediaAssetRepository(path);
+    assert.equal(migrated.getMediaAcquisition("media_acquisition_001"), null);
+    migrated.close();
+    const raw = new DatabaseSync(path);
+    assert.equal(raw.prepare("SELECT media_asset_id FROM media_assets").get().media_asset_id, "media_asset_001");
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 19);
+    raw.close();
+  });
+});
+
 test("migração 018 é aditiva e preserva dados existentes", () => {
   withDatabase((path) => {
     const { repository } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TRIGGER media_acquisition_requests_no_delete;
+      DROP TRIGGER media_acquisition_requests_no_update;
+      DROP TRIGGER media_acquisition_requests_validate_scope;
+      DROP TABLE media_acquisition_requests;
       DROP TRIGGER media_assets_no_delete;
       DROP TRIGGER media_assets_no_update;
       DROP TRIGGER media_assets_validate_revision;
       DROP TRIGGER media_assets_validate_scope;
       DROP TABLE media_assets;
+      DELETE FROM schema_migrations WHERE version = 19;
       DELETE FROM schema_migrations WHERE version = 18;
       PRAGMA user_version = 17;
     `);
@@ -117,8 +182,8 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
     assert.deepEqual(migrated.listMediaAssetsByPipelineRun("run_e06_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 18);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 18);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 19);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 19);
     raw.close();
   });
 });
@@ -197,6 +262,22 @@ function mediaAsset(script, overrides = {}) {
   };
 }
 
+function acquisitionRequest(script, overrides = {}) {
+  const value = {
+    schemaVersion: MEDIA_ACQUISITION_REQUEST_VERSION,
+    mediaAcquisitionRequestId: "media_acquisition_001",
+    scriptId: script.scriptId,
+    scriptContentHash: script.contentHash,
+    visualDirectionPosition: 1,
+    assetType: "IMAGE",
+    requestedAt: "2026-09-28T22:00:00.000Z",
+    contentHash: "0".repeat(64),
+    ...overrides,
+  };
+  value.contentHash = mediaAcquisitionRequestHash(value);
+  return value;
+}
+
 function project() {
   return {
     id: "project_curiosidades_ia", name: "Curiosidades IA", version: 1,
@@ -212,4 +293,4 @@ function repositoryError(code, field) { return (caught) => caught instanceof Med
 function count(path, table) { const db = new DatabaseSync(path); try { return db.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total; } finally { db.close(); } }
 function countWhere(path, table, where) { const db = new DatabaseSync(path); try { return db.prepare(`SELECT COUNT(*) AS total FROM ${table} WHERE ${where}`).get().total; } finally { db.close(); } }
 function withService(operation) { withDatabase((path) => { const { repository, script } = setup(path); const service = new MediaAssetService(repository); try { operation({ service, repository, script, path }); } finally { if (repository.db?.isOpen) repository.close(); } }); }
-function withDatabase(operation) { const root = mkdtempSync(join(tmpdir(), "mktauto-media-asset-")); try { operation(join(root, "catalog.sqlite")); } finally { rmSync(root, { recursive: true, force: true }); } }
+function withDatabase(operation) { const root = mkdtempSync(join(tmpdir(), "mktauto-media-asset-")); try { operation(join(root, "catalog.sqlite")); } finally { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); } }
