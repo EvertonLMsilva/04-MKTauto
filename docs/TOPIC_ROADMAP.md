@@ -31,7 +31,8 @@
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
-| E03-I02 | PR ABERTO | Seleção humana de ideia append-only | PR #41 aberto; `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
+| E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
+| E04-S01 | PR ABERTO | Contrato e persistência append-only de roteiro | PR #42 aberto; `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -551,7 +552,41 @@ retry, conflitos, revisão e substituição, ordem, rollback, imutabilidade,
 migração aditiva, revalidação na leitura, linhagem e ausência de custo.
 Riscos residuais: SQLite mantém escritor único; a interface de operação será
 introduzida apenas por tópico próprio. Roteiro, aprovação final e publicação
-permanecem fora deste tópico. O PR #41 foi aberto em 28/09/2026.
+permanecem fora deste tópico. O PR #41 foi mergeado em 28/09/2026 no commit
+`a3ac4e7`.
+
+### E04-S01 — contrato e persistência append-only de roteiro
+
+- registrar roteiro versionado derivado somente de uma `IdeaSelection`
+  `SELECTED` informada por ID explícito;
+- preservar seleção, ideia, run, projeto, versão e hashes exatos, sem consulta a
+  `latest`;
+- validar idioma, formato, duração, narração, blocos, indicações visuais,
+  afirmações sensíveis e flags de revisão;
+- recuperar por ID e listar por run ou seleção em ordem determinística;
+- preservar retry idempotente, correções append-only, rollback e linhagem sem
+  IA, custo ou efeito externo.
+
+Implementação E04-S01: `script/1.0.0` representa hook, blocos narrativos e
+indicações visuais ordenados, narração integral coerente, CTA opcional, duração,
+afirmações sensíveis, flags editoriais, origem, revisão e hash reproduzível. O
+repositório consome somente a seleção explícita, revalida a seleção e a ideia na
+leitura e compara idioma, formato e limites de duração com o `ProjectSnapshot`
+imutável da run.
+
+A migração 013 adiciona roteiros sem criar registros retroativos. Cada seleção
+tem uma única revisão de cada número; correções usam nova identidade, apontam
+para a predecessora imediata e mantêm o histórico recuperável. Triggers impedem
+update e delete. Roteiro e linhagem são persistidos na mesma transação, com a
+`IdeaSelection` como entrada interna explícita e sem eventos de custo.
+
+Evidência: 11 testes focados e a suíte completa de 243 testes cobrem contrato,
+imutabilidade, ordem, narração, conteúdo sensível, seleção explícita, escopo e
+hashes, compatibilidade com o projeto, retry, conflitos, revisão, rollback,
+migração aditiva, revalidação na leitura, linhagem e ausência de custo. Riscos
+residuais: SQLite mantém escritor único; originalidade substantiva e qualidade
+editorial continuam sujeitas à revisão humana; geração por IA e aprovação final
+permanecem em tópicos posteriores. O PR #42 foi aberto em 28/09/2026.
 
 ## Ordem após E01
 

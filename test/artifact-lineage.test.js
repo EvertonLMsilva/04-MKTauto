@@ -195,7 +195,7 @@ test("leitura revalida o contrato e expõe erro público sanitizado", () => {
   });
 });
 
-test("migrações 009 a 012 são aditivas e não criam efeitos nos artefatos atuais de Research", () => {
+test("migrações 009 a 013 são aditivas e não criam efeitos nos artefatos atuais de Research", () => {
   withDatabase((path) => {
     const repository = new ArtifactLineageRepository(path);
     repository.create(project(), { createdAt: STARTED_AT });
@@ -204,6 +204,7 @@ test("migrações 009 a 012 são aditivas e não criam efeitos nos artefatos atu
 
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TABLE scripts;
       DROP TABLE idea_selections;
       DROP TABLE idea_candidate_evidence;
       DROP TABLE idea_scores;
@@ -218,6 +219,7 @@ test("migrações 009 a 012 são aditivas e não criam efeitos nos artefatos atu
       DROP TRIGGER artifact_lineage_inputs_no_delete;
       DROP TABLE artifact_lineage_inputs;
       DROP TABLE artifact_lineage;
+      DELETE FROM schema_migrations WHERE version = 13;
       DELETE FROM schema_migrations WHERE version = 12;
       DELETE FROM schema_migrations WHERE version = 11;
       DELETE FROM schema_migrations WHERE version = 10;
@@ -232,8 +234,8 @@ test("migrações 009 a 012 são aditivas e não criam efeitos nos artefatos atu
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 12);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 12);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 13);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 13);
     for (const table of ["research_artifacts", "reference_insights", "research_shortlists"]) {
       assert.equal(raw.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total, 0);
     }
