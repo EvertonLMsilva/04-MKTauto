@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { ContractValidationError } from "./domain/contracts.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import { validateVoiceTrack, voiceTrackIdentityHash } from "./domain/voice-track-contracts.js";
+import {
+  VOICE_GENERATION_REQUEST_VERSION,
+  validateVoiceGenerationRequest,
+  voiceGenerationRequestHash,
+} from "./domain/voice-generation-contracts.js";
 import { ScriptRepository } from "./script-repository.js";
 
 export class VoiceTrackRepositoryError extends Error {
@@ -18,42 +23,62 @@ export class VoiceTrackRepository extends ScriptRepository {
     let track;
     try { track = validateVoiceTrack(value); }
     catch (caught) { throw mapError(caught); }
-    return this.#transaction(() => {
-      const identityHash = voiceTrackIdentityHash(track);
-      const prior = this.db.prepare("SELECT identity_hash FROM voice_tracks WHERE voice_track_id = ?").get(track.voiceTrackId);
-      if (prior) {
-        if (prior.identity_hash !== identityHash) throw failure("VOICE_TRACK_ID_REUSED", "voiceTrackId", "ID já usado com faixa incompatível");
-        return this.getVoiceTrack(track.voiceTrackId);
-      }
-      const logicalPrior = this.db.prepare("SELECT voice_track_id FROM voice_tracks WHERE script_id = ? AND revision = ?")
-        .get(track.scriptId, track.revision);
-      if (logicalPrior) throw failure("VOICE_TRACK_REVISION_CONFLICT", "revision", "revisão já registrada para o roteiro");
+    return this.#transaction(() => this.#registerValidatedVoiceTrack(track, true));
+  }
 
-      const run = this.getRun(track.pipelineRunId);
-      if (!run) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
-      verifyScope(run, track, "VOICE_TRACK_RUN_SCOPE_MISMATCH");
-      const script = this.getScript(track.scriptId);
-      if (!script) throw failure("SCRIPT_NOT_FOUND", "scriptId", "roteiro não encontrado");
-      verifyScript(track, script);
-      verifySnapshot(track, run.projectSnapshot);
-      const previous = this.#validateRevision(track);
-      this.#insertLineage(track, previous);
-      this.db.prepare(`INSERT INTO voice_tracks
-        (voice_track_id, schema_version, identity_hash, pipeline_run_id, project_id,
-         project_version, script_id, script_content_hash, language, voice_style,
-         duration_milliseconds, audio_format, content_hash, storage_reference, origin,
-         provider, usage_basis, commercial_use_allowed, created_at, revision,
-         supersedes_voice_track_id, payload_json)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(
-        track.voiceTrackId, track.schemaVersion, identityHash, track.pipelineRunId,
-        track.projectId, track.projectVersion, track.scriptId, track.scriptContentHash,
-        track.language, track.voiceStyle, track.durationMilliseconds, track.audioFormat,
-        track.contentHash, track.storageReference, track.origin, track.provider,
-        track.rights.usageBasis, track.createdAt, track.revision,
-        track.supersedesVoiceTrackId, JSON.stringify(track),
+  registerGeneratedVoiceTrack({ request: requestValue, voiceTrack: trackValue }) {
+    let request;
+    let track;
+    try {
+      request = validateVoiceGenerationRequest(requestValue);
+      track = validateVoiceTrack(trackValue);
+    } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.db.prepare(`SELECT request_hash, voice_track_id
+        FROM voice_generation_requests WHERE generation_request_id = ?`).get(request.generationRequestId);
+      if (prior) {
+        if (prior.request_hash !== request.contentHash) throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
+        return this.getVoiceTrack(prior.voice_track_id);
+      }
+      verifyGenerationBinding(request, track);
+      const created = this.#registerValidatedVoiceTrack(track, false);
+      this.db.prepare(`INSERT INTO voice_generation_requests
+        (generation_request_id, schema_version, request_hash, script_id,
+         script_content_hash, voice_track_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?)`).run(
+        request.generationRequestId, request.schemaVersion, request.contentHash,
+        request.scriptId, request.scriptContentHash, created.voiceTrackId, request.requestedAt,
       );
-      return this.getVoiceTrack(track.voiceTrackId);
+      return created;
     });
+  }
+
+  getVoiceGeneration(generationRequestId) {
+    requireIdentifier(generationRequestId, "generationRequestId", 180);
+    const row = this.db.prepare(`SELECT * FROM voice_generation_requests
+      WHERE generation_request_id = ?`).get(generationRequestId);
+    if (!row) return null;
+    try {
+      const voiceTrack = this.getVoiceTrack(row.voice_track_id);
+      if (!voiceTrack || row.schema_version !== VOICE_GENERATION_REQUEST_VERSION) throw new Error("geração incompleta");
+      const expectedHash = voiceGenerationRequestHash({
+        schemaVersion: row.schema_version,
+        generationRequestId: row.generation_request_id,
+        scriptId: row.script_id,
+        scriptContentHash: row.script_content_hash,
+        requestedAt: row.created_at,
+        contentHash: row.request_hash,
+      });
+      if (expectedHash !== row.request_hash
+        || voiceTrack.voiceTrackId !== `voice_track:${row.generation_request_id}`
+        || voiceTrack.scriptId !== row.script_id
+        || voiceTrack.scriptContentHash !== row.script_content_hash
+        || voiceTrack.createdAt !== row.created_at) throw new Error("vínculo inválido");
+      return deepFreeze({ requestHash: row.request_hash, voiceTrack });
+    } catch (caught) {
+      if (caught instanceof VoiceTrackRepositoryError) throw caught;
+      throw failure("INVALID_PERSISTED_VOICE_GENERATION", "generationRequestId", "geração persistida inválida", { cause: caught });
+    }
   }
 
   getVoiceTrack(voiceTrackId) {
@@ -91,6 +116,43 @@ export class VoiceTrackRepository extends ScriptRepository {
     return this.db.prepare(`SELECT voice_track_id FROM voice_tracks WHERE script_id = ?
       ORDER BY revision, voice_track_id`).all(scriptId)
       .map(({ voice_track_id: id }) => this.getVoiceTrack(id));
+  }
+
+  #registerValidatedVoiceTrack(track, allowExisting) {
+    const identityHash = voiceTrackIdentityHash(track);
+    const prior = this.db.prepare("SELECT identity_hash FROM voice_tracks WHERE voice_track_id = ?").get(track.voiceTrackId);
+    if (prior) {
+      if (!allowExisting || prior.identity_hash !== identityHash) throw failure("VOICE_TRACK_ID_REUSED", "voiceTrackId", "ID já usado com faixa incompatível");
+      return this.getVoiceTrack(track.voiceTrackId);
+    }
+    const logicalPrior = this.db.prepare("SELECT voice_track_id FROM voice_tracks WHERE script_id = ? AND revision = ?")
+      .get(track.scriptId, track.revision);
+    if (logicalPrior) throw failure("VOICE_TRACK_REVISION_CONFLICT", "revision", "revisão já registrada para o roteiro");
+
+    const run = this.getRun(track.pipelineRunId);
+    if (!run) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
+    verifyScope(run, track, "VOICE_TRACK_RUN_SCOPE_MISMATCH");
+    const script = this.getScript(track.scriptId);
+    if (!script) throw failure("SCRIPT_NOT_FOUND", "scriptId", "roteiro não encontrado");
+    verifyScript(track, script);
+    verifySnapshot(track, run.projectSnapshot);
+    const previous = this.#validateRevision(track);
+    this.#insertLineage(track, previous);
+    this.db.prepare(`INSERT INTO voice_tracks
+      (voice_track_id, schema_version, identity_hash, pipeline_run_id, project_id,
+       project_version, script_id, script_content_hash, language, voice_style,
+       duration_milliseconds, audio_format, content_hash, storage_reference, origin,
+       provider, usage_basis, commercial_use_allowed, created_at, revision,
+       supersedes_voice_track_id, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)`).run(
+      track.voiceTrackId, track.schemaVersion, identityHash, track.pipelineRunId,
+      track.projectId, track.projectVersion, track.scriptId, track.scriptContentHash,
+      track.language, track.voiceStyle, track.durationMilliseconds, track.audioFormat,
+      track.contentHash, track.storageReference, track.origin, track.provider,
+      track.rights.usageBasis, track.createdAt, track.revision,
+      track.supersedesVoiceTrackId, JSON.stringify(track),
+    );
+    return this.getVoiceTrack(track.voiceTrackId);
   }
 
   #validateRevision(track) {
@@ -157,6 +219,14 @@ function verifyScript(track, script) {
   if (script.contentHash !== track.scriptContentHash) throw failure("SCRIPT_CONTENT_HASH_MISMATCH", "scriptContentHash", "hash do roteiro divergente");
 }
 
+function verifyGenerationBinding(request, track) {
+  if (request.scriptId !== track.scriptId) throw failure("VOICE_GENERATION_SCOPE_MISMATCH", "scriptId", "solicitação diverge da faixa");
+  if (request.scriptContentHash !== track.scriptContentHash) throw failure("VOICE_GENERATION_SCOPE_MISMATCH", "scriptContentHash", "solicitação diverge da faixa");
+  if (request.requestedAt !== track.createdAt) throw failure("VOICE_GENERATION_SCOPE_MISMATCH", "requestedAt", "solicitação diverge da faixa");
+  if (track.voiceTrackId !== `voice_track:${request.generationRequestId}`) throw failure("VOICE_GENERATION_SCOPE_MISMATCH", "voiceTrackId", "solicitação diverge da faixa");
+  if (track.revision !== 1 || track.supersedesVoiceTrackId !== null) throw failure("VOICE_GENERATION_SCOPE_MISMATCH", "revision", "geração inicial inválida");
+}
+
 function verifySnapshot(track, snapshot) {
   if (snapshot.project.audience.language !== track.language) throw failure("VOICE_TRACK_LANGUAGE_MISMATCH", "language", "idioma diverge do projeto");
   if (snapshot.channel.voiceStyle !== track.voiceStyle) throw failure("VOICE_TRACK_STYLE_MISMATCH", "voiceStyle", "estilo de voz diverge do projeto");
@@ -200,3 +270,4 @@ function mapError(caught) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code, field, message, options) { return new VoiceTrackRepositoryError(code, field, message, options); }
+function deepFreeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(deepFreeze); return Object.freeze(value); }
