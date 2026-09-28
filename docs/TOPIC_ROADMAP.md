@@ -40,7 +40,7 @@
 | E05-V02 | CONCLUÍDO | Porta de provider e orquestração de geração de voz | PR #47 mergeado em 28/09/2026 (`f66e5c`); `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C01 | EM EXECUÇÃO | Contrato e persistência append-only de plano de composição | `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C01 | PR ABERTO | Contrato e persistência append-only de plano de composição | PR #50 aberto; `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -593,7 +593,7 @@ para o composer; legendas e alinhamento por palavra continuam futuros; qualidade
 visual dependerá de render e Quality Control; referências opacas dependem do
 ciclo de vida do storage externo; SQLite mantém escritor único. Os arquivos
 locais não rastreados em `data/` e `templates/` foram preservados e não integram
-a entrega.
+a entrega. O PR #50 foi aberto em 28/09/2026.
 
 ## Primeiro épico — E01 Project Configuration
 
