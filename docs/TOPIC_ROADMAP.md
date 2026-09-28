@@ -37,7 +37,8 @@
 | V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
 | AI03 | CONCLUÍDO | Telemetria de custo e uso das chamadas de IA | PR #45 mergeado em 28/09/2026 (`9e8d359`); `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
 | E05-V01 | CONCLUÍDO | Contrato e persistência append-only de faixa de voz | PR #46 mergeado em 28/09/2026 (`17338dd`); `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
-| E05-V02 | PR ABERTO | Porta de provider e orquestração de geração de voz | PR #47 aberto; `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
+| E05-V02 | CONCLUÍDO | Porta de provider e orquestração de geração de voz | PR #47 mergeado em 28/09/2026 (`f66e5c`); `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
+| E06-M01 | PR ABERTO | Contrato e persistência append-only de ativo de mídia | PR #48 aberto; `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -470,9 +471,44 @@ aprovados e um smoke real ignorado por padrão; `git diff --check` também passo
 Riscos residuais: qualidade e semântica do áudio dependem do futuro adapter e do
 Quality Control; disponibilidade, latência, cobrança e retenção dependem do
 provider; uma falha local após futura chamada externa poderá exigir reconciliação;
-SQLite mantém escritor único. O PR #47 foi aberto em 28/09/2026. Os arquivos
+SQLite mantém escritor único. O PR #47 foi mergeado em 28/09/2026 (`f66e5c`). Os arquivos
 locais não rastreados em `data/` e `templates/` foram preservados e não integram
 a entrega.
+
+### E06-M01 — MediaAsset Contract and Persistence
+
+O contrato `media-asset/1.0.0` registra identidade e revisão, `PipelineRun`,
+projeto e versão, roteiro e hash exatos e a posição explícita de uma direção
+visual persistida. O tipo lógico `IMAGE` ou `VIDEO` permanece separado das
+propriedades técnicas aplicáveis: formato, dimensões reais e duração real somente
+para vídeo. Nenhuma medida é derivada ou inventada pela aplicação.
+
+O ativo preserva apenas hash SHA-256 e `mediaReference` lógica opaca, sem bytes,
+base64, URL, caminho físico ou localização de storage. Origem e direitos são
+obrigatórios e coerentes; uso comercial precisa ser `true` explicitamente.
+`provider` é exigido somente para origens geradas ou licenciadas por provider e
+é recusado nas origens próprias ou autorizadas diretamente. Referência social
+ou evidência de Research não pertence à allowlist de origens autorizadas.
+
+A migração 018 é aditiva e append-only. Ativo e linhagem
+`artifact-lineage/1.0.0` são gravados na mesma transação, com o roteiro exato
+como entrada e a revisão anterior como segunda entrada nas correções. Run,
+projeto, versão, hash do roteiro e direção visual são revalidados antes da
+escrita. Retry idêntico não duplica registros; reutilização divergente de ID ou
+revisão falha sem alterar o histórico. Consultas exigem identidades explícitas e
+as listagens possuem ordem determinística, sem seleção por `latest`.
+
+Evidência: 14 testes focados cobrem contrato, separação lógica/técnica, direitos,
+provider condicional, dados sensíveis, referência opaca, escopo, hash, direção
+visual, retry, conflito, revisão, imutabilidade, linhagem, rollback, migração e
+isolamento arquitetural. A suíte completa registrou 308 testes aprovados e um
+smoke real ignorado por padrão; `git diff --check` também passou. Riscos
+residuais: qualidade visual dependerá de adapters e Quality Control futuros;
+disponibilidade, latência, cobrança e limites dependerão do provider; retenção e
+ciclo de vida do objeto externo permanecem para tópico próprio; não existe
+atomicidade distribuída com um futuro provider; SQLite mantém escritor único.
+Os arquivos locais não rastreados em `data/` e `templates/` foram preservados e
+não integram a entrega. O PR #48 foi aberto em 28/09/2026.
 
 ## Primeiro épico — E01 Project Configuration
 
