@@ -31,7 +31,7 @@
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
-| E03-I02 | EM EXECUÇÃO | Seleção humana de ideia append-only | `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional implementadas; PR a abrir. |
+| E03-I02 | PR ABERTO | Seleção humana de ideia append-only | PR #41 aberto; `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -551,7 +551,7 @@ retry, conflitos, revisão e substituição, ordem, rollback, imutabilidade,
 migração aditiva, revalidação na leitura, linhagem e ausência de custo.
 Riscos residuais: SQLite mantém escritor único; a interface de operação será
 introduzida apenas por tópico próprio. Roteiro, aprovação final e publicação
-permanecem fora deste tópico.
+permanecem fora deste tópico. O PR #41 foi aberto em 28/09/2026.
 
 ## Ordem após E01
 
