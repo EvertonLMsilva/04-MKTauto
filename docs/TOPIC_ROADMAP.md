@@ -34,7 +34,7 @@
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
-| V09 | EM EXECUÇÃO | Estratégia documental Operator Revenue | Visão e roadmap em atualização, sem alteração de código ou contratos existentes. |
+| V09 | PR ABERTO | Estratégia documental Operator Revenue | PR #44 aberto; visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -104,6 +104,11 @@ Os contratos implementados continuam válidos. Em particular, o CTA opcional de
 `script/1.0.0` permanece editorial; `Offer`, `Campaign`, CTA comercial,
 `Attribution`, `Conversion` e `RevenueLedger` serão conceitos desacoplados,
 introduzidos apenas por seus tópicos futuros.
+
+V09 foi validado com `git diff --check`, presença dos termos e da ordem causal
+aprovados, blocos Markdown balanceados e revisão do diff restrito aos dois
+documentos previstos. O PR #44 foi aberto em 28/09/2026. Os arquivos locais não
+rastreados em `data/` foram preservados e não integram a entrega.
 
 ## Épicos
 
