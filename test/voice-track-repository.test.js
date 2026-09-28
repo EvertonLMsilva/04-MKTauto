@@ -7,6 +7,7 @@ import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { VOICE_TRACK_CONTRACT_VERSION } from "../src/domain/voice-track-contracts.js";
+import { VOICE_GENERATION_REQUEST_VERSION, voiceGenerationRequestHash } from "../src/domain/voice-generation-contracts.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
 import { VoiceTrackRepository, VoiceTrackRepositoryError } from "../src/voice-track-repository.js";
@@ -80,18 +81,53 @@ test("falha na escrita reverte faixa e linhagem", () => {
   });
 });
 
+test("persiste solicitação concluída ligada à faixa e recupera retry idempotente", () => {
+  withService(({ repository, script, path }) => {
+    const request = generationRequest(script);
+    const track = generatedVoiceTrack(script);
+    assert.deepEqual(repository.registerGeneratedVoiceTrack({ request, voiceTrack: track }), track);
+    assert.deepEqual(repository.getVoiceGeneration(request.generationRequestId), {
+      requestHash: request.contentHash, voiceTrack: track,
+    });
+    assert.deepEqual(repository.registerGeneratedVoiceTrack({ request, voiceTrack: track }), track);
+    assert.equal(count(path, "voice_generation_requests"), 1);
+    assert.equal(count(path, "voice_tracks"), 1);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'voice_track'"), 1);
+
+    const divergent = generationRequest(script, { requestedAt: "2026-09-28T20:01:00.000Z" });
+    assert.throws(() => repository.registerGeneratedVoiceTrack({ request: divergent, voiceTrack: track }), repositoryError("GENERATION_REQUEST_ID_REUSED", "generationRequestId"));
+  });
+});
+
+test("falha ao ligar solicitação reverte faixa, linhagem e identidade", () => {
+  withService(({ repository, script, path }) => {
+    repository.db.exec("CREATE TRIGGER reject_voice_generation BEFORE INSERT ON voice_generation_requests BEGIN SELECT RAISE(ABORT, 'PRIVATE generation failure'); END;");
+    assert.throws(
+      () => repository.registerGeneratedVoiceTrack({ request: generationRequest(script), voiceTrack: generatedVoiceTrack(script) }),
+      repositoryError("VOICE_TRACK_PERSISTENCE_FAILED", "voiceTrack"),
+    );
+    assert.equal(count(path, "voice_generation_requests"), 0);
+    assert.equal(count(path, "voice_tracks"), 0);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'voice_track'"), 0);
+  });
+});
+
 test("migração 016 é aditiva e preserva os dados existentes", () => {
   withDatabase((path) => {
     const { repository } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TRIGGER voice_generation_requests_no_delete;
+      DROP TRIGGER voice_generation_requests_no_update;
+      DROP TRIGGER voice_generation_requests_validate_scope;
+      DROP TABLE voice_generation_requests;
       DROP TRIGGER voice_tracks_no_delete;
       DROP TRIGGER voice_tracks_no_update;
       DROP TRIGGER voice_tracks_validate_revision;
       DROP TRIGGER voice_tracks_validate_scope;
       DROP TABLE voice_tracks;
-      DELETE FROM schema_migrations WHERE version = 16;
+      DELETE FROM schema_migrations WHERE version >= 16;
       PRAGMA user_version = 15;
     `);
     before.close();
@@ -100,8 +136,33 @@ test("migração 016 é aditiva e preserva os dados existentes", () => {
     assert.deepEqual(migrated.listVoiceTracksByPipelineRun("run_e05_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 16);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 16);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 17);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 17);
+    raw.close();
+  });
+});
+
+test("migração 017 é aditiva e preserva os dados existentes", () => {
+  withDatabase((path) => {
+    const { repository } = setup(path);
+    repository.close();
+    const before = new DatabaseSync(path);
+    before.exec(`
+      DROP TRIGGER voice_generation_requests_no_delete;
+      DROP TRIGGER voice_generation_requests_no_update;
+      DROP TRIGGER voice_generation_requests_validate_scope;
+      DROP TABLE voice_generation_requests;
+      DELETE FROM schema_migrations WHERE version = 17;
+      PRAGMA user_version = 16;
+    `);
+    before.close();
+    const migrated = new VoiceTrackRepository(path);
+    assert.equal(migrated.getRun("run_e05_001").pipelineRunId, "run_e05_001");
+    assert.equal(migrated.getVoiceGeneration("voice_generation_001"), null);
+    migrated.close();
+    const raw = new DatabaseSync(path);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 17);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 17);
     raw.close();
   });
 });
@@ -173,6 +234,27 @@ function voiceTrack(script, overrides = {}) {
     createdAt: "2026-09-28T19:00:00.000Z", revision: 1,
     supersedesVoiceTrackId: null, ...overrides,
   };
+}
+
+function generationRequest(script, overrides = {}) {
+  const value = {
+    schemaVersion: VOICE_GENERATION_REQUEST_VERSION,
+    generationRequestId: "voice_generation_001",
+    scriptId: script.scriptId,
+    scriptContentHash: script.contentHash,
+    requestedAt: "2026-09-28T20:00:00.000Z",
+    contentHash: "0".repeat(64),
+    ...overrides,
+  };
+  value.contentHash = voiceGenerationRequestHash(value);
+  return value;
+}
+
+function generatedVoiceTrack(script) {
+  return voiceTrack(script, {
+    voiceTrackId: "voice_track:voice_generation_001",
+    createdAt: "2026-09-28T20:00:00.000Z",
+  });
 }
 
 function project() {

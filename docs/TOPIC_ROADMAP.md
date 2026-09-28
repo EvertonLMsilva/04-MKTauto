@@ -36,7 +36,8 @@
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 | V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
 | AI03 | CONCLUÍDO | Telemetria de custo e uso das chamadas de IA | PR #45 mergeado em 28/09/2026 (`9e8d359`); `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
-| E05-V01 | PR ABERTO | Contrato e persistência append-only de faixa de voz | PR #46 aberto; `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
+| E05-V01 | CONCLUÍDO | Contrato e persistência append-only de faixa de voz | PR #46 mergeado em 28/09/2026 (`17338dd`); `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
+| E05-V02 | PR ABERTO | Porta de provider e orquestração de geração de voz | PR #47 aberto; `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -433,8 +434,45 @@ um smoke real ignorado por padrão; `git diff --check` também passou. Riscos
 residuais: validação semântica do áudio dependerá do adapter e do Quality
 Control; retenção do objeto externo permanece futura; custos só serão registrados
 quando houver chamada real; SQLite mantém escritor único.
-O PR #46 foi aberto em 28/09/2026. Os arquivos locais não rastreados em `data/`
+O PR #46 foi mergeado em 28/09/2026 (`17338dd`). Os arquivos locais não rastreados em `data/`
 e `templates/` foram preservados e não integram a entrega.
+
+### E05-V02 — VoiceProvider Port and Generation Orchestration
+
+O contrato `voice-generation-request/1.0.0` exige identidade lógica, `scriptId`,
+hash exato do roteiro, instante e hash reproduzível. O serviço valida a entrada
+antes de qualquer leitura, recupera somente o `Script` indicado, revalida seu
+hash e deriva narração, idioma, estilo e limites exclusivamente do roteiro e do
+`ProjectSnapshot` imutáveis. A porta `VoiceProvider` recebe apenas esses dados
+públicos e a identidade de correlação, sem configuração privada ou tipo de SDK.
+
+A resposta do provider é tratada como não confiável: duração medida, formato,
+hash do conteúdo, referência opaca, provider, origem sintética e direitos
+comerciais explícitos são integralmente revalidados. `VoiceTrack` preserva a
+identidade e os metadados do ativo, nunca bytes de áudio. URLs, caminhos locais,
+base64, tokens, credenciais, direitos ausentes ou incompatíveis e qualquer origem
+de clonagem, imitação ou personificação são recusados. A duração real vem da
+evidência do provider e deve respeitar os limites do snapshot; ela não é inferida
+do tamanho ou da duração estimada do roteiro.
+
+A migração 017 liga a identidade da solicitação à faixa concluída. Solicitação,
+`VoiceTrack` e linhagem são persistidos na mesma transação; falha de contrato ou
+escrita não deixa identidade, faixa ou linhagem parcial. Retry local concluído
+retorna a faixa persistida sem nova chamada, enquanto identidade divergente falha
+antes do provider. Isso não declara garantia distribuída de `exactly-once` para
+um futuro provider externo, e nenhum evento de custo é criado sem custo real.
+
+Evidência: 15 testes novos cobrem contrato, isolamento arquitetural, entrada
+pública, saída não confiável, direitos, dados sensíveis, derivação, duração real,
+chamada única, retry, conflito, sanitização, persistência, rollback e migração.
+Os 27 testes focados de voz passaram; a suíte completa registrou 294 testes
+aprovados e um smoke real ignorado por padrão; `git diff --check` também passou.
+Riscos residuais: qualidade e semântica do áudio dependem do futuro adapter e do
+Quality Control; disponibilidade, latência, cobrança e retenção dependem do
+provider; uma falha local após futura chamada externa poderá exigir reconciliação;
+SQLite mantém escritor único. O PR #47 foi aberto em 28/09/2026. Os arquivos
+locais não rastreados em `data/` e `templates/` foram preservados e não integram
+a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
