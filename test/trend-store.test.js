@@ -19,8 +19,8 @@ test("migra banco vazio e reabre o catálogo sem alteração destrutiva", () => 
     assert.equal(second.getRun("run-2026-09-26").candidates.length, 1);
     second.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 4);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 4);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 5);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 5);
     raw.close();
   });
 });
@@ -193,7 +193,7 @@ test("falha por chave estrangeira reverte toda a transação com código estáve
 test("rejeita versão futura do catálogo com código estável", () => {
   withDatabase((path) => {
     const raw = new DatabaseSync(path);
-    raw.exec("PRAGMA user_version = 5");
+    raw.exec("PRAGMA user_version = 6");
     raw.close();
     assert.throws(
       () => new TrendCatalogStore(path),
@@ -287,7 +287,7 @@ function cluster() {
     subtheme: "vídeos curtos",
     likelyAudience: "público brasileiro",
     narrativePattern: "explicação direta",
-    ptBrLocalization: "adaptável ao contexto brasileiro",
+    localization: "adaptável ao contexto brasileiro",
     candidateIds: ["candidate-1"],
     evidenceSnapshotIds: ["snapshot-1"],
     createdBy: "HUMAN",

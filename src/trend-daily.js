@@ -5,6 +5,8 @@ import { collectThreadsKeywordCoverage } from "./adapters/threads.js";
 import { collectTikTokOfficialCoverage } from "./adapters/tiktok.js";
 import { collectPopularYouTubeTrends } from "./adapters/youtube.js";
 import { RADAR_CONTRACT_VERSION } from "./domain/contracts.js";
+import { createResearchInput } from "./domain/research-contracts.js";
+import { RESEARCH_ARTIFACT_CONTRACT_VERSION } from "./domain/research-artifact-contracts.js";
 import { DEFAULT_TREND_RANKING_CONFIG, TREND_RANKING_CONFIG_VERSION } from "./domain/ranking.js";
 import { analyzeTrendRun } from "./trend-analysis.js";
 import { exportDailyCatalog } from "./trend-export.js";
@@ -22,8 +24,7 @@ const STEP = Object.freeze({
 
 export async function runDailyTrendCatalog({
   store,
-  logicalDate,
-  timezone,
+  researchInput,
   config,
   clock = () => new Date(),
   fetchImpl = fetch,
@@ -33,17 +34,27 @@ export async function runDailyTrendCatalog({
   clusterer,
   sleep = defaultSleep,
 }) {
-  validateDailyInput({ store, logicalDate, timezone, config });
+  validateDailyInput({ store, config });
+  const input = createResearchInput(researchInput);
+  const logicalDate = input.window.logicalDate;
+  const timezone = input.projectSnapshot.channel.publishing.timezone;
+  const { pipelineRunId, projectId, projectVersion } = input.execution;
+  const analysisContext = researchContext(input);
+  const sourcePlan = planSources(input.projectSnapshot.channel.publishing.networks, config);
   const publicConfig = sanitizeConfig(config);
   const configHash = stableHash(configFingerprint(config));
-  const dailyId = `daily:${logicalDate}:${configHash.slice(0, 16)}`;
+  const researchInputHash = stableHash(input);
+  const dailyId = `research-daily:${stableHash({ pipelineRunId, projectId, projectVersion, logicalDate }).slice(0, 24)}`;
   const startedAt = iso(clock());
-  let daily = store.beginDailyRun({ id: dailyId, logicalDate, timezone, configHash, config: publicConfig, startedAt });
+  let daily = store.beginResearchDailyRun({
+    id: dailyId, pipelineRunId, projectId, projectVersion, logicalDate, timezone,
+    researchInputHash, configHash, config: publicConfig, sourcePlan, startedAt,
+  });
   if (["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED"].includes(daily.state)) {
     return resultForExisting({ store, daily, outputRoot, fileSystem });
   }
 
-  const youtubeBatch = await providerStep({
+  const youtubeBatch = sourcePlanned(sourcePlan, "youtube") ? await providerStep({
     store, dailyId, stepKey: STEP.youtube, platform: "YOUTUBE", clock, capturedAt: startedAt,
     ready: Boolean(config.youtube?.apiKey),
     blockCode: "YOUTUBE_API_KEY_MISSING",
@@ -57,11 +68,13 @@ export async function runDailyTrendCatalog({
       idempotencyKey: `${dailyId}:youtube`,
       fetchImpl,
     }),
-  });
+  }) : emptyBatch();
 
   let seedCatalog;
   let seedGap;
-  if (youtubeBatch.observations.length === 0) {
+  if (!sourcePlanned(sourcePlan, "youtube")) {
+    await skippedStep(store, dailyId, STEP.seed, clock, "YOUTUBE_NOT_REQUIRED");
+  } else if (youtubeBatch.observations.length === 0) {
     seedGap = "CLUSTERING_SKIPPED:NO_YOUTUBE_EVIDENCE";
     await skippedStep(store, dailyId, STEP.seed, clock, seedGap);
   } else if (!config.ollama?.model && !clusterer) {
@@ -82,6 +95,8 @@ export async function runDailyTrendCatalog({
             model: config.ollama?.model,
             config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
             now: startedAt,
+            analysisContext,
+            historyScope: { projectId, projectVersion },
             fetchImpl,
           },
         });
@@ -93,7 +108,7 @@ export async function runDailyTrendCatalog({
     }
   }
 
-  const instagramBatch = await providerStep({
+  const instagramBatch = sourcePlanned(sourcePlan, "instagram") ? await providerStep({
     store, dailyId, stepKey: STEP.instagram, platform: "INSTAGRAM", clock, capturedAt: startedAt,
     ready: instagramReady(config.instagram) && Boolean(seedCatalog),
     blockCode: seedCatalog ? instagramBlock(config.instagram) : "DEPENDENCY_CLUSTERING_UNAVAILABLE",
@@ -106,9 +121,9 @@ export async function runDailyTrendCatalog({
       capturedAt: startedAt,
       fetchImpl,
     }),
-  });
+  }) : emptyBatch();
 
-  const threadsBatch = await providerStep({
+  const threadsBatch = sourcePlanned(sourcePlan, "threads") ? await providerStep({
     store, dailyId, stepKey: STEP.threads, platform: "THREADS", clock, capturedAt: startedAt,
     ready: threadsReady(config.threads) && Boolean(seedCatalog),
     blockCode: seedCatalog ? threadsBlock(config.threads) : "DEPENDENCY_CLUSTERING_UNAVAILABLE",
@@ -121,10 +136,10 @@ export async function runDailyTrendCatalog({
       capturedAt: startedAt,
       fetchImpl,
     }),
-  });
+  }) : emptyBatch();
 
   const tiktokNeedsClusters = (config.tiktok?.product ?? "RESEARCH_API") === "RESEARCH_API";
-  const tiktokBatch = await providerStep({
+  const tiktokBatch = sourcePlanned(sourcePlan, "tiktok") ? await providerStep({
     store, dailyId, stepKey: STEP.tiktok, platform: "TIKTOK", clock, capturedAt: startedAt,
     ready: tiktokReady(config.tiktok) && (!tiktokNeedsClusters || Boolean(seedCatalog)),
     blockCode: tiktokNeedsClusters && !seedCatalog ? "DEPENDENCY_CLUSTERING_UNAVAILABLE" : tiktokBlock(config.tiktok),
@@ -132,7 +147,7 @@ export async function runDailyTrendCatalog({
     collect: () => captureOperation(collectors.tiktok ?? collectTikTokOfficialCoverage, {
       ...config.tiktok,
       storeCatalog: seedCatalog,
-      clusterRunId: youtubeBatch.run.id,
+      clusterRunId: youtubeBatch.run?.id,
       idempotencyKey: `${dailyId}:tiktok`,
       capturedAt: startedAt,
       startDate: config.tiktok?.startDate ?? compactDate(logicalDate),
@@ -140,10 +155,10 @@ export async function runDailyTrendCatalog({
       regions: config.regions ?? DEFAULT_TREND_RANKING_CONFIG.regions,
       fetchImpl,
     }),
-  });
+  }) : emptyBatch();
 
   const batches = [youtubeBatch, instagramBatch, threadsBatch, tiktokBatch];
-  const trendRunId = `trend:${logicalDate}:${configHash.slice(0, 16)}`;
+  const trendRunId = `trend:${stableHash({ dailyId, configHash }).slice(0, 24)}`;
   const consolidated = await persistedStep(store, dailyId, STEP.consolidate, clock, async () => {
     const sourceRuns = batches.flatMap((batch) => batch.sourceRuns).map((source) => ({ ...source, trendRunId }));
     const observations = deduplicateObservations(batches.flatMap((batch) => batch.observations));
@@ -185,6 +200,8 @@ export async function runDailyTrendCatalog({
             model: config.ollama?.model,
             config: config.ranking ?? DEFAULT_TREND_RANKING_CONFIG,
             now: startedAt,
+            analysisContext,
+            historyScope: { projectId, projectVersion },
             fetchImpl,
           },
         });
@@ -198,47 +215,74 @@ export async function runDailyTrendCatalog({
   }
 
   const catalog = store.getRun(trendRunId);
-  const sourceGaps = catalog.sourceRuns.flatMap(({ gaps }) => gaps);
-  const gaps = [...new Set([...sourceGaps, ...operationalGaps])];
+  const sourceGaps = catalog.sourceRuns.flatMap(({ gaps: values }) => values);
+  const planGaps = sourcePlan.filter(({ adapter }) => adapter === "UNAVAILABLE").map(({ network }) => `UNSUPPORTED_NETWORK:${network.toUpperCase()}`);
+  const gaps = [...new Set([...sourceGaps, ...operationalGaps, ...planGaps])];
   const finalState = catalog.candidates.length === 0 ? "FAILED" : gaps.length > 0 ? "COMPLETED_WITH_GAPS" : "COMPLETED";
   const completedAt = iso(clock());
-  daily = store.finishDailyRun({
-    logicalDate,
+  const result = {
+    gaps,
+    rankedCandidateIds: ranking.ranked.map(({ candidate }) => candidate.id),
+    topCandidateIds: ranking.top.map(({ candidate }) => candidate.id),
+  };
+  const artifactBase = {
+    schemaVersion: RESEARCH_ARTIFACT_CONTRACT_VERSION,
+    artifactId: `research:${stableHash({ dailyId, revision: 1 }).slice(0, 24)}`,
+    artifactType: "topic_discovery",
+    revision: 1,
+    pipelineRunId, projectId, projectVersion, logicalDate, timezone,
+    createdAt: completedAt,
+    createdBy: "SYSTEM",
+    researchInputHash,
+    analysisContext,
+    sourcePlan: resolveSourcePlan(sourcePlan, catalog.sourceRuns),
+    trendRunId,
+    state: finalState,
+    gaps,
+    rights: { usageCondition: "REFERENCE_ONLY", mediaDownloaded: false, republicationAllowed: false },
+  };
+  const artifact = store.recordResearchArtifact({
+    researchDailyRunId: dailyId,
+    artifact: { ...artifactBase, contentHash: stableHash(artifactBase) },
+  });
+  daily = store.finishResearchDailyRun({
+    id: dailyId,
     state: finalState,
     trendRunId,
     completedAt,
     durationMs: elapsedMs(startedAt, completedAt),
-    result: {
-      gaps,
-      rankedCandidateIds: ranking.ranked.map(({ candidate }) => candidate.id),
-      topCandidateIds: ranking.top.map(({ candidate }) => candidate.id),
-    },
+    result,
   });
   const exported = await persistedStep(store, dailyId, STEP.export, clock, async () => exportDailyCatalog({
-    store, logicalDate, outputRoot, fileSystem,
+    store, researchDailyRunId: dailyId, outputRoot, fileSystem,
   }));
-  return { dailyRun: store.getDailyRun(logicalDate), catalog: store.getRun(trendRunId), exported };
+  return { dailyRun: store.getResearchDailyRun(dailyId), artifact, catalog: store.getRun(trendRunId), exported };
 }
 
 async function resultForExisting({ store, daily, outputRoot, fileSystem }) {
-  const exported = exportDailyCatalog({ store, logicalDate: daily.logicalDate, outputRoot, fileSystem });
-  return { dailyRun: store.getDailyRun(daily.logicalDate), catalog: daily.trendRunId ? store.getRun(daily.trendRunId) : null, exported };
+  const exported = exportDailyCatalog({ store, researchDailyRunId: daily.id, outputRoot, fileSystem });
+  return {
+    dailyRun: store.getResearchDailyRun(daily.id),
+    artifact: store.getResearchArtifact(daily.id),
+    catalog: daily.trendRunId ? store.getRun(daily.trendRunId) : null,
+    exported,
+  };
 }
 
 async function persistedStep(store, dailyRunId, stepKey, clock, operation) {
-  const prior = store.getDailyStep(dailyRunId, stepKey);
+  const prior = store.getResearchDailyStep(dailyRunId, stepKey);
   if (["COMPLETED", "SKIPPED"].includes(prior?.state)) return prior.result;
   const startedAt = iso(clock());
-  store.startDailyStep({ dailyRunId, stepKey, startedAt });
+  store.startResearchDailyStep({ researchDailyRunId: dailyRunId, stepKey, startedAt });
   try {
     const result = await operation();
     const completedAt = iso(clock());
-    store.finishDailyStep({ dailyRunId, stepKey, state: "COMPLETED", completedAt, durationMs: elapsedMs(startedAt, completedAt), result });
+    store.finishResearchDailyStep({ researchDailyRunId: dailyRunId, stepKey, state: "COMPLETED", completedAt, durationMs: elapsedMs(startedAt, completedAt), result });
     return result;
   } catch (error) {
     const completedAt = iso(clock());
-    store.finishDailyStep({
-      dailyRunId, stepKey, state: "FAILED", completedAt, durationMs: elapsedMs(startedAt, completedAt),
+    store.finishResearchDailyStep({
+      researchDailyRunId: dailyRunId, stepKey, state: "FAILED", completedAt, durationMs: elapsedMs(startedAt, completedAt),
       result: { errorCode: safeErrorCode(error), ...(Number.isInteger(error?.attempts) ? { attempts: error.attempts } : {}) },
     });
     throw error;
@@ -246,21 +290,21 @@ async function persistedStep(store, dailyRunId, stepKey, clock, operation) {
 }
 
 async function skippedStep(store, dailyRunId, stepKey, clock, reason) {
-  const prior = store.getDailyStep(dailyRunId, stepKey);
+  const prior = store.getResearchDailyStep(dailyRunId, stepKey);
   if (prior) return prior.result;
   const at = iso(clock());
-  store.startDailyStep({ dailyRunId, stepKey, startedAt: at });
-  return store.finishDailyStep({ dailyRunId, stepKey, state: "SKIPPED", completedAt: at, durationMs: 0, result: { reason } }).result;
+  store.startResearchDailyStep({ researchDailyRunId: dailyRunId, stepKey, startedAt: at });
+  return store.finishResearchDailyStep({ researchDailyRunId: dailyRunId, stepKey, state: "SKIPPED", completedAt: at, durationMs: 0, result: { reason } }).result;
 }
 
 async function providerStep({ store, dailyId, stepKey, platform, clock, capturedAt, ready, blockCode, discovery, collect }) {
   if (!ready) {
     const batch = blockedBatch({ platform, dailyId, capturedAt, blockCode, discovery });
-    const prior = store.getDailyStep(dailyId, stepKey);
+    const prior = store.getResearchDailyStep(dailyId, stepKey);
     if (prior?.state === "COMPLETED") return prior.result;
     const at = iso(clock());
-    store.startDailyStep({ dailyRunId: dailyId, stepKey, startedAt: at });
-    store.finishDailyStep({ dailyRunId: dailyId, stepKey, state: "COMPLETED", completedAt: at, durationMs: 0, result: batch });
+    store.startResearchDailyStep({ researchDailyRunId: dailyId, stepKey, startedAt: at });
+    store.finishResearchDailyStep({ researchDailyRunId: dailyId, stepKey, state: "COMPLETED", completedAt: at, durationMs: 0, result: batch });
     return batch;
   }
   try {
@@ -347,6 +391,67 @@ function deduplicateObservations(observations) {
     if (!values.has(key)) values.set(key, observation);
   }
   return [...values.values()];
+}
+
+function emptyBatch() {
+  return { sourceRuns: [], observations: [] };
+}
+
+function researchContext(input) {
+  const { project } = input.projectSnapshot;
+  return {
+    niche: project.niche,
+    subniches: [...project.subniches],
+    audience: project.audience.profile,
+    language: project.audience.language,
+  };
+}
+
+function planSources(networks, config) {
+  const configured = new Set(networks);
+  const needsYoutube = configured.has("instagram")
+    || configured.has("threads")
+    || (configured.has("tiktok") && (config.tiktok?.product ?? "RESEARCH_API") === "RESEARCH_API");
+  const planned = [...networks].map((network) => ({
+    network,
+    role: "CONFIGURED_NETWORK",
+    adapter: network === "facebook" ? "UNAVAILABLE" : network.toUpperCase(),
+  }));
+  if (needsYoutube && !configured.has("youtube")) {
+    planned.push({ network: "youtube", role: "TECHNICAL_DEPENDENCY", adapter: "YOUTUBE" });
+  }
+  return planned;
+}
+
+function sourcePlanned(plan, network) {
+  return plan.some((item) => item.network === network && item.adapter !== "UNAVAILABLE");
+}
+
+function resolveSourcePlan(plan, sourceRuns) {
+  const byNetwork = new Map();
+  for (const source of sourceRuns) {
+    const network = source.platform.toLowerCase();
+    const values = byNetwork.get(network) ?? [];
+    values.push(source);
+    byNetwork.set(network, values);
+  }
+  return plan.map((item) => {
+    if (item.adapter === "UNAVAILABLE") {
+      return { ...item, status: "UNSUPPORTED", sourceRunIds: [], gaps: [`UNSUPPORTED_NETWORK:${item.network.toUpperCase()}`] };
+    }
+    const values = byNetwork.get(item.network) ?? [];
+    const statuses = values.map(({ status }) => status);
+    const status = statuses.includes("FAILED") ? "FAILED"
+      : statuses.includes("BLOCKED_BY_PROVIDER") ? "BLOCKED_BY_PROVIDER"
+        : statuses.includes("PARTIAL") ? "PARTIAL"
+          : statuses.length > 0 && statuses.every((value) => value === "SUCCESS") ? "SUCCESS" : "FAILED";
+    return {
+      ...item,
+      status,
+      sourceRunIds: values.map(({ id }) => id),
+      gaps: [...new Set(values.flatMap(({ gaps }) => gaps))],
+    };
+  });
 }
 
 function sanitizeConfig(config) {
@@ -468,11 +573,8 @@ function stableJson(value) {
   return JSON.stringify(value);
 }
 
-function validateDailyInput({ store, logicalDate, timezone, config }) {
-  if (!store || typeof store.beginDailyRun !== "function") throw new Error("TrendCatalogStore diário é obrigatório");
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(logicalDate) || new Date(`${logicalDate}T00:00:00.000Z`).toISOString().slice(0, 10) !== logicalDate) throw new Error("logicalDate deve usar YYYY-MM-DD válido");
-  if (typeof timezone !== "string" || timezone.trim() === "") throw new Error("timezone explícito é obrigatório");
-  try { new Intl.DateTimeFormat("pt-BR", { timeZone: timezone }).format(); } catch { throw new Error("timezone IANA inválido"); }
+function validateDailyInput({ store, config }) {
+  if (!store || typeof store.beginResearchDailyRun !== "function") throw new Error("TrendCatalogStore de Research é obrigatório");
   if (!config || typeof config !== "object" || Array.isArray(config)) throw new Error("config é obrigatória");
 }
 

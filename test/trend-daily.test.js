@@ -4,6 +4,8 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync, mkdirSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { RADAR_CONTRACT_VERSION, canonicalTrendIdentity } from "../src/domain/contracts.js";
+import { RESEARCH_INPUT_CONTRACT_VERSION } from "../src/domain/research-contracts.js";
+import { PROJECT_CONTRACT_VERSION } from "../src/domain/project-contracts.js";
 import { retryClustering, runDailyTrendCatalog } from "../src/trend-daily.js";
 import { exportDailyCatalog, renderHtml } from "../src/trend-export.js";
 import { TrendCatalogStore, TrendStoreError } from "../src/trend-store.js";
@@ -15,29 +17,49 @@ test("execução diária consolida fontes, ranking e artefatos sem repetir etapa
   await withWorkspace(async ({ store, output }) => {
     const calls = counters();
     const dependencies = fixtureDependencies(calls);
-    const args = { store, logicalDate: DATE, timezone: "America/Sao_Paulo", outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() };
+    const input = researchInput();
+    const args = { store, researchInput: input, outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() };
     const first = await runDailyTrendCatalog(args);
     assert.equal(first.dailyRun.state, "COMPLETED_WITH_GAPS");
     assert.deepEqual(first.dailyRun.result.rankedCandidateIds, ["tiktok:90001", "youtube:video-1"]);
     assert.equal(first.catalog.sourceRuns.length, 4);
     assert.equal(first.catalog.candidates.length, 3);
     assert.equal(first.catalog.scores.length, 3);
+    assert.equal(first.artifact.pipelineRunId, "pipeline_e02_r02_001");
+    assert.equal(first.artifact.projectId, "canal_educacao");
+    assert.equal(first.artifact.projectVersion, 1);
+    assert.throws(
+      () => store.recordResearchArtifact({
+        researchDailyRunId: first.dailyRun.id,
+        artifact: { ...first.artifact, projectId: "outro_canal" },
+      }),
+      (error) => error instanceof TrendStoreError && error.code === "RESEARCH_ARTIFACT_REFERENCE_MISMATCH",
+    );
+    assert.throws(
+      () => store.recordResearchArtifact({
+        researchDailyRunId: first.dailyRun.id,
+        artifact: { ...first.artifact, gaps: [...first.artifact.gaps, "ALTERED"] },
+      }),
+      (error) => error instanceof TrendStoreError && error.code === "RESEARCH_ARTIFACT_HASH_MISMATCH",
+    );
     assert.deepEqual(calls, { youtube: 1, instagram: 1, threads: 1, tiktok: 1, clusters: 2 });
-    for (const file of ["catalog.json", "ranking.csv", "report.html"]) assert.equal(existsSync(join(output, DATE, file)), true);
-    assert.equal(existsSync(join(output, DATE, "candidates", "youtube%3Avideo-1", "candidate.json")), true);
+    const target = researchOutput(output, input);
+    for (const file of ["catalog.json", "ranking.csv", "report.html"]) assert.equal(existsSync(join(target, file)), true);
+    assert.equal(existsSync(join(target, "candidates", "youtube%3Avideo-1", "candidate.json")), true);
     await runDailyTrendCatalog(args);
     assert.deepEqual(calls, { youtube: 1, instagram: 1, threads: 1, tiktok: 1, clusters: 2 });
     assert.equal(store.getCandidateHistory("youtube:video-1").snapshots.length, 1);
   });
 });
 
-test("mesma data rejeita mudança material de configuração", async () => {
+test("retry com a mesma identidade rejeita mudança material de configuração", async () => {
   await withWorkspace(async ({ store, output }) => {
     const dependencies = fixtureDependencies(counters());
-    await runDailyTrendCatalog({ store, logicalDate: DATE, timezone: "UTC", outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
+    const input = researchInput();
+    await runDailyTrendCatalog({ store, researchInput: input, outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
     await assert.rejects(
-      runDailyTrendCatalog({ store, logicalDate: DATE, timezone: "UTC", outputRoot: output, config: { ...fullConfig(), regions: ["BR", "US"] }, ...dependencies, clock: fixedClock() }),
-      (error) => error instanceof TrendStoreError && error.code === "DAILY_CONFIG_CONFLICT",
+      runDailyTrendCatalog({ store, researchInput: input, outputRoot: output, config: { ...fullConfig(), regions: ["BR", "US"] }, ...dependencies, clock: fixedClock() }),
+      (error) => error instanceof TrendStoreError && error.code === "RESEARCH_RUN_CONFLICT",
     );
   });
 });
@@ -47,24 +69,26 @@ test("fontes sem configuração não são chamadas e preservam resultado válido
     const calls = counters();
     const dependencies = fixtureDependencies(calls);
     const result = await runDailyTrendCatalog({
-      store, logicalDate: DATE, timezone: "UTC", outputRoot: output,
+      store, researchInput: researchInput(["youtube"]), outputRoot: output,
       config: { youtube: { apiKey: "configured" }, ollama: { model: "local" }, regions: ["BR"] },
       ...dependencies, clock: fixedClock(),
     });
     assert.deepEqual(calls, { youtube: 1, instagram: 0, threads: 0, tiktok: 0, clusters: 2 });
     assert.equal(result.catalog.candidates.length, 1);
     assert.equal(result.dailyRun.state, "COMPLETED_WITH_GAPS");
-    assert.deepEqual(result.catalog.sourceRuns.map(({ status }) => status), ["BLOCKED_BY_PROVIDER", "BLOCKED_BY_PROVIDER", "BLOCKED_BY_PROVIDER", "SUCCESS"]);
+    assert.deepEqual(result.catalog.sourceRuns.map(({ status }) => status), ["SUCCESS"]);
   });
 });
 
 test("CSV neutraliza fórmula, HTML escapa conteúdo e catálogo não expõe segredos", async () => {
   await withWorkspace(async ({ store, output }) => {
     const dependencies = fixtureDependencies(counters(), "=HYPERLINK(\"x\")<script>alert(1)</script>");
-    await runDailyTrendCatalog({ store, logicalDate: DATE, timezone: "UTC", outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
-    const csv = readFileSync(join(output, DATE, "ranking.csv"), "utf8");
-    const html = readFileSync(join(output, DATE, "report.html"), "utf8");
-    const catalog = readFileSync(join(output, DATE, "catalog.json"), "utf8");
+    const input = researchInput();
+    await runDailyTrendCatalog({ store, researchInput: input, outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
+    const target = researchOutput(output, input);
+    const csv = readFileSync(join(target, "ranking.csv"), "utf8");
+    const html = readFileSync(join(target, "report.html"), "utf8");
+    const catalog = readFileSync(join(target, "catalog.json"), "utf8");
     assert.match(csv, /'=HYPERLINK/);
     assert.equal(html.includes("<script>alert(1)</script>"), false);
     assert.match(html, /&lt;script&gt;alert\(1\)&lt;\/script&gt;/);
@@ -72,32 +96,24 @@ test("CSV neutraliza fórmula, HTML escapa conteúdo e catálogo não expõe seg
   });
 });
 
-test("shortlist e seleção são explícitas, únicas, auditáveis e reexportáveis", async () => {
+test("exportação de Research não antecipa shortlist global", async () => {
   await withWorkspace(async ({ store, output }) => {
     const dependencies = fixtureDependencies(counters());
-    await runDailyTrendCatalog({ store, logicalDate: DATE, timezone: "UTC", outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
-    store.changeCandidateState({ logicalDate: DATE, candidateId: "youtube:video-1", nextState: "SHORTLISTED", actor: "operador", changedAt: AT });
-    store.changeCandidateState({ logicalDate: DATE, candidateId: "youtube:video-1", nextState: "SELECTED", actor: "operador", changedAt: AT });
-    store.changeCandidateState({ logicalDate: DATE, candidateId: "tiktok:90001", nextState: "SELECTED", actor: "operador", changedAt: AT });
-    assert.equal(store.getCandidateHistory("youtube:video-1").candidate.state, "SHORTLISTED");
-    assert.equal(store.getCandidateHistory("tiktok:90001").candidate.state, "SELECTED");
-    assert.equal(store.getCandidateStateEvents(DATE).length, 4);
-    assert.throws(
-      () => store.changeCandidateState({ logicalDate: DATE, candidateId: "missing", nextState: "SELECTED", actor: "operador", changedAt: AT }),
-      (error) => error.code === "CANDIDATE_NOT_ELIGIBLE",
-    );
-    exportDailyCatalog({ store, logicalDate: DATE, outputRoot: output });
-    const catalog = JSON.parse(readFileSync(join(output, DATE, "catalog.json"), "utf8"));
-    assert.equal(catalog.candidates.find(({ id }) => id === "tiktok:90001").state, "SELECTED");
-    assert.equal(catalog.selectionAudit.length, 4);
+    const input = researchInput();
+    const result = await runDailyTrendCatalog({ store, researchInput: input, outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
+    exportDailyCatalog({ store, researchDailyRunId: result.dailyRun.id, outputRoot: output });
+    const catalog = JSON.parse(readFileSync(join(researchOutput(output, input), "catalog.json"), "utf8"));
+    assert.deepEqual(catalog.selectionAudit, []);
   });
 });
 
 test("falha de escrita não substitui catálogo anterior", async () => {
   await withWorkspace(async ({ store, output }) => {
     const dependencies = fixtureDependencies(counters());
-    await runDailyTrendCatalog({ store, logicalDate: DATE, timezone: "UTC", outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
-    writeFileSync(join(output, DATE, "sentinel.txt"), "preservar", "utf8");
+    const input = researchInput();
+    const result = await runDailyTrendCatalog({ store, researchInput: input, outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock() });
+    const target = researchOutput(output, input);
+    writeFileSync(join(target, "sentinel.txt"), "preservar", "utf8");
     const fileSystem = {
       exists: existsSync,
       mkdir: (path) => mkdirSync(path, { recursive: true }),
@@ -105,8 +121,108 @@ test("falha de escrita não substitui catálogo anterior", async () => {
       rename: () => assert.fail("rename não deve ocorrer antes da escrita completa"),
       rm: (path) => rmSync(path, { recursive: true, force: true }),
     };
-    assert.throws(() => exportDailyCatalog({ store, logicalDate: DATE, outputRoot: output, fileSystem }), /DISK_FULL/);
-    assert.equal(readFileSync(join(output, DATE, "sentinel.txt"), "utf8"), "preservar");
+    assert.throws(() => exportDailyCatalog({ store, researchDailyRunId: result.dailyRun.id, outputRoot: output, fileSystem }), /DISK_FULL/);
+    assert.equal(readFileSync(join(target, "sentinel.txt"), "utf8"), "preservar");
+  });
+});
+
+test("dois projetos executam na mesma data sem colisão e ficam rastreáveis", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const firstInput = researchInput(["youtube"]);
+    const secondInput = researchInput(["youtube"], {
+      pipelineRunId: "pipeline_e02_r02_002",
+      projectId: "canal_ciencia",
+      projectVersion: 3,
+    });
+    const first = await runDailyTrendCatalog({
+      store, researchInput: firstInput, outputRoot: output, config: fullConfig(),
+      ...fixtureDependencies(counters(), "Vídeo projeto 1", "p1"), clock: fixedClock(),
+    });
+    const second = await runDailyTrendCatalog({
+      store, researchInput: secondInput, outputRoot: output, config: fullConfig(),
+      ...fixtureDependencies(counters(), "Vídeo projeto 2", "p2"),
+      clock: () => new Date("2026-09-26T12:00:01.000Z"),
+    });
+    assert.notEqual(first.dailyRun.id, second.dailyRun.id);
+    assert.notEqual(first.catalog.run.id, second.catalog.run.id);
+    assert.equal(first.artifact.projectId, "canal_educacao");
+    assert.equal(second.artifact.projectId, "canal_ciencia");
+    assert.equal(existsSync(join(researchOutput(output, firstInput), "catalog.json")), true);
+    assert.equal(existsSync(join(researchOutput(output, secondInput), "catalog.json")), true);
+  });
+});
+
+test("pipelineRunId não pode ser reutilizado por outro projeto", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const dependencies = fixtureDependencies(counters());
+    await runDailyTrendCatalog({
+      store, researchInput: researchInput(["youtube"]), outputRoot: output,
+      config: fullConfig(), ...dependencies, clock: fixedClock(),
+    });
+    await assert.rejects(
+      runDailyTrendCatalog({
+        store,
+        researchInput: researchInput(["youtube"], { projectId: "outro_canal" }),
+        outputRoot: output, config: fullConfig(), ...dependencies, clock: fixedClock(),
+      }),
+      (error) => error instanceof TrendStoreError && error.code === "PIPELINE_RUN_ID_REUSED",
+    );
+  });
+});
+
+test("plano registra rede sem adapter e YouTube como dependência técnica", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const unsupportedCalls = counters();
+    const unsupported = await runDailyTrendCatalog({
+      store, researchInput: researchInput(["facebook"]), outputRoot: output,
+      config: fullConfig(), ...fixtureDependencies(unsupportedCalls), clock: fixedClock(),
+    });
+    assert.deepEqual(unsupportedCalls, counters());
+    assert.equal(unsupported.dailyRun.state, "FAILED");
+    assert.deepEqual(unsupported.artifact.sourcePlan, [{
+      network: "facebook", role: "CONFIGURED_NETWORK", adapter: "UNAVAILABLE",
+      status: "UNSUPPORTED", sourceRunIds: [], gaps: ["UNSUPPORTED_NETWORK:FACEBOOK"],
+    }]);
+
+    const dependencyCalls = counters();
+    const dependencyInput = researchInput(["instagram"], { pipelineRunId: "pipeline_e02_r02_002" });
+    const dependency = await runDailyTrendCatalog({
+      store, researchInput: dependencyInput, outputRoot: output,
+      config: fullConfig(), ...fixtureDependencies(dependencyCalls, "Vídeo", "dependency"),
+      clock: () => new Date("2026-09-26T12:00:01.000Z"),
+    });
+    assert.deepEqual(dependencyCalls, { youtube: 1, instagram: 1, threads: 0, tiktok: 0, clusters: 2 });
+    assert.equal(dependency.artifact.sourcePlan.find(({ network }) => network === "youtube").role, "TECHNICAL_DEPENDENCY");
+  });
+});
+
+test("idioma e contexto vêm do snapshot enquanto regiões permanecem operacionais", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const calls = counters();
+    const dependencies = fixtureDependencies(calls);
+    const clusterInputs = [];
+    const regions = [];
+    const collectors = {
+      ...dependencies.collectors,
+      youtube: async (args) => {
+        regions.push(args.regions);
+        return dependencies.collectors.youtube(args);
+      },
+    };
+    const clusterer = async (input) => {
+      clusterInputs.push(input);
+      return dependencies.clusterer(input);
+    };
+    const result = await runDailyTrendCatalog({
+      store, researchInput: researchInput(["youtube"], { language: "es-ES" }), outputRoot: output,
+      config: { ...fullConfig(), regions: ["US", "MX"] }, collectors, clusterer, clock: fixedClock(),
+    });
+    assert.deepEqual(regions, [["US", "MX"]]);
+    assert.equal(clusterInputs.length, 2);
+    assert.ok(clusterInputs.every(({ language }) => language === "es-ES"));
+    assert.ok(clusterInputs.every(({ context }) => context.niche === "educação" && context.audience === "adultos curiosos"));
+    assert.equal(result.artifact.timezone, "America/Sao_Paulo");
+    assert.equal(result.artifact.analysisContext.language, "es-ES");
   });
 });
 
@@ -207,7 +323,7 @@ test("execução diária recupera clustering transitório e registra tentativas"
       return dependencies.clusterer(input);
     };
     const result = await runDailyTrendCatalog({
-      store, logicalDate: DATE, timezone: "UTC", outputRoot: output,
+      store, researchInput: researchInput(), outputRoot: output,
       config: fullConfig(), collectors: dependencies.collectors, clusterer,
       sleep: async (delay) => delays.push(delay), clock: fixedClock(),
     });
@@ -219,30 +335,30 @@ test("execução diária recupera clustering transitório e registra tentativas"
   });
 });
 
-function fixtureDependencies(calls, title = "Vídeo útil") {
+function fixtureDependencies(calls, title = "Vídeo útil", suffix = "") {
   const collectors = {
     youtube: async ({ store, idempotencyKey, capturedAt }) => {
       calls.youtube += 1;
-      return store.recordOperation(batch({ platform: "YOUTUBE", id: "video-1", title, idempotencyKey, capturedAt, status: "SUCCESS" }));
+      return store.recordOperation(batch({ platform: "YOUTUBE", id: "video-1", title, idempotencyKey, capturedAt, status: "SUCCESS", suffix }));
     },
     instagram: async ({ store, idempotencyKey, capturedAt }) => {
       calls.instagram += 1;
-      return store.recordOperation(batch({ platform: "INSTAGRAM", idempotencyKey, capturedAt, status: "PARTIAL", noCandidate: true }));
+      return store.recordOperation(batch({ platform: "INSTAGRAM", idempotencyKey, capturedAt, status: "PARTIAL", noCandidate: true, suffix }));
     },
     threads: async ({ store, idempotencyKey, capturedAt }) => {
       calls.threads += 1;
-      return store.recordOperation(batch({ platform: "THREADS", id: "18000000000000123", title: "Threads público", idempotencyKey, capturedAt, status: "PARTIAL" }));
+      return store.recordOperation(batch({ platform: "THREADS", id: "18000000000000123", title: "Threads público", idempotencyKey, capturedAt, status: "PARTIAL", suffix }));
     },
     tiktok: async ({ store, idempotencyKey, capturedAt }) => {
       calls.tiktok += 1;
-      return store.recordOperation(batch({ platform: "TIKTOK", id: "90001", title: "TikTok público", idempotencyKey, capturedAt, status: "SUCCESS" }));
+      return store.recordOperation(batch({ platform: "TIKTOK", id: "90001", title: "TikTok público", idempotencyKey, capturedAt, status: "SUCCESS", suffix }));
     },
   };
   const clusterer = async ({ evidence }) => {
     calls.clusters += 1;
     return [{
       label: "Assunto público", niche: "educação", subtheme: "explicação", likelyAudience: "público brasileiro",
-      narrativePattern: "explicação direta", ptBrLocalization: "aplicável ao Brasil",
+      narrativePattern: "explicação direta", localization: "aplicável ao Brasil",
       candidateIds: evidence.map(({ candidateId }) => candidateId),
       evidenceSnapshotIds: evidence.flatMap(({ snapshots }) => snapshots.map(({ id }) => id)),
       explanation: "Agrupamento baseado somente nas evidências fornecidas.",
@@ -251,9 +367,9 @@ function fixtureDependencies(calls, title = "Vídeo útil") {
   return { collectors, clusterer };
 }
 
-function batch({ platform, id, title, idempotencyKey, capturedAt, status, noCandidate = false }) {
-  const runId = `${platform.toLowerCase()}-run`;
-  const sourceId = `${platform.toLowerCase()}-source`;
+function batch({ platform, id, title, idempotencyKey, capturedAt, status, noCandidate = false, suffix = "" }) {
+  const runId = `${platform.toLowerCase()}-run${suffix ? `-${suffix}` : ""}`;
+  const sourceId = `${platform.toLowerCase()}-source${suffix ? `-${suffix}` : ""}`;
   const hasGap = status !== "SUCCESS";
   const observations = noCandidate ? [] : [observation({ platform, id, title, capturedAt, runId })];
   return {
@@ -317,6 +433,42 @@ function fullConfig() {
       eligibility: { eligibleOrganization: true, nonCommercialResearch: true, ethicalReviewApproved: true, researchProjectApproved: true, researchScopeGranted: true, retentionControlsApproved: true },
     },
   };
+}
+
+function researchInput(networks = ["instagram", "threads", "tiktok", "youtube"], overrides = {}) {
+  const projectId = overrides.projectId ?? "canal_educacao";
+  const projectVersion = overrides.projectVersion ?? 1;
+  return {
+    schemaVersion: RESEARCH_INPUT_CONTRACT_VERSION,
+    execution: {
+      pipelineRunId: overrides.pipelineRunId ?? "pipeline_e02_r02_001",
+      projectId,
+      projectVersion,
+      startedAt: AT,
+    },
+    window: { logicalDate: DATE },
+    projectSnapshot: {
+      schemaVersion: PROJECT_CONTRACT_VERSION,
+      project: {
+        id: projectId,
+        name: "Canal Educação",
+        version: projectVersion,
+        niche: "educação",
+        subniches: ["ciência prática"],
+        audience: { profile: "adultos curiosos", language: overrides.language ?? "pt-BR" },
+      },
+      channel: {
+        format: "short_video", aspectRatio: "9:16", minDurationSeconds: 25, maxDurationSeconds: 45,
+        editorialStyle: "informative", visualStyle: "dynamic", voiceStyle: "informative",
+        publishing: { contentsPerDay: 1, networks, timezone: "America/Sao_Paulo", times: ["10:00"] },
+      },
+      references: [],
+    },
+  };
+}
+
+function researchOutput(output, input) {
+  return join(output, input.execution.projectId, `v${input.execution.projectVersion}`, DATE, input.execution.pipelineRunId);
 }
 
 function counters() { return { youtube: 0, instagram: 0, threads: 0, tiktok: 0, clusters: 0 }; }

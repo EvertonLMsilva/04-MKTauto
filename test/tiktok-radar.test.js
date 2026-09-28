@@ -296,7 +296,7 @@ function cluster(id, label, subtheme) {
     subtheme,
     likelyAudience: "operadores brasileiros",
     narrativePattern: "explicação curta",
-    ptBrLocalization: "vocabulário brasileiro",
+    localization: "vocabulário brasileiro",
     candidateIds: [`seed-candidate-${suffix}`],
     evidenceSnapshotIds: [`seed-snapshot-${suffix}`],
     createdBy: "OLLAMA",

@@ -149,8 +149,10 @@ function booleanObject(keys) {
 
 // Radar M1 contracts are additive: the discovery contract above remains the
 // boundary for R01A while these versioned contracts define R02A.
-export const RADAR_CONTRACT_VERSION = "trend-contracts/1.1.0";
-const SUPPORTED_RADAR_CONTRACT_VERSIONS = Object.freeze(["trend-contracts/1.0.0", RADAR_CONTRACT_VERSION]);
+export const RADAR_CONTRACT_VERSION = "trend-contracts/1.2.0";
+const SUPPORTED_RADAR_CONTRACT_VERSIONS = Object.freeze([
+  "trend-contracts/1.0.0", "trend-contracts/1.1.0", RADAR_CONTRACT_VERSION,
+]);
 export const TREND_SCORE_VERSION = "trend-score/1.0.0";
 export const TREND_SCORE_DEFINITION = Object.freeze({
   version: TREND_SCORE_VERSION,
@@ -194,7 +196,7 @@ export const TREND_SCHEMAS = Object.freeze(Object.fromEntries([
   ["SourceRun", ["id", "trendRunId", "platform", "status", "startedAt", "completedAt", "capabilities", "coverage", "gaps"]],
   ["TrendCandidate", ["id", "identityKey", "platform", "canonicalUrl", "state", "firstSeenAt", "lastSeenAt", "reappearanceCount", "durationSeconds", "publishedAt", "usageCondition", "snapshotIds", "topicClusterIds"]],
   ["TrendSnapshot", ["id", "candidateId", "capturedAt", "metrics"]],
-  ["TopicCluster", ["id", "label", "niche", "subtheme", "likelyAudience", "narrativePattern", "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation"]],
+  ["TopicCluster", ["id", "label", "niche", "subtheme", "likelyAudience", "narrativePattern", "localization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation"]],
   ["TrendScore", ["id", "candidateId", "formulaVersion", "calculatedAt", "value", "confidence", "components", "explanation"]],
 ].map(([name, required]) => [name, Object.freeze({
   $id: `mktauto/${name}/${RADAR_CONTRACT_VERSION}`,
@@ -205,7 +207,8 @@ export const TREND_SCHEMAS = Object.freeze(Object.fromEntries([
 })])));
 
 export const TREND_CATALOG_LAYOUT = Object.freeze({
-  root: "data/trends/<YYYY-MM-DD>",
+  root: "data/trends/<project-id>/v<project-version>/<YYYY-MM-DD>/<pipeline-run-id>",
+  legacyRoot: "data/trends/<YYYY-MM-DD>",
   files: Object.freeze(["catalog.json", "ranking.csv", "report.html"]),
   candidateDirectory: "candidates/<candidate-id>",
   candidateFiles: Object.freeze(["candidate.json", "thumbnail.<ext> (somente quando permitido)"]),
@@ -340,9 +343,10 @@ export function validateTrendRun(value, sourceRuns = []) {
 
 export function validateTopicCluster(value, knownCandidateIds = [], knownSnapshotIds = []) {
   requireRecord(value, "topicCluster");
+  const localizationField = value.schemaVersion === RADAR_CONTRACT_VERSION ? "localization" : "ptBrLocalization";
   requireExactKeys(value, [
     "schemaVersion", "id", "label", "niche", "subtheme", "likelyAudience",
-    "narrativePattern", "ptBrLocalization", "candidateIds", "evidenceSnapshotIds",
+    "narrativePattern", localizationField, "candidateIds", "evidenceSnapshotIds",
     "createdBy", "explanation",
   ], "topicCluster", true);
   requireSchemaVersion(value.schemaVersion, "topicCluster.schemaVersion");
@@ -352,7 +356,7 @@ export function validateTopicCluster(value, knownCandidateIds = [], knownSnapsho
   requireTextContract(value.subtheme, "topicCluster.subtheme");
   requireTextContract(value.likelyAudience, "topicCluster.likelyAudience");
   requireTextContract(value.narrativePattern, "topicCluster.narrativePattern");
-  requireTextContract(value.ptBrLocalization, "topicCluster.ptBrLocalization");
+  requireTextContract(value[localizationField], `topicCluster.${localizationField}`);
   requireIdentifierArray(value.candidateIds, "topicCluster.candidateIds", true);
   requireIdentifierArray(value.evidenceSnapshotIds, "topicCluster.evidenceSnapshotIds", true);
   requireKnownIds(value.candidateIds, knownCandidateIds, "topicCluster.candidateIds");
@@ -387,7 +391,7 @@ export function validateAiTopicProposal(value, knownCandidateIds, knownSnapshotI
   requireRecord(value, "aiProposal");
   const allowed = [
     "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
-    "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "explanation",
+    "localization", "candidateIds", "evidenceSnapshotIds", "explanation",
   ];
   const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
   if (unknown.length > 0) fail("AI_EVIDENCE_MUTATION", "aiProposal", `campos não permitidos: ${unknown.join(", ")}`);
@@ -397,7 +401,7 @@ export function validateAiTopicProposal(value, knownCandidateIds, knownSnapshotI
   requireTextContract(value.subtheme, "aiProposal.subtheme");
   requireTextContract(value.likelyAudience, "aiProposal.likelyAudience");
   requireTextContract(value.narrativePattern, "aiProposal.narrativePattern");
-  requireTextContract(value.ptBrLocalization, "aiProposal.ptBrLocalization");
+  requireTextContract(value.localization, "aiProposal.localization");
   requireIdentifierArray(value.candidateIds, "aiProposal.candidateIds", true);
   requireIdentifierArray(value.evidenceSnapshotIds, "aiProposal.evidenceSnapshotIds", true);
   requireKnownIds(value.candidateIds, knownCandidateIds, "aiProposal.candidateIds");
@@ -426,7 +430,7 @@ export function serializePublicTrendCatalog(value) {
   const snapshotIds = snapshots.map((item) => item.id);
   const topicClusters = (value.topicClusters ?? []).map((item) => validateTopicCluster(pick(item, [
     "schemaVersion", "id", "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
-    "ptBrLocalization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation",
+    "ptBrLocalization", "localization", "candidateIds", "evidenceSnapshotIds", "createdBy", "explanation",
   ]), candidateIds, snapshotIds));
   const scores = (value.scores ?? []).map((item) => validateTrendScore(pick(item, [
     "schemaVersion", "id", "candidateId", "formulaVersion", "calculatedAt", "value",

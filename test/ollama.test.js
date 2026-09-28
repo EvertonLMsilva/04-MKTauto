@@ -59,7 +59,7 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
     subtheme: "aprendizado rápido",
     likelyAudience: "adultos brasileiros",
     narrativePattern: "explicação curta",
-    ptBrLocalization: "usar exemplos brasileiros",
+    localization: "usar exemplos brasileiros",
     candidateRefs: ["C001"],
     explanation: "O título sustenta o assunto.",
   };
@@ -68,7 +68,11 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
     request = JSON.parse(options.body);
     return { ok: true, json: async () => ({ message: { content: JSON.stringify({ clusters: [proposal] }) } }) };
   };
-  const result = await proposeTopicClusters({ model: "qwen3:4b", evidence, fetchImpl });
+  const result = await proposeTopicClusters({
+    model: "qwen3:4b", evidence, language: "es-ES",
+    context: { niche: "educación", subniches: ["ciencia"], audience: "adultos", language: "es-ES" },
+    fetchImpl,
+  });
   const { candidateRefs: _candidateRefs, ...semanticProposal } = proposal;
   assert.deepEqual(result, [{ ...semanticProposal, candidateIds: ["candidate-1"], evidenceSnapshotIds: ["snapshot-1"] }]);
   assert.equal(request.format.properties.clusters.items.additionalProperties, false);
@@ -77,6 +81,9 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
   assert.equal(Object.hasOwn(request.format.properties.clusters.items.properties, "evidenceSnapshotIds"), false);
   assert.match(request.messages[0].content, /Não devolva snapshotIds/);
   assert.match(request.messages[0].content, /Aliases obrigatórios: C001/);
+  assert.match(request.messages[0].content, /idioma BCP 47 es-ES/);
+  assert.match(request.messages[0].content, /educación/);
+  assert.equal(request.messages[0].content.includes("Agrupe em pt-BR"), false);
   assert.equal(request.messages[0].content.includes("snapshot-1"), false);
   assert.equal(request.messages[0].content.includes("candidate-1"), false);
 });
@@ -89,7 +96,7 @@ test("rejeita tentativa da IA de fornecer snapshot e deriva evidência pelo cand
     subtheme: "subtema",
     likelyAudience: "público",
     narrativePattern: "padrão",
-    ptBrLocalization: "localização",
+    localization: "localização",
     candidateRefs: ["C001"],
     evidenceSnapshotIds: ["snapshot-forged"],
     explanation: "Explicação",
@@ -119,7 +126,7 @@ test("completa aliases ausentes em uma correção dirigida", async () => {
   ];
   const incomplete = {
     label: "Assunto", niche: "educação", subtheme: "subtema", likelyAudience: "público",
-    narrativePattern: "padrão", ptBrLocalization: "localização", candidateRefs: ["C001"], explanation: "Explicação",
+    narrativePattern: "padrão", localization: "localização", candidateRefs: ["C001"], explanation: "Explicação",
   };
   const repair = { ...incomplete, label: "Outro assunto", candidateRefs: ["C002"] };
   const requests = [];

@@ -180,7 +180,7 @@ test("IA só referencia evidências conhecidas e não pode fornecer IDs, métric
     subtheme: "receitas práticas",
     likelyAudience: "adultos com pouco tempo",
     narrativePattern: "passo a passo curto",
-    ptBrLocalization: "ingredientes disponíveis no Brasil",
+    localization: "ingredientes disponíveis no Brasil",
     candidateIds: ["candidate-youtube"],
     evidenceSnapshotIds: ["snapshot-1"],
     explanation: "O assunto reaparece nas evidências.",
@@ -239,6 +239,7 @@ test("serialização pública usa allowlist e publica o layout lógico sem dados
   });
   assert.equal(JSON.stringify(publicCatalog).includes("segredo"), false);
   assert.equal(JSON.stringify(publicCatalog).includes("rawProviderPayload"), false);
-  assert.equal(TREND_CATALOG_LAYOUT.root, "data/trends/<YYYY-MM-DD>");
+  assert.equal(TREND_CATALOG_LAYOUT.root, "data/trends/<project-id>/v<project-version>/<YYYY-MM-DD>/<pipeline-run-id>");
+  assert.equal(TREND_CATALOG_LAYOUT.legacyRoot, "data/trends/<YYYY-MM-DD>");
   assert.deepEqual(TREND_CATALOG_LAYOUT.files, ["catalog.json", "ranking.csv", "report.html"]);
 });

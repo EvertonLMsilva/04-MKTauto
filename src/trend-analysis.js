@@ -20,6 +20,8 @@ export async function analyzeTrendRun({
   config = DEFAULT_TREND_RANKING_CONFIG,
   now = new Date().toISOString(),
   clusterer = proposeTopicClusters,
+  analysisContext,
+  historyScope,
   fetchImpl,
 }) {
   if (!store || typeof store.getRun !== "function" || typeof store.recordAnalysis !== "function") {
@@ -35,7 +37,11 @@ export async function analyzeTrendRun({
   if (catalog.candidates.length === 0) {
     return { catalog, ranked: [], top: [], gaps: [`INSUFFICIENT_ELIGIBLE_CANDIDATES:0/${config.candidateLimit}`] };
   }
-  const histories = new Map(catalog.candidates.map(({ id }) => [id, store.getCandidateHistory(id)]));
+  const histories = new Map(catalog.candidates.map(({ id }) => [id,
+    historyScope && typeof store.getCandidateResearchHistory === "function"
+      ? store.getCandidateResearchHistory(id, { runId, ...historyScope })
+      : store.getCandidateHistory(id),
+  ]));
   const evidence = catalog.candidates.map((candidate) => ({
     candidateId: candidate.id,
     title: candidate.title ?? "Título público indisponível",
@@ -45,9 +51,16 @@ export async function analyzeTrendRun({
     language: candidate.language ?? "Idioma indisponível",
     publishedAt: candidate.publishedAt,
     durationSeconds: candidate.durationSeconds,
-    snapshots: histories.get(candidate.id).snapshots.map(({ id, capturedAt, metrics }) => ({ id, capturedAt, metrics })),
+    snapshots: catalog.snapshots.filter(({ candidateId }) => candidateId === candidate.id)
+      .map(({ id, capturedAt, metrics }) => ({ id, capturedAt, metrics })),
   }));
-  const proposals = await clusterer({ model, evidence, ...(fetchImpl ? { fetchImpl } : {}) });
+  const proposals = await clusterer({
+    model,
+    evidence,
+    language: analysisContext?.language,
+    context: analysisContext,
+    ...(fetchImpl ? { fetchImpl } : {}),
+  });
   if (!Array.isArray(proposals) || proposals.length === 0) throw new Error("O agrupador não retornou clusters");
   const knownCandidateIds = catalog.candidates.map(({ id }) => id);
   const snapshotOwner = new Map(evidence.flatMap(({ candidateId, snapshots }) => snapshots.map(({ id }) => [id, candidateId])));

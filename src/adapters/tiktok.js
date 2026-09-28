@@ -526,7 +526,7 @@ function metric(value) {
 function normalizeHashtag(value) {
   if (typeof value !== "string") return "";
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
-    .toLocaleLowerCase("pt-BR").replace(/^#+/, "").replace(/[^a-z0-9_]/g, "").slice(0, 100);
+    .toLowerCase().replace(/^#+/, "").replace(/[^a-z0-9_]/g, "").slice(0, 100);
 }
 
 function queryLabel({ region, hashtag }) {

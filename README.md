@@ -42,11 +42,17 @@ credenciais oficiais necessárias no arquivo `.env`, que não entra no Git.
 ### Radar diário
 
 ```powershell
-npm run trend:daily -- --date 2026-09-27 --timezone America/Sao_Paulo
-npm run trend:export -- --date 2026-09-27
+npm run trend:daily -- --input .\research-input.json
+npm run trend:export -- --research-run research-daily:ID
 node --env-file-if-exists=.env src/trend-cli.js shortlist --date 2026-09-27 --candidate youtube:ID --actor operador
 node --env-file-if-exists=.env src/trend-cli.js select --date 2026-09-27 --candidate youtube:ID --actor operador
 ```
+
+O comando diário exige o `ResearchInput` imutável produzido pelo handoff do
+projeto. Data, timezone, nicho, público, idioma e redes vêm desse snapshot; as
+regiões de pesquisa continuam na configuração operacional `TREND_REGIONS`. A
+saída informa o ID `research-daily:*` necessário para reexportação. Os comandos
+legados de shortlist e seleção por data não atuam sobre artefatos de Research.
 
 Referências encontradas não concedem direitos e não são baixadas. Instagram,
 Threads e TikTok só são consultados quando tokens, escopos e aprovações oficiais

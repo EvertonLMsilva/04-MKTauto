@@ -176,7 +176,7 @@ function proposal(label, evidence) {
     subtheme: `${label} em vídeos curtos`,
     likelyAudience: "operadores brasileiros de perfis temáticos",
     narrativePattern: "explicação curta com contexto",
-    ptBrLocalization: "contextualizar exemplos e vocabulário para o Brasil",
+    localization: "contextualizar exemplos e vocabulário para o Brasil",
     candidateIds: evidence.map(({ candidateId }) => candidateId),
     evidenceSnapshotIds: evidence.flatMap(({ snapshots }) => snapshots.slice(-1).map(({ id }) => id)),
     explanation: `Agrupamento sustentado por ${evidence.length} vídeos observados.`,
