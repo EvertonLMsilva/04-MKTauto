@@ -2,6 +2,11 @@ import { createHash } from "node:crypto";
 import { ContractValidationError } from "./domain/contracts.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import { validateScript } from "./domain/script-contracts.js";
+import {
+  SCRIPT_GENERATION_REQUEST_VERSION,
+  scriptGenerationRequestHash,
+  validateScriptGenerationRequest,
+} from "./domain/script-generation-contracts.js";
 import { IdeaSelectionRepository } from "./idea-selection-repository.js";
 
 export class ScriptRepositoryError extends Error {
@@ -18,23 +23,76 @@ export class ScriptRepository extends IdeaSelectionRepository {
     let script;
     try { script = validateScript(value); }
     catch (caught) { throw mapError(caught); }
-    return this.#transaction(() => {
-      const prior = this.db.prepare("SELECT content_hash FROM scripts WHERE script_id = ?").get(script.scriptId);
-      if (prior) {
-        if (prior.content_hash !== script.contentHash) throw failure("SCRIPT_ID_REUSED", "scriptId", "ID já usado com roteiro incompatível");
-        return this.getScript(script.scriptId);
-      }
+    return this.#transaction(() => this.#registerValidatedScript(script, null, true));
+  }
 
-      const run = this.getRun(script.pipelineRunId);
-      if (!run) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
-      verifyScope(run, script, "SCRIPT_RUN_SCOPE_MISMATCH");
-      const selection = this.getSelection(script.ideaSelectionId);
-      if (!selection) throw failure("IDEA_SELECTION_NOT_FOUND", "ideaSelectionId", "seleção não encontrada");
-      verifySelection(script, selection);
-      verifyProjectCompatibility(script, run.projectSnapshot);
-      const previous = this.#validateRevision(script);
-      this.#insertLineage(script, previous);
-      this.db.prepare(`INSERT INTO scripts
+  registerGeneratedScript({ request: requestValue, script: scriptValue, generationMetadata }) {
+    let request;
+    let script;
+    try {
+      request = validateScriptGenerationRequest(requestValue);
+      script = validateScript(scriptValue);
+    } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.db.prepare(`SELECT request_hash, script_id
+        FROM script_generation_requests WHERE generation_request_id = ?`).get(request.generationRequestId);
+      if (prior) {
+        if (prior.request_hash !== request.contentHash) throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
+        return this.getScript(prior.script_id);
+      }
+      if (request.ideaSelectionId !== script.ideaSelectionId) throw failure("GENERATION_REQUEST_SCOPE_MISMATCH", "ideaSelectionId", "solicitação diverge do roteiro");
+      if (request.requestedAt !== script.createdAt) throw failure("GENERATION_REQUEST_SCOPE_MISMATCH", "requestedAt", "solicitação diverge do roteiro");
+      if (script.scriptId !== `script:${request.generationRequestId}`) throw failure("GENERATION_REQUEST_SCOPE_MISMATCH", "scriptId", "solicitação diverge do roteiro");
+      const created = this.#registerValidatedScript(script, generationMetadata, false);
+      this.db.prepare(`INSERT INTO script_generation_requests
+        (generation_request_id, schema_version, request_hash, script_id, created_at)
+        VALUES (?, ?, ?, ?, ?)`)
+        .run(request.generationRequestId, request.schemaVersion, request.contentHash, created.scriptId, request.requestedAt);
+      return created;
+    });
+  }
+
+  getScriptGeneration(generationRequestId) {
+    requireIdentifier(generationRequestId, "generationRequestId", 180);
+    const row = this.db.prepare(`SELECT * FROM script_generation_requests
+      WHERE generation_request_id = ?`).get(generationRequestId);
+    if (!row) return null;
+    try {
+      if (row.schema_version !== SCRIPT_GENERATION_REQUEST_VERSION || !/^[a-f0-9]{64}$/.test(row.request_hash)) throw new Error("identidade inválida");
+      const script = this.getScript(row.script_id);
+      const lineage = this.getArtifact(row.script_id);
+      if (!script || !lineage?.generationMetadata) throw new Error("geração incompleta");
+      const expectedHash = scriptGenerationRequestHash({
+        schemaVersion: row.schema_version,
+        generationRequestId: row.generation_request_id,
+        ideaSelectionId: script.ideaSelectionId,
+        requestedAt: row.created_at,
+        contentHash: row.request_hash,
+      });
+      if (row.script_id !== `script:${row.generation_request_id}` || script.createdAt !== row.created_at || expectedHash !== row.request_hash) throw new Error("vínculo inválido");
+      return deepFreeze({ requestHash: row.request_hash, script, generationMetadata: lineage.generationMetadata });
+    } catch (caught) {
+      throw failure("INVALID_PERSISTED_SCRIPT_GENERATION", "generationRequestId", "geração persistida inválida", { cause: caught });
+    }
+  }
+
+  #registerValidatedScript(script, generationMetadata, allowExisting) {
+    const prior = this.db.prepare("SELECT content_hash FROM scripts WHERE script_id = ?").get(script.scriptId);
+    if (prior) {
+      if (!allowExisting || prior.content_hash !== script.contentHash) throw failure("SCRIPT_ID_REUSED", "scriptId", "ID já usado com roteiro incompatível");
+      return this.getScript(script.scriptId);
+    }
+
+    const run = this.getRun(script.pipelineRunId);
+    if (!run) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
+    verifyScope(run, script, "SCRIPT_RUN_SCOPE_MISMATCH");
+    const selection = this.getSelection(script.ideaSelectionId);
+    if (!selection) throw failure("IDEA_SELECTION_NOT_FOUND", "ideaSelectionId", "seleção não encontrada");
+    verifySelection(script, selection);
+    verifyProjectCompatibility(script, run.projectSnapshot);
+    const previous = this.#validateRevision(script);
+    this.#insertLineage(script, previous, generationMetadata);
+    this.db.prepare(`INSERT INTO scripts
         (script_id, schema_version, pipeline_run_id, project_id, project_version,
          idea_selection_id, idea_selection_content_hash, idea_candidate_id,
          idea_content_hash, language, content_format, estimated_duration_seconds,
@@ -47,8 +105,7 @@ export class ScriptRepository extends IdeaSelectionRepository {
         script.createdAt, script.revision, script.supersedesScriptId,
         script.contentHash, JSON.stringify(script),
       );
-      return this.getScript(script.scriptId);
-    });
+    return this.getScript(script.scriptId);
   }
 
   getScript(scriptId) {
@@ -100,7 +157,7 @@ export class ScriptRepository extends IdeaSelectionRepository {
     return previous;
   }
 
-  #insertLineage(script, previous) {
+  #insertLineage(script, previous, generationMetadata = null) {
     const inputs = [{
       position: 1, kind: "INTERNAL_ARTIFACT", inputId: script.ideaSelectionId,
       contentHash: script.ideaSelectionContentHash,
@@ -121,18 +178,20 @@ export class ScriptRepository extends IdeaSelectionRepository {
       hashAlgorithm: "sha256",
       contentHash: script.contentHash,
       inputs,
-      generationMetadata: null,
+      generationMetadata,
       createdAt: script.createdAt,
     });
     this.db.prepare(`INSERT INTO artifact_lineage
       (artifact_id, schema_version, artifact_type, artifact_version, identity_hash,
        pipeline_run_id, project_id, project_version, content_identity, hash_algorithm,
        content_hash, generation_metadata_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       artifact.artifactId, artifact.schemaVersion, artifact.artifactType,
       artifact.artifactVersion, sha256(JSON.stringify(artifact)), artifact.pipelineRunId,
       artifact.projectId, artifact.projectVersion, artifact.contentIdentity,
-      artifact.hashAlgorithm, artifact.contentHash, artifact.createdAt,
+      artifact.hashAlgorithm, artifact.contentHash,
+      artifact.generationMetadata === null ? null : JSON.stringify(artifact.generationMetadata),
+      artifact.createdAt,
     );
     const insert = this.db.prepare(`INSERT INTO artifact_lineage_inputs
       (artifact_id, position, kind, input_id, content_hash) VALUES (?, ?, ?, ?, ?)`);
@@ -205,3 +264,4 @@ function mapError(caught) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code, field, message, options) { return new ScriptRepositoryError(code, field, message, options); }
+function deepFreeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(deepFreeze); return Object.freeze(value); }

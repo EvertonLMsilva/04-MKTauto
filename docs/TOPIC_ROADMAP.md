@@ -32,7 +32,8 @@
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
-| E04-S01 | PR ABERTO | Contrato e persistência append-only de roteiro | PR #42 aberto; `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
+| E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
+| AI01 | PR ABERTO | Primeira geração de roteiro por OpenAIAdapter | PR #43 aberto; `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -227,6 +228,34 @@ formam um grande épico antecipado e não alteram a prioridade atual de `FND03`.
 
 Aceite: uma capacidade real do pipeline produz artefato rastreável por adapter,
 com contrato testado e sem dependência de OpenAI no domínio.
+
+Implementação AI01: o serviço recebe uma `IdeaSelection` por ID explícito,
+recupera a seleção, ideia, `PipelineRun` e `ProjectSnapshot` exatos e chama uma
+única vez a porta `ScriptGenerator`. A saída externa é revalidada e traduzida
+deterministicamente para `script/1.0.0`; nenhuma referência textual é enviada ao
+provider e nenhuma consulta usa `latest`.
+
+O `OpenAIAdapter` usa Responses com saída estruturada, política pública
+`script-generation-prompt/1.0.0`, timeout e cancelamento. Credencial e modelo
+vêm do ambiente; somente provider, modelo, tarefa, versão da política, hash e
+configuração pública sanitizada entram na linhagem. Prompt, mensagens, payload
+e resposta brutos não são persistidos ou registrados.
+
+A migração 014 registra identidade e hash da solicitação ligados ao roteiro. O
+retry concluído retorna o artefato persistido sem nova chamada; identidade com
+conteúdo divergente falha, e roteiro, identidade e linhagem são confirmados na
+mesma transação. AI01 não cria eventos de custo, tokens, latência, fallback,
+router ou telemetria; esses itens permanecem em AI02/AI03.
+
+Evidência: 15 testes novos cobrem contrato, isolamento arquitetural, seleção
+explícita, escopo e hashes, saída não confiável, conteúdo sensível, configuração
+e erros sanitizados, timeout, cancelamento, retry, conflito e rollback. A suíte
+completa registra 258 testes aprovados e um smoke real ignorado por padrão. O
+smoke só executa com `OPENAI_SMOKE_TEST=1`. Riscos residuais: SQLite mantém
+escritor único; qualidade, originalidade substantiva e afirmações sensíveis
+continuam sujeitas a revisão humana; disponibilidade, limites e cobrança do
+provider só são observáveis quando o smoke for explicitamente habilitado.
+O PR #43 foi aberto em 28/09/2026.
 
 ### AI02 — Model Routing Policy
 
@@ -586,7 +615,8 @@ hashes, compatibilidade com o projeto, retry, conflitos, revisão, rollback,
 migração aditiva, revalidação na leitura, linhagem e ausência de custo. Riscos
 residuais: SQLite mantém escritor único; originalidade substantiva e qualidade
 editorial continuam sujeitas à revisão humana; geração por IA e aprovação final
-permanecem em tópicos posteriores. O PR #42 foi aberto em 28/09/2026.
+permanecem em tópicos posteriores. O PR #42 foi mergeado em 28/09/2026 no
+commit `d78309f`.
 
 ## Ordem após E01
 
