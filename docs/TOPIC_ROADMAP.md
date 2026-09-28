@@ -23,7 +23,7 @@
 | PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
-| E02-R03 | EM EXECUÇÃO | Análise de referências estratégicas | `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passando. |
+| E02-R03 | PR ABERTO | Análise de referências estratégicas | PR #33 aberto; `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -277,6 +277,7 @@ isolamento multi-projeto, retry, migração 005→006, sanitização e direitos;
 `git diff --check` passou. Riscos residuais: App Review e quotas da Meta, cobertura
 profissional do Instagram, autorização TikTok, métricas mutáveis, handles
 renomeados e amostras insuficientes.
+O PR #33 foi aberto em 27/09/2026.
 
 ## Ordem após E01
 
