@@ -24,7 +24,7 @@
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
 | E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
-| E02-R04 | EM EXECUÇÃO | Shortlist de Research vinculada ao projeto | `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passando. |
+| E02-R04 | PR ABERTO | Shortlist de Research vinculada ao projeto | PR #34 aberto; `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -308,6 +308,7 @@ hashes, retry, migração 006→007 e regressão completa; `git diff --check` pa
 Riscos residuais: qualidade e cobertura continuam limitadas pelos scores e
 fontes do catálogo original; diversidade pode ser relaxada quando há poucos
 candidatos elegíveis.
+O PR #34 foi aberto em 27/09/2026.
 
 ## Ordem após E01
 
