@@ -26,7 +26,8 @@
 | E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
 | E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
 | V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
-| V08 | PR ABERTO | Estratégia multimodelo de IA | PR #36 aberto; roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
+| V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
+| FND01 | EM EXECUÇÃO | Persistência de PipelineRun | Contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -45,8 +46,8 @@ continuam preservados e não integram a entrega.
 
 V08 foi validado com a suíte completa de 169 testes, `git diff --check`, blocos
 Markdown balanceados e revisão do diff restrito aos quatro documentos aprovados.
-O PR #36 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
-continuam preservados e não integram a entrega.
+O PR #36 foi mergeado em 27/09/2026 (`2b272ce`). Os arquivos locais não
+rastreados em `data/` continuam preservados e não integram a entrega.
 
 ## Corte aprovado em V07
 
@@ -116,8 +117,25 @@ entregue em tópicos independentes antes de automação agressiva:
 
 Aceite: iniciar ou retomar a mesma run não duplica registro; nova versão do
 projeto não altera a run existente; transições e conflitos possuem códigos
-estáveis e testes. Este é o **próximo tópico técnico recomendado**, somente após
-o merge de V08.
+estáveis e testes.
+
+Implementação FND01: `pipeline-run/1.0.0` define somente `RUNNING`, `SUCCEEDED`
+e `FAILED`, com transições determinísticas de `RUNNING` para um estado terminal.
+A migração 008 persiste identidade, `ProjectSnapshot` completo e histórico de
+transições, protegido contra atualização ou remoção retroativa. O serviço
+reutiliza o handoff PC05, exige projeto e versão explícitos e usa
+`pipelineRunId` como identidade idempotente; retry compatível recupera a run e
+conteúdo divergente falha antes de qualquer escrita. Nova versão ou arquivamento
+do projeto não altera o snapshot armazenado. Erros persistidos contêm somente
+`code` e `field` públicos sanitizados.
+
+Evidência: 11 testes focados e a suíte completa de 180 testes passaram em
+28/09/2026, junto de `git diff --check`. Os testes cobrem criação, recuperação,
+retry, conflito de identidade, compatibilidade com `ResearchInput`, snapshot
+imutável, transições, rollback, migração aditiva, erro sanitizado, proteções do
+banco e ausência de efeitos de Research. Riscos residuais deliberados: o SQLite
+mantém sua concorrência de escritor único e runs terminais não são reabertas;
+artefatos, linhagem e custos permanecem para FND02 e FND03.
 
 ### FND02 — linhagem comum de artefatos
 
