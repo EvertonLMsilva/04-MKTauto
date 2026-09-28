@@ -30,7 +30,7 @@
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
-| E03-I01 | EM EXECUÇÃO | Contratos de ideias e scoring determinístico | `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram; PR a abrir. |
+| E03-I01 | PR ABERTO | Contratos de ideias e scoring determinístico | PR #40 aberto; `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -516,7 +516,8 @@ indisponibilidade, política e desempate, retry, conflitos, ordem, rollback,
 migração aditiva, revalidação na leitura, linhagem e ausência de custo ou IA.
 Riscos residuais: o scoring lexical inicial é deliberadamente simples e exige
 calibração futura com histórico; SQLite mantém escritor único. Seleção humana,
-geração automática e roteiro permanecem fora deste tópico. PR a abrir.
+geração automática e roteiro permanecem fora deste tópico. O PR #40 foi aberto
+em 28/09/2026.
 
 ## Ordem após E01
 
