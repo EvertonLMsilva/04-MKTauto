@@ -18,6 +18,70 @@ const RESEARCH_ELIGIBILITY = [
   ["retentionControlsApproved", "TIKTOK_RESEARCH_RETENTION_CONTROLS_REQUIRED"],
 ];
 
+export async function analyzeTikTokReference({
+  handle, accessToken, authorizedAccountContext, displayAccess = {}, maxItems = 20, fetchImpl = fetch,
+}) {
+  const requested = normalizeReferenceHandle(handle);
+  const authorized = safeContext(authorizedAccountContext);
+  if (!requested) return tiktokReferenceGap("FAILED", "TIKTOK_INVALID_HANDLE");
+  if (!authorized || requested.toLowerCase() !== authorized.toLowerCase()) {
+    return tiktokReferenceGap("BLOCKED_BY_PROVIDER", "TIKTOK_REFERENCE_ACCOUNT_NOT_AUTHORIZED");
+  }
+  const missing = [
+    ["accountAuthorized", "TIKTOK_DISPLAY_ACCOUNT_AUTHORIZATION_REQUIRED"],
+    ["appApproved", "TIKTOK_DISPLAY_APP_APPROVAL_REQUIRED"],
+    ["videoListScopeGranted", "TIKTOK_DISPLAY_VIDEO_LIST_SCOPE_REQUIRED"],
+  ].find(([field]) => displayAccess?.[field] !== true)?.[1];
+  if (!nonBlank(accessToken) || missing) {
+    return tiktokReferenceGap("BLOCKED_BY_PROVIDER", missing ?? "TIKTOK_DISPLAY_ACCESS_TOKEN_MISSING");
+  }
+  try {
+    const url = new URL(DISPLAY_VIDEO_URL);
+    url.searchParams.set("fields", "id,title,video_description,duration,share_url,create_time");
+    const response = await fetchImpl(url, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ max_count: Math.min(maxItems, 20) }),
+    });
+    const body = await safeJson(response);
+    if (!response.ok || (body?.error?.code && body.error.code !== "ok")) throw errorFromResponse(response.status, body);
+    const source = Array.isArray(body?.data?.videos) ? body.data.videos : [];
+    const items = source.flatMap((item) => {
+      try {
+        const normalized = normalizeTikTokDisplayVideo(item);
+        return [{
+          providerContentId: normalized.platformVideoId,
+          canonicalUrl: normalized.canonicalUrl,
+          publishedAt: normalized.publishedAt,
+          mediaType: "VIDEO",
+          durationSeconds: normalized.durationSeconds,
+          sourceText: nonBlank(item.title) ?? nonBlank(item.video_description) ?? "",
+        }];
+      } catch { return []; }
+    });
+    const gaps = [];
+    if (items.length === 0) gaps.push("TIKTOK_NO_AUTHORIZED_PUBLIC_VIDEOS");
+    if (items.length !== source.length) gaps.push("TIKTOK_ITEMS_INVALID_OR_UNAVAILABLE");
+    return {
+      capability: "AUTHORIZED_ACCOUNT_VIDEOS", status: items.length > 0 && items.length === source.length ? "SUCCESS" : "PARTIAL",
+      items, gaps,
+    };
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    return tiktokReferenceGap(normalized.blocking ? "BLOCKED_BY_PROVIDER" : "FAILED", normalized.code);
+  }
+}
+
+function tiktokReferenceGap(status, code) {
+  return { capability: "AUTHORIZED_ACCOUNT_VIDEOS", status, items: [], gaps: [code] };
+}
+
+function normalizeReferenceHandle(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim().replace(/^@/, "");
+  return /^[A-Za-z0-9._]{1,24}$/.test(normalized) ? normalized : "";
+}
+
 export function deriveTikTokResearchQueries(clusters, regions, maxQueries = 30) {
   if (!Array.isArray(clusters) || clusters.length === 0) throw new Error("clusters persistidos são obrigatórios");
   validateRegions(regions);
