@@ -38,7 +38,8 @@
 | AI03 | CONCLUÍDO | Telemetria de custo e uso das chamadas de IA | PR #45 mergeado em 28/09/2026 (`9e8d359`); `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
 | E05-V01 | CONCLUÍDO | Contrato e persistência append-only de faixa de voz | PR #46 mergeado em 28/09/2026 (`17338dd`); `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
 | E05-V02 | CONCLUÍDO | Porta de provider e orquestração de geração de voz | PR #47 mergeado em 28/09/2026 (`f66e5c`); `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
-| E06-M01 | PR ABERTO | Contrato e persistência append-only de ativo de mídia | PR #48 aberto; `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
+| E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
+| E06-M02 | PR ABERTO | Porta de provider e orquestração de aquisição de mídia | PR #49 aberto; `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -508,7 +509,50 @@ disponibilidade, latência, cobrança e limites dependerão do provider; retenç
 ciclo de vida do objeto externo permanecem para tópico próprio; não existe
 atomicidade distribuída com um futuro provider; SQLite mantém escritor único.
 Os arquivos locais não rastreados em `data/` e `templates/` foram preservados e
-não integram a entrega. O PR #48 foi aberto em 28/09/2026.
+não integram a entrega. O PR #48 foi mergeado em 28/09/2026 (`2689359`).
+
+### E06-M02 — MediaProvider Port and Acquisition Orchestration
+
+O contrato `media-acquisition-request/1.0.0` exige identidade lógica, roteiro e
+hash exatos, posição explícita da direção visual, tipo lógico desejado, instante
+e hash reproduzível. O request expressa requisitos, sem formato, dimensões,
+duração ou outras propriedades reais inferidas. O serviço valida a solicitação
+antes de qualquer leitura, recupera somente o `Script` indicado e revalida hash,
+direção, `PipelineRun`, projeto, versão e `ProjectSnapshot` persistidos.
+
+A porta `MediaProvider` recebe somente identidade pública de correlação, tipo
+lógico desejado, direção visual explícita e contexto público derivado do
+snapshot. Credenciais, configuração privada, referências de Research, mídia de
+referência, caminhos, localização de storage e tipos de SDK permanecem fora da
+entrada. Não existe adapter nem chamada externa real neste tópico.
+
+Toda saída do provider é tratada como não confiável. Tipo lógico, formato,
+dimensões reais, duração real quando aplicável, hash SHA-256, referência lógica
+opaca, origem, identidade pública do provider e direitos são revalidados antes
+de formar e revalidar o `MediaAsset`. Bytes, base64, URLs, caminhos, storage
+físico, segredos e payload bruto são recusados. Direito comercial precisa ser
+explicitamente verdadeiro e compatível com a origem; ausência de evidência não
+concede permissão implícita. `provider` é obrigatório apenas para origens que
+dependem dele.
+
+A migração 019 persiste a identidade concluída e seu vínculo imutável com o
+ativo. Solicitação, `MediaAsset` e linhagem são gravados na mesma transação;
+falhas revertem os três. Retry terminal recupera o ativo persistido sem chamar
+novamente a porta, enquanto identidade divergente falha antes do provider. A
+garantia é local: uma futura chamada externa não terá atomicidade distribuída
+nem promessa de `exactly-once`. Nenhum evento de custo é criado sem custo real.
+
+Evidência: 15 testes novos cobrem contrato, hash, isolamento arquitetural,
+entrada pública, requisitos desejados, saída não confiável, propriedades reais,
+direitos, dados sensíveis, derivação, chamada única, retry, conflito,
+sanitização, persistência, rollback e migração. A suíte completa registrou 323
+testes aprovados e um smoke real ignorado por padrão; `git diff --check` também
+passou. Riscos residuais: qualidade visual dependerá do futuro adapter e do
+Quality Control; disponibilidade, latência, cobrança, limites e retenção
+dependerão do provider; uma falha local após futura chamada externa poderá
+exigir reconciliação; SQLite mantém escritor único. Os arquivos locais não
+rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
+O PR #49 foi aberto em 28/09/2026.
 
 ## Primeiro épico — E01 Project Configuration
 
