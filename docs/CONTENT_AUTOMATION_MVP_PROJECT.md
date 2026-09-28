@@ -1,13 +1,24 @@
-# MKTauto — máquina Portfolio-First de ativos digitais
+# MKTauto — operação interna de aquisição e receita por conteúdo
 
 ## 1. Visão
 
-O MKTauto permite que um operador individual crie e opere canais próprios como
-um portfólio de ativos digitais. A finalidade de curto e médio prazo é descobrir,
-produzir, medir, monetizar e escalar ativos lucrativos de forma sistemática. O
-produto evolui da máquina de conteúdo para experimentos de portfólio, economia
-do conteúdo e otimização; uma plataforma comercial só pode ser considerada após
-o modelo funcionar internamente.
+O MKTauto é um sistema modular de automação de conteúdo, distribuição e
+experimentação comercial. No horizonte atual, o operador individual usa o
+próprio sistema para descobrir nichos, produzir conteúdo, adquirir audiência,
+promover ofertas digitais, medir conversões e gerar receita. O objetivo inicial
+é ganhar dinheiro **usando** o MKTauto, não vendendo o MKTauto.
+
+A evolução possui duas fases deliberadamente separadas:
+
+```text
+Operator Revenue → validação operacional e econômica → Platform Revenue
+```
+
+Em `Operator Revenue`, o sistema funciona como ferramenta interna e acumula
+evidência sobre conteúdo, canal, oferta, campanha, conversão, receita e custo.
+Somente depois de o modelo funcionar internamente, `Platform Revenue` poderá
+considerar SaaS, produto para terceiros, automação como serviço, assinatura,
+créditos ou marketplace. Essa segunda fase não integra o MVP comercial atual.
 
 ```text
 criar canais próprios → testar nichos e formatos → medir desempenho e receita
@@ -27,6 +38,49 @@ projeto e um conteúdo por vez no MVP.
 Não há promessa de viralidade ou renda. IA sugere e produz artefatos; regras de
 estado, direitos, validação, aprovação, idempotência e efeitos externos permanecem
 determinísticas.
+
+### Objetivo do MVP
+
+O MVP deve primeiro permitir ao operador pesquisar, produzir, aprovar, distribuir
+e aprender com conteúdo original. A camada comercial entra progressivamente,
+depois de produção e publicação suficientes para sustentar evidência real. Ela
+não altera retroativamente `Project`, `ProjectSnapshot`, `PipelineRun`,
+`Research`, ideias, roteiro, linhagem ou custos já implementados.
+
+O primeiro modelo operacional evita escala prematura:
+
+```text
+1 nicho → 1 canal → 1 a 3 ofertas → 30 a 50 conteúdos
+→ mensuração → aprendizado → otimização
+```
+
+### Estratégia comercial
+
+A progressão de monetização do operador é:
+
+```text
+afiliados de produtos digitais
+→ ADRs, automações, agentes e ferramentas digitais de terceiros
+→ produtos digitais simples próprios
+→ SaaS futuro, somente após validação interna
+```
+
+### Loop de crescimento
+
+```text
+Research → Idea → Script → Content → Publish → Audience → Traffic
+→ Offer → Conversion → Revenue → Analytics → novo Research
+```
+
+Esse fluxo é um ciclo de aprendizado: dados comerciais complementam, sem
+substituir, critérios editoriais, direitos, aprovação humana e qualidade.
+
+### Métricas comerciais futuras
+
+Quando a cadeia de evidência existir, a arquitetura deverá suportar views, CTR,
+leads, conversão, receita, comissão, receita por vídeo, oferta, campanha e canal,
+além de custo, lucro, margem, ROAS e RPM. Estas são metas futuras; esta decisão
+não cria contratos, persistência, integrações ou dashboards.
 
 ## 2. Princípios invariantes
 
@@ -146,10 +200,16 @@ Scheduler
         ↓ PublishingJob
 Social Publisher
         ↓ Publication
-Analytics
-        ↓ MetricSnapshot
-Revenue Analytics
-        ↓ RevenueSnapshot / economics view
+Offer and Campaign
+        ↓ Offer / Campaign / commercial CTA
+Attribution and Traffic
+        ↓ Attribution / TrafficEvent
+Conversion
+        ↓ ConversionEvent
+Revenue Ledger
+        ↓ RevenueEvent
+Commercial Analytics
+        ↓ MetricSnapshot / RevenueSnapshot / economics view
 Optimization Engine
         ↓ OptimizationRecommendation
 Portfolio Allocation
@@ -160,9 +220,14 @@ Cada módulo consome contratos validados e produz artefatos rastreáveis. Falha
 obrigatória interrompe o item; nenhum módulo corrige silenciosamente a saída de
 outro ou pula uma aprovação.
 
-`Revenue Analytics` relacionará conteúdo a receita e custo; `Portfolio
-Allocation` recomendará onde investir capacidade. Ambos permanecem futuros e
-não autorizam decisão ou efeito automático.
+`Campaign` deverá relacionar pelo menos `Project/Channel`, `Offer`,
+`Content/Artifact`, CTA e `Attribution`; não será um agrupador genérico. O
+`Revenue Ledger` será separado do `CostLedger`, preferencialmente append-only e
+auditável. Contratos técnicos para esses conceitos serão definidos apenas em
+tópicos futuros. `Commercial Analytics` relacionará a cadeia comercial a receita
+e custo, enquanto `Portfolio Allocation` recomendará onde investir capacidade.
+Essas capacidades permanecem futuras e não autorizam decisão ou efeito
+automático.
 
 ## 7. Entidades principais
 
@@ -183,16 +248,22 @@ não autorizam decisão ou efeito automático.
 | `Publication` | ID externo, estado reconciliado e versão publicada. |
 | `MetricSnapshot` | Métricas opcionais observadas em um instante. |
 | `Experiment` | Hipótese, janela, variantes, evidências e decisão registrada. |
-| `RevenueSource` | Tipo de monetização e referência externa sem credencial. |
+| `Offer` | Oferta promovida, tipo, plataforma, destino, nicho e condições comerciais sem credencial. |
+| `Campaign` | Relação rastreável entre `Project/Channel`, `Offer`, `Content/Artifact`, CTA e atribuição. |
+| `CTA` | Objetivo comercial e destino vinculados ao conteúdo sem alterar o CTA editorial de `Script`. |
+| `Attribution` | Identificadores e regras versionadas que explicam a origem de tráfego e conversão. |
+| `TrafficEvent` | Clique ou visita observada com campanha, origem e instante conhecidos. |
+| `ConversionEvent` | Lead ou venda observada, ligada à evidência de atribuição disponível. |
 | `RevenueEvent` | Receita atribuída, moeda, origem e instante imutáveis. |
+| `RevenueLedger` | Histórico auditável de receita comercial, separado do `CostLedger`. |
 | `RevenueSnapshot` | Visão histórica de receita em uma janela de análise. |
 | `CostLedger` | Eventos de custo atribuíveis a run, conteúdo ou projeto. |
 | `OptimizationDecision` | Recomendação explicável, evidências e aplicação. |
 | `AllocationRecommendation` | Distribuição sugerida de orçamento/capacidade. |
 
-As entidades de portfólio e economia são contratos futuros, não tabelas ou
-serviços autorizados por esta decisão. Artefatos iniciais incluem
-`TopicCandidate`, `IdeaCandidate`, `IdeaScore`,
+As entidades comerciais, de portfólio e economia são conceitos futuros, não
+contratos, tabelas ou serviços autorizados por esta decisão. Artefatos iniciais
+incluem `TopicCandidate`, `IdeaCandidate`, `IdeaScore`,
 `Script`, `VoiceTrack`, `MediaAsset`, `VideoRender`, `SubtitleTrack`,
 `ContentMetadata` e `ValidationReport`.
 
@@ -312,43 +383,49 @@ Entrada: projeto, nicho, tema e referências estratégicas. Saída: ideia, rotei
 narração, mídia autorizada ou gerada, vídeo vertical, legenda, hashtags e preview.
 Não publica automaticamente.
 
-### Stage 2 — Portfolio / MVPs 2 a 6
+### Stage 2 — Distribution
 
-Publica com aprovação humana, automatiza a rotina, coleta analytics e Revenue
-Analytics e opera pequenos experimentos de canais. O objetivo é descobrir nichos
-e formatos promissores, não aumentar volume sem evidência.
+Publica por adapter oficial com aprovação humana, mantém exportação manual como
+fallback e automatiza a rotina somente após estabilizar o efeito externo.
 
-### Stage 3 — Scale / MVPs 7 e 8
+### Stage 3 — Operator Revenue
 
-Otimização explicável e alocação recomendam onde ampliar produção. O objetivo é
-crescer audiência e lucro sem crescimento proporcional de trabalho manual.
+Introduz, nesta ordem causal, oferta e campanha, atribuição e tráfego, conversão,
+receita e analytics comercial. O objetivo é provar que o operador consegue gerar
+e explicar receita com uma operação simples, começando por afiliados. Pequenos
+experimentos comparam conteúdo, canal e oferta somente quando a cadeia de
+evidência estiver disponível.
 
-### Stage 4 — Monetization
+### Stage 4 — Optimization and Scale
 
-Refina múltiplas fontes — anúncios de plataforma, afiliados, produto próprio,
-leads, patrocínio, serviço, assinatura e outras — para maximizar lucro por ativo.
-Esta capacidade começa a ser medida antes desta etapa, mas só é otimizada quando
-há histórico confiável.
+Otimização explicável e alocação recomendam onde ampliar produção. A operação
+pode evoluir de afiliados para ferramentas de terceiros e produtos digitais
+próprios, buscando crescer receita e lucro sem crescimento proporcional de
+trabalho manual. Nenhuma recomendação altera conteúdo, oferta ou orçamento
+automaticamente.
 
 ### Stage 5 — Platform / futuro
 
-Somente após validação interna, capacidades podem virar SaaS, API, marketplace,
-templates ou intelligence platform. Multi-tenant, billing de clientes e demandas
-comerciais não influenciam o MVP atual.
+Somente após a validação de `Operator Revenue`, capacidades podem gerar
+`Platform Revenue` como SaaS, API, automação como serviço, assinatura, créditos,
+marketplace, templates ou intelligence platform. Multi-tenant, billing de
+clientes e demandas comerciais da plataforma não influenciam o MVP atual.
 
 ### Sequência incremental dos MVPs
 
 1. Content Machine;
 2. Publishing;
 3. Daily Automation;
-4. Analytics;
-5. Revenue Analytics;
-6. Portfolio Experiments;
-7. Optimization Engine;
-8. Portfolio Allocation.
+4. Offer and Campaign;
+5. Attribution and Traffic;
+6. Conversion and Revenue Ledger;
+7. Commercial Analytics and Experiments;
+8. Optimization and Portfolio Allocation.
 
-Infraestrutura de IA própria e plataforma comercial permanecem futuras. Cada MVP
-é decomposto em tópicos menores no roadmap.
+Essa sequência preserva a ordem produção → publicação → oferta/campanha →
+atribuição/tráfego → conversão → receita → analytics → otimização.
+Infraestrutura de IA própria e Platform Revenue permanecem futuras. Cada MVP é
+decomposto em tópicos menores no roadmap.
 
 ## 12. Dados e economia como ativos
 
@@ -359,6 +436,10 @@ prioritária é:
 ```text
 ProjectSnapshot → PipelineRun → Artifact lineage → CostLedger
 ```
+
+Depois de conteúdo e publicação, a cadeia comercial adiciona, sem substituir
+essa fundação: Offer/Campaign → Attribution/Traffic → Conversion → RevenueLedger
+→ Commercial Analytics.
 
 O histórico deve relacionar, quando existirem, `ProjectSnapshot`,
 `ContentVersion`, `GenerationConfiguration`, provider/modelo de IA, tipo da
@@ -392,17 +473,21 @@ ideias e roteiros, classificação, previsão de performance e otimização, em 
 um único LLM geral. As fases B, C e D permanecem futuras.
 
 `Content Economics` deverá responder quanto custou criar e distribuir, quanto
-gerou e quanto lucrou. `PipelineRun` permanece a unidade técnica; `CostLedger` e
-`RevenueEvent` preservam eventos imutáveis e permitem agregação por conteúdo,
-canal, projeto, nicho e portfólio.
+gerou e quanto lucrou. `PipelineRun` permanece a unidade técnica. O futuro
+`RevenueLedger` deve preservar eventos de receita preferencialmente append-only,
+com origem, moeda, instante e evidência auditáveis, e permanecer estritamente
+separado do `CostLedger` já existente. A união ocorre somente em visões de
+economia capazes de agregar conteúdo, oferta, campanha, canal, projeto, nicho e
+portfólio; esta decisão não define seu contrato técnico.
 
 ## 13. Capacidades por horizonte
 
 | Horizonte | Capacidade |
 |---|---|
-| Atual | Configuração versionada, Research, shortlist e rastreabilidade por projeto. |
-| Próximo | Persistir `PipelineRun`, linhagem de artefatos e custos desde o primeiro conteúdo. |
-| Futuro | Publicação, analytics, receitas, experimentos, otimização, alocação e providers próprios. |
+| Atual | Configuração versionada, Research, ideias, roteiro, `PipelineRun`, linhagem e custos. |
+| Próximo | Completar produção, mídia, preview, aprovação humana e publicação oficial. |
+| Futuro — Operator Revenue | Oferta/campanha, atribuição/tráfego, conversão, receita, analytics comercial, experimentos e otimização. |
+| Futuro — Platform Revenue | SaaS, produto para terceiros, billing, marketplace e outras receitas da própria plataforma. |
 
 Não implementar antecipadamente SaaS, multi-tenant, billing, marketplace,
 infraestrutura GPU, modelos próprios, ML avançado, alocação, previsão, scaling ou
@@ -450,11 +535,13 @@ visíveis ao operador e integram a decisão registrada.
 | Duplicação de publicação | Chave idempotente, reconciliação e estado persistido. |
 | Métricas incompatíveis | Modelo opcional por plataforma e snapshots brutos sanitizados. |
 | Vazamento de segredo ou mídia | Storage privado, menor privilégio e Git restrito. |
+| Campanha virar agrupador genérico | Exigir relação explícita entre projeto/canal, oferta, conteúdo/artefato, CTA e atribuição. |
+| Receita sem cadeia de evidência | Implementar atribuição, tráfego e conversão antes de analytics comercial. |
 | Otimização opaca ou nociva | Recomendações explicáveis, auditáveis e reversíveis. |
 | Receita ou custo atribuídos incorretamente | Eventos imutáveis, moeda/origem explícitas e regras de atribuição versionadas. |
 | Escala baseada em amostra fraca | Políticas configuráveis, qualidade de dados visível e validação humana. |
 
-## 18. Decisões V06, V07 e V08
+## 18. Decisões V06, V07, V08 e V09
 
 V06 substitui a prioridade futura de transformar mídia-fonte pela prioridade de
 gerar conteúdo original a partir de uma configuração de projeto/canal. Ela não
@@ -476,3 +563,11 @@ V08 define OpenAI como provider inicial multimodelo, com seleção determinísti
 por tarefa, complexidade e criticidade atrás de `AIModelRouter`. Ela preserva
 Ports and Adapters, prepara telemetria comparável e evolução para modelos
 especializados próprios, sem implementar provider, router ou experimento.
+
+V09 torna `Operator Revenue` a prioridade comercial: primeiro o operador usa a
+cadeia de conteúdo e distribuição para promover ofertas e gerar receita
+rastreável; somente a validação dessa operação permite considerar Platform
+Revenue. A decisão introduz conceitos futuros de oferta, campanha, CTA
+comercial, atribuição, tráfego, conversão e ledger de receita, sem alterar
+contratos implementados. O CTA de `script/1.0.0` continua sendo artefato
+editorial; qualquer vínculo comercial será externo e definido por tópico próprio.
