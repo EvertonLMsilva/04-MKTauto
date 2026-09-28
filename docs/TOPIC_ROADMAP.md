@@ -28,7 +28,7 @@
 | V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
-| FND02 | EM EXECUÇÃO | Linhagem comum de artefatos | Contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only implementados; 194 testes passaram. |
+| FND02 | PR ABERTO | Linhagem comum de artefatos | PR #38 aberto; contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -173,6 +173,7 @@ Riscos residuais deliberados: SQLite mantém escritor único; a configuração
 pública usa uma política conservadora de sanitização e continua exigindo que o
 chamador envie somente valores públicos; artefatos legados de Research não são
 registrados retroativamente. Custos permanecem para FND03.
+O PR #38 foi aberto em 28/09/2026.
 
 ### FND03 — eventos de custo e CostLedger
 
