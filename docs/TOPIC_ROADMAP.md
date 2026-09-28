@@ -35,7 +35,7 @@
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 | V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
-| AI03 | EM EXECUÇÃO | Telemetria de custo e uso das chamadas de IA | `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 266 testes passaram e 1 smoke opt-in foi ignorado. |
+| AI03 | PR ABERTO | Telemetria de custo e uso das chamadas de IA | PR #45 aberto; `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 266 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -400,6 +400,8 @@ rollback conjunto. Riscos residuais: a disponibilidade dos contadores depende do
 provider; sem pricing versionado não há custo calculado; SQLite mantém escritor
 único; não existe atomicidade distribuída entre a cobrança externa e uma falha
 local anterior ao commit.
+O PR #45 foi aberto em 28/09/2026. Os arquivos locais não rastreados em `data/`
+e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
