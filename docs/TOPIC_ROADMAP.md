@@ -27,7 +27,8 @@
 | E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
 | V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
-| FND01 | PR ABERTO | Persistência de PipelineRun | PR #37 aberto; contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
+| FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
+| FND02 | EM EXECUÇÃO | Linhagem comum de artefatos | Contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only implementados; 194 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -145,6 +146,34 @@ O PR #37 foi aberto em 28/09/2026.
   for usada;
 - não armazenar segredo, prompt privado ou mídia no Git.
 
+Implementação FND02: `artifact-lineage/1.0.0` registra identidade, tipo, versão,
+`PipelineRun`, projeto e versão exatos, identidade lógica opcional, instante e
+hash SHA-256 explícito. Entradas externas são preservadas por ID e hash; entradas
+internas exigem artefato anterior no mesmo escopo da run, projeto e versão, com
+hash correspondente e posição determinística. Retry idêntico recupera o registro
+existente, enquanto reutilização incompatível do ID ou da identidade lógica falha
+antes de qualquer escrita.
+
+A migração 009 é aditiva e cria o registro comum e suas entradas ordenadas, com
+chaves estrangeiras, índices e triggers que impedem atualização ou remoção. O
+repositório transacional revalida o contrato e o hash de identidade na leitura.
+Metadados opcionais de geração exigem provider, modelo, tarefa, versão de prompt
+e hash de configuração como conjunto; a configuração pública é normalizada e
+rejeita chaves ou valores potencialmente sensíveis. Nenhum prompt, mídia ou
+payload de conteúdo é persistido. Os artefatos atuais de Research permanecem
+inalterados e podem alimentar novos registros como entradas externas por seus IDs
+e hashes, sem migração retroativa nem mudança funcional no fluxo.
+
+Evidência: 14 testes focados e a suíte completa de 194 testes passaram em
+28/09/2026, junto de `git diff --check`. A cobertura inclui contrato, criação,
+recuperação, listagem determinística, retry, conflitos, escopo da `PipelineRun`,
+referências internas, hashes, metadados de IA, sanitização, rollback, leitura
+revalidada, imutabilidade, migração 008→009 e ausência de efeitos em Research.
+Riscos residuais deliberados: SQLite mantém escritor único; a configuração
+pública usa uma política conservadora de sanitização e continua exigindo que o
+chamador envie somente valores públicos; artefatos legados de Research não são
+registrados retroativamente. Custos permanecem para FND03.
+
 ### FND03 — eventos de custo e CostLedger
 
 - registrar eventos append-only por run, conteúdo e projeto;
@@ -158,7 +187,7 @@ fundação não antecipa limiares financeiros nem entidades de SaaS.
 ## Habilitação incremental de IA
 
 Estes tópicos entregam capacidades pequenas quando houver consumidor real; não
-formam um grande épico antecipado e não alteram a prioridade atual de `FND01`.
+formam um grande épico antecipado e não alteram a prioridade atual de `FND02`.
 
 ### AI01 — OpenAI Adapter
 
