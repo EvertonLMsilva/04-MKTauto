@@ -29,7 +29,7 @@
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
-| FND03 | IMPLEMENTADO | Eventos de custo e CostLedger | Contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram; PR a abrir. |
+| FND03 | PR ABERTO | Eventos de custo e CostLedger | PR #39 aberto; contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -208,7 +208,7 @@ vínculo e conteúdo do artefato, moedas separadas, ausência de custo,
 imutabilidade, rollback, erro sanitizado, leitura revalidada e migração
 009→010. Riscos residuais deliberados: SQLite mantém escritor único; correções
 financeiras, câmbio e validação contra uma tabela externa de códigos monetários
-permanecem fora deste corte. PR a abrir.
+permanecem fora deste corte. O PR #39 foi aberto em 28/09/2026.
 
 ## Habilitação incremental de IA
 
