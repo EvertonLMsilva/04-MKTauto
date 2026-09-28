@@ -39,7 +39,8 @@
 | E05-V01 | CONCLUÍDO | Contrato e persistência append-only de faixa de voz | PR #46 mergeado em 28/09/2026 (`17338dd`); `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
 | E05-V02 | CONCLUÍDO | Porta de provider e orquestração de geração de voz | PR #47 mergeado em 28/09/2026 (`f66e5c`); `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
-| E06-M02 | PR ABERTO | Porta de provider e orquestração de aquisição de mídia | PR #49 aberto; `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
+| E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C01 | EM EXECUÇÃO | Contrato e persistência append-only de plano de composição | `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -552,7 +553,47 @@ Quality Control; disponibilidade, latência, cobrança, limites e retenção
 dependerão do provider; uma falha local após futura chamada externa poderá
 exigir reconciliação; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
-O PR #49 foi aberto em 28/09/2026.
+O PR #49 foi mergeado em 28/09/2026 (`d427594`).
+
+### E07-C01 — CompositionPlan Contract and Persistence
+
+O contrato `composition-plan/1.0.0` registra identidade e revisão,
+`PipelineRun`, projeto e versão, roteiro e hash exatos, `VoiceTrack` e hash
+exatos, proporção de saída derivada do `ProjectSnapshot`, duração total e
+segmentos ordenados. A unidade temporal canônica é `MILLISECOND`, com valores
+inteiros, e `continuityMode: CONTIGUOUS` torna explícito que esta versão não
+admite intervalos intencionais: a timeline começa em zero, não possui lacunas
+ou sobreposição e termina exatamente na duração real da faixa de voz.
+
+Cada segmento preserva posição, direção visual, `MediaAsset` e hash exatos,
+além dos instantes inicial e final. O plano cobre todas as direções do roteiro
+em ordem e usa cada ativo uma única vez, eliminando duplicações ambíguas. Antes
+da persistência, roteiro, voz, ativos, run, projeto, versão e snapshot são
+recuperados por identidade explícita e revalidados. Direitos comerciais,
+origem, escopo, hashes e propriedades técnicas dos ativos são conferidos no
+momento da criação; vídeos precisam ter duração real suficiente para o trecho,
+enquanto imagens apenas ocupam o intervalo declarado.
+
+A migração 020 é aditiva e não cria planos retroativos. Plano, segmentos e
+linhagem `artifact-lineage/1.0.0` são gravados na mesma transação. A linhagem
+registra roteiro, voz e ativos na ordem dos segmentos. Retry idêntico não
+duplica dados; reutilização divergente de ID ou revisão falha sem alterar o
+histórico; correções criam nova revisão append-only. A leitura revalida
+contrato, colunas, segmentos, relações e linhagem. Nenhuma consulta a `latest`,
+renderização, byte, localização física, transformação ou dependência de
+composer, FFmpeg, SDK ou fornecedor foi introduzida.
+
+Evidência: 18 testes novos cobrem contrato, unidade temporal, continuidade,
+ordem, cobertura visual, hashes, escopo, snapshot, direitos, duração real,
+isolamento arquitetural, idempotência, conflito, revisão, imutabilidade,
+linhagem, rollback e migração. A suíte completa registrou 341 testes aprovados
+e um smoke real ignorado por padrão; `git diff --check` também passou. Riscos
+residuais: enquadramento, transformação e sincronização semântica permanecem
+para o composer; legendas e alinhamento por palavra continuam futuros; qualidade
+visual dependerá de render e Quality Control; referências opacas dependem do
+ciclo de vida do storage externo; SQLite mantém escritor único. Os arquivos
+locais não rastreados em `data/` e `templates/` foram preservados e não integram
+a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
