@@ -19,19 +19,22 @@ test("migra banco vazio e reabre o catálogo sem alteração destrutiva", () => 
     assert.equal(second.getRun("run-2026-09-26").candidates.length, 1);
     second.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 9);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 9);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 10);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 10);
     raw.close();
   });
 });
 
-test("migrações 007 a 009 preservam catálogo e análises existentes da versão 6", () => {
+test("migrações 007 a 010 preservam catálogo e análises existentes da versão 6", () => {
   withDatabase((path) => {
     const first = new TrendCatalogStore(path);
     first.recordOperation(batch({ key: "before-reference-migration", at: DAY_ONE, views: 100 }));
     first.close();
     const raw = new DatabaseSync(path);
     raw.exec(`
+      DROP TRIGGER cost_events_no_update;
+      DROP TRIGGER cost_events_no_delete;
+      DROP TABLE cost_events;
       DROP TRIGGER artifact_lineage_no_update;
       DROP TRIGGER artifact_lineage_no_delete;
       DROP TRIGGER artifact_lineage_inputs_no_update;
@@ -46,6 +49,7 @@ test("migrações 007 a 009 preservam catálogo e análises existentes da versã
       DROP TABLE pipeline_run_transitions;
       DROP TABLE pipeline_runs;
       DROP TABLE research_shortlists;
+      DELETE FROM schema_migrations WHERE version = 10;
       DELETE FROM schema_migrations WHERE version = 9;
       DELETE FROM schema_migrations WHERE version = 8;
       DELETE FROM schema_migrations WHERE version = 7;
@@ -228,7 +232,7 @@ test("falha por chave estrangeira reverte toda a transação com código estáve
 test("rejeita versão futura do catálogo com código estável", () => {
   withDatabase((path) => {
     const raw = new DatabaseSync(path);
-    raw.exec("PRAGMA user_version = 10");
+    raw.exec("PRAGMA user_version = 11");
     raw.close();
     assert.throws(
       () => new TrendCatalogStore(path),
