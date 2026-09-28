@@ -25,7 +25,7 @@
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
 | E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
 | E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
-| V07 | EM EXECUÇÃO | Estratégia documental Portfolio-First | Visão, pipeline e roadmap em atualização; sem alteração de código. |
+| V07 | PR ABERTO | Estratégia documental Portfolio-First | PR #35 aberto; visão, pipeline e roadmap atualizados sem alteração de código; 169 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -36,6 +36,11 @@ V06 foi validado com a suíte completa de 87 testes, `git diff --check` e revis�
 do diff restrito a `README.md` e aos três documentos arquiteturais equivalentes.
 O PR #24 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
 foram preservados e não integram a entrega.
+
+V07 foi validado com a suíte completa de 169 testes, `git diff --check`, blocos
+Markdown balanceados e revisão do diff restrito aos quatro documentos aprovados.
+O PR #35 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
+continuam preservados e não integram a entrega.
 
 ## Corte aprovado em V07
 
