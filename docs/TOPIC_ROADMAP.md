@@ -28,7 +28,8 @@
 | V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
-| FND02 | PR ABERTO | Linhagem comum de artefatos | PR #38 aberto; contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
+| FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
+| FND03 | IMPLEMENTADO | Eventos de custo e CostLedger | Contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram; PR a abrir. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -185,10 +186,34 @@ O PR #38 foi aberto em 28/09/2026.
 Revenue Analytics e regras de experimento permanecem nos épicos E13 e E14. Esta
 fundação não antecipa limiares financeiros nem entidades de SaaS.
 
+Implementação FND03: `cost-event/1.0.0` registra identidade, categoria,
+`PipelineRun`, projeto e versão exatos, conteúdo e artefato opcionais, valor
+decimal exato, moeda, ocorrência, origem, regra de atribuição versionada e
+instante de registro. Retry idêntico recupera o evento; reutilização incompatível
+do ID falha antes da escrita. O vínculo opcional ao artefato exige linhagem
+persistida no mesmo escopo e identidade de conteúdo coerente quando informada.
+
+`cost-ledger/1.0.0` deriva exclusivamente os eventos da run, ordenados por
+ocorrência e ID, e soma decimais exatamente em totais separados por moeda. Uma
+run sem eventos mantém totais ausentes, sem inventar custo zero. A migração 010
+é aditiva, aplica chaves estrangeiras, índices e triggers de imutabilidade; os
+repositórios de projeto e catálogo compartilham a mesma cadeia de migrações.
+Nenhuma conversão cambial, receita, ROI, orçamento, telemetria de IA ou efeito
+externo foi introduzido.
+
+Evidência: 12 testes focados da FND03 e a suíte completa de 206 testes passaram
+em 28/09/2026. A cobertura inclui contrato, categorias, precisão decimal,
+criação, recuperação, ordem determinística, retry, conflitos, escopo da run,
+vínculo e conteúdo do artefato, moedas separadas, ausência de custo,
+imutabilidade, rollback, erro sanitizado, leitura revalidada e migração
+009→010. Riscos residuais deliberados: SQLite mantém escritor único; correções
+financeiras, câmbio e validação contra uma tabela externa de códigos monetários
+permanecem fora deste corte. PR a abrir.
+
 ## Habilitação incremental de IA
 
 Estes tópicos entregam capacidades pequenas quando houver consumidor real; não
-formam um grande épico antecipado e não alteram a prioridade atual de `FND02`.
+formam um grande épico antecipado e não alteram a prioridade atual de `FND03`.
 
 ### AI01 — OpenAI Adapter
 
