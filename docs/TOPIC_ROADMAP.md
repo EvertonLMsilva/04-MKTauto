@@ -36,7 +36,7 @@
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 | V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
 | AI03 | CONCLUÍDO | Telemetria de custo e uso das chamadas de IA | PR #45 mergeado em 28/09/2026 (`9e8d359`); `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
-| E05-V01 | PR A ABRIR | Contrato e persistência append-only de faixa de voz | `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
+| E05-V01 | PR ABERTO | Contrato e persistência append-only de faixa de voz | PR #46 aberto; `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -433,6 +433,8 @@ um smoke real ignorado por padrão; `git diff --check` também passou. Riscos
 residuais: validação semântica do áudio dependerá do adapter e do Quality
 Control; retenção do objeto externo permanece futura; custos só serão registrados
 quando houver chamada real; SQLite mantém escritor único.
+O PR #46 foi aberto em 28/09/2026. Os arquivos locais não rastreados em `data/`
+e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
