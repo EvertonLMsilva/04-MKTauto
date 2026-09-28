@@ -33,7 +33,8 @@
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
-| AI01 | PR ABERTO | Primeira geração de roteiro por OpenAIAdapter | PR #43 aberto; `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
+| AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
+| V09 | PR ABERTO | Estratégia documental Operator Revenue | PR #44 aberto; visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -81,6 +82,39 @@ Defaults:
 - histórico de métricas, custos, receitas e decisões nunca é sobrescrito;
 - exportação manual preservada como fallback.
 
+## Corte estratégico aprovado em V09
+
+V09 mantém a arquitetura Portfolio-First, mas define `Operator Revenue` como
+prioridade comercial. O MKTauto será usado internamente para produzir e publicar
+conteúdo, adquirir audiência, promover ofertas e gerar receita rastreável. O
+objetivo imediato é ganhar dinheiro usando o sistema; `Platform Revenue` — SaaS,
+produto para terceiros, assinatura, créditos ou marketplace — depende de
+validação operacional e permanece fora do MVP comercial atual.
+
+O modelo inicial evita escala prematura: um nicho, um canal, uma a três ofertas e
+30 a 50 conteúdos antes de ampliar a operação. A evolução comercial respeita a
+cadeia causal:
+
+```text
+produção → publicação → oferta/campanha → atribuição/tráfego
+→ conversão → receita → analytics → otimização
+```
+
+Os contratos implementados continuam válidos. Em particular, o CTA opcional de
+`script/1.0.0` permanece editorial; `Offer`, `Campaign`, CTA comercial,
+`Attribution`, `Conversion` e `RevenueLedger` serão conceitos desacoplados,
+introduzidos apenas por seus tópicos futuros.
+
+Após E09, E10 Daily Automation e E11 Offer & Campaign podem evoluir em
+paralelo. E11 depende de E09, não de E10, para que a validação inicial de
+`Operator Revenue` possa começar com publicação disponível mesmo antes de a
+rotina diária estar automatizada.
+
+V09 foi validado com `git diff --check`, presença dos termos e da ordem causal
+aprovados, blocos Markdown balanceados e revisão do diff restrito aos dois
+documentos previstos. O PR #44 foi aberto em 28/09/2026. Os arquivos locais não
+rastreados em `data/` foram preservados e não integram a entrega.
+
 ## Épicos
 
 | Épico | Capacidade | Resultado mínimo | Dependência principal |
@@ -96,18 +130,81 @@ Defaults:
 | E08 | Quality Control & Approval | Versão validada recebe aprovação humana sobre hash exato. | E07 |
 | E09 | Social Publishing | Um adapter oficial publica sem duplicação e com fallback. | E08 + gate da rede |
 | E10 | Scheduler & Daily Automation | Jobs persistidos executam agenda configurável com retry. | E09 |
-| E11 | Analytics | Snapshots opcionais reconciliam métricas oficiais. | E09 |
-| E12 | Optimization Engine | Regras explicáveis recomendam melhorias com base no histórico. | E11 + volume mínimo |
-| E13 | Revenue Analytics | Receita, custo, lucro e ROI possuem histórico atribuível. | E11 + FND |
-| E14 | Portfolio Experiments | Hipóteses recebem avaliação `KILL`, `CONTINUE` ou `SCALE`. | E13 + política aprovada |
-| E15 | Portfolio Allocation | Capacidade recebe recomendação explicável de distribuição. | E12 + E14 |
+| E11 | Offer & Campaign | Ofertas e campanhas comerciais relacionam operação, conteúdo e destino. | E09 |
+| E12 | Attribution & Traffic | Identificadores e eventos explicam a origem de impressões, views e cliques. | E11 + E09 |
+| E13 | Conversion | Leads e vendas preservam a evidência de atribuição disponível. | E12 |
+| E14 | Revenue Ledger | Receita comercial possui histórico auditável separado dos custos. | E13 + FND03 |
+| E15 | Commercial Analytics | Receita, comissão, custo, lucro, margem, ROAS e RPM são comparáveis. | E14 + volume mínimo |
+| E16 | Portfolio Experiments | Hipóteses recebem avaliação `KILL`, `CONTINUE` ou `SCALE`. | E15 + política aprovada |
+| E17 | Optimization Engine | Regras explicáveis recomendam melhorias com base no histórico. | E15 + volume mínimo |
+| E18 | Portfolio Allocation | Capacidade recebe recomendação explicável de distribuição. | E16 + E17 |
 
-Ordem dos produtos: MVP 1 Content Machine; MVP 2 Publishing; MVP 3 Daily
-Automation; MVP 4 Analytics; MVP 5 Revenue Analytics; MVP 6 Portfolio
-Experiments; MVP 7 Optimization Engine; MVP 8 Portfolio Allocation. O MVP 1
-termina em E08 com preview aprovado e inclui as fundações FND conforme forem
-consumidas. Modelos próprios/infraestrutura de IA e plataforma comercial/SaaS
-permanecem futuros.
+Ordem dos produtos: MVP 1 Content Machine; MVP 2 Publishing; após Publishing,
+MVP 3 Daily Automation e MVP 4 Offer & Campaign seguem como frentes paralelas;
+MVP 5 Attribution & Traffic; MVP 6 Conversion & Revenue Ledger; MVP 7 Commercial
+Analytics & Experiments; MVP 8 Optimization & Portfolio Allocation. O MVP 4
+depende de E09, não da conclusão do MVP 3. O MVP 1 termina em E08 com preview
+aprovado e inclui as fundações FND conforme forem consumidas. Modelos próprios,
+infraestrutura de IA e Platform Revenue permanecem futuros.
+
+## Camada comercial futura — E11 a E15
+
+Esta decomposição registra responsabilidades e dependências, sem aprovar
+contratos técnicos ou implementação antecipada:
+
+### E11-O01 — Offer Domain
+
+- representar oferta afiliada, ADR, automação, agente, ferramenta ou produto
+  digital próprio;
+- manter identidade explícita, tipo, plataforma, destino, nicho, moeda, condições
+  comerciais e status, sem credenciais;
+- preservar versionamento e histórico quando mudanças afetarem atribuição.
+
+### E11-C01 — Campaign Domain
+
+- relacionar obrigatoriamente pelo menos `Project/Channel`, `Offer`,
+  `Content/Artifact` e CTA comercial;
+- representar o conjunto comercial testado, não um agrupador genérico;
+- depender de oferta e conteúdo/publicação identificáveis;
+- admitir estratégia ou configuração de tracking opcional e futura, sem exigir
+  `Attribution` efetiva, que será criada somente em E12.
+
+### E12-A01 — CTA e Attribution
+
+- modelar objetivo comercial, destino e identificadores como UTM, affiliate ID,
+  campaign ID ou tracking ID quando suportados;
+- manter o CTA comercial externo ao contrato editorial `script/1.0.0`;
+- criar a `Attribution` efetiva a partir da campanha e da evidência de tracking
+  disponível, sem retroagir como dependência de E11;
+- versionar regras de atribuição e tornar limitações de cobertura explícitas.
+
+### E12-T01 — Traffic Tracking
+
+- registrar origem, impressões, views e cliques por campanha quando disponíveis;
+- consumir APIs e webhooks oficiais, com importação manual como fallback;
+- preservar ausência de métrica como ausência, nunca como zero inventado.
+
+### E13-C01 — Conversion
+
+- registrar leads e vendas com identidade, instante, origem e evidência de
+  atribuição disponíveis;
+- suportar reconciliação e idempotência sem duplicar conversões;
+- não inferir causalidade quando a plataforma não fornecer evidência suficiente.
+
+### E14-R01 — Revenue Ledger
+
+- registrar receita e comissão comerciais em componente separado do `CostLedger`;
+- preferir histórico append-only e auditável, com moeda, origem, instante e
+  vínculo à conversão conhecidos;
+- definir o contrato técnico somente neste tópico futuro, sem reutilizar eventos
+  de custo como eventos de receita.
+
+### E15-A01 — Commercial Analytics
+
+- calcular receita por vídeo, oferta, campanha, canal e nicho somente após existir
+  a cadeia de evidência anterior;
+- combinar receita e custo apenas em visões para lucro, margem, ROAS e RPM;
+- evidenciar cobertura parcial, janela, moeda e regra de atribuição.
 
 ## Fundação prioritária — FND Execution Economics
 
@@ -187,8 +284,9 @@ O PR #38 foi aberto em 28/09/2026.
 - manter moeda, instante, origem e regra de atribuição explícitos;
 - não criar receita, ROI, orçamento ou decisão automática.
 
-Revenue Analytics e regras de experimento permanecem nos épicos E13 e E14. Esta
-fundação não antecipa limiares financeiros nem entidades de SaaS.
+Revenue Ledger, Commercial Analytics e regras de experimento permanecem nos
+épicos E14, E15 e E16. Esta fundação não antecipa receita, limiares financeiros
+nem entidades de Platform Revenue.
 
 Implementação FND03: `cost-event/1.0.0` registra identidade, categoria,
 `PipelineRun`, projeto e versão exatos, conteúdo e artefato opcionais, valor
@@ -628,9 +726,14 @@ commit `d78309f`.
 5. provar a porta OpenAI e uma porta de mídia antes do composer;
 6. encerrar MVP 1 com preview, QC e aprovação humana;
 7. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
-8. adicionar agenda, analytics, Revenue Analytics e experimentos somente após o
-   efeito anterior estar estável e medido;
-9. otimizar e recomendar alocação apenas com histórico suficiente.
+8. após E09, evoluir E10 Daily Automation e E11 Offer & Campaign em paralelo;
+   oferta e campanha vinculam projeto/canal, oferta, conteúdo/artefato e CTA
+   comercial, sem exigir `Attribution` efetiva;
+9. criar atribuição efetiva e registrar tráfego em E12 antes de conversão, e
+   conversão antes de receita em ledger próprio;
+10. construir analytics comercial e experimentos somente sobre essa cadeia de
+    evidência;
+11. otimizar e recomendar alocação apenas com histórico suficiente.
 
 ## Gates
 
@@ -641,9 +744,10 @@ commit `d78309f`.
 | G3 — produção | Preview vertical passa por direitos, formato e QC. |
 | G4 — publicação | Conta de teste, permissões e API oficial funcionam com fallback. |
 | G5 — operação pública | Direitos, privacidade, retenção, takedown e segurança são revisados. |
-| G6 — otimização | Há volume e qualidade de métricas suficientes para comparação útil. |
-| G7 — economia | Custos e receitas possuem origem, moeda, janela e atribuição reproduzíveis. |
-| G8 — escala | Política versionada, amostra suficiente e validação humana sustentam a recomendação. |
+| G6 — atribuição | Campanha, CTA, origem e limitações de tracking são reproduzíveis. |
+| G7 — economia | Conversões e receitas possuem origem, moeda, janela e atribuição auditáveis. |
+| G8 — analytics | Há cobertura e volume suficientes para comparação comercial útil. |
+| G9 — escala | Política versionada, amostra suficiente e validação humana sustentam otimização e alocação. |
 
 ## Fronteiras e decisões
 
@@ -652,10 +756,13 @@ commit `d78309f`.
 - `ProjectSnapshot` é imutável dentro de uma run;
 - `PipelineRun` permanece a unidade técnica; portfólio é contexto econômico;
 - artefatos são versionados e ligados por IDs/hashes;
-- custos, receitas, métricas e decisões são históricos append-only;
+- custos permanecem no `CostLedger`; o futuro `RevenueLedger` será separado,
+  preferencialmente append-only e auditável;
+- receitas, métricas e decisões preservam histórico sem sobrescrita destrutiva;
 - nenhuma agregação converte moedas sem fonte, taxa e instante registrados;
 - edição posterior invalida validação e aprovação;
 - scheduler persiste antes de publicar e reconcilia antes de retry;
+- Daily Automation e Offer & Campaign podem avançar em paralelo após E09;
 - métrica indisponível permanece ausente, nunca vira zero;
 - recomendação de otimização não altera regra ou conteúdo automaticamente;
 - IA não publica, mata canal, muda regra financeira nem aloca capacidade;
@@ -674,6 +781,12 @@ commit `d78309f`.
 - artefatos audiovisuais exigirão storage privado e política de retenção;
 - retries mal projetados podem duplicar efeitos externos;
 - métricas disponíveis não são equivalentes entre plataformas;
+- identificadores e janelas de atribuição variam por oferta e plataforma;
+- campanhas genéricas podem romper o vínculo causal entre conteúdo e receita;
+- tratar `Attribution` efetiva como requisito de E11 recriaria dependência circular
+  com E12; somente configuração futura de tracking pode ser opcional em campanha;
+- condicionar E11 à conclusão de E10 pode atrasar desnecessariamente a validação
+  de `Operator Revenue` após Publishing;
 - otimização prematura pode reforçar ruído com pouca amostra.
 - atribuição incompleta pode distorcer lucro e ROI;
 - experimentos com pouca amostra podem levar a `KILL` ou `SCALE` incorretos;
