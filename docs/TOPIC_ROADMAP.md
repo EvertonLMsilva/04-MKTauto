@@ -30,7 +30,8 @@
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
-| E03-I01 | PR ABERTO | Contratos de ideias e scoring determinístico | PR #40 aberto; `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
+| E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
+| E03-I02 | EM EXECUÇÃO | Seleção humana de ideia append-only | `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional implementadas; PR a abrir. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -518,6 +519,39 @@ Riscos residuais: o scoring lexical inicial é deliberadamente simples e exige
 calibração futura com histórico; SQLite mantém escritor único. Seleção humana,
 geração automática e roteiro permanecem fora deste tópico. O PR #40 foi aberto
 em 28/09/2026.
+
+### E03-I02 — seleção humana de ideia append-only
+
+- selecionar explicitamente uma ideia e seu score persistidos, sem inferir a
+  escolha pelo ranking;
+- registrar ator humano, justificativa pública opcional, hashes exatos, revisão
+  e decisão anterior substituída;
+- recuperar por ID explícito e listar por run ou lote em ordem determinística;
+- preservar retry idempotente, histórico append-only e rollback transacional;
+- integrar a seleção à linhagem sem IA, custo, roteiro ou efeito externo.
+
+Implementação E03-I02: `idea-selection/1.0.0` registra somente a decisão
+`SELECTED`, exige ator `HUMAN` e vincula a decisão à `PipelineRun`, projeto,
+versão, lote, `IdeaCandidate` e `IdeaScore` exatos. O hash do conteúdo é
+reproduzível e a leitura revalida contrato, colunas persistidas e hashes dos
+artefatos selecionados. A API recupera seleção apenas por ID explícito; não há
+consulta implícita à seleção mais recente.
+
+A migração 012 adiciona decisões sem criar registros retroativos. Cada lote tem
+uma única decisão por revisão; correções usam nova identidade e revisão,
+referenciam a predecessora imediata e mantêm todas as decisões recuperáveis.
+Triggers impedem update e delete. A seleção e sua linhagem, com ideia e score
+como entradas internas, são gravadas na mesma transação. Nenhum evento de custo
+é criado.
+
+Evidência: 11 testes focados e a suíte completa de 232 testes passaram em
+28/09/2026, junto de `git diff --check`. A cobertura inclui contrato, ator
+humano, seleção sem relação com o maior score, escopo e hashes, ausências,
+retry, conflitos, revisão e substituição, ordem, rollback, imutabilidade,
+migração aditiva, revalidação na leitura, linhagem e ausência de custo.
+Riscos residuais: SQLite mantém escritor único; a interface de operação será
+introduzida apenas por tópico próprio. Roteiro, aprovação final e publicação
+permanecem fora deste tópico.
 
 ## Ordem após E01
 
