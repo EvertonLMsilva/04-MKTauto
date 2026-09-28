@@ -35,7 +35,8 @@
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 | V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
-| AI03 | PR ABERTO | Telemetria de custo e uso das chamadas de IA | PR #45 aberto; `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
+| AI03 | CONCLUÍDO | Telemetria de custo e uso das chamadas de IA | PR #45 mergeado em 28/09/2026 (`9e8d359`); `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 267 testes passaram e 1 smoke opt-in foi ignorado. |
+| E05-V01 | PR ABERTO | Contrato e persistência append-only de faixa de voz | PR #46 aberto; `voice-track/1.0.0`, migração SQLite 016, direitos explícitos, storage opaco e linhagem transacional com o roteiro exato; 279 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -404,7 +405,35 @@ rollback conjunto. Riscos residuais: a disponibilidade dos contadores depende do
 provider; sem pricing versionado não há custo calculado; SQLite mantém escritor
 único; não existe atomicidade distribuída entre a cobrança externa e uma falha
 local anterior ao commit.
-O PR #45 foi aberto em 28/09/2026. Os arquivos locais não rastreados em `data/`
+O PR #45 foi mergeado em 28/09/2026 (`9e8d359`). Os arquivos locais não rastreados em `data/`
+e `templates/` foram preservados e não integram a entrega.
+
+### E05-V01 — VoiceTrack Contract and Persistence
+
+O contrato `voice-track/1.0.0` registra identidade e revisão, `PipelineRun`,
+projeto e versão, roteiro e hash exatos, idioma e estilo de voz derivados do
+`ProjectSnapshot`, duração em milissegundos, formato em allowlist, hash SHA-256
+do áudio e referência opaca de storage. Origem, provider quando exigido e base
+de direitos são explícitos; uso comercial precisa estar autorizado. Origens de
+clonagem, imitação ou personificação não pertencem à allowlist, e direitos
+ausentes, desconhecidos ou incompatíveis impedem o registro.
+
+A migração 016 preserva faixas e correções append-only. A faixa e sua linhagem
+`artifact-lineage/1.0.0` são gravadas na mesma transação, com o roteiro como
+entrada interna e, nas correções, a faixa anterior como segunda entrada. Retry
+idêntico não duplica registros; reutilização divergente de ID ou revisão falha
+antes da escrita; nenhuma consulta implícita a `latest` foi adicionada. Bytes de
+áudio, URL assinada, caminho privado, token e credencial não entram no contrato,
+banco, fixtures ou Git.
+
+Evidência: 12 testes focados cobrem contrato, isolamento de provider, direitos,
+storage, escopo, hash do roteiro, idempotência, conflito, revisão, imutabilidade,
+linhagem, rollback e migração. A suíte completa registra 279 testes aprovados e
+um smoke real ignorado por padrão; `git diff --check` também passou. Riscos
+residuais: validação semântica do áudio dependerá do adapter e do Quality
+Control; retenção do objeto externo permanece futura; custos só serão registrados
+quando houver chamada real; SQLite mantém escritor único.
+O PR #46 foi aberto em 28/09/2026. Os arquivos locais não rastreados em `data/`
 e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
