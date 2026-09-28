@@ -12,13 +12,15 @@ import {
   validateTrendSnapshot,
 } from "./domain/contracts.js";
 import { calculateHistoricalVelocity } from "./domain/velocity.js";
+import { createResearchArtifact } from "./domain/research-artifact-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 4;
+const CATALOG_SCHEMA_VERSION = 5;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
   [3, ["003_project_catalog", readFileSync(new URL("./db/migrations/003_project_catalog.sql", import.meta.url), "utf8")]],
   [4, ["004_project_commands", readFileSync(new URL("./db/migrations/004_project_commands.sql", import.meta.url), "utf8")]],
+  [5, ["005_research_daily", readFileSync(new URL("./db/migrations/005_research_daily.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {
@@ -175,6 +177,117 @@ export class TrendCatalogStore {
       previous_position, current_position FROM candidate_appearances
       WHERE candidate_id = ? ORDER BY observed_at, trend_run_id`).all(candidateId).map(toAppearance);
     return { candidate, snapshots, appearances, velocities: calculateHistoricalVelocity(snapshots) };
+  }
+
+  getCandidateResearchHistory(candidateId, { runId, projectId, projectVersion }) {
+    const candidate = this.#candidate(candidateId);
+    if (!candidate) return null;
+    const snapshots = rowsAsPayload(this.db.prepare(`SELECT ts.payload_json
+      FROM trend_snapshots ts
+      LEFT JOIN research_daily_runs rr ON rr.trend_run_id = ts.trend_run_id
+      WHERE ts.candidate_id = ?
+        AND (ts.trend_run_id = ? OR (rr.project_id = ? AND rr.project_version = ?))
+      ORDER BY ts.captured_at, ts.id`).all(candidateId, runId, projectId, projectVersion));
+    return { candidate, snapshots, appearances: [], velocities: calculateHistoricalVelocity(snapshots) };
+  }
+
+  beginResearchDailyRun(value) {
+    const priorByPipeline = this.db.prepare("SELECT * FROM research_daily_runs WHERE pipeline_run_id = ?").get(value.pipelineRunId);
+    if (priorByPipeline) {
+      const same = priorByPipeline.id === value.id
+        && priorByPipeline.project_id === value.projectId
+        && priorByPipeline.project_version === value.projectVersion
+        && priorByPipeline.logical_date === value.logicalDate;
+      if (!same) throw new TrendStoreError("PIPELINE_RUN_ID_REUSED", "pipelineRunId já pertence a outra execução");
+      if (priorByPipeline.research_input_hash !== value.researchInputHash
+        || priorByPipeline.config_hash !== value.configHash
+        || priorByPipeline.timezone !== value.timezone) {
+        throw new TrendStoreError("RESEARCH_RUN_CONFLICT", "retry diverge da entrada original");
+      }
+      return this.getResearchDailyRun(value.id);
+    }
+    this.db.prepare(`INSERT INTO research_daily_runs
+      (id, pipeline_run_id, project_id, project_version, logical_date, timezone,
+       research_input_hash, config_hash, config_json, source_plan_json, state, started_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?)`)
+      .run(value.id, value.pipelineRunId, value.projectId, value.projectVersion,
+        value.logicalDate, value.timezone, value.researchInputHash, value.configHash,
+        json(value.config), json(value.sourcePlan), value.startedAt);
+    return this.getResearchDailyRun(value.id);
+  }
+
+  getResearchDailyRun(id) {
+    const row = this.db.prepare("SELECT * FROM research_daily_runs WHERE id = ?").get(id);
+    if (!row) return null;
+    const value = researchDailyRunFromRow(row);
+    value.steps = this.db.prepare("SELECT * FROM research_daily_steps WHERE research_daily_run_id = ? ORDER BY step_key")
+      .all(id).map(dailyStepFromRow);
+    return value;
+  }
+
+  getResearchDailyStep(researchDailyRunId, stepKey) {
+    const row = this.db.prepare("SELECT * FROM research_daily_steps WHERE research_daily_run_id = ? AND step_key = ?")
+      .get(researchDailyRunId, stepKey);
+    return row ? dailyStepFromRow(row) : null;
+  }
+
+  startResearchDailyStep({ researchDailyRunId, stepKey, startedAt }) {
+    this.db.prepare(`INSERT INTO research_daily_steps (research_daily_run_id, step_key, state, started_at)
+      VALUES (?, ?, 'RUNNING', ?) ON CONFLICT(research_daily_run_id, step_key) DO NOTHING`)
+      .run(researchDailyRunId, stepKey, startedAt);
+    return this.getResearchDailyStep(researchDailyRunId, stepKey);
+  }
+
+  finishResearchDailyStep({ researchDailyRunId, stepKey, state, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "SKIPPED", "FAILED"].includes(state)) throw new TrendStoreError("INVALID_DAILY_STEP_STATE", state);
+    this.db.prepare(`UPDATE research_daily_steps SET state = ?, completed_at = ?, duration_ms = ?, result_json = ?
+      WHERE research_daily_run_id = ? AND step_key = ?`)
+      .run(state, completedAt, durationMs, json(result), researchDailyRunId, stepKey);
+    return this.getResearchDailyStep(researchDailyRunId, stepKey);
+  }
+
+  finishResearchDailyRun({ id, state, trendRunId, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED"].includes(state)) throw new TrendStoreError("INVALID_DAILY_RUN_STATE", state);
+    this.db.prepare(`UPDATE research_daily_runs SET state = ?, trend_run_id = ?, completed_at = ?, duration_ms = ?, result_json = ?
+      WHERE id = ?`).run(state, trendRunId ?? null, completedAt, durationMs, json(result), id);
+    return this.getResearchDailyRun(id);
+  }
+
+  recordResearchArtifact({ researchDailyRunId, artifact }) {
+    const validated = createResearchArtifact(artifact);
+    const daily = this.getResearchDailyRun(researchDailyRunId);
+    if (!daily) throw new TrendStoreError("RESEARCH_RUN_NOT_FOUND", "execução de Research inexistente");
+    for (const field of ["pipelineRunId", "projectId", "projectVersion"]) {
+      if (validated[field] !== daily[field]) {
+        throw new TrendStoreError("RESEARCH_ARTIFACT_REFERENCE_MISMATCH", `artifact.${field} diverge da execução`);
+      }
+    }
+    if (!this.getRun(validated.trendRunId)) {
+      throw new TrendStoreError("RESEARCH_ARTIFACT_REFERENCE_MISMATCH", "artifact.trendRunId não existe no catálogo");
+    }
+    const { contentHash, ...content } = validated;
+    if (stableHash(content) !== contentHash) {
+      throw new TrendStoreError("RESEARCH_ARTIFACT_HASH_MISMATCH", "contentHash diverge do conteúdo");
+    }
+    const prior = this.db.prepare("SELECT payload_json FROM research_artifacts WHERE research_daily_run_id = ?").get(researchDailyRunId);
+    if (prior) {
+      const stored = JSON.parse(prior.payload_json);
+      if (stableHash(stored) !== stableHash(validated)) throw new TrendStoreError("RESEARCH_ARTIFACT_CONFLICT", "artefato já persistido com outro conteúdo");
+      return stored;
+    }
+    this.db.prepare(`INSERT INTO research_artifacts
+      (artifact_id, schema_version, research_daily_run_id, trend_run_id, pipeline_run_id,
+       project_id, project_version, content_hash, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(validated.artifactId, validated.schemaVersion, researchDailyRunId, validated.trendRunId,
+        validated.pipelineRunId, validated.projectId, validated.projectVersion,
+        validated.contentHash, json(validated), validated.createdAt);
+    return validated;
+  }
+
+  getResearchArtifact(researchDailyRunId) {
+    const row = this.db.prepare("SELECT payload_json FROM research_artifacts WHERE research_daily_run_id = ?").get(researchDailyRunId);
+    return row ? JSON.parse(row.payload_json) : null;
   }
 
   beginDailyRun({ id, logicalDate, timezone, configHash, config, startedAt }) {
@@ -433,6 +546,18 @@ function dailyRunFromRow(row) {
   return {
     id: row.id, logicalDate: row.logical_date, timezone: row.timezone,
     configHash: row.config_hash, config: JSON.parse(row.config_json), state: row.state,
+    trendRunId: row.trend_run_id ?? undefined, startedAt: row.started_at,
+    completedAt: row.completed_at ?? undefined, durationMs: row.duration_ms ?? undefined,
+    result: row.result_json ? JSON.parse(row.result_json) : undefined,
+  };
+}
+
+function researchDailyRunFromRow(row) {
+  return {
+    id: row.id, pipelineRunId: row.pipeline_run_id, projectId: row.project_id,
+    projectVersion: row.project_version, logicalDate: row.logical_date, timezone: row.timezone,
+    researchInputHash: row.research_input_hash, configHash: row.config_hash,
+    config: JSON.parse(row.config_json), sourcePlan: JSON.parse(row.source_plan_json), state: row.state,
     trendRunId: row.trend_run_id ?? undefined, startedAt: row.started_at,
     completedAt: row.completed_at ?? undefined, durationMs: row.duration_ms ?? undefined,
     result: row.result_json ? JSON.parse(row.result_json) : undefined,

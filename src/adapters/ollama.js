@@ -21,7 +21,7 @@ const topicProposalSchema = {
         additionalProperties: false,
         required: [
           "label", "niche", "subtheme", "likelyAudience", "narrativePattern",
-          "ptBrLocalization", "candidateRefs", "explanation",
+          "localization", "candidateRefs", "explanation",
         ],
         properties: {
           label: { type: "string" },
@@ -29,7 +29,7 @@ const topicProposalSchema = {
           subtheme: { type: "string" },
           likelyAudience: { type: "string" },
           narrativePattern: { type: "string" },
-          ptBrLocalization: { type: "string" },
+          localization: { type: "string" },
           candidateRefs: { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", pattern: "^C[0-9]{3}$" } },
           explanation: { type: "string" },
         },
@@ -41,6 +41,8 @@ const topicProposalSchema = {
 export async function proposeTopicClusters({
   model,
   evidence,
+  language = "pt-BR",
+  context,
   validationFeedback,
   baseUrl = DEFAULT_BASE_URL,
   numCtx = 16_384,
@@ -75,8 +77,9 @@ export async function proposeTopicClusters({
         messages: [{
           role: "user",
           content: [
-            "Agrupe em pt-BR somente as evidências fornecidas por assunto editorial equivalente.",
-            "Rotule nicho, subtema, público provável, padrão narrativo e possibilidade de localização para o Brasil.",
+            `Agrupe no idioma BCP 47 ${language} somente as evidências fornecidas por assunto editorial equivalente.`,
+            "Rotule nicho, subtema, público provável, padrão narrativo e localização para o contexto editorial informado.",
+            `Contexto editorial: ${JSON.stringify(context ?? {})}.`,
             "Use exclusivamente candidateRef existentes na entrada, preservando cada alias exatamente.",
             "Inclua cada candidateRef fornecido exatamente uma vez em um único cluster.",
             `Aliases obrigatórios: ${requiredReferences.join(", ")}.`,

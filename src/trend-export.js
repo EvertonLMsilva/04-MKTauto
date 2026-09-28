@@ -1,5 +1,5 @@
 import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve, sep } from "node:path";
 import { serializePublicTrendCatalog } from "./domain/contracts.js";
 
 const CSV_HEADERS = Object.freeze([
@@ -8,9 +8,14 @@ const CSV_HEADERS = Object.freeze([
   "velocity", "engagement", "recency", "recurrence", "explanation",
 ]);
 
-export function exportDailyCatalog({ store, logicalDate, outputRoot = "data/trends", fileSystem = defaultFileSystem() }) {
-  const daily = store.getDailyRun(logicalDate);
-  if (!daily?.trendRunId) throw new Error(`Execução diária não consolidada: ${logicalDate}`);
+export function exportDailyCatalog({ store, researchDailyRunId, logicalDate, outputRoot = "data/trends", fileSystem = defaultFileSystem() }) {
+  const researchMode = typeof researchDailyRunId === "string";
+  const daily = researchMode ? store.getResearchDailyRun(researchDailyRunId) : store.getDailyRun(logicalDate);
+  if (!daily?.trendRunId) throw new Error(researchMode
+    ? `Execução de Research não consolidada: ${researchDailyRunId}`
+    : `Execução diária não consolidada: ${logicalDate}`);
+  const artifact = researchMode ? store.getResearchArtifact(researchDailyRunId) : undefined;
+  if (researchMode && !artifact) throw new Error(`Artefato de Research não encontrado: ${researchDailyRunId}`);
   const stored = store.getRun(daily.trendRunId);
   if (!stored) throw new Error(`Catálogo não encontrado: ${daily.trendRunId}`);
   const publicCatalog = serializePublicTrendCatalog(stored);
@@ -26,6 +31,7 @@ export function exportDailyCatalog({ store, logicalDate, outputRoot = "data/tren
   });
   const output = {
     ...publicCatalog,
+    ...(artifact ? { researchArtifact: artifact } : {}),
     dailyRun: {
       logicalDate: daily.logicalDate,
       timezone: daily.timezone,
@@ -36,10 +42,12 @@ export function exportDailyCatalog({ store, logicalDate, outputRoot = "data/tren
       gaps: daily.result?.gaps ?? [],
     },
     ranking,
-    selectionAudit: store.getCandidateStateEvents(logicalDate),
+    selectionAudit: researchMode ? [] : store.getCandidateStateEvents(logicalDate),
   };
 
-  const target = resolve(outputRoot, logicalDate);
+  const target = researchMode
+    ? resolve(outputRoot, daily.projectId, `v${daily.projectVersion}`, daily.logicalDate, daily.pipelineRunId)
+    : resolve(outputRoot, daily.logicalDate);
   const temporary = `${target}.tmp-${process.pid}`;
   const backup = `${target}.bak-${process.pid}`;
   assertScopedDirectory(target, resolve(outputRoot));
@@ -180,7 +188,8 @@ function escapeAttribute(value) {
 }
 
 function assertScopedDirectory(target, root) {
-  if (dirname(target) !== root || target === root) throw new Error("Diretório de exportação fora do escopo diário");
+  const normalizedRoot = root.endsWith(sep) ? root : `${root}${sep}`;
+  if (!target.startsWith(normalizedRoot) || target === root) throw new Error("Diretório de exportação fora do escopo diário");
 }
 
 function defaultFileSystem() {

@@ -74,7 +74,7 @@ function threadVideo(id) {
 function cluster(id, label) {
   return {
     schemaVersion: RADAR_CONTRACT_VERSION, id, label, niche: "entretenimento", subtheme: "subtema",
-    likelyAudience: "público", narrativePattern: "padrão", ptBrLocalization: "localização",
+    likelyAudience: "público", narrativePattern: "padrão", localization: "localização",
     candidateIds: ["seed-candidate"], evidenceSnapshotIds: ["seed-snapshot"], createdBy: "OLLAMA", explanation: "evidência",
   };
 }

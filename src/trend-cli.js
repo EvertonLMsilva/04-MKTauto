@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 import { TrendCatalogStore } from "./trend-store.js";
 import { exportDailyCatalog } from "./trend-export.js";
 import { runDailyTrendCatalog } from "./trend-daily.js";
@@ -14,7 +15,9 @@ const store = new TrendCatalogStore(databasePath);
 try {
   let result;
   if (command === "daily") {
-    result = await runDailyTrendCatalog({ store, logicalDate, timezone, outputRoot, config: configFromEnvironment(process.env) });
+    if (!options.input) throw new Error("--input com ResearchInput JSON é obrigatório");
+    const researchInput = JSON.parse(readFileSync(resolve(options.input), "utf8"));
+    result = await runDailyTrendCatalog({ store, researchInput, outputRoot, config: configFromEnvironment(process.env) });
   } else if (command === "shortlist" || command === "select") {
     const candidateId = options.candidate;
     if (!candidateId) throw new Error("--candidate é obrigatório");
@@ -27,7 +30,9 @@ try {
     });
     result = exportDailyCatalog({ store, logicalDate, outputRoot });
   } else if (command === "export") {
-    result = exportDailyCatalog({ store, logicalDate, outputRoot });
+    result = options["research-run"]
+      ? exportDailyCatalog({ store, researchDailyRunId: options["research-run"], outputRoot })
+      : exportDailyCatalog({ store, logicalDate, outputRoot });
   } else {
     throw new Error("Comando inválido. Use daily, shortlist, select ou export.");
   }

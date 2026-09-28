@@ -21,7 +21,8 @@
 | PC03 | CONCLUÍDO | Serviço de aplicação idempotente de Project/Channel | PR #28 mergeado em 27/09/2026 (`1b08a2c`); comandos explícitos, retries reproduzíveis e 117 testes passaram. |
 | PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
 | PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
-| E02-R01 | PR ABERTO | Entrada versionada de Research | PR #31 aberto; contrato `research-input/1.0.0`, 14 testes focados e suíte completa de 139 testes passando. |
+| E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
+| E02-R02 | PR ABERTO | Radar diário vinculado ao projeto | PR #32 aberto; `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -217,10 +218,34 @@ permanecem fora do contrato e nenhum campo `latest` é aceito.
 
 Evidência: 14 testes focados de handoff e entrada de Research e a suíte completa
 de 139 testes passaram em 27/09/2026, junto de `git diff --check`; o PR #31 foi
-aberto. O risco residual é deliberado: identidade diária multi-projeto,
+mergeado. O risco residual é deliberado: identidade diária multi-projeto,
 propagação aos artefatos do radar e uso editorial de nicho, público, idioma e
 redes pertencem ao E02-R02; análise de handles estratégicos permanece em tópico
 posterior separado.
+
+### E02-R02 — radar diário vinculado ao projeto
+
+- consumir exclusivamente `ResearchInput`, sem consultar projeto, versão ou `latest`;
+- isolar execução e exportação por pipeline, projeto, versão e data;
+- usar contexto editorial, timezone, idioma e redes do snapshot;
+- produzir o primeiro artefato versionado de Research ligado ao `TrendRun`.
+
+Implementação E02-R02: `research-topic-catalog/1.0.0` propaga `pipelineRunId`,
+`projectId` e `projectVersion` ao catálogo diário, enquanto `trend-contracts/1.2.0`
+remove o idioma fixo do clustering. A migração 005 é aditiva e mantém
+`daily_runs` como legado; retries idênticos reutilizam etapas e conflitos de
+identidade falham antes de consultar providers. Redes configuradas definem o
+plano de fontes, YouTube pode aparecer como dependência técnica explícita e
+redes sem adapter são registradas sem chamada externa. `TREND_REGIONS` permanece
+operacional e independente do idioma.
+
+Evidência: 145 testes passaram em 27/09/2026, incluindo dois projetos na mesma
+data, isolamento do histórico por projeto e versão, retry, conflito de pipeline,
+idioma dinâmico, dependência técnica, provider não suportado, exportação e
+direitos; `git diff --check` passou. Risco residual: shortlist e seleção ainda
+pertencem ao catálogo legado global e exigem corte próprio antes de uso por
+projeto. Análise ativa de `references[]` continua fora deste tópico. O PR #32
+foi aberto em 27/09/2026.
 
 ## Ordem após E01
 
