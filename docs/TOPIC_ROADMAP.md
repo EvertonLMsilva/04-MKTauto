@@ -32,7 +32,7 @@
 | FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
-| E04-S01 | EM EXECUÇÃO | Contrato e persistência append-only de roteiro | `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional implementados; 243 testes passaram. |
+| E04-S01 | PR ABERTO | Contrato e persistência append-only de roteiro | PR #42 aberto; `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -586,7 +586,7 @@ hashes, compatibilidade com o projeto, retry, conflitos, revisão, rollback,
 migração aditiva, revalidação na leitura, linhagem e ausência de custo. Riscos
 residuais: SQLite mantém escritor único; originalidade substantiva e qualidade
 editorial continuam sujeitas à revisão humana; geração por IA e aprovação final
-permanecem em tópicos posteriores.
+permanecem em tópicos posteriores. O PR #42 foi aberto em 28/09/2026.
 
 ## Ordem após E01
 
