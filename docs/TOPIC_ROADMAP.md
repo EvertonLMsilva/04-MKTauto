@@ -34,7 +34,8 @@
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
 | AI01 | CONCLUÍDO | Primeira geração de roteiro por OpenAIAdapter | PR #43 mergeado em 28/09/2026 (`a7065c9`); `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
-| V09 | PR ABERTO | Estratégia documental Operator Revenue | PR #44 aberto; visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
+| V09 | CONCLUÍDO | Estratégia documental Operator Revenue | PR #44 mergeado em 28/09/2026 (`ab74e3c`); visão, cadeia comercial e roadmap atualizados sem alteração de código ou contratos existentes. |
+| AI03 | EM EXECUÇÃO | Telemetria de custo e uso das chamadas de IA | `ai-call-telemetry/1.0.0`, migração SQLite 015, correlação transacional com roteiro, linhagem e `CostLedger`; 266 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -112,8 +113,9 @@ rotina diária estar automatizada.
 
 V09 foi validado com `git diff --check`, presença dos termos e da ordem causal
 aprovados, blocos Markdown balanceados e revisão do diff restrito aos dois
-documentos previstos. O PR #44 foi aberto em 28/09/2026. Os arquivos locais não
-rastreados em `data/` foram preservados e não integram a entrega.
+documentos previstos. O PR #44 foi mergeado em 28/09/2026 (`ab74e3c`). Os
+arquivos locais não rastreados em `data/` foram preservados e não integram a
+entrega.
 
 ## Épicos
 
@@ -373,6 +375,31 @@ somente quando existir a primeira tarefa complexa consumidora.
 
 Aceite: uma chamada pode ser atribuída e comparada sem antecipar receita, ROI,
 A/B testing ou decisão automática. Depende de AI01, FND02 e FND03.
+
+Implementação AI03: `ai-call-telemetry/1.0.0` registra uma identidade lógica
+explícita ligada à solicitação, `PipelineRun`, projeto e versão, provider, modelo,
+tarefa e prompt versionado. Uso, custo, moeda, latência, fallback e hashes são
+campos conhecidos ou `null`; ausência nunca é convertida em zero. A migração 015
+mantém os registros imutáveis e correlaciona opcionalmente o roteiro produzido e
+um único evento `ai_cost` do `CostLedger`.
+
+O `OpenAIAdapter` mede instante, latência e hashes SHA-256 e extrai somente os
+tokens informados pela Responses API, inclusive cache quando presente. Como a
+resposta não fornece preço monetário, custo, moeda e origem de preço permanecem
+ausentes. O serviço aceita custo positivo somente com moeda e origem explícitas;
+nesse caso cria o evento de custo com identidade determinística. Sucesso persiste
+roteiro, linhagem, telemetria e custo na mesma transação. Falha observada persiste
+telemetria sanitizada e eventual custo sem criar artefato. Retry da mesma
+identidade terminal recupera sucesso ou falha sem nova chamada nem duplicação.
+
+Evidência: os testes focados de contrato, adapter, aplicação, persistência e
+migração passaram, assim como a suíte completa de 266 testes; o smoke real
+opt-in permaneceu ignorado. A cobertura inclui uso parcial, pricing ausente,
+custo conhecido, correlação, sucesso, falha, retry, conflito, imutabilidade e
+rollback conjunto. Riscos residuais: a disponibilidade dos contadores depende do
+provider; sem pricing versionado não há custo calculado; SQLite mantém escritor
+único; não existe atomicidade distribuída entre a cobrança externa e uma falha
+local anterior ao commit.
 
 ## Primeiro épico — E01 Project Configuration
 

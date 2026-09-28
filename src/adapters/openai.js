@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { validateScriptGenerationOutput } from "../domain/script-generation-contracts.js";
 import { SCRIPT_GENERATION_POLICY } from "../script-generation-policy.js";
 import { OpenAIAdapterError } from "./openai-error.js";
@@ -7,15 +8,22 @@ const RESPONSES_URL = "https://api.openai.com/v1/responses";
 export { OpenAIAdapterError } from "./openai-error.js";
 
 export class OpenAIAdapter {
-  constructor(config, { fetchImpl = fetch } = {}) {
+  constructor(config, { fetchImpl = fetch, now = Date.now } = {}) {
     validateConfig(config);
     if (typeof fetchImpl !== "function") throw new TypeError("fetch obrigatório");
+    if (typeof now !== "function") throw new TypeError("relógio obrigatório");
     this.config = config;
     this.fetchImpl = fetchImpl;
+    this.now = now;
   }
 
   async generate(input, { signal } = {}) {
     if (signal?.aborted) throw failure("PROVIDER_CANCELLED", "signal", "operação cancelada");
+    const startedAt = this.now();
+    const requestPayload = requestBody(input, this.config);
+    const inputHash = sha256(JSON.stringify(requestPayload));
+    let usage = emptyUsage();
+    let outputHash = null;
     const controller = new AbortController();
     let timedOut = false;
     const timeout = setTimeout(() => { timedOut = true; controller.abort(); }, this.config.timeoutMs);
@@ -25,14 +33,16 @@ export class OpenAIAdapter {
       const response = await this.fetchImpl(RESPONSES_URL, {
         method: "POST",
         headers: { authorization: `Bearer ${this.config.apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(requestBody(input, this.config)),
+        body: JSON.stringify(requestPayload),
         signal: controller.signal,
       });
       if (!response.ok) throw httpFailure(response.status);
-      let body;
-      try { body = await response.json(); }
+      let providerBody;
+      try { providerBody = await response.json(); }
       catch (caught) { throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta estruturada inválida", { cause: caught }); }
-      const text = outputText(body);
+      usage = providerUsage(providerBody);
+      const text = outputText(providerBody);
+      outputHash = sha256(text);
       let parsed;
       try { parsed = JSON.parse(text); }
       catch (caught) { throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta estruturada inválida", { cause: caught }); }
@@ -41,24 +51,81 @@ export class OpenAIAdapter {
       catch (caught) { throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta estruturada inválida", { cause: caught }); }
       return deepFreeze({
         output,
-        generationMetadata: {
-          provider: "openai", model: this.config.model,
-          taskType: SCRIPT_GENERATION_POLICY.taskType,
-          promptVersion: SCRIPT_GENERATION_POLICY.version,
-          configurationHash: this.config.configurationHash,
-          publicConfiguration: this.config.publicConfiguration,
-        },
+        generationMetadata: generationMetadata(this.config),
+        telemetry: observation(this.config, usage, startedAt, this.now(), inputHash, outputHash),
       });
     } catch (caught) {
-      if (caught instanceof OpenAIAdapterError) throw caught;
-      if (timedOut) throw failure("PROVIDER_TIMEOUT", "timeoutMs", "provider excedeu o tempo limite", { cause: caught });
-      if (signal?.aborted || caught?.name === "AbortError") throw failure("PROVIDER_CANCELLED", "signal", "operação cancelada", { cause: caught });
-      throw failure("PROVIDER_CONNECTION_FAILED", "provider", "falha de conexão com o provider", { cause: caught });
+      let mapped;
+      if (caught instanceof OpenAIAdapterError) mapped = caught;
+      else if (timedOut) mapped = failure("PROVIDER_TIMEOUT", "timeoutMs", "provider excedeu o tempo limite", { cause: caught });
+      else if (signal?.aborted || caught?.name === "AbortError") mapped = failure("PROVIDER_CANCELLED", "signal", "operação cancelada", { cause: caught });
+      else mapped = failure("PROVIDER_CONNECTION_FAILED", "provider", "falha de conexão com o provider", { cause: caught });
+      mapped.telemetry = observation(this.config, usage, startedAt, this.now(), inputHash, outputHash);
+      throw mapped;
     } finally {
       clearTimeout(timeout);
       signal?.removeEventListener("abort", cancel);
     }
   }
+}
+
+function generationMetadata(config) {
+  return {
+    provider: "openai", model: config.model,
+    taskType: SCRIPT_GENERATION_POLICY.taskType,
+    promptVersion: SCRIPT_GENERATION_POLICY.version,
+    configurationHash: config.configurationHash,
+    publicConfiguration: config.publicConfiguration,
+  };
+}
+
+function observation(config, usage, startedAt, finishedAt, inputHash, outputHash) {
+  const metadata = generationMetadata(config);
+  return deepFreeze({
+    provider: metadata.provider,
+    model: metadata.model,
+    taskType: metadata.taskType,
+    promptVersion: metadata.promptVersion,
+    ...usage,
+    costAmount: null,
+    currency: null,
+    costOrigin: null,
+    latencyMs: Math.max(0, Math.round(finishedAt - startedAt)),
+    occurredAt: new Date(startedAt).toISOString(),
+    fallback: false,
+    inputHash,
+    outputHash,
+  });
+}
+
+function providerUsage(body) {
+  if (body?.usage === undefined || body.usage === null) return emptyUsage();
+  if (!body.usage || typeof body.usage !== "object" || Array.isArray(body.usage)) {
+    throw failure("PROVIDER_INVALID_RESPONSE", "usage", "uso informado pelo provider é inválido");
+  }
+  const inputTokens = optionalCount(body.usage.input_tokens, "usage.input_tokens");
+  const outputTokens = optionalCount(body.usage.output_tokens, "usage.output_tokens");
+  const details = body.usage.input_tokens_details;
+  if (details !== undefined && details !== null && (!details || typeof details !== "object" || Array.isArray(details))) {
+    throw failure("PROVIDER_INVALID_RESPONSE", "usage.input_tokens_details", "uso informado pelo provider é inválido");
+  }
+  const cachedInputTokens = optionalCount(details?.cached_tokens, "usage.input_tokens_details.cached_tokens");
+  const usageOrigin = [inputTokens, outputTokens, cachedInputTokens].some((value) => value !== null)
+    ? "provider_response"
+    : null;
+  return { inputTokens, outputTokens, cachedInputTokens, usageOrigin };
+}
+
+function optionalCount(value, field) {
+  if (value === undefined || value === null) return null;
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw failure("PROVIDER_INVALID_RESPONSE", field, "uso informado pelo provider é inválido");
+  }
+  return value;
+}
+
+function emptyUsage() {
+  return { inputTokens: null, outputTokens: null, cachedInputTokens: null, usageOrigin: null };
 }
 
 function requestBody(input, config) {
@@ -117,4 +184,5 @@ function httpFailure(status) {
 }
 
 function failure(code, field, message, options) { return new OpenAIAdapterError(code, field, message, options); }
+function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function deepFreeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(deepFreeze); return Object.freeze(value); }

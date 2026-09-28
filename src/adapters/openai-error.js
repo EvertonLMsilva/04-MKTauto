@@ -4,5 +4,6 @@ export class OpenAIAdapterError extends Error {
     this.name = "OpenAIAdapterError";
     this.code = code;
     this.field = field;
+    this.telemetry = options?.telemetry ?? null;
   }
 }

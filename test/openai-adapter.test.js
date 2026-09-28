@@ -26,9 +26,10 @@ test("configuração vem do ambiente, expõe somente valores públicos e hash es
 
 test("adapter usa Responses com schema estrito e não devolve payload bruto", async () => {
   let captured;
-  const adapter = new OpenAIAdapter(config(), { fetchImpl: async (url, options) => {
+  const times = [Date.parse("2026-09-28T18:00:00.000Z"), Date.parse("2026-09-28T18:00:00.125Z")];
+  const adapter = new OpenAIAdapter(config(), { now: () => times.shift(), fetchImpl: async (url, options) => {
     captured = { url, options };
-    return response(200, providerResponse(validOutput()));
+    return response(200, providerResponse(validOutput(), { input_tokens: 120, output_tokens: 30, input_tokens_details: { cached_tokens: 40 } }));
   } });
   const result = await adapter.generate(input());
   const body = JSON.parse(captured.options.body);
@@ -46,7 +47,17 @@ test("adapter usa Responses com schema estrito e não devolve payload bruto", as
     configurationHash: config().configurationHash,
     publicConfiguration: config().publicConfiguration,
   });
-  assert.deepEqual(Object.keys(result).sort(), ["generationMetadata", "output"]);
+  assert.equal(result.telemetry.inputTokens, 120);
+  assert.equal(result.telemetry.outputTokens, 30);
+  assert.equal(result.telemetry.cachedInputTokens, 40);
+  assert.equal(result.telemetry.usageOrigin, "provider_response");
+  assert.equal(result.telemetry.costAmount, null);
+  assert.equal(result.telemetry.currency, null);
+  assert.equal(result.telemetry.latencyMs, 125);
+  assert.equal(result.telemetry.occurredAt, "2026-09-28T18:00:00.000Z");
+  assert.equal(result.telemetry.inputHash.length, 64);
+  assert.equal(result.telemetry.outputHash.length, 64);
+  assert.deepEqual(Object.keys(result).sort(), ["generationMetadata", "output", "telemetry"]);
 });
 
 test("adapter classifica resposta inválida, falhas HTTP, timeout e cancelamento sem vazar detalhes", async () => {
@@ -58,6 +69,9 @@ test("adapter classifica resposta inválida, falhas HTTP, timeout e cancelamento
   try { await unauthorized.generate(input()); } catch (error) { caught = error; }
   assert.equal(caught?.code, "PROVIDER_AUTHENTICATION_FAILED");
   assert.equal(caught?.message.includes("sk-private"), false);
+  assert.equal(caught?.telemetry.outcome, undefined);
+  assert.equal(caught?.telemetry.costAmount, null);
+  assert.equal(JSON.stringify(caught?.telemetry).includes("sk-private"), false);
 
   const timeout = new OpenAIAdapter({ ...config(), timeoutMs: 5, publicConfiguration: { ...config().publicConfiguration, timeoutMs: 5 } }, {
     fetchImpl: async (_url, { signal }) => new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(abortError()), { once: true })),
@@ -96,8 +110,8 @@ function validOutput() {
   };
 }
 
-function providerResponse(output) {
-  return { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }] };
+function providerResponse(output, usage) {
+  return { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: JSON.stringify(output) }] }], ...(usage ? { usage } : {}) };
 }
 
 function response(status, body) {

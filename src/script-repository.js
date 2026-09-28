@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { ContractValidationError } from "./domain/contracts.js";
+import { AI_CALL_TELEMETRY_CONTRACT_VERSION, validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
+import { validateCostEvent } from "./domain/cost-event-contracts.js";
 import { validateScript } from "./domain/script-contracts.js";
 import {
   SCRIPT_GENERATION_REQUEST_VERSION,
@@ -26,14 +28,28 @@ export class ScriptRepository extends IdeaSelectionRepository {
     return this.#transaction(() => this.#registerValidatedScript(script, null, true));
   }
 
-  registerGeneratedScript({ request: requestValue, script: scriptValue, generationMetadata }) {
+  registerGeneratedScript({ request: requestValue, script: scriptValue, generationMetadata, telemetry: telemetryValue, costEvent: costEventValue }) {
     let request;
     let script;
+    let telemetry;
+    let costEvent;
     try {
       request = validateScriptGenerationRequest(requestValue);
       script = validateScript(scriptValue);
+      telemetry = validateAiCallTelemetry(telemetryValue);
+      costEvent = costEventValue === null ? null : validateCostEvent(costEventValue);
     } catch (caught) { throw mapError(caught); }
     return this.#transaction(() => {
+      if (telemetry.logicalCallId !== request.generationRequestId || telemetry.requestHash !== request.contentHash) {
+        throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
+      }
+      verifyTelemetry({ telemetry, request, script, generationMetadata, costEvent });
+      const priorTelemetry = this.#priorTelemetry(telemetry);
+      if (priorTelemetry) {
+        const priorGeneration = this.getScriptGeneration(request.generationRequestId);
+        if (!priorGeneration || priorTelemetry.outcome !== "SUCCESS") throw failure("AI_CALL_ID_REUSED", "aiCallId", "identidade já usada com resultado incompatível");
+        return priorGeneration.script;
+      }
       const prior = this.db.prepare(`SELECT request_hash, script_id
         FROM script_generation_requests WHERE generation_request_id = ?`).get(request.generationRequestId);
       if (prior) {
@@ -48,8 +64,54 @@ export class ScriptRepository extends IdeaSelectionRepository {
         (generation_request_id, schema_version, request_hash, script_id, created_at)
         VALUES (?, ?, ?, ?, ?)`)
         .run(request.generationRequestId, request.schemaVersion, request.contentHash, created.scriptId, request.requestedAt);
+      this.#insertCostEvent(costEvent);
+      this.#insertTelemetry(telemetry);
       return created;
     });
+  }
+
+  registerFailedAiCall({ request: requestValue, telemetry: telemetryValue, costEvent: costEventValue }) {
+    let request;
+    let telemetry;
+    let costEvent;
+    try {
+      request = validateScriptGenerationRequest(requestValue);
+      telemetry = validateAiCallTelemetry(telemetryValue);
+      costEvent = costEventValue === null ? null : validateCostEvent(costEventValue);
+    } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      if (telemetry.logicalCallId !== request.generationRequestId || telemetry.requestHash !== request.contentHash) {
+        throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
+      }
+      const selection = this.getSelection(request.ideaSelectionId);
+      if (!selection) throw failure("IDEA_SELECTION_NOT_FOUND", "ideaSelectionId", "seleção não encontrada");
+      verifyFailedTelemetry({ telemetry, request, selection, costEvent });
+      const prior = this.#priorTelemetry(telemetry);
+      if (prior) return prior;
+      if (telemetry.outcome !== "FAILURE") throw failure("INVALID_AI_CALL_OUTCOME", "outcome", "falha exige resultado FAILURE");
+      this.#insertCostEvent(costEvent);
+      this.#insertTelemetry(telemetry);
+      return this.getAiCallTelemetry(telemetry.aiCallId);
+    });
+  }
+
+  getAiCallTelemetry(aiCallId) {
+    requireIdentifier(aiCallId, "aiCallId", 200);
+    const row = this.db.prepare("SELECT * FROM ai_call_telemetry WHERE ai_call_id = ?").get(aiCallId);
+    if (!row) return null;
+    try {
+      const telemetry = validateAiCallTelemetry(telemetryFromRow(row));
+      if (sha256(JSON.stringify(telemetry)) !== row.identity_hash) throw new Error("integridade inválida");
+      return telemetry;
+    } catch (caught) {
+      throw failure("INVALID_PERSISTED_AI_CALL_TELEMETRY", "aiCallId", "telemetria persistida inválida", { cause: caught });
+    }
+  }
+
+  getAiCallTelemetryByLogicalCall(logicalCallId) {
+    requireIdentifier(logicalCallId, "logicalCallId", 200);
+    const row = this.db.prepare("SELECT ai_call_id FROM ai_call_telemetry WHERE logical_call_id = ?").get(logicalCallId);
+    return row ? this.getAiCallTelemetry(row.ai_call_id) : null;
   }
 
   getScriptGeneration(generationRequestId) {
@@ -140,6 +202,57 @@ export class ScriptRepository extends IdeaSelectionRepository {
     return this.db.prepare(`SELECT script_id FROM scripts WHERE idea_selection_id = ?
       ORDER BY revision, script_id`).all(ideaSelectionId)
       .map(({ script_id: id }) => this.getScript(id));
+  }
+
+  #priorTelemetry(telemetry) {
+    const byId = this.db.prepare("SELECT identity_hash FROM ai_call_telemetry WHERE ai_call_id = ?").get(telemetry.aiCallId);
+    const byLogical = this.db.prepare("SELECT ai_call_id, identity_hash FROM ai_call_telemetry WHERE logical_call_id = ?").get(telemetry.logicalCallId);
+    if (!byId && !byLogical) return null;
+    if (!byId || !byLogical || byLogical.ai_call_id !== telemetry.aiCallId
+      || byId.identity_hash !== sha256(JSON.stringify(telemetry))
+      || byLogical.identity_hash !== byId.identity_hash) {
+      throw failure("AI_CALL_ID_REUSED", "aiCallId", "identidade já usada com telemetria incompatível");
+    }
+    return this.getAiCallTelemetry(telemetry.aiCallId);
+  }
+
+  #insertCostEvent(event) {
+    if (event === null) return;
+    const identityHash = sha256(JSON.stringify(event));
+    const prior = this.db.prepare("SELECT identity_hash FROM cost_events WHERE cost_event_id = ?").get(event.costEventId);
+    if (prior) {
+      if (prior.identity_hash !== identityHash) throw failure("COST_EVENT_ID_REUSED", "costEventId", "identidade de custo incompatível");
+      return;
+    }
+    this.db.prepare(`INSERT INTO cost_events
+      (cost_event_id, schema_version, identity_hash, category, pipeline_run_id,
+       project_id, project_version, content_identity, artifact_id, amount, currency,
+       occurred_at, origin, attribution_rule_version, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(event.costEventId, event.schemaVersion, identityHash, event.category,
+        event.pipelineRunId, event.projectId, event.projectVersion, event.contentIdentity,
+        event.artifactId, event.amount, event.currency, event.occurredAt, event.origin,
+        event.attributionRuleVersion, event.recordedAt);
+  }
+
+  #insertTelemetry(value) {
+    this.db.prepare(`INSERT INTO ai_call_telemetry
+      (ai_call_id, logical_call_id, schema_version, identity_hash, request_hash,
+       pipeline_run_id, project_id, project_version, artifact_id, cost_event_id,
+       provider, model, task_type, prompt_version, input_tokens, output_tokens,
+       cached_input_tokens, usage_origin, cost_amount, currency, cost_origin,
+       latency_ms, occurred_at, fallback, input_hash, output_hash, outcome,
+       failure_code, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(value.aiCallId, value.logicalCallId, value.schemaVersion,
+        sha256(JSON.stringify(value)), value.requestHash, value.pipelineRunId,
+        value.projectId, value.projectVersion, value.artifactId, value.costEventId,
+        value.provider, value.model, value.taskType, value.promptVersion,
+        value.inputTokens, value.outputTokens, value.cachedInputTokens,
+        value.usageOrigin, value.costAmount, value.currency, value.costOrigin,
+        value.latencyMs, value.occurredAt,
+        value.fallback === null ? null : Number(value.fallback), value.inputHash,
+        value.outputHash, value.outcome, value.failureCode, value.recordedAt);
   }
 
   #validateRevision(script) {
@@ -244,6 +357,102 @@ function verifyPersistedColumns(script, row) {
   for (const [field, value] of Object.entries(expected)) if (row[field] !== value) throw new Error(`coluna divergente: ${field}`);
 }
 
+function verifyTelemetry({ telemetry, request, script, generationMetadata, costEvent }) {
+  const expected = {
+    aiCallId: `ai_call:${request.generationRequestId}`,
+    logicalCallId: request.generationRequestId,
+    requestHash: request.contentHash,
+    pipelineRunId: script.pipelineRunId,
+    projectId: script.projectId,
+    projectVersion: script.projectVersion,
+    artifactId: script.scriptId,
+    outcome: "SUCCESS",
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if (telemetry[field] !== value) throw failure("AI_CALL_TELEMETRY_SCOPE_MISMATCH", field, "telemetria diverge da geração");
+  }
+  for (const field of ["provider", "model", "taskType", "promptVersion"]) {
+    if (telemetry[field] !== generationMetadata?.[field]) throw failure("AI_CALL_TELEMETRY_METADATA_MISMATCH", field, "metadado diverge da linhagem");
+  }
+  verifyCostLink(telemetry, costEvent, `script:${script.ideaSelectionId}`);
+}
+
+function verifyFailedTelemetry({ telemetry, request, selection, costEvent }) {
+  const expected = {
+    aiCallId: `ai_call:${request.generationRequestId}`,
+    logicalCallId: request.generationRequestId,
+    requestHash: request.contentHash,
+    pipelineRunId: selection.pipelineRunId,
+    projectId: selection.projectId,
+    projectVersion: selection.projectVersion,
+    artifactId: null,
+    outcome: "FAILURE",
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if (telemetry[field] !== value) throw failure("AI_CALL_TELEMETRY_SCOPE_MISMATCH", field, "telemetria diverge da geração");
+  }
+  verifyCostLink(telemetry, costEvent, `script:${selection.ideaSelectionId}`);
+}
+
+function verifyCostLink(telemetry, event, contentIdentity) {
+  if (telemetry.costEventId === null) {
+    if (event !== null) throw failure("AI_CALL_COST_MISMATCH", "costEvent", "custo ausente na telemetria");
+    return;
+  }
+  if (event === null) throw failure("AI_CALL_COST_MISMATCH", "costEvent", "evento de custo ausente");
+  const expected = {
+    costEventId: telemetry.costEventId,
+    category: "ai_cost",
+    pipelineRunId: telemetry.pipelineRunId,
+    projectId: telemetry.projectId,
+    projectVersion: telemetry.projectVersion,
+    contentIdentity,
+    artifactId: telemetry.artifactId,
+    amount: telemetry.costAmount,
+    currency: telemetry.currency,
+    occurredAt: telemetry.occurredAt,
+    origin: `ai_telemetry:${telemetry.costOrigin}`,
+    attributionRuleVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    recordedAt: telemetry.recordedAt,
+  };
+  for (const [field, value] of Object.entries(expected)) {
+    if (event[field] !== value) throw failure("AI_CALL_COST_MISMATCH", field, "evento de custo diverge da telemetria");
+  }
+}
+
+function telemetryFromRow(row) {
+  return {
+    schemaVersion: row.schema_version,
+    aiCallId: row.ai_call_id,
+    logicalCallId: row.logical_call_id,
+    requestHash: row.request_hash,
+    pipelineRunId: row.pipeline_run_id,
+    projectId: row.project_id,
+    projectVersion: row.project_version,
+    artifactId: row.artifact_id,
+    costEventId: row.cost_event_id,
+    provider: row.provider,
+    model: row.model,
+    taskType: row.task_type,
+    promptVersion: row.prompt_version,
+    inputTokens: row.input_tokens,
+    outputTokens: row.output_tokens,
+    cachedInputTokens: row.cached_input_tokens,
+    usageOrigin: row.usage_origin,
+    costAmount: row.cost_amount,
+    currency: row.currency,
+    costOrigin: row.cost_origin,
+    latencyMs: row.latency_ms,
+    occurredAt: row.occurred_at,
+    fallback: row.fallback === null ? null : row.fallback === 1,
+    inputHash: row.input_hash,
+    outputHash: row.output_hash,
+    outcome: row.outcome,
+    failureCode: row.failure_code,
+    recordedAt: row.recorded_at,
+  };
+}
+
 function verifyScope(stored, expected, code) {
   for (const field of ["pipelineRunId", "projectId", "projectVersion"]) if (stored[field] !== expected[field]) throw failure(code, field, "escopo divergente");
 }
@@ -259,6 +468,8 @@ function mapError(caught) {
   if (message.includes("IMMUTABLE_SCRIPT")) return failure("IMMUTABLE_SCRIPT", "scriptId", "roteiro imutável", { cause: caught });
   if (message.includes("SCRIPT_SCOPE_MISMATCH")) return failure("SCRIPT_SCOPE_MISMATCH", "ideaSelectionId", "artefatos fora do escopo", { cause: caught });
   if (message.includes("SCRIPT_REVISION_MISMATCH")) return failure("SCRIPT_REVISION_MISMATCH", "revision", "revisão inválida", { cause: caught });
+  if (message.includes("AI_CALL_TELEMETRY_SCOPE_MISMATCH")) return failure("AI_CALL_TELEMETRY_SCOPE_MISMATCH", "aiCallId", "telemetria fora do escopo", { cause: caught });
+  if (message.includes("IMMUTABLE_AI_CALL_TELEMETRY")) return failure("IMMUTABLE_AI_CALL_TELEMETRY", "aiCallId", "telemetria é imutável", { cause: caught });
   if (typeof caught?.code === "string" && caught.code.startsWith("ERR_SQLITE")) return failure("SCRIPT_PERSISTENCE_FAILED", "script", "não foi possível persistir o roteiro", { cause: caught });
   return caught;
 }

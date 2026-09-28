@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ScriptRepository, ScriptRepositoryError } from "../src/script-repository.js";
+import { AI_CALL_TELEMETRY_CONTRACT_VERSION } from "../src/domain/ai-call-telemetry-contracts.js";
+import { COST_EVENT_CONTRACT_VERSION } from "../src/domain/cost-event-contracts.js";
 import { ScriptService } from "../src/script-service.js";
 import { IdeaSelectionService } from "../src/idea-selection-service.js";
 import { IdeaService } from "../src/idea-service.js";
@@ -42,7 +44,7 @@ test("registra, recupera e lista roteiro explícito sem duplicar retry", () => {
 test("persiste identidade e metadados públicos de geração atomicamente", () => {
   withService(({ repository, selected, path }) => {
     const value = script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" });
-    const generation = { request: generationRequest(), script: value, generationMetadata: metadata() };
+    const generation = { request: generationRequest(), script: value, generationMetadata: metadata(), telemetry: telemetry(), costEvent: null };
     const created = repository.registerGeneratedScript(generation);
     assert.deepEqual(repository.registerGeneratedScript(generation), created);
     assert.deepEqual(repository.getScriptGeneration("generation_ai01_001"), {
@@ -54,6 +56,8 @@ test("persiste identidade e metadados públicos de geração atomicamente", () =
     assert.equal(count(path, "script_generation_requests"), 1);
     assert.equal(count(path, "scripts"), 1);
     assert.equal(count(path, "cost_events"), 0);
+    assert.equal(count(path, "ai_call_telemetry"), 1);
+    assert.deepEqual(repository.getAiCallTelemetryByLogicalCall("generation_ai01_001"), telemetry());
     const raw = new DatabaseSync(path);
     try {
       assert.throws(() => raw.prepare("UPDATE script_generation_requests SET request_hash = ? WHERE generation_request_id = ?").run("f".repeat(64), "generation_ai01_001"), /IMMUTABLE_SCRIPT_GENERATION_REQUEST/);
@@ -77,12 +81,71 @@ test("falha ao registrar identidade reverte roteiro e linhagem gerados", () => {
         request: generationRequest(),
         script: script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" }),
         generationMetadata: metadata(),
+        telemetry: telemetry(),
+        costEvent: null,
       });
     } catch (error) { caught = error; }
     assert.equal(caught?.code, "SCRIPT_PERSISTENCE_FAILED");
     assert.equal(caught?.message.includes("PRIVATE"), false);
     assert.equal(count(path, "script_generation_requests"), 0);
     assert.equal(count(path, "scripts"), 0);
+    assert.equal(count(path, "artifact_lineage"), 3);
+  });
+});
+
+test("persiste telemetria e custo correlacionados na mesma transação", () => {
+  withService(({ repository, selected, path }) => {
+    const generatedScript = script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" });
+    const knownCostTelemetry = telemetry({
+      costEventId: "cost:ai_call:generation_ai01_001",
+      costAmount: "0.015", currency: "USD", costOrigin: "provider_reported",
+    });
+    const event = costEvent(knownCostTelemetry);
+    const value = {
+      request: generationRequest(), script: generatedScript, generationMetadata: metadata(),
+      telemetry: knownCostTelemetry, costEvent: event,
+    };
+    const created = repository.registerGeneratedScript(value);
+    assert.deepEqual(repository.registerGeneratedScript(value), created);
+    assert.equal(count(path, "ai_call_telemetry"), 1);
+    assert.equal(count(path, "cost_events"), 1);
+    const raw = new DatabaseSync(path);
+    const storedCost = raw.prepare("SELECT artifact_id, amount, currency FROM cost_events WHERE cost_event_id = ?")
+      .get(knownCostTelemetry.costEventId);
+    raw.close();
+    assert.equal(storedCost.artifact_id, created.scriptId);
+    assert.equal(storedCost.amount, "0.015");
+    assert.equal(storedCost.currency, "USD");
+  });
+});
+
+test("falha registra telemetria sanitizada sem criar artefato falso", () => {
+  withService(({ repository, path }) => {
+    const failed = telemetry({ artifactId: null, outcome: "FAILURE", failureCode: "PROVIDER_TIMEOUT", outputHash: null });
+    assert.deepEqual(repository.registerFailedAiCall({ request: generationRequest(), telemetry: failed, costEvent: null }), failed);
+    assert.deepEqual(repository.registerFailedAiCall({ request: generationRequest(), telemetry: failed, costEvent: null }), failed);
+    assert.equal(count(path, "ai_call_telemetry"), 1);
+    assert.equal(count(path, "scripts"), 0);
+    assert.equal(count(path, "cost_events"), 0);
+  });
+});
+
+test("falha ao inserir telemetria reverte roteiro, linhagem e custo", () => {
+  withService(({ repository, selected, path }) => {
+    repository.db.exec("CREATE TRIGGER reject_ai_telemetry BEFORE INSERT ON ai_call_telemetry BEGIN SELECT RAISE(ABORT, 'PRIVATE telemetry payload'); END;");
+    const knownCostTelemetry = telemetry({
+      costEventId: "cost:ai_call:generation_ai01_001",
+      costAmount: "0.015", currency: "USD", costOrigin: "provider_reported",
+    });
+    assert.throws(() => repository.registerGeneratedScript({
+      request: generationRequest(),
+      script: script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" }),
+      generationMetadata: metadata(), telemetry: knownCostTelemetry,
+      costEvent: costEvent(knownCostTelemetry),
+    }), repositoryError("SCRIPT_PERSISTENCE_FAILED", "script"));
+    assert.equal(count(path, "scripts"), 0);
+    assert.equal(count(path, "ai_call_telemetry"), 0);
+    assert.equal(count(path, "cost_events"), 0);
     assert.equal(count(path, "artifact_lineage"), 3);
   });
 });
@@ -160,20 +223,20 @@ test("leitura rejeita quando a ideia selecionada deixa de preservar o hash exato
   });
 });
 
-test("migrações 013 e 014 são aditivas e preservam seleção existente", () => {
+test("migrações 013 a 015 são aditivas e preservam seleção existente", () => {
   withDatabase((path) => {
     const { repository, selected } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE script_generation_requests; DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
+    before.exec("DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
     before.close();
     const migrated = new ScriptRepository(path);
     assert.equal(migrated.getSelection(selected.ideaSelectionId).ideaSelectionId, selected.ideaSelectionId);
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 14);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 14);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 15);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 15);
     raw.close();
   });
 });
@@ -214,6 +277,37 @@ function metadata() {
     provider: "openai", model: "model-test", taskType: "script_generation",
     promptVersion: "script-generation-prompt/1.0.0", configurationHash: "d".repeat(64),
     publicConfiguration: { outputLimit: 1200, responseFormat: "json_schema", store: false, timeoutMs: 1000 },
+  };
+}
+
+function telemetry(overrides = {}) {
+  return {
+    schemaVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    aiCallId: "ai_call:generation_ai01_001", logicalCallId: "generation_ai01_001",
+    requestHash: generationRequest().contentHash,
+    pipelineRunId: "run_e04_001", projectId: "project_curiosidades_ia", projectVersion: 1,
+    artifactId: "script:generation_ai01_001", costEventId: null,
+    provider: "openai", model: "model-test", taskType: "script_generation",
+    promptVersion: "script-generation-prompt/1.0.0",
+    inputTokens: 120, outputTokens: 30, cachedInputTokens: 40,
+    usageOrigin: "provider_response", costAmount: null, currency: null, costOrigin: null,
+    latencyMs: 125, occurredAt: "2026-09-28T14:00:00.000Z", fallback: false,
+    inputHash: "e".repeat(64), outputHash: "f".repeat(64), outcome: "SUCCESS",
+    failureCode: null, recordedAt: "2026-09-28T14:00:01.000Z", ...overrides,
+  };
+}
+
+function costEvent(aiTelemetry) {
+  return {
+    schemaVersion: COST_EVENT_CONTRACT_VERSION,
+    costEventId: aiTelemetry.costEventId, category: "ai_cost",
+    pipelineRunId: aiTelemetry.pipelineRunId, projectId: aiTelemetry.projectId,
+    projectVersion: aiTelemetry.projectVersion, contentIdentity: "script:selection_001",
+    artifactId: aiTelemetry.artifactId, amount: aiTelemetry.costAmount,
+    currency: aiTelemetry.currency, occurredAt: aiTelemetry.occurredAt,
+    origin: `ai_telemetry:${aiTelemetry.costOrigin}`,
+    attributionRuleVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    recordedAt: aiTelemetry.recordedAt,
   };
 }
 
