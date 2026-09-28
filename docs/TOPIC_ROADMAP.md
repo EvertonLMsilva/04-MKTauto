@@ -22,7 +22,7 @@
 | PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
 | PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
-| E02-R02 | EM EXECUÇÃO | Radar diário vinculado ao projeto | `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passando; PR pendente. |
+| E02-R02 | PR ABERTO | Radar diário vinculado ao projeto | PR #32 aberto; `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -244,7 +244,8 @@ data, isolamento do histórico por projeto e versão, retry, conflito de pipelin
 idioma dinâmico, dependência técnica, provider não suportado, exportação e
 direitos; `git diff --check` passou. Risco residual: shortlist e seleção ainda
 pertencem ao catálogo legado global e exigem corte próprio antes de uso por
-projeto. Análise ativa de `references[]` continua fora deste tópico.
+projeto. Análise ativa de `references[]` continua fora deste tópico. O PR #32
+foi aberto em 27/09/2026.
 
 ## Ordem após E01
 
