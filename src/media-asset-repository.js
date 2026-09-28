@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import { ContractValidationError } from "./domain/contracts.js";
+import {
+  MEDIA_ACQUISITION_REQUEST_VERSION,
+  mediaAcquisitionRequestHash,
+  validateMediaAcquisitionRequest,
+} from "./domain/media-acquisition-contracts.js";
 import { mediaAssetIdentityHash, validateMediaAsset } from "./domain/media-asset-contracts.js";
 import { ScriptRepository } from "./script-repository.js";
 
@@ -19,6 +24,67 @@ export class MediaAssetRepository extends ScriptRepository {
     try { asset = validateMediaAsset(value); }
     catch (caught) { throw mapError(caught); }
     return this.#transaction(() => this.#registerValidated(asset));
+  }
+
+  registerAcquiredMediaAsset({ request: requestValue, mediaAsset: assetValue }) {
+    let request;
+    let asset;
+    try {
+      request = validateMediaAcquisitionRequest(requestValue);
+      asset = validateMediaAsset(assetValue);
+    } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.db.prepare(`SELECT request_hash, media_asset_id
+        FROM media_acquisition_requests WHERE media_acquisition_request_id = ?`)
+        .get(request.mediaAcquisitionRequestId);
+      if (prior) {
+        if (prior.request_hash !== request.contentHash) throw failure("MEDIA_ACQUISITION_REQUEST_ID_REUSED", "mediaAcquisitionRequestId", "identidade já usada com conteúdo divergente");
+        return this.getMediaAsset(prior.media_asset_id);
+      }
+      verifyAcquisitionBinding(request, asset);
+      const created = this.#registerValidated(asset);
+      this.db.prepare(`INSERT INTO media_acquisition_requests
+        (media_acquisition_request_id, schema_version, request_hash, script_id,
+         script_content_hash, visual_direction_position, asset_type, media_asset_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        request.mediaAcquisitionRequestId, request.schemaVersion, request.contentHash,
+        request.scriptId, request.scriptContentHash, request.visualDirectionPosition,
+        request.assetType, created.mediaAssetId, request.requestedAt,
+      );
+      return created;
+    });
+  }
+
+  getMediaAcquisition(mediaAcquisitionRequestId) {
+    requireIdentifier(mediaAcquisitionRequestId, "mediaAcquisitionRequestId", 180);
+    const row = this.db.prepare(`SELECT * FROM media_acquisition_requests
+      WHERE media_acquisition_request_id = ?`).get(mediaAcquisitionRequestId);
+    if (!row) return null;
+    try {
+      const mediaAsset = this.getMediaAsset(row.media_asset_id);
+      if (!mediaAsset || row.schema_version !== MEDIA_ACQUISITION_REQUEST_VERSION) throw new Error("aquisição incompleta");
+      const expectedHash = mediaAcquisitionRequestHash({
+        schemaVersion: row.schema_version,
+        mediaAcquisitionRequestId: row.media_acquisition_request_id,
+        scriptId: row.script_id,
+        scriptContentHash: row.script_content_hash,
+        visualDirectionPosition: row.visual_direction_position,
+        assetType: row.asset_type,
+        requestedAt: row.created_at,
+        contentHash: row.request_hash,
+      });
+      if (expectedHash !== row.request_hash
+        || mediaAsset.mediaAssetId !== `media_asset:${row.media_acquisition_request_id}`
+        || mediaAsset.scriptId !== row.script_id
+        || mediaAsset.scriptContentHash !== row.script_content_hash
+        || mediaAsset.visualDirectionPosition !== row.visual_direction_position
+        || mediaAsset.assetType !== row.asset_type
+        || mediaAsset.createdAt !== row.created_at) throw new Error("vínculo inválido");
+      return deepFreeze({ requestHash: row.request_hash, mediaAsset });
+    } catch (caught) {
+      if (caught instanceof MediaAssetRepositoryError) throw caught;
+      throw failure("INVALID_PERSISTED_MEDIA_ACQUISITION", "mediaAcquisitionRequestId", "aquisição persistida inválida", { cause: caught });
+    }
   }
 
   getMediaAsset(mediaAssetId) {
@@ -172,6 +238,15 @@ function verifyScript(asset, script) {
   }
 }
 
+function verifyAcquisitionBinding(request, asset) {
+  for (const field of ["scriptId", "scriptContentHash", "visualDirectionPosition", "assetType"]) {
+    if (request[field] !== asset[field]) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", field, "solicitação diverge do ativo");
+  }
+  if (request.requestedAt !== asset.createdAt) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "requestedAt", "solicitação diverge do ativo");
+  if (asset.mediaAssetId !== `media_asset:${request.mediaAcquisitionRequestId}`) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "mediaAssetId", "solicitação diverge do ativo");
+  if (asset.revision !== 1 || asset.supersedesMediaAssetId !== null) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "revision", "aquisição inicial inválida");
+}
+
 function verifyScope(stored, expected, code) {
   for (const field of ["pipelineRunId", "projectId", "projectVersion"]) if (stored[field] !== expected[field]) throw failure(code, field, "escopo divergente");
 }
@@ -206,6 +281,8 @@ function mapError(caught) {
   if (message.includes("artifact_lineage.artifact_type, artifact_lineage.content_identity, artifact_lineage.artifact_version")) return failure("MEDIA_ASSET_REVISION_CONFLICT", "revision", "revisão já registrada", { cause: caught });
   if (message.includes("artifact_lineage.artifact_id")) return failure("MEDIA_ASSET_ID_REUSED", "mediaAssetId", "ID já registrado", { cause: caught });
   if (message.includes("IMMUTABLE_MEDIA_ASSET")) return failure("IMMUTABLE_MEDIA_ASSET", "mediaAssetId", "ativo imutável", { cause: caught });
+  if (message.includes("IMMUTABLE_MEDIA_ACQUISITION_REQUEST")) return failure("IMMUTABLE_MEDIA_ACQUISITION_REQUEST", "mediaAcquisitionRequestId", "solicitação imutável", { cause: caught });
+  if (message.includes("MEDIA_ACQUISITION_SCOPE_MISMATCH")) return failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "mediaAcquisitionRequestId", "solicitação fora do escopo", { cause: caught });
   if (message.includes("MEDIA_ASSET_SCOPE_MISMATCH")) return failure("MEDIA_ASSET_SCOPE_MISMATCH", "scriptId", "artefatos fora do escopo", { cause: caught });
   if (message.includes("MEDIA_ASSET_REVISION_MISMATCH")) return failure("MEDIA_ASSET_REVISION_MISMATCH", "revision", "revisão inválida", { cause: caught });
   if (typeof caught?.code === "string" && caught.code.startsWith("ERR_SQLITE")) return failure("MEDIA_ASSET_PERSISTENCE_FAILED", "mediaAsset", "não foi possível persistir o ativo", { cause: caught });
@@ -213,3 +290,5 @@ function mapError(caught) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code, field, message, options) { return new MediaAssetRepositoryError(code, field, message, options); }
+function deepFreeze(value) { const clone = structuredClone(value); freeze(clone); return clone; }
+function freeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(freeze); return Object.freeze(value); }
