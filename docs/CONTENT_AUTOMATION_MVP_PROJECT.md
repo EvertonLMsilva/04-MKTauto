@@ -221,13 +221,21 @@ obrigatória interrompe o item; nenhum módulo corrige silenciosamente a saída 
 outro ou pula uma aprovação.
 
 `Campaign` deverá relacionar pelo menos `Project/Channel`, `Offer`,
-`Content/Artifact`, CTA e `Attribution`; não será um agrupador genérico. O
+`Content/Artifact` e CTA comercial; não será um agrupador genérico. Uma
+estratégia ou configuração de tracking poderá ser associada de forma opcional e
+futura, mas `Attribution` efetiva não é pré-requisito de `Campaign` e nasce
+somente em `Attribution and Traffic` (E12). O
 `Revenue Ledger` será separado do `CostLedger`, preferencialmente append-only e
 auditável. Contratos técnicos para esses conceitos serão definidos apenas em
 tópicos futuros. `Commercial Analytics` relacionará a cadeia comercial a receita
 e custo, enquanto `Portfolio Allocation` recomendará onde investir capacidade.
 Essas capacidades permanecem futuras e não autorizam decisão ou efeito
 automático.
+
+No plano evolutivo, `Scheduler and Daily Automation` e `Offer and Campaign`
+podem avançar em paralelo depois de `Social Publisher`. A automação diária não é
+dependência para iniciar a validação de `Operator Revenue` com publicações já
+disponíveis.
 
 ## 7. Entidades principais
 
@@ -249,7 +257,7 @@ automático.
 | `MetricSnapshot` | Métricas opcionais observadas em um instante. |
 | `Experiment` | Hipótese, janela, variantes, evidências e decisão registrada. |
 | `Offer` | Oferta promovida, tipo, plataforma, destino, nicho e condições comerciais sem credencial. |
-| `Campaign` | Relação rastreável entre `Project/Channel`, `Offer`, `Content/Artifact`, CTA e atribuição. |
+| `Campaign` | Relação rastreável entre `Project/Channel`, `Offer`, `Content/Artifact` e CTA comercial; pode receber configuração futura de tracking, sem exigir `Attribution` efetiva. |
 | `CTA` | Objetivo comercial e destino vinculados ao conteúdo sem alterar o CTA editorial de `Script`. |
 | `Attribution` | Identificadores e regras versionadas que explicam a origem de tráfego e conversão. |
 | `TrafficEvent` | Clique ou visita observada com campanha, origem e instante conhecidos. |
@@ -386,7 +394,10 @@ Não publica automaticamente.
 ### Stage 2 — Distribution
 
 Publica por adapter oficial com aprovação humana, mantém exportação manual como
-fallback e automatiza a rotina somente após estabilizar o efeito externo.
+fallback e automatiza a rotina somente após estabilizar o efeito externo. Assim
+que Publishing estiver disponível, Daily Automation e a validação inicial de
+Offer and Campaign podem evoluir em paralelo; concluir a automação diária não é
+condição para iniciar `Operator Revenue`.
 
 ### Stage 3 — Operator Revenue
 
@@ -413,17 +424,20 @@ clientes e demandas comerciais da plataforma não influenciam o MVP atual.
 
 ### Sequência incremental dos MVPs
 
-1. Content Machine;
-2. Publishing;
-3. Daily Automation;
-4. Offer and Campaign;
-5. Attribution and Traffic;
-6. Conversion and Revenue Ledger;
-7. Commercial Analytics and Experiments;
-8. Optimization and Portfolio Allocation.
+1. MVP 1 — Content Machine;
+2. MVP 2 — Publishing;
+3. após Publishing, duas frentes podem evoluir em paralelo:
+   - MVP 3 — Daily Automation;
+   - MVP 4 — Offer and Campaign;
+4. MVP 5 — Attribution and Traffic;
+5. MVP 6 — Conversion and Revenue Ledger;
+6. MVP 7 — Commercial Analytics and Experiments;
+7. MVP 8 — Optimization and Portfolio Allocation.
 
-Essa sequência preserva a ordem produção → publicação → oferta/campanha →
-atribuição/tráfego → conversão → receita → analytics → otimização.
+Na cadeia comercial, o MVP 4 depende de Publishing, não de Daily Automation.
+Isso preserva a ordem produção → publicação → oferta/campanha →
+atribuição/tráfego → conversão → receita → analytics → otimização sem atrasar a
+primeira validação de receita até a conclusão do MVP 3.
 Infraestrutura de IA própria e Platform Revenue permanecem futuras. Cada MVP é
 decomposto em tópicos menores no roadmap.
 
@@ -535,7 +549,8 @@ visíveis ao operador e integram a decisão registrada.
 | Duplicação de publicação | Chave idempotente, reconciliação e estado persistido. |
 | Métricas incompatíveis | Modelo opcional por plataforma e snapshots brutos sanitizados. |
 | Vazamento de segredo ou mídia | Storage privado, menor privilégio e Git restrito. |
-| Campanha virar agrupador genérico | Exigir relação explícita entre projeto/canal, oferta, conteúdo/artefato, CTA e atribuição. |
+| Campanha virar agrupador genérico | Exigir relação explícita entre projeto/canal, oferta, conteúdo/artefato e CTA comercial; tracking futuro é opcional e `Attribution` efetiva pertence à etapa seguinte. |
+| Automação diária atrasar a validação comercial | Permitir que Daily Automation e Offer and Campaign evoluam em paralelo após Publishing. |
 | Receita sem cadeia de evidência | Implementar atribuição, tráfego e conversão antes de analytics comercial. |
 | Otimização opaca ou nociva | Recomendações explicáveis, auditáveis e reversíveis. |
 | Receita ou custo atribuídos incorretamente | Eventos imutáveis, moeda/origem explícitas e regras de atribuição versionadas. |
@@ -571,3 +586,6 @@ Revenue. A decisão introduz conceitos futuros de oferta, campanha, CTA
 comercial, atribuição, tráfego, conversão e ledger de receita, sem alterar
 contratos implementados. O CTA de `script/1.0.0` continua sendo artefato
 editorial; qualquer vínculo comercial será externo e definido por tópico próprio.
+`Campaign` não depende de `Attribution` efetiva, que nasce no estágio seguinte,
+e Daily Automation não bloqueia Offer and Campaign: ambas as frentes podem
+evoluir em paralelo após Publishing.

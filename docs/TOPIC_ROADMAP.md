@@ -105,6 +105,11 @@ Os contratos implementados continuam válidos. Em particular, o CTA opcional de
 `Attribution`, `Conversion` e `RevenueLedger` serão conceitos desacoplados,
 introduzidos apenas por seus tópicos futuros.
 
+Após E09, E10 Daily Automation e E11 Offer & Campaign podem evoluir em
+paralelo. E11 depende de E09, não de E10, para que a validação inicial de
+`Operator Revenue` possa começar com publicação disponível mesmo antes de a
+rotina diária estar automatizada.
+
 V09 foi validado com `git diff --check`, presença dos termos e da ordem causal
 aprovados, blocos Markdown balanceados e revisão do diff restrito aos dois
 documentos previstos. O PR #44 foi aberto em 28/09/2026. Os arquivos locais não
@@ -134,11 +139,12 @@ rastreados em `data/` foram preservados e não integram a entrega.
 | E17 | Optimization Engine | Regras explicáveis recomendam melhorias com base no histórico. | E15 + volume mínimo |
 | E18 | Portfolio Allocation | Capacidade recebe recomendação explicável de distribuição. | E16 + E17 |
 
-Ordem dos produtos: MVP 1 Content Machine; MVP 2 Publishing; MVP 3 Daily
-Automation; MVP 4 Offer & Campaign; MVP 5 Attribution & Traffic; MVP 6
-Conversion & Revenue Ledger; MVP 7 Commercial Analytics & Experiments; MVP 8
-Optimization & Portfolio Allocation. O MVP 1 termina em E08 com preview aprovado
-e inclui as fundações FND conforme forem consumidas. Modelos próprios,
+Ordem dos produtos: MVP 1 Content Machine; MVP 2 Publishing; após Publishing,
+MVP 3 Daily Automation e MVP 4 Offer & Campaign seguem como frentes paralelas;
+MVP 5 Attribution & Traffic; MVP 6 Conversion & Revenue Ledger; MVP 7 Commercial
+Analytics & Experiments; MVP 8 Optimization & Portfolio Allocation. O MVP 4
+depende de E09, não da conclusão do MVP 3. O MVP 1 termina em E08 com preview
+aprovado e inclui as fundações FND conforme forem consumidas. Modelos próprios,
 infraestrutura de IA e Platform Revenue permanecem futuros.
 
 ## Camada comercial futura — E11 a E15
@@ -157,15 +163,19 @@ contratos técnicos ou implementação antecipada:
 ### E11-C01 — Campaign Domain
 
 - relacionar obrigatoriamente pelo menos `Project/Channel`, `Offer`,
-  `Content/Artifact`, CTA e `Attribution`;
+  `Content/Artifact` e CTA comercial;
 - representar o conjunto comercial testado, não um agrupador genérico;
-- depender de oferta e conteúdo/publicação identificáveis.
+- depender de oferta e conteúdo/publicação identificáveis;
+- admitir estratégia ou configuração de tracking opcional e futura, sem exigir
+  `Attribution` efetiva, que será criada somente em E12.
 
 ### E12-A01 — CTA e Attribution
 
 - modelar objetivo comercial, destino e identificadores como UTM, affiliate ID,
   campaign ID ou tracking ID quando suportados;
 - manter o CTA comercial externo ao contrato editorial `script/1.0.0`;
+- criar a `Attribution` efetiva a partir da campanha e da evidência de tracking
+  disponível, sem retroagir como dependência de E11;
 - versionar regras de atribuição e tornar limitações de cobertura explícitas.
 
 ### E12-T01 — Traffic Tracking
@@ -716,10 +726,11 @@ commit `d78309f`.
 5. provar a porta OpenAI e uma porta de mídia antes do composer;
 6. encerrar MVP 1 com preview, QC e aprovação humana;
 7. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
-8. estabilizar a operação e então introduzir oferta e campanha vinculadas a
-   projeto/canal, conteúdo/artefato, CTA e atribuição;
-9. registrar atribuição e tráfego antes de conversão, e conversão antes de
-   receita em ledger próprio;
+8. após E09, evoluir E10 Daily Automation e E11 Offer & Campaign em paralelo;
+   oferta e campanha vinculam projeto/canal, oferta, conteúdo/artefato e CTA
+   comercial, sem exigir `Attribution` efetiva;
+9. criar atribuição efetiva e registrar tráfego em E12 antes de conversão, e
+   conversão antes de receita em ledger próprio;
 10. construir analytics comercial e experimentos somente sobre essa cadeia de
     evidência;
 11. otimizar e recomendar alocação apenas com histórico suficiente.
@@ -751,6 +762,7 @@ commit `d78309f`.
 - nenhuma agregação converte moedas sem fonte, taxa e instante registrados;
 - edição posterior invalida validação e aprovação;
 - scheduler persiste antes de publicar e reconcilia antes de retry;
+- Daily Automation e Offer & Campaign podem avançar em paralelo após E09;
 - métrica indisponível permanece ausente, nunca vira zero;
 - recomendação de otimização não altera regra ou conteúdo automaticamente;
 - IA não publica, mata canal, muda regra financeira nem aloca capacidade;
@@ -771,6 +783,10 @@ commit `d78309f`.
 - métricas disponíveis não são equivalentes entre plataformas;
 - identificadores e janelas de atribuição variam por oferta e plataforma;
 - campanhas genéricas podem romper o vínculo causal entre conteúdo e receita;
+- tratar `Attribution` efetiva como requisito de E11 recriaria dependência circular
+  com E12; somente configuração futura de tracking pode ser opcional em campanha;
+- condicionar E11 à conclusão de E10 pode atrasar desnecessariamente a validação
+  de `Operator Revenue` após Publishing;
 - otimização prematura pode reforçar ruído com pouca amostra.
 - atribuição incompleta pode distorcer lucro e ROI;
 - experimentos com pouca amostra podem levar a `KILL` ou `SCALE` incorretos;
