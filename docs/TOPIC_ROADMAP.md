@@ -27,7 +27,7 @@
 | E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
 | V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
-| FND01 | EM EXECUÇÃO | Persistência de PipelineRun | Contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
+| FND01 | PR ABERTO | Persistência de PipelineRun | PR #37 aberto; contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -136,6 +136,7 @@ imutável, transições, rollback, migração aditiva, erro sanitizado, proteç�
 banco e ausência de efeitos de Research. Riscos residuais deliberados: o SQLite
 mantém sua concorrência de escritor único e runs terminais não são reabertas;
 artefatos, linhagem e custos permanecem para FND02 e FND03.
+O PR #37 foi aberto em 28/09/2026.
 
 ### FND02 — linhagem comum de artefatos
 
