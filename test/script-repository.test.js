@@ -13,6 +13,7 @@ import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-hando
 import { RADAR_CONTRACT_VERSION } from "../src/domain/contracts.js";
 import { IDEA_SELECTION_CONTRACT_VERSION, selectionContentHash } from "../src/domain/idea-selection-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash } from "../src/domain/script-contracts.js";
+import { SCRIPT_GENERATION_REQUEST_VERSION, scriptGenerationRequestHash } from "../src/domain/script-generation-contracts.js";
 import { DEFAULT_RESEARCH_SHORTLIST_POLICY, RESEARCH_SHORTLIST_CONTRACT_VERSION } from "../src/domain/research-shortlist-contracts.js";
 
 const STARTED_AT = "2026-09-28T11:00:00.000Z";
@@ -35,6 +36,54 @@ test("registra, recupera e lista roteiro explícito sem duplicar retry", () => {
     raw.close();
     assert.equal(input.input_id, selected.ideaSelectionId);
     assert.equal(input.content_hash, selected.contentHash);
+  });
+});
+
+test("persiste identidade e metadados públicos de geração atomicamente", () => {
+  withService(({ repository, selected, path }) => {
+    const value = script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" });
+    const generation = { request: generationRequest(), script: value, generationMetadata: metadata() };
+    const created = repository.registerGeneratedScript(generation);
+    assert.deepEqual(repository.registerGeneratedScript(generation), created);
+    assert.deepEqual(repository.getScriptGeneration("generation_ai01_001"), {
+      requestHash: generation.request.contentHash,
+      script: created,
+      generationMetadata: metadata(),
+    });
+    assert.deepEqual(repository.getArtifact(created.scriptId).generationMetadata, metadata());
+    assert.equal(count(path, "script_generation_requests"), 1);
+    assert.equal(count(path, "scripts"), 1);
+    assert.equal(count(path, "cost_events"), 0);
+    const raw = new DatabaseSync(path);
+    try {
+      assert.throws(() => raw.prepare("UPDATE script_generation_requests SET request_hash = ? WHERE generation_request_id = ?").run("f".repeat(64), "generation_ai01_001"), /IMMUTABLE_SCRIPT_GENERATION_REQUEST/);
+      assert.throws(() => raw.prepare("DELETE FROM script_generation_requests WHERE generation_request_id = ?").run("generation_ai01_001"), /IMMUTABLE_SCRIPT_GENERATION_REQUEST/);
+    } finally { raw.close(); }
+
+    const divergent = generationRequest({ ideaSelectionId: "selection_other" });
+    assert.throws(
+      () => repository.registerGeneratedScript({ ...generation, request: divergent }),
+      repositoryError("GENERATION_REQUEST_ID_REUSED", "generationRequestId"),
+    );
+  });
+});
+
+test("falha ao registrar identidade reverte roteiro e linhagem gerados", () => {
+  withService(({ repository, selected, path }) => {
+    repository.db.exec("CREATE TRIGGER reject_generation BEFORE INSERT ON script_generation_requests BEGIN SELECT RAISE(ABORT, 'PRIVATE provider payload'); END;");
+    let caught;
+    try {
+      repository.registerGeneratedScript({
+        request: generationRequest(),
+        script: script(selected, { scriptId: "script:generation_ai01_001", origin: "EXTERNAL_CONSUMER" }),
+        generationMetadata: metadata(),
+      });
+    } catch (error) { caught = error; }
+    assert.equal(caught?.code, "SCRIPT_PERSISTENCE_FAILED");
+    assert.equal(caught?.message.includes("PRIVATE"), false);
+    assert.equal(count(path, "script_generation_requests"), 0);
+    assert.equal(count(path, "scripts"), 0);
+    assert.equal(count(path, "artifact_lineage"), 3);
   });
 });
 
@@ -111,20 +160,20 @@ test("leitura rejeita quando a ideia selecionada deixa de preservar o hash exato
   });
 });
 
-test("migração 013 é aditiva e preserva seleção existente", () => {
+test("migrações 013 e 014 são aditivas e preservam seleção existente", () => {
   withDatabase((path) => {
     const { repository, selected } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
+    before.exec("DROP TABLE script_generation_requests; DROP TABLE scripts; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; PRAGMA user_version = 12;");
     before.close();
     const migrated = new ScriptRepository(path);
     assert.equal(migrated.getSelection(selected.ideaSelectionId).ideaSelectionId, selected.ideaSelectionId);
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 13);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 13);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 14);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 14);
     raw.close();
   });
 });
@@ -148,6 +197,24 @@ function script(selection, overrides = {}) {
   value.fullNarration = [value.hook, ...value.narrativeBlocks.map(({ narration }) => narration), value.cta].filter(Boolean).join("\n\n");
   value.contentHash = scriptContentHash(value);
   return value;
+}
+
+function generationRequest(overrides = {}) {
+  const value = {
+    schemaVersion: SCRIPT_GENERATION_REQUEST_VERSION,
+    generationRequestId: "generation_ai01_001", ideaSelectionId: "selection_001",
+    requestedAt: "2026-09-28T14:00:00.000Z", contentHash: "0".repeat(64), ...overrides,
+  };
+  value.contentHash = scriptGenerationRequestHash(value);
+  return value;
+}
+
+function metadata() {
+  return {
+    provider: "openai", model: "model-test", taskType: "script_generation",
+    promptVersion: "script-generation-prompt/1.0.0", configurationHash: "d".repeat(64),
+    publicConfiguration: { outputLimit: 1200, responseFormat: "json_schema", store: false, timeoutMs: 1000 },
+  };
 }
 
 function setup(path) {

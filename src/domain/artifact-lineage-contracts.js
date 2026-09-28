@@ -84,7 +84,7 @@ function validateInputs(value) {
   });
 }
 
-function validateGenerationMetadata(value) {
+export function validateGenerationMetadata(value) {
   record(value, "generationMetadata");
   exact(value, GENERATION_FIELDS, "generationMetadata");
   const provider = token(value.provider, "generationMetadata.provider");
