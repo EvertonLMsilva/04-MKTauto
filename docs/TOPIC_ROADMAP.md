@@ -33,7 +33,7 @@
 | E03-I01 | CONCLUÍDO | Contratos de ideias e scoring determinístico | PR #40 mergeado em 28/09/2026 (`ae443f8`); `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram. |
 | E03-I02 | CONCLUÍDO | Seleção humana de ideia append-only | PR #41 mergeado em 28/09/2026 (`a3ac4e7`); `idea-selection/1.0.0`, migração SQLite 012, revisão explícita e linhagem transacional; 232 testes passaram. |
 | E04-S01 | CONCLUÍDO | Contrato e persistência append-only de roteiro | PR #42 mergeado em 28/09/2026 (`d78309f`); `script/1.0.0`, migração SQLite 013, revisão explícita e linhagem transacional; 243 testes passaram. |
-| AI01 | EM EXECUÇÃO | Primeira geração de roteiro por OpenAIAdapter | `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; PR pendente. |
+| AI01 | PR ABERTO | Primeira geração de roteiro por OpenAIAdapter | PR #43 aberto; `script-generation-request/1.0.0`, porta `ScriptGenerator`, configuração sanitizada e migração SQLite 014; 258 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -255,6 +255,7 @@ smoke só executa com `OPENAI_SMOKE_TEST=1`. Riscos residuais: SQLite mantém
 escritor único; qualidade, originalidade substantiva e afirmações sensíveis
 continuam sujeitas a revisão humana; disponibilidade, limites e cobrança do
 provider só são observáveis quando o smoke for explicitamente habilitado.
+O PR #43 foi aberto em 28/09/2026.
 
 ### AI02 — Model Routing Policy
 
