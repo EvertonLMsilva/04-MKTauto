@@ -29,7 +29,8 @@
 | V08 | CONCLUÍDO | Estratégia multimodelo de IA | PR #36 mergeado em 27/09/2026 (`2b272ce`); roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
 | FND01 | CONCLUÍDO | Persistência de PipelineRun | PR #37 mergeado em 28/09/2026 (`2eb0a94`); contrato `pipeline-run/1.0.0`, migração SQLite 008, identidade e transições imutáveis; 180 testes passaram. |
 | FND02 | CONCLUÍDO | Linhagem comum de artefatos | PR #38 mergeado em 28/09/2026 (`df10017`); contrato `artifact-lineage/1.0.0`, migração SQLite 009 e histórico append-only; 194 testes passaram. |
-| FND03 | PR ABERTO | Eventos de custo e CostLedger | PR #39 aberto; contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
+| FND03 | CONCLUÍDO | Eventos de custo e CostLedger | PR #39 mergeado em 28/09/2026 (`439bb44`); contratos `cost-event/1.0.0` e `cost-ledger/1.0.0`, migração SQLite 010 e ledger append-only; 206 testes passaram. |
+| E03-I01 | EM EXECUÇÃO | Contratos de ideias e scoring determinístico | `idea-candidate/1.0.0`, `idea-score/1.0.0`, política versionada, migração SQLite 011 e persistência append-only; 221 testes passaram; PR a abrir. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -208,7 +209,7 @@ vínculo e conteúdo do artefato, moedas separadas, ausência de custo,
 imutabilidade, rollback, erro sanitizado, leitura revalidada e migração
 009→010. Riscos residuais deliberados: SQLite mantém escritor único; correções
 financeiras, câmbio e validação contra uma tabela externa de códigos monetários
-permanecem fora deste corte. O PR #39 foi aberto em 28/09/2026.
+permanecem fora deste corte. O PR #39 foi mergeado em 28/09/2026 (`439bb44`).
 
 ## Habilitação incremental de IA
 
@@ -478,6 +479,44 @@ Riscos residuais: qualidade e cobertura continuam limitadas pelos scores e
 fontes do catálogo original; diversidade pode ser relaxada quando há poucos
 candidatos elegíveis.
 O PR #34 foi mergeado em 27/09/2026 (`3908856`).
+
+## Terceiro épico — E03 Content Intelligence
+
+### E03-I01 — contratos de ideias e scoring determinístico
+
+- receber lotes explícitos de ideias sem chamar IA ou escolher vencedora;
+- vincular cada ideia à `PipelineRun`, projeto, versão e `ResearchShortlist` exatos;
+- aceitar `ReferenceInsight` somente quando informado e coerente com o escopo;
+- calcular score versionado, explicável e reproduzível;
+- persistir ideias, scores, evidências e linhagem de forma transacional e append-only.
+
+Implementação E03-I01: `idea-candidate/1.0.0` preserva identidade de conteúdo
+normalizado, conceito, ângulo editorial, intenção derivada do `ProjectSnapshot`,
+origem e IDs das evidências consumidas. IDs da shortlist e do insight opcional
+são verificados contra registros persistidos do mesmo escopo; texto-fonte,
+prompts, segredos, mídia, transcrições e payloads privados não são aceitos.
+
+`idea-score/1.0.0` usa `idea-scoring-policy/1.0.0` para adequação ao nicho e
+público, força da evidência, novidade relativa, viabilidade editorial, risco de
+direitos e diversidade. Cada componente registra disponibilidade, valor, peso,
+motivo, evidências e contribuição. Componentes indisponíveis permanecem sem
+valor ou contribuição e os pesos disponíveis são renormalizados. Empates seguem
+`TOTAL_DESC,EVIDENCE_DESC,FIT_DESC,CONTENT_IDENTITY_ASC,IDEA_ID_ASC`.
+
+A migração 011 adiciona lotes, ideias, evidências e scores sem alterar dados
+anteriores. Ideias e scores integram `artifact-lineage/1.0.0`, são gravados na
+mesma transação e protegidos contra update e delete. Retry idêntico recupera o
+lote; divergências falham com código e campo públicos estáveis. Nenhum evento de
+custo é criado e Research permanece funcionalmente inalterado.
+
+Evidência: 15 testes focados e a suíte completa de 221 testes passaram em
+28/09/2026, junto de `git diff --check`. A cobertura inclui contratos,
+imutabilidade, escopo da run, shortlist e insights, evidências, componentes e
+indisponibilidade, política e desempate, retry, conflitos, ordem, rollback,
+migração aditiva, revalidação na leitura, linhagem e ausência de custo ou IA.
+Riscos residuais: o scoring lexical inicial é deliberadamente simples e exige
+calibração futura com histórico; SQLite mantém escritor único. Seleção humana,
+geração automática e roteiro permanecem fora deste tópico. PR a abrir.
 
 ## Ordem após E01
 

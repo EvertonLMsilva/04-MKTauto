@@ -161,8 +161,11 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     repository.close();
 
     const before = new DatabaseSync(path);
-    before.exec(`DROP TRIGGER cost_events_no_update; DROP TRIGGER cost_events_no_delete;
-      DROP TABLE cost_events; DELETE FROM schema_migrations WHERE version = 10; PRAGMA user_version = 9;`);
+    before.exec(`DROP TABLE idea_candidate_evidence; DROP TABLE idea_scores;
+      DROP TABLE idea_candidates; DROP TABLE idea_batches;
+      DROP TRIGGER cost_events_no_update; DROP TRIGGER cost_events_no_delete;
+      DROP TABLE cost_events; DELETE FROM schema_migrations WHERE version = 11;
+      DELETE FROM schema_migrations WHERE version = 10; PRAGMA user_version = 9;`);
     before.close();
 
     const migrated = new CostLedgerRepository(path);
@@ -171,8 +174,8 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 10);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 10);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 11);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 11);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM pipeline_runs").get().total, 1);
     raw.close();
   });
