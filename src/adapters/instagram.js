@@ -7,6 +7,67 @@ const MEDIA_FIELDS = [
   "id", "media_type", "media_product_type", "permalink", "timestamp",
   "username", "caption", "like_count", "comments_count",
 ].join(",");
+
+export async function analyzeInstagramReference({
+  handle, accessToken, igUserId, apiVersion, eligibility = {}, maxItems = 25, fetchImpl = fetch,
+}) {
+  const block = configurationBlock({ accessToken, igUserId, apiVersion, eligibility });
+  if (block) return instagramReferenceGap("BLOCKED_BY_PROVIDER", block);
+  if (eligibility.businessDiscoveryGranted !== true) {
+    return instagramReferenceGap("BLOCKED_BY_PROVIDER", "INSTAGRAM_BUSINESS_DISCOVERY_PERMISSION_REQUIRED");
+  }
+  const username = normalizeReferenceHandle(handle);
+  if (!username) return instagramReferenceGap("FAILED", "INSTAGRAM_INVALID_HANDLE");
+  try {
+    const fields = `business_discovery.username(${username}){media.limit(${Math.min(maxItems, 25)}){id,caption,media_type,media_product_type,permalink,timestamp}}`;
+    const body = await requestJson({
+      url: graphUrl(apiVersion, igUserId, { fields }), accessToken, fetchImpl, onAttempt: () => {},
+    });
+    const media = body?.business_discovery?.media?.data;
+    if (!Array.isArray(media)) return instagramReferenceGap("FAILED", "INSTAGRAM_REFERENCE_NOT_ACCESSIBLE");
+    const items = media.flatMap((item) => {
+      try {
+        if (typeof item?.id !== "string" || !/^\d{5,64}$/.test(item.id) || !isDateTime(item.timestamp)) return [];
+        return [{
+          providerContentId: item.id,
+          canonicalUrl: canonicalInstagramUrl(item.permalink),
+          publishedAt: new Date(item.timestamp).toISOString(),
+          mediaType: normalizeMediaType(item.media_product_type ?? item.media_type),
+          durationSeconds: null,
+          sourceText: nonBlank(item.caption) ?? "",
+        }];
+      } catch { return []; }
+    });
+    const gaps = [];
+    if (items.length === 0) gaps.push("INSTAGRAM_NO_PUBLIC_MEDIA");
+    if (items.length !== media.length) gaps.push("INSTAGRAM_ITEMS_INVALID_OR_UNAVAILABLE");
+    gaps.push("INSTAGRAM_DURATION_UNAVAILABLE");
+    return {
+      capability: "BUSINESS_DISCOVERY",
+      status: items.length > 0 && items.length === media.length ? "SUCCESS" : "PARTIAL",
+      items,
+      gaps,
+    };
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    return instagramReferenceGap(normalized.blocking ? "BLOCKED_BY_PROVIDER" : "FAILED", normalized.code);
+  }
+}
+
+function instagramReferenceGap(status, code) {
+  return { capability: "BUSINESS_DISCOVERY", status, items: [], gaps: [code] };
+}
+
+function normalizeReferenceHandle(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim().replace(/^@/, "");
+  return /^[A-Za-z0-9._]{1,30}$/.test(normalized) ? normalized : "";
+}
+
+function normalizeMediaType(value) {
+  if (value === "REELS") return "REEL";
+  return ["VIDEO", "IMAGE", "CAROUSEL_ALBUM"].includes(value) ? value : "OTHER";
+}
 const REQUIRED_ELIGIBILITY = [
   ["professionalAccount", "INSTAGRAM_PROFESSIONAL_ACCOUNT_REQUIRED"],
   ["facebookPageLinked", "INSTAGRAM_FACEBOOK_PAGE_LINK_REQUIRED"],
@@ -338,6 +399,8 @@ function normalizeHashtag(value) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "")
     .toLowerCase().replace(/^#+/, "").replace(/[^a-z0-9_]/g, "").slice(0, 100);
 }
+
+function isDateTime(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
 
 function canonicalInstagramUrl(value) {
   const url = new URL(value);

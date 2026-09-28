@@ -13,14 +13,16 @@ import {
 } from "./domain/contracts.js";
 import { calculateHistoricalVelocity } from "./domain/velocity.js";
 import { createResearchArtifact } from "./domain/research-artifact-contracts.js";
+import { createReferenceInsight } from "./domain/reference-insight-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 5;
+const CATALOG_SCHEMA_VERSION = 6;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
   [3, ["003_project_catalog", readFileSync(new URL("./db/migrations/003_project_catalog.sql", import.meta.url), "utf8")]],
   [4, ["004_project_commands", readFileSync(new URL("./db/migrations/004_project_commands.sql", import.meta.url), "utf8")]],
   [5, ["005_research_daily", readFileSync(new URL("./db/migrations/005_research_daily.sql", import.meta.url), "utf8")]],
+  [6, ["006_reference_analysis", readFileSync(new URL("./db/migrations/006_reference_analysis.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {
@@ -287,6 +289,104 @@ export class TrendCatalogStore {
 
   getResearchArtifact(researchDailyRunId) {
     const row = this.db.prepare("SELECT payload_json FROM research_artifacts WHERE research_daily_run_id = ?").get(researchDailyRunId);
+    return row ? JSON.parse(row.payload_json) : null;
+  }
+
+  beginReferenceAnalysisRun(value) {
+    const prior = this.db.prepare("SELECT * FROM reference_analysis_runs WHERE pipeline_run_id = ?").get(value.pipelineRunId);
+    if (prior) {
+      const sameIdentity = prior.id === value.id && prior.project_id === value.projectId
+        && prior.project_version === value.projectVersion && prior.logical_date === value.logicalDate;
+      if (!sameIdentity) throw new TrendStoreError("PIPELINE_RUN_ID_REUSED", "pipelineRunId já pertence a outra análise");
+      const sameInput = prior.research_input_hash === value.researchInputHash
+        && prior.project_snapshot_hash === value.projectSnapshotHash
+        && prior.policy_version === value.policyVersion && prior.config_hash === value.configHash
+        && prior.timezone === value.timezone;
+      if (!sameInput) throw new TrendStoreError("REFERENCE_ANALYSIS_CONFLICT", "retry diverge da entrada original");
+      return this.getReferenceAnalysisRun(value.id);
+    }
+    this.db.prepare(`INSERT INTO reference_analysis_runs
+      (id, pipeline_run_id, project_id, project_version, logical_date, timezone,
+       research_input_hash, project_snapshot_hash, policy_version, config_hash, state, started_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'RUNNING', ?)`)
+      .run(value.id, value.pipelineRunId, value.projectId, value.projectVersion, value.logicalDate,
+        value.timezone, value.researchInputHash, value.projectSnapshotHash, value.policyVersion,
+        value.configHash, value.startedAt);
+    return this.getReferenceAnalysisRun(value.id);
+  }
+
+  getReferenceAnalysisRun(id) {
+    const row = this.db.prepare("SELECT * FROM reference_analysis_runs WHERE id = ?").get(id);
+    if (!row) return null;
+    const value = referenceAnalysisRunFromRow(row);
+    value.steps = this.db.prepare(`SELECT * FROM reference_analysis_steps
+      WHERE reference_analysis_run_id = ? ORDER BY reference_key`).all(id).map(referenceStepFromRow);
+    return value;
+  }
+
+  getReferenceAnalysisStep(referenceAnalysisRunId, referenceKey) {
+    const row = this.db.prepare(`SELECT * FROM reference_analysis_steps
+      WHERE reference_analysis_run_id = ? AND reference_key = ?`).get(referenceAnalysisRunId, referenceKey);
+    return row ? referenceStepFromRow(row) : null;
+  }
+
+  startReferenceAnalysisStep({ referenceAnalysisRunId, referenceKey, startedAt }) {
+    this.db.prepare(`INSERT INTO reference_analysis_steps
+      (reference_analysis_run_id, reference_key, state, started_at)
+      VALUES (?, ?, 'RUNNING', ?) ON CONFLICT(reference_analysis_run_id, reference_key) DO NOTHING`)
+      .run(referenceAnalysisRunId, referenceKey, startedAt);
+    return this.getReferenceAnalysisStep(referenceAnalysisRunId, referenceKey);
+  }
+
+  finishReferenceAnalysisStep({ referenceAnalysisRunId, referenceKey, state, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "FAILED"].includes(state)) throw new TrendStoreError("INVALID_REFERENCE_STEP_STATE", state);
+    rejectReferenceSourceFields(result);
+    this.db.prepare(`UPDATE reference_analysis_steps
+      SET state = ?, completed_at = ?, duration_ms = ?, result_json = ?
+      WHERE reference_analysis_run_id = ? AND reference_key = ?`)
+      .run(state, completedAt, durationMs, json(result), referenceAnalysisRunId, referenceKey);
+    return this.getReferenceAnalysisStep(referenceAnalysisRunId, referenceKey);
+  }
+
+  finishReferenceAnalysisRun({ id, state, completedAt, durationMs, result }) {
+    if (!["COMPLETED", "COMPLETED_WITH_GAPS", "FAILED"].includes(state)) {
+      throw new TrendStoreError("INVALID_REFERENCE_RUN_STATE", state);
+    }
+    this.db.prepare(`UPDATE reference_analysis_runs
+      SET state = ?, completed_at = ?, duration_ms = ?, result_json = ? WHERE id = ?`)
+      .run(state, completedAt, durationMs, json(result), id);
+    return this.getReferenceAnalysisRun(id);
+  }
+
+  recordReferenceInsight({ referenceAnalysisRunId, artifact }) {
+    const validated = createReferenceInsight(artifact);
+    const run = this.getReferenceAnalysisRun(referenceAnalysisRunId);
+    if (!run) throw new TrendStoreError("REFERENCE_ANALYSIS_RUN_NOT_FOUND", "análise de referências inexistente");
+    for (const field of ["pipelineRunId", "projectId", "projectVersion", "logicalDate", "researchInputHash", "projectSnapshotHash", "policyVersion"]) {
+      if (validated[field] !== run[field]) {
+        throw new TrendStoreError("REFERENCE_INSIGHT_LINEAGE_MISMATCH", `artifact.${field} diverge da execução`);
+      }
+    }
+    const { contentHash, ...content } = validated;
+    if (stableHash(content) !== contentHash) throw new TrendStoreError("REFERENCE_INSIGHT_HASH_MISMATCH", "contentHash diverge do conteúdo");
+    const prior = this.db.prepare("SELECT payload_json FROM reference_insights WHERE reference_analysis_run_id = ?").get(referenceAnalysisRunId);
+    if (prior) {
+      const stored = JSON.parse(prior.payload_json);
+      if (stableHash(stored) !== stableHash(validated)) throw new TrendStoreError("REFERENCE_INSIGHT_CONFLICT", "artefato já persistido com outro conteúdo");
+      return stored;
+    }
+    this.db.prepare(`INSERT INTO reference_insights
+      (artifact_id, schema_version, reference_analysis_run_id, pipeline_run_id,
+       project_id, project_version, content_hash, payload_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+      .run(validated.artifactId, validated.schemaVersion, referenceAnalysisRunId,
+        validated.pipelineRunId, validated.projectId, validated.projectVersion,
+        validated.contentHash, json(validated), validated.createdAt);
+    return validated;
+  }
+
+  getReferenceInsight(referenceAnalysisRunId) {
+    const row = this.db.prepare("SELECT payload_json FROM reference_insights WHERE reference_analysis_run_id = ?").get(referenceAnalysisRunId);
     return row ? JSON.parse(row.payload_json) : null;
   }
 
@@ -564,6 +664,27 @@ function researchDailyRunFromRow(row) {
   };
 }
 
+function referenceAnalysisRunFromRow(row) {
+  return {
+    id: row.id, pipelineRunId: row.pipeline_run_id, projectId: row.project_id,
+    projectVersion: row.project_version, logicalDate: row.logical_date, timezone: row.timezone,
+    researchInputHash: row.research_input_hash, projectSnapshotHash: row.project_snapshot_hash,
+    policyVersion: row.policy_version, configHash: row.config_hash, state: row.state,
+    startedAt: row.started_at, completedAt: row.completed_at ?? undefined,
+    durationMs: row.duration_ms ?? undefined,
+    result: row.result_json ? JSON.parse(row.result_json) : undefined,
+  };
+}
+
+function referenceStepFromRow(row) {
+  return {
+    referenceAnalysisRunId: row.reference_analysis_run_id, referenceKey: row.reference_key,
+    state: row.state, startedAt: row.started_at, completedAt: row.completed_at ?? undefined,
+    durationMs: row.duration_ms ?? undefined,
+    result: row.result_json ? JSON.parse(row.result_json) : undefined,
+  };
+}
+
 function dailyStepFromRow(row) {
   return {
     stepKey: row.step_key, state: row.state, startedAt: row.started_at,
@@ -601,6 +722,21 @@ function json(value) {
 
 function requireKey(value) {
   if (typeof value !== "string" || value.trim() === "") throw new TrendStoreError("INVALID_IDEMPOTENCY_KEY", "chave explícita obrigatória");
+}
+
+function rejectReferenceSourceFields(value) {
+  const forbidden = /^(?:(?:access|refresh)?token|api[_-]?key|authorization|secret|password|caption|title|description|biography|bio|text|source[_-]?text|transcript|thumbnail|media[_-]?url)$/i;
+  const seen = new WeakSet();
+  function visit(current, path) {
+    if (!current || typeof current !== "object" || seen.has(current)) return;
+    seen.add(current);
+    for (const [key, child] of Object.entries(current)) {
+      const childPath = path ? `${path}.${key}` : key;
+      if (forbidden.test(key)) throw new TrendStoreError("FORBIDDEN_REFERENCE_STEP_FIELD", childPath);
+      visit(child, childPath);
+    }
+  }
+  visit(value, "result");
 }
 
 function minDate(left, right) {

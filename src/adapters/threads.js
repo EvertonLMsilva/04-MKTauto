@@ -10,6 +10,70 @@ const REQUIRED_ELIGIBILITY = [
   ["appAccessApproved", "THREADS_APP_ACCESS_NOT_APPROVED"],
 ];
 
+export async function analyzeThreadsReference({
+  handle, accessToken, apiVersion = "v1.0", eligibility = {}, maxItems = 25, fetchImpl = fetch,
+}) {
+  const block = !nonBlank(accessToken) ? "THREADS_ACCESS_TOKEN_MISSING"
+    : eligibility.basicGranted !== true ? "THREADS_BASIC_PERMISSION_REQUIRED"
+      : eligibility.profileDiscoveryGranted !== true ? "THREADS_PROFILE_DISCOVERY_PERMISSION_REQUIRED"
+        : eligibility.appAccessApproved !== true ? "THREADS_APP_ACCESS_NOT_APPROVED" : null;
+  if (block) return threadsReferenceGap("BLOCKED_BY_PROVIDER", block);
+  const username = normalizeReferenceHandle(handle);
+  if (!username) return threadsReferenceGap("FAILED", "THREADS_INVALID_HANDLE");
+  const url = new URL(`https://${GRAPH_HOST}/${apiVersion}/profile_posts`);
+  url.search = new URLSearchParams({ username, fields: MEDIA_FIELDS, limit: String(Math.min(maxItems, 100)) });
+  try {
+    let response;
+    try { response = await fetchImpl(url, { headers: { Authorization: `Bearer ${accessToken}` } }); }
+    catch (cause) { throw providerError("THREADS_NETWORK_ERROR", false, cause); }
+    const body = await safeJson(response);
+    if (!response.ok) throw errorFromResponse(response.status, body);
+    const source = Array.isArray(body?.data) ? body.data : [];
+    const items = source.flatMap((item) => {
+      try {
+        if (typeof item?.id !== "string" || !/^[A-Za-z0-9._-]{5,128}$/.test(item.id) || !isDateTime(item.timestamp)) return [];
+        return [{
+          providerContentId: item.id,
+          canonicalUrl: canonicalThreadsUrl(item.permalink),
+          publishedAt: new Date(item.timestamp).toISOString(),
+          mediaType: normalizeThreadsMediaType(item.media_type),
+          durationSeconds: null,
+          sourceText: nonBlank(item.text) ?? "",
+        }];
+      } catch { return []; }
+    });
+    const gaps = [];
+    if (items.length === 0) gaps.push("THREADS_NO_ACCESSIBLE_PUBLIC_POSTS");
+    if (items.length !== source.length) gaps.push("THREADS_ITEMS_INVALID_OR_UNAVAILABLE");
+    gaps.push("THREADS_DURATION_UNAVAILABLE");
+    return {
+      capability: "PUBLIC_PROFILE_POSTS",
+      status: items.length > 0 && items.length === source.length ? "SUCCESS" : "PARTIAL",
+      items,
+      gaps,
+    };
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    return threadsReferenceGap(normalized.blocking ? "BLOCKED_BY_PROVIDER" : "FAILED", normalized.code);
+  }
+}
+
+function threadsReferenceGap(status, code) {
+  return { capability: "PUBLIC_PROFILE_POSTS", status, items: [], gaps: [code] };
+}
+
+function normalizeReferenceHandle(value) {
+  if (typeof value !== "string") return "";
+  const normalized = value.trim().replace(/^@/, "");
+  return /^[A-Za-z0-9._]{1,30}$/.test(normalized) ? normalized : "";
+}
+
+function normalizeThreadsMediaType(value) {
+  return ["TEXT_POST", "IMAGE", "VIDEO", "CAROUSEL_ALBUM", "AUDIO", "REPOST_FACADE"].includes(value) ? value : "OTHER";
+}
+
+function isDateTime(value) { return typeof value === "string" && Number.isFinite(Date.parse(value)); }
+
 export function deriveThreadsQueries(clusters, maxQueries = 30) {
   if (!Array.isArray(clusters) || clusters.length === 0) throw new Error("clusters persistidos são obrigatórios");
   if (!Number.isInteger(maxQueries) || maxQueries < 1 || maxQueries > 30) throw new Error("maxQueries deve ser inteiro entre 1 e 30");

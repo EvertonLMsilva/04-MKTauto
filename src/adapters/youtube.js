@@ -9,6 +9,8 @@ import {
 } from "../domain/ranking.js";
 
 const YOUTUBE_URL = "https://www.googleapis.com/youtube/v3/videos";
+const YOUTUBE_CHANNELS_URL = "https://www.googleapis.com/youtube/v3/channels";
+const YOUTUBE_PLAYLIST_ITEMS_URL = "https://www.googleapis.com/youtube/v3/playlistItems";
 const YOUTUBE_PARTS = "snippet,contentDetails,statistics";
 const MIN_DURATION_SECONDS = 15;
 const MAX_DURATION_SECONDS = 180;
@@ -25,6 +27,81 @@ const CATEGORY_LABELS = {
   "27": "educação",
   "28": "ciência e tecnologia",
 };
+
+export async function analyzeYouTubeReference({ handle, apiKey, maxItems = 25, fetchImpl = fetch }) {
+  if (!apiKey) return referenceGap("BLOCKED_BY_PROVIDER", "YOUTUBE_API_KEY_MISSING");
+  const normalizedHandle = normalizeHandle(handle);
+  try {
+    const channelUrl = new URL(YOUTUBE_CHANNELS_URL);
+    channelUrl.search = new URLSearchParams({ part: "contentDetails", forHandle: normalizedHandle, key: apiKey });
+    const channelBody = await referenceRequest(channelUrl, fetchImpl);
+    const uploads = channelBody?.items?.[0]?.contentDetails?.relatedPlaylists?.uploads;
+    if (typeof uploads !== "string" || uploads === "") return referenceGap("FAILED", "YOUTUBE_HANDLE_NOT_FOUND");
+
+    const ids = [];
+    let pageToken;
+    while (ids.length < maxItems) {
+      const playlistUrl = new URL(YOUTUBE_PLAYLIST_ITEMS_URL);
+      playlistUrl.search = new URLSearchParams({
+        part: "contentDetails", playlistId: uploads, maxResults: String(Math.min(50, maxItems - ids.length)),
+        key: apiKey, ...(pageToken ? { pageToken } : {}),
+      });
+      const playlistBody = await referenceRequest(playlistUrl, fetchImpl);
+      for (const item of Array.isArray(playlistBody?.items) ? playlistBody.items : []) {
+        const id = item?.contentDetails?.videoId;
+        if (typeof id === "string" && isPlatformVideoId(id) && !ids.includes(id)) ids.push(id);
+      }
+      pageToken = typeof playlistBody?.nextPageToken === "string" ? playlistBody.nextPageToken : undefined;
+      if (!pageToken || !playlistBody?.items?.length) break;
+    }
+    if (ids.length === 0) return { capability: "PUBLIC_HANDLE_UPLOADS", status: "PARTIAL", items: [], gaps: ["YOUTUBE_NO_PUBLIC_UPLOADS"] };
+
+    const videosUrl = new URL(YOUTUBE_URL);
+    videosUrl.search = new URLSearchParams({ part: YOUTUBE_PARTS, id: ids.join(","), key: apiKey });
+    const videosBody = await referenceRequest(videosUrl, fetchImpl);
+    const items = (Array.isArray(videosBody?.items) ? videosBody.items : []).flatMap((item) => {
+      const durationSeconds = parseYouTubeDuration(item?.contentDetails?.duration);
+      if (!isPlatformVideoId(item?.id) || !isDateTime(item?.snippet?.publishedAt)) return [];
+      return [{
+        providerContentId: item.id,
+        canonicalUrl: `https://youtube.com/watch?v=${encodeURIComponent(item.id)}`,
+        publishedAt: new Date(item.snippet.publishedAt).toISOString(),
+        mediaType: "VIDEO",
+        durationSeconds,
+        sourceText: [item.snippet?.title, item.snippet?.description, ...(item.snippet?.tags ?? [])]
+          .filter((value) => typeof value === "string").join(" "),
+      }];
+    });
+    return {
+      capability: "PUBLIC_HANDLE_UPLOADS",
+      status: items.length === ids.length ? "SUCCESS" : "PARTIAL",
+      items,
+      gaps: items.length === ids.length ? [] : ["YOUTUBE_ITEMS_INVALID_OR_UNAVAILABLE"],
+    };
+  } catch (error) {
+    const normalized = normalizeProviderError(error);
+    return referenceGap(normalized.blocking ? "BLOCKED_BY_PROVIDER" : "FAILED", normalized.code);
+  }
+}
+
+async function referenceRequest(url, fetchImpl) {
+  let response;
+  try { response = await fetchImpl(url); } catch (cause) { throw providerError("YOUTUBE_NETWORK_ERROR", false, cause); }
+  const body = await safeJson(response);
+  if (!response.ok) throw errorFromResponse(response.status, body);
+  return body;
+}
+
+function referenceGap(status, code) {
+  return { capability: "PUBLIC_HANDLE_UPLOADS", status, items: [], gaps: [code] };
+}
+
+function normalizeHandle(value) {
+  if (typeof value !== "string" || !/^@?[\p{L}\p{N}._-]{1,100}$/u.test(value.trim())) {
+    throw providerError("YOUTUBE_INVALID_HANDLE", false);
+  }
+  return value.trim().replace(/^@/, "");
+}
 
 export async function fetchPopularYouTubeSignals({
   apiKey,

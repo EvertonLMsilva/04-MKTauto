@@ -22,7 +22,8 @@
 | PC04 | CONCLUÍDO | Interface local de Project/Channel | PR #29 mergeado em 27/09/2026 (`5b16176`); 125 testes passaram. |
 | PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
-| E02-R02 | PR ABERTO | Radar diário vinculado ao projeto | PR #32 aberto; `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passando. |
+| E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
+| E02-R03 | EM EXECUÇÃO | Análise de referências estratégicas | `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -244,8 +245,38 @@ data, isolamento do histórico por projeto e versão, retry, conflito de pipelin
 idioma dinâmico, dependência técnica, provider não suportado, exportação e
 direitos; `git diff --check` passou. Risco residual: shortlist e seleção ainda
 pertencem ao catálogo legado global e exigem corte próprio antes de uso por
-projeto. Análise ativa de `references[]` continua fora deste tópico. O PR #32
-foi aberto em 27/09/2026.
+projeto. Análise ativa de `references[]` continua fora deste tópico. O PR #32 foi
+mergeado em 27/09/2026 (`7e0cf31`).
+
+### E02-R03 — análise de referências estratégicas
+
+- consumir exclusivamente o `ResearchInput` e os handles configurados no snapshot;
+- consultar somente capacidades oficiais por handle, sem scraping ou descoberta;
+- produzir `ReferenceInsight` agregado, rastreável e sem conteúdo-fonte persistido;
+- manter análise de referências separada do radar, Content Intelligence e geração.
+
+Implementação E02-R03: `reference-insight/1.0.0` liga o artefato a
+`pipelineRunId`, projeto, versão, data e hashes da entrada e do snapshot. A
+política `reference-analysis-policy/1.0.0` usa uma janela determinística de 30
+dias e até 25 itens por referência. YouTube, Instagram Business Discovery e
+Threads Profile Discovery consultam o handle exato; TikTok limita-se à conta
+OAuth exatamente correspondente; Facebook permanece `UNSUPPORTED` sem criar
+novo provider. Textos públicos são classificados apenas em memória e somente
+IDs, permalinks, metadados mínimos e rótulos controlados são persistidos.
+
+A migração 006 é aditiva e separa runs, passos por referência e artefatos. Retry
+idêntico reutiliza passos concluídos e o artefato final; conflitos de pipeline,
+projeto, versão, snapshot ou política falham antes do provider. Cobertura parcial,
+provider indisponível e erros sanitizados permanecem explícitos. Direitos ficam
+`strategic_reference_only`, sem download, armazenamento de texto ou permissão de
+republicação.
+
+Evidência: 161 testes passaram em 27/09/2026, incluindo consultas exatas por
+handle, ausência de chamadas para referências sem capacidade, agregação mínima,
+isolamento multi-projeto, retry, migração 005→006, sanitização e direitos;
+`git diff --check` passou. Riscos residuais: App Review e quotas da Meta, cobertura
+profissional do Instagram, autorização TikTok, métricas mutáveis, handles
+renomeados e amostras insuficientes.
 
 ## Ordem após E01
 
