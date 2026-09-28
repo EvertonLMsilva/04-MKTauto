@@ -4,6 +4,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import {
   canonicalTrendIdentity,
+  serializePublicTrendCatalog,
   validateSourceRun,
   validateTopicCluster,
   validateTrendCandidate,
@@ -14,8 +15,9 @@ import {
 import { calculateHistoricalVelocity } from "./domain/velocity.js";
 import { createResearchArtifact } from "./domain/research-artifact-contracts.js";
 import { createReferenceInsight } from "./domain/reference-insight-contracts.js";
+import { createResearchShortlist } from "./domain/research-shortlist-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 6;
+const CATALOG_SCHEMA_VERSION = 7;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
@@ -23,6 +25,7 @@ const MIGRATIONS = new Map([
   [4, ["004_project_commands", readFileSync(new URL("./db/migrations/004_project_commands.sql", import.meta.url), "utf8")]],
   [5, ["005_research_daily", readFileSync(new URL("./db/migrations/005_research_daily.sql", import.meta.url), "utf8")]],
   [6, ["006_reference_analysis", readFileSync(new URL("./db/migrations/006_reference_analysis.sql", import.meta.url), "utf8")]],
+  [7, ["007_research_shortlist", readFileSync(new URL("./db/migrations/007_research_shortlist.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {
@@ -227,6 +230,11 @@ export class TrendCatalogStore {
     return value;
   }
 
+  getResearchDailyRunByPipeline(pipelineRunId) {
+    const row = this.db.prepare("SELECT * FROM research_daily_runs WHERE pipeline_run_id = ?").get(pipelineRunId);
+    return row ? this.getResearchDailyRun(row.id) : null;
+  }
+
   getResearchDailyStep(researchDailyRunId, stepKey) {
     const row = this.db.prepare("SELECT * FROM research_daily_steps WHERE research_daily_run_id = ? AND step_key = ?")
       .get(researchDailyRunId, stepKey);
@@ -289,6 +297,71 @@ export class TrendCatalogStore {
 
   getResearchArtifact(researchDailyRunId) {
     const row = this.db.prepare("SELECT payload_json FROM research_artifacts WHERE research_daily_run_id = ?").get(researchDailyRunId);
+    return row ? JSON.parse(row.payload_json) : null;
+  }
+
+  recordResearchShortlist(artifact) {
+    const validated = createResearchShortlist(artifact);
+    const daily = this.getResearchDailyRunByPipeline(validated.pipelineRunId);
+    if (!daily) throw new TrendStoreError("RESEARCH_RUN_NOT_FOUND", "execução de Research inexistente");
+    const source = this.getResearchArtifact(daily.id);
+    if (!source || source.artifactId !== validated.researchTopicCatalogArtifactId
+      || source.contentHash !== validated.researchTopicCatalogHash || source.trendRunId !== validated.trendRunId) {
+      throw new TrendStoreError("RESEARCH_SHORTLIST_LINEAGE_MISMATCH", "shortlist diverge do catálogo persistido");
+    }
+    for (const field of ["pipelineRunId", "projectId", "projectVersion", "logicalDate", "timezone", "researchInputHash"]) {
+      if (validated[field] !== source[field]) throw new TrendStoreError("RESEARCH_SHORTLIST_LINEAGE_MISMATCH", `shortlist.${field} diverge do catálogo`);
+    }
+    const catalog = this.getRun(validated.trendRunId);
+    const publicCatalog = catalog ? serializePublicTrendCatalog(catalog) : null;
+    if (!publicCatalog || stableHash(publicCatalog) !== validated.trendCatalogHash) {
+      throw new TrendStoreError("RESEARCH_SHORTLIST_LINEAGE_MISMATCH", "trendCatalogHash diverge do catálogo persistido");
+    }
+    const candidates = new Map(publicCatalog.candidates.map((item) => [item.id, item]));
+    const clusters = new Map(publicCatalog.topicClusters.map((item) => [item.id, item]));
+    const scores = new Map(publicCatalog.scores.map((item) => [item.id, item]));
+    for (const item of validated.orderedCandidates) {
+      if (!candidates.has(item.candidate.id) || !clusters.has(item.cluster.id) || !scores.has(item.score.id)
+        || stableHash(candidates.get(item.candidate.id)) !== stableHash(item.candidate)
+        || stableHash(clusters.get(item.cluster.id)) !== stableHash(item.cluster)
+        || stableHash(scores.get(item.score.id)) !== stableHash(item.score)) {
+        throw new TrendStoreError("RESEARCH_SHORTLIST_LINEAGE_MISMATCH", `dados divergentes para ${item.candidate.id}`);
+      }
+    }
+    const catalogCandidateIds = publicCatalog.candidates.map(({ id }) => id).sort();
+    const decisionCandidateIds = validated.decisions.map(({ candidateId }) => candidateId).sort();
+    if (stableHash(catalogCandidateIds) !== stableHash(decisionCandidateIds)
+      || stableHash(publicCatalog.sourceRuns) !== stableHash(validated.coverage)) {
+      throw new TrendStoreError("RESEARCH_SHORTLIST_LINEAGE_MISMATCH", "decisões ou cobertura divergem do catálogo");
+    }
+    const { contentHash, ...content } = validated;
+    if (stableHash(content) !== contentHash) throw new TrendStoreError("RESEARCH_SHORTLIST_HASH_MISMATCH", "contentHash diverge do conteúdo");
+    const prior = this.getResearchShortlistByPipeline(validated.pipelineRunId);
+    if (prior) {
+      if (stableHash(prior) !== stableHash(validated)) throw new TrendStoreError("RESEARCH_SHORTLIST_CONFLICT", "shortlist já persistida com outro conteúdo");
+      return createResearchShortlist(prior);
+    }
+    try {
+      this.db.prepare(`INSERT INTO research_shortlists
+        (artifact_id, schema_version, revision, pipeline_run_id, project_id, project_version,
+         logical_date, research_artifact_id, trend_run_id, research_input_hash,
+         research_topic_catalog_hash, trend_catalog_hash, policy_version, state,
+         content_hash, payload_json, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+        .run(validated.artifactId, validated.schemaVersion, validated.revision,
+          validated.pipelineRunId, validated.projectId, validated.projectVersion,
+          validated.logicalDate, validated.researchTopicCatalogArtifactId, validated.trendRunId,
+          validated.researchInputHash, validated.researchTopicCatalogHash,
+          validated.trendCatalogHash, validated.policy.version, validated.state,
+          validated.contentHash, json(validated), validated.createdAt);
+      return validated;
+    } catch (error) {
+      throw mapSqliteError(error);
+    }
+  }
+
+  getResearchShortlistByPipeline(pipelineRunId) {
+    const row = this.db.prepare("SELECT payload_json FROM research_shortlists WHERE pipeline_run_id = ?").get(pipelineRunId);
     return row ? JSON.parse(row.payload_json) : null;
   }
 
