@@ -19,34 +19,29 @@ test("migra banco vazio e reabre o catálogo sem alteração destrutiva", () => 
     assert.equal(second.getRun("run-2026-09-26").candidates.length, 1);
     second.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 6);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 6);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 7);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 7);
     raw.close();
   });
 });
 
-test("migração 006 preserva catálogo existente da versão 5", () => {
+test("migração 007 preserva catálogo e análises existentes da versão 6", () => {
   withDatabase((path) => {
     const first = new TrendCatalogStore(path);
     first.recordOperation(batch({ key: "before-reference-migration", at: DAY_ONE, views: 100 }));
     first.close();
     const raw = new DatabaseSync(path);
     raw.exec(`
-      DROP TABLE reference_insights;
-      DROP TABLE reference_analysis_steps;
-      DROP TABLE reference_analysis_runs;
-      DELETE FROM schema_migrations WHERE version = 6;
-      PRAGMA user_version = 5;
+      DROP TABLE research_shortlists;
+      DELETE FROM schema_migrations WHERE version = 7;
+      PRAGMA user_version = 6;
     `);
     raw.close();
 
     const migrated = new TrendCatalogStore(path);
     assert.equal(migrated.getRun("run-2026-09-26").candidates.length, 1);
+    assert.equal(migrated.getResearchShortlistByPipeline("pipeline-inexistente"), null);
     migrated.close();
-    const verified = new DatabaseSync(path);
-    assert.equal(verified.prepare("PRAGMA user_version").get().user_version, 6);
-    assert.equal(verified.prepare("SELECT COUNT(*) AS total FROM reference_analysis_runs").get().total, 0);
-    verified.close();
   });
 });
 
@@ -218,7 +213,7 @@ test("falha por chave estrangeira reverte toda a transação com código estáve
 test("rejeita versão futura do catálogo com código estável", () => {
   withDatabase((path) => {
     const raw = new DatabaseSync(path);
-    raw.exec("PRAGMA user_version = 7");
+    raw.exec("PRAGMA user_version = 8");
     raw.close();
     assert.throws(
       () => new TrendCatalogStore(path),
@@ -355,6 +350,6 @@ function withDatabase(callback) {
   try {
     callback(join(directory, "catalog.sqlite"));
   } finally {
-    rmSync(directory, { recursive: true, force: true });
+    rmSync(directory, { recursive: true, force: true, maxRetries: 3, retryDelay: 100 });
   }
 }

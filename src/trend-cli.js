@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { TrendCatalogStore } from "./trend-store.js";
 import { exportDailyCatalog } from "./trend-export.js";
 import { runDailyTrendCatalog } from "./trend-daily.js";
+import { buildResearchShortlist } from "./research-shortlist.js";
 
 const [command = "daily", ...args] = process.argv.slice(2);
 const options = parseOptions(args);
@@ -10,6 +11,13 @@ const logicalDate = options.date ?? logicalDateInTimezone(new Date(), options.ti
 const timezone = options.timezone ?? process.env.TREND_TIMEZONE ?? "America/Sao_Paulo";
 const databasePath = resolve(options.database ?? process.env.TREND_DATABASE ?? "data/trends.sqlite");
 const outputRoot = resolve(options.output ?? process.env.TREND_OUTPUT_ROOT ?? "data/trends");
+if (!["daily", "shortlist", "select", "export"].includes(command)) {
+  throw new Error("Comando inválido. Use daily, shortlist ou export.");
+}
+if (command === "select") throw new Error("LEGACY_GLOBAL_SELECTION_DISABLED: use shortlist com ResearchInput e ResearchTopicCatalog exatos");
+if (command === "shortlist" && (!options.input || !options.catalog)) {
+  throw new Error("--input e --catalog com contratos JSON exatos são obrigatórios");
+}
 const store = new TrendCatalogStore(databasePath);
 
 try {
@@ -18,23 +26,18 @@ try {
     if (!options.input) throw new Error("--input com ResearchInput JSON é obrigatório");
     const researchInput = JSON.parse(readFileSync(resolve(options.input), "utf8"));
     result = await runDailyTrendCatalog({ store, researchInput, outputRoot, config: configFromEnvironment(process.env) });
-  } else if (command === "shortlist" || command === "select") {
-    const candidateId = options.candidate;
-    if (!candidateId) throw new Error("--candidate é obrigatório");
-    store.changeCandidateState({
-      logicalDate,
-      candidateId,
-      nextState: command === "select" ? "SELECTED" : "SHORTLISTED",
-      actor: options.actor ?? process.env.USERNAME ?? "operador",
-      changedAt: new Date().toISOString(),
+  } else if (command === "shortlist") {
+    result = buildResearchShortlist({
+      store,
+      researchInput: JSON.parse(readFileSync(resolve(options.input), "utf8")),
+      researchTopicCatalog: JSON.parse(readFileSync(resolve(options.catalog), "utf8")),
     });
-    result = exportDailyCatalog({ store, logicalDate, outputRoot });
   } else if (command === "export") {
     result = options["research-run"]
       ? exportDailyCatalog({ store, researchDailyRunId: options["research-run"], outputRoot })
       : exportDailyCatalog({ store, logicalDate, outputRoot });
   } else {
-    throw new Error("Comando inválido. Use daily, shortlist, select ou export.");
+    throw new Error("Comando inválido. Use daily, shortlist ou export.");
   }
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 } finally {

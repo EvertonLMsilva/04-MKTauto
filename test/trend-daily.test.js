@@ -8,6 +8,7 @@ import { RESEARCH_INPUT_CONTRACT_VERSION } from "../src/domain/research-contract
 import { PROJECT_CONTRACT_VERSION } from "../src/domain/project-contracts.js";
 import { retryClustering, runDailyTrendCatalog } from "../src/trend-daily.js";
 import { exportDailyCatalog, renderHtml } from "../src/trend-export.js";
+import { buildResearchShortlist } from "../src/research-shortlist.js";
 import { TrendCatalogStore, TrendStoreError } from "../src/trend-store.js";
 
 const DATE = "2026-09-26";
@@ -123,6 +124,43 @@ test("falha de escrita não substitui catálogo anterior", async () => {
     };
     assert.throws(() => exportDailyCatalog({ store, researchDailyRunId: result.dailyRun.id, outputRoot: output, fileSystem }), /DISK_FULL/);
     assert.equal(readFileSync(join(target, "sentinel.txt"), "utf8"), "preservar");
+  });
+});
+
+test("shortlist consome somente a execução e o catálogo exatos, preserva lacunas e retry", async () => {
+  await withWorkspace(async ({ store, output }) => {
+    const calls = counters();
+    const dependencies = fixtureDependencies(calls);
+    const input = researchInput();
+    const daily = await runDailyTrendCatalog({
+      store, researchInput: input, outputRoot: output, config: fullConfig(),
+      ...dependencies, clock: fixedClock(),
+    });
+    const first = buildResearchShortlist({ store, researchInput: input, researchTopicCatalog: daily.artifact, clock: fixedClock() });
+    const second = buildResearchShortlist({ store, researchInput: input, researchTopicCatalog: daily.artifact, clock: () => new Date("2026-09-28T12:00:00.000Z") });
+    assert.deepEqual(second, first);
+    assert.equal(first.pipelineRunId, input.execution.pipelineRunId);
+    assert.equal(first.projectId, input.execution.projectId);
+    assert.equal(first.state, "COMPLETED_WITH_GAPS");
+    assert.deepEqual(first.orderedCandidates.map(({ candidate }) => candidate.id), ["tiktok:90001", "youtube:video-1"]);
+    assert.equal(first.decisions.find(({ candidateId }) => candidateId === "threads:18000000000000123").reasons[0], "DURATION_UNAVAILABLE");
+    assert.ok(first.coverage.some(({ status }) => status === "PARTIAL"));
+    assert.ok(first.orderedCandidates.every(({ score }) => Object.values(score.components).some(({ availability }) => availability === "UNAVAILABLE")));
+    assert.deepEqual(calls, { youtube: 1, instagram: 1, threads: 1, tiktok: 1, clusters: 2 });
+    const mismatches = [
+      { ...structuredClone(input), execution: { ...input.execution, pipelineRunId: "pipeline_e02_r04_other" } },
+      { ...structuredClone(input), execution: { ...input.execution, projectId: "canal_outro" }, projectSnapshot: { ...structuredClone(input.projectSnapshot), project: { ...input.projectSnapshot.project, id: "canal_outro" } } },
+      { ...structuredClone(input), execution: { ...input.execution, projectVersion: 2 }, projectSnapshot: { ...structuredClone(input.projectSnapshot), project: { ...input.projectSnapshot.project, version: 2 } } },
+      { ...structuredClone(input), window: { logicalDate: "2026-09-28" } },
+    ];
+    for (const mismatched of mismatches) assert.throws(
+      () => buildResearchShortlist({ store, researchInput: mismatched, researchTopicCatalog: daily.artifact }),
+      (error) => error.code === "RESEARCH_SHORTLIST_LINEAGE_MISMATCH",
+    );
+    assert.throws(
+      () => buildResearchShortlist({ store, researchInput: input, researchTopicCatalog: { ...daily.artifact, gaps: [...daily.artifact.gaps, "ALTERED"] } }),
+      (error) => error.code === "RESEARCH_ARTIFACT_HASH_MISMATCH",
+    );
   });
 });
 

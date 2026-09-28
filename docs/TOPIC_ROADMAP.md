@@ -23,7 +23,8 @@
 | PC05 | CONCLUÍDO | Handoff de ProjectSnapshot para o pipeline | PR #30 mergeado em 27/09/2026 (`35cede6`); contrato `pipeline-handoff/1.0.0` e 133 testes passaram. |
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
-| E02-R03 | PR ABERTO | Análise de referências estratégicas | PR #33 aberto; `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passando. |
+| E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
+| E02-R04 | PR ABERTO | Shortlist de Research vinculada ao projeto | PR #34 aberto; `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passando. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -277,7 +278,37 @@ isolamento multi-projeto, retry, migração 005→006, sanitização e direitos;
 `git diff --check` passou. Riscos residuais: App Review e quotas da Meta, cobertura
 profissional do Instagram, autorização TikTok, métricas mutáveis, handles
 renomeados e amostras insuficientes.
-O PR #33 foi aberto em 27/09/2026.
+O PR #33 foi mergeado em 27/09/2026 (`4cb6ce2`).
+
+### E02-R04 — shortlist de Research vinculada ao projeto
+
+- consumir somente o `ResearchInput` e o `ResearchTopicCatalog` exatos;
+- validar identidade e hashes antes de considerar qualquer candidato;
+- materializar seleção determinística e explicável, sem nova coleta ou análise;
+- manter `ReferenceInsight` independente para o futuro Content Intelligence.
+
+Implementação E02-R04: `research-shortlist/1.0.0` liga a shortlist ao pipeline,
+projeto, versão, data, catálogo de Research e hash canônico do catálogo de
+tendências consumido. A política `research-shortlist-policy/1.0.0` limita o
+resultado a cinco candidatos, com até dois por cluster, três por plataforma e
+três por região; relaxamento para cobertura insuficiente preserva a ordem-base
+e gera lacuna explícita.
+
+A migração 007 é aditiva e isola os artefatos por pipeline e escopo do projeto.
+Retry idêntico retorna o artefato existente; divergências de identidade, entrada,
+catálogo ou política falham antes da seleção. Scores, explicações, componentes
+indisponíveis, evidências e cobertura são copiados dos artefatos persistidos,
+sem provider, IA, `latest`, catálogo global ou mutação do estado dos candidatos.
+O comando global `select` falha fechado e `ReferenceInsight` não integra o
+contrato nem influencia ranking.
+
+Evidência: 169 testes passaram em 27/09/2026, incluindo ordem e desempates,
+diversidade e relaxamento, métricas indisponíveis, cobertura parcial, linhagem,
+hashes, retry, migração 006→007 e regressão completa; `git diff --check` passou.
+Riscos residuais: qualidade e cobertura continuam limitadas pelos scores e
+fontes do catálogo original; diversidade pode ser relaxada quando há poucos
+candidatos elegíveis.
+O PR #34 foi aberto em 27/09/2026.
 
 ## Ordem após E01
 
