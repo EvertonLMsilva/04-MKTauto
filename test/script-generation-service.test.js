@@ -27,6 +27,9 @@ test("gera uma vez a partir da seleção explícita e persiste script/1.0.0 com 
   assert.equal(created.fullNarration, `${providerOutput().hook}\n\n${providerOutput().narrativeBlocks[0].narration}\n\n${providerOutput().cta}`);
   assert.equal(repository.persisted.length, 1);
   assert.equal(repository.persisted[0].generationMetadata.provider, "openai");
+  assert.equal(repository.persisted[0].telemetry.pipelineRunId, "run_ai01_001");
+  assert.equal(repository.persisted[0].telemetry.artifactId, created.scriptId);
+  assert.equal(repository.persisted[0].telemetry.costEventId, null);
   assert.equal("latest" in service, false);
 });
 
@@ -35,6 +38,7 @@ test("retry concluído retorna o roteiro persistido sem nova chamada e conflito 
   const firstGenerator = fakeGenerator();
   const first = await new ScriptGenerationService(repository, firstGenerator).generate(request());
   repository.prior = { requestHash: request().contentHash, script: first };
+  repository.priorTelemetry = repository.persisted[0].telemetry;
   const retryGenerator = fakeGenerator();
   assert.deepEqual(await new ScriptGenerationService(repository, retryGenerator).generate(request()), first);
   assert.equal(retryGenerator.calls.length, 0);
@@ -68,11 +72,13 @@ test("saída inválida, duração incompatível e falha do provider não deixam 
   const malformed = fakeGenerator({ output: { ...providerOutput(), narrativeBlocks: [] } });
   await assert.rejects(new ScriptGenerationService(malformedRepository, malformed).generate(request()), generationError("INVALID_BLOCKS", "narrativeBlocks"));
   assert.equal(malformedRepository.persisted.length, 0);
+  assert.equal(malformedRepository.failed[0].telemetry.failureCode, "INVALID_BLOCKS");
 
   const durationRepository = fakeRepository();
   const duration = fakeGenerator({ output: { ...providerOutput(), estimatedDurationSeconds: 60 } });
   await assert.rejects(new ScriptGenerationService(durationRepository, duration).generate(request()), generationError("SCRIPT_DURATION_OUT_OF_RANGE", "estimatedDurationSeconds"));
   assert.equal(durationRepository.persisted.length, 0);
+  assert.equal(durationRepository.failed[0].telemetry.failureCode, "SCRIPT_DURATION_OUT_OF_RANGE");
 
   const failedRepository = fakeRepository();
   const failed = fakeGenerator(null, new Error("private provider payload"));
@@ -81,6 +87,74 @@ test("saída inválida, duração incompatível e falha do provider não deixam 
   assert.equal(caught?.code, "PROVIDER_FAILED");
   assert.equal(caught?.message.includes("private"), false);
   assert.equal(failedRepository.persisted.length, 0);
+  assert.equal(failedRepository.failed[0].telemetry.failureCode, "PROVIDER_FAILED");
+});
+
+test("custo conhecido cria evento correlacionado e retry não o duplica", async () => {
+  const repository = fakeRepository();
+  const generator = fakeGenerator({ telemetry: observation({
+    inputTokens: 100, outputTokens: 20, cachedInputTokens: 25,
+    usageOrigin: "provider_response", costAmount: "0.015", currency: "USD",
+    costOrigin: "provider_reported",
+  }) });
+  const created = await new ScriptGenerationService(repository, generator, {
+    now: () => "2026-09-28T18:00:01.000Z",
+  }).generate(request());
+  const persisted = repository.persisted[0];
+  assert.equal(persisted.telemetry.costEventId, "cost:ai_call:generation_ai01_001");
+  assert.equal(persisted.costEvent.artifactId, created.scriptId);
+  assert.equal(persisted.costEvent.amount, "0.015");
+  assert.equal(persisted.costEvent.origin, "ai_telemetry:provider_reported");
+
+  repository.prior = { requestHash: request().contentHash, script: created };
+  repository.priorTelemetry = persisted.telemetry;
+  await new ScriptGenerationService(repository, fakeGenerator()).generate(request());
+  assert.equal(repository.persisted.length, 1);
+});
+
+test("retry de falha observada não chama novamente o provider", async () => {
+  const repository = fakeRepository();
+  repository.priorTelemetry = {
+    ...observation(), requestHash: request().contentHash, outcome: "FAILURE",
+    failureCode: "PROVIDER_TIMEOUT",
+  };
+  const generator = fakeGenerator();
+  await assert.rejects(
+    new ScriptGenerationService(repository, generator).generate(request()),
+    generationError("PROVIDER_TIMEOUT", "provider"),
+  );
+  assert.equal(generator.calls.length, 0);
+  assert.equal(repository.failed.length, 0);
+});
+
+test("falha com custo conhecido atribui custo à chamada sem artefato ou detalhe privado", async () => {
+  const repository = fakeRepository();
+  const providerFailure = new Error("PRIVATE raw provider response with stack detail");
+  providerFailure.code = "PROVIDER_RATE_LIMITED";
+  providerFailure.field = "provider";
+  providerFailure.telemetry = observation({
+    inputTokens: 80, outputTokens: 0, cachedInputTokens: null,
+    usageOrigin: "provider_response", costAmount: "0.0075", currency: "USD",
+    costOrigin: "provider_reported", outputHash: null,
+  });
+
+  await assert.rejects(
+    new ScriptGenerationService(repository, fakeGenerator({}, providerFailure), {
+      now: () => "2026-09-28T18:00:01.000Z",
+    }).generate(request()),
+    generationError("PROVIDER_RATE_LIMITED", "provider"),
+  );
+
+  const failed = repository.failed[0];
+  assert.equal(failed.telemetry.artifactId, null);
+  assert.equal(failed.telemetry.failureCode, "PROVIDER_RATE_LIMITED");
+  assert.equal(failed.costEvent.artifactId, null);
+  assert.equal(failed.costEvent.amount, "0.0075");
+  assert.equal(failed.costEvent.costEventId, "cost:ai_call:generation_ai01_001");
+  const persistedShape = JSON.stringify(failed);
+  assert.equal(persistedShape.includes("PRIVATE"), false);
+  assert.equal(persistedShape.includes("stack"), false);
+  assert.equal(persistedShape.includes("raw provider"), false);
 });
 
 test("cancelamento anterior à chamada não invoca o provider", async () => {
@@ -95,6 +169,7 @@ test("cancelamento anterior à chamada não invoca o provider", async () => {
 function fakeRepository() {
   const repository = {
     prior: null,
+    priorTelemetry: null,
     selection: {
       ideaSelectionId: "selection_001", pipelineRunId: "run_ai01_001",
       projectId: "project_ai01", projectVersion: 1, ideaCandidateId: "idea_candidate_001",
@@ -107,20 +182,23 @@ function fakeRepository() {
     },
     run: { pipelineRunId: "run_ai01_001", projectId: "project_ai01", projectVersion: 1, projectSnapshot: snapshot() },
     persisted: [],
+    failed: [],
     getScriptGeneration() { return this.prior; },
+    getAiCallTelemetryByLogicalCall() { return this.priorTelemetry; },
     getSelection() { return this.selection; },
     getIdea() { return this.idea; },
     getRun() { return this.run; },
     registerGeneratedScript(value) { this.persisted.push(value); return value.script; },
+    registerFailedAiCall(value) { this.failed.push(value); return value.telemetry; },
   };
   return repository;
 }
 
 function fakeGenerator(result = {}, failure = null) {
-  const resolved = result === null ? null : { output: providerOutput(), generationMetadata: metadata(), ...result };
+  const resolved = result === null ? null : { output: providerOutput(), generationMetadata: metadata(), telemetry: observation(), ...result };
   const generator = new class extends ScriptGenerator {
     constructor() { super(); this.calls = []; }
-    async generate(input) { this.calls.push(input); if (failure) throw failure; return resolved; }
+    async generate(input) { this.calls.push(input); if (failure) { failure.telemetry ??= observation(); throw failure; } return resolved; }
   }();
   return generator;
 }
@@ -150,6 +228,17 @@ function metadata() {
     provider: "openai", model: "model-test", taskType: "script_generation",
     promptVersion: "script-generation-prompt/1.0.0", configurationHash: "d".repeat(64),
     publicConfiguration: { outputLimit: 1200, responseFormat: "json_schema", store: false, timeoutMs: 1000 },
+  };
+}
+
+function observation(overrides = {}) {
+  return {
+    provider: "openai", model: "model-test", taskType: "script_generation",
+    promptVersion: "script-generation-prompt/1.0.0",
+    inputTokens: null, outputTokens: null, cachedInputTokens: null, usageOrigin: null,
+    costAmount: null, currency: null, costOrigin: null, latencyMs: 125,
+    occurredAt: "2026-09-28T15:00:00.000Z", fallback: false,
+    inputHash: "e".repeat(64), outputHash: "f".repeat(64), ...overrides,
   };
 }
 

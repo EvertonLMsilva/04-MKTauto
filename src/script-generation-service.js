@@ -1,5 +1,7 @@
+import { AI_CALL_TELEMETRY_CONTRACT_VERSION, validateAiCallObservation, validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
 import { validateGenerationMetadata } from "./domain/artifact-lineage-contracts.js";
 import { ContractValidationError } from "./domain/contracts.js";
+import { COST_EVENT_CONTRACT_VERSION, validateCostEvent } from "./domain/cost-event-contracts.js";
 import {
   validateScriptGenerationOutput,
   validateScriptGenerationRequest,
@@ -16,12 +18,14 @@ export class ScriptGenerationError extends Error {
 }
 
 export class ScriptGenerationService {
-  constructor(repository, generator) {
-    const methods = ["getScriptGeneration", "getSelection", "getIdea", "getRun", "registerGeneratedScript"];
+  constructor(repository, generator, { now = () => new Date().toISOString() } = {}) {
+    const methods = ["getScriptGeneration", "getAiCallTelemetryByLogicalCall", "getSelection", "getIdea", "getRun", "registerGeneratedScript", "registerFailedAiCall"];
     if (!repository || methods.some((method) => typeof repository[method] !== "function")) throw new TypeError("repositório de geração de roteiro obrigatório");
     if (!generator || typeof generator.generate !== "function") throw new TypeError("ScriptGenerator obrigatório");
+    if (typeof now !== "function") throw new TypeError("relógio obrigatório");
     this.repository = repository;
     this.generator = generator;
+    this.now = now;
   }
 
   async generate(value, { signal } = {}) {
@@ -29,6 +33,14 @@ export class ScriptGenerationService {
     try { request = validateScriptGenerationRequest(value); }
     catch (caught) { throw mapError(caught); }
 
+    const priorTelemetry = this.repository.getAiCallTelemetryByLogicalCall(request.generationRequestId);
+    if (priorTelemetry) {
+      if (priorTelemetry.requestHash !== request.contentHash) throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
+      if (priorTelemetry.outcome === "FAILURE") throw failure(priorTelemetry.failureCode, "provider", "falha sanitizada registrada");
+      const completed = this.repository.getScriptGeneration(request.generationRequestId);
+      if (!completed) throw failure("INVALID_PERSISTED_SCRIPT_GENERATION", "generationRequestId", "geração persistida incompleta");
+      return completed.script;
+    }
     const prior = this.repository.getScriptGeneration(request.generationRequestId);
     if (prior) {
       if (prior.requestHash !== request.contentHash) throw failure("GENERATION_REQUEST_ID_REUSED", "generationRequestId", "identidade já usada com conteúdo divergente");
@@ -50,19 +62,83 @@ export class ScriptGenerationService {
     try {
       generated = await this.generator.generate(deepFreeze({ selection, idea, projectSnapshot: run.projectSnapshot }), { signal });
     } catch (caught) {
-      throw mapProviderError(caught);
+      const mapped = mapProviderError(caught);
+      this.#persistFailure(request, selection, caught?.telemetry, mapped.code);
+      throw mapped;
     }
 
     try {
       if (!generated || typeof generated !== "object" || Array.isArray(generated)) throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta inválida");
       const output = validateScriptGenerationOutput(generated.output);
       const generationMetadata = validateGenerationMetadata(generated.generationMetadata);
+      const observation = validateAiCallObservation(generated.telemetry);
+      verifyObservationMetadata(observation, generationMetadata);
       verifyDuration(output.estimatedDurationSeconds, run.projectSnapshot.channel);
       const script = buildScript(request, selection, run.projectSnapshot, output);
-      return this.repository.registerGeneratedScript({ request, script, generationMetadata });
+      const telemetry = buildTelemetry(request, selection, observation, {
+        artifactId: script.scriptId, outcome: "SUCCESS", failureCode: null,
+        recordedAt: this.now(),
+      });
+      const costEvent = buildCostEvent(telemetry, selection.ideaSelectionId);
+      return this.repository.registerGeneratedScript({ request, script, generationMetadata, telemetry, costEvent });
     } catch (caught) {
-      throw mapError(caught);
+      const mapped = mapError(caught);
+      this.#persistFailure(request, selection, generated?.telemetry, mapped.code);
+      throw mapped;
     }
+  }
+
+  #persistFailure(request, selection, observationValue, failureCode) {
+    if (observationValue === null || observationValue === undefined) return;
+    let observation;
+    try { observation = validateAiCallObservation(observationValue); }
+    catch { return; }
+    const telemetry = buildTelemetry(request, selection, observation, {
+      artifactId: null, outcome: "FAILURE", failureCode, recordedAt: this.now(),
+    });
+    const costEvent = buildCostEvent(telemetry, selection.ideaSelectionId);
+    this.repository.registerFailedAiCall({ request, telemetry, costEvent });
+  }
+}
+
+function buildTelemetry(request, selection, observation, terminal) {
+  return validateAiCallTelemetry({
+    schemaVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    aiCallId: `ai_call:${request.generationRequestId}`,
+    logicalCallId: request.generationRequestId,
+    requestHash: request.contentHash,
+    pipelineRunId: selection.pipelineRunId,
+    projectId: selection.projectId,
+    projectVersion: selection.projectVersion,
+    costEventId: observation.costAmount === null ? null : `cost:ai_call:${request.generationRequestId}`,
+    ...observation,
+    ...terminal,
+  });
+}
+
+function buildCostEvent(telemetry, ideaSelectionId) {
+  if (telemetry.costEventId === null) return null;
+  return validateCostEvent({
+    schemaVersion: COST_EVENT_CONTRACT_VERSION,
+    costEventId: telemetry.costEventId,
+    category: "ai_cost",
+    pipelineRunId: telemetry.pipelineRunId,
+    projectId: telemetry.projectId,
+    projectVersion: telemetry.projectVersion,
+    contentIdentity: `script:${ideaSelectionId}`,
+    artifactId: telemetry.artifactId,
+    amount: telemetry.costAmount,
+    currency: telemetry.currency,
+    occurredAt: telemetry.occurredAt,
+    origin: `ai_telemetry:${telemetry.costOrigin}`,
+    attributionRuleVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    recordedAt: telemetry.recordedAt,
+  });
+}
+
+function verifyObservationMetadata(observation, metadata) {
+  for (const field of ["provider", "model", "taskType", "promptVersion"]) {
+    if (observation[field] !== metadata[field]) throw failure("PROVIDER_TELEMETRY_MISMATCH", field, "telemetria diverge dos metadados de geração");
   }
 }
 
