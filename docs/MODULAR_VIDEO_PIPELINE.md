@@ -2,9 +2,10 @@
 
 ## Objetivo
 
-Definir a sequência, os artefatos e as fronteiras do MKTauto sem acoplar o domínio
-a um fornecedor. Cada etapa recebe um contrato validado, produz uma nova versão
-rastreável e não executa efeitos pertencentes à etapa seguinte.
+Definir a sequência, os artefatos e as fronteiras do MKTauto Portfolio-First sem
+acoplar domínio ou aplicação a um fornecedor. Cada etapa recebe um contrato
+validado, produz uma nova versão rastreável e não executa efeitos pertencentes à
+etapa seguinte.
 
 ```text
 ProjectSnapshot
@@ -21,11 +22,30 @@ Video Composition → Subtitle Generation → Metadata Generation
        ↓
 Quality Validation → Preview → Human Approval
        ↓
-Scheduling → Publishing → Analytics → Optimization Recommendation
+Scheduling → Publishing → Analytics → Revenue Analytics
+       ↓
+Optimization Recommendation → Portfolio Allocation Recommendation
 ```
 
 No MVP 1 o fluxo termina em `Preview`. Pesquisa existente pode sugerir temas,
-mas o operador também pode informar um tema diretamente.
+mas o operador também pode informar um tema diretamente. Revenue Analytics,
+experimentos, otimização e alocação são capacidades posteriores.
+
+## Fundação de execução e economia
+
+Antes de ampliar a automação, cada conteúdo deve preservar esta cadeia:
+
+```mermaid
+flowchart LR
+    PS[ProjectSnapshot imutável] --> PR[PipelineRun persistido]
+    PR --> AL[Artifact lineage]
+    AL --> CL[CostLedger]
+```
+
+`PipelineRun` continua sendo a unidade técnica de execução. O snapshot fixa a
+configuração; a linhagem explica cada saída; eventos de custo registram consumo
+atribuível. As entregas serão incrementais: persistir a run não autoriza criar de
+uma vez todos os artefatos, providers ou métricas financeiras.
 
 ## Envelope comum dos artefatos
 
@@ -43,14 +63,24 @@ revision
 created_at
 created_by
 provider
+provider_model
+prompt_version
+generation_configuration
+input_hash
+output_hash
+provider_cost
+provider_latency_ms
 input_artifact_ids
 content_hash
 rights
 storage_reference
 ```
 
-Arquivos de mídia ficam fora do Git. `storage_reference` nunca expõe token ou URL
-privada permanente. Um artefato substituído não é alterado: cria-se nova revisão.
+Os campos de geração aplicam-se apenas a artefatos gerados por IA e devem ser
+sanitizados. Arquivos de mídia ficam fora do Git. `storage_reference` nunca expõe
+token ou URL privada permanente. Um artefato substituído não é alterado: cria-se
+nova revisão. Segredos e prompts completos potencialmente privados não compõem a
+linhagem.
 
 ## 1. Project Configuration
 
@@ -187,15 +217,99 @@ Views, likes, comentários, compartilhamentos, salvamentos, alcance, watch time,
 retenção e seguidores ganhos são opcionais. O snapshot registra quais métricas a
 plataforma forneceu, janela, instante e cursor. Ausência não vira zero.
 
-## 12. Optimization
+## 12. Revenue Analytics e Content Economics
 
-Entradas: histórico de conteúdo, características e métricas. Saída:
+Entradas: publicações, conteúdos, runs, custos e eventos de monetização. Saídas:
+`RevenueEvent`, `RevenueSnapshot` e visões econômicas históricas.
+
+Custos previstos incluem `production_cost`, `ai_cost`, `media_cost`,
+`voice_cost` e `publishing_cost`. Receitas previstas incluem
+`platform_revenue`, `affiliate_revenue`, `product_revenue`, `lead_revenue`,
+`sponsorship_revenue` e `other_revenue`. As estratégias suportadas são anúncios
+de plataforma, afiliados, produto próprio, geração de leads, patrocínio, serviço,
+assinatura e outras fontes explícitas.
+
+`RevenueSource` identifica a origem e `RevenueEvent` registra valor, moeda,
+instante, janela, referência externa sanitizada e regra de atribuição. Eventos
+financeiros e snapshots são append-only; correções geram novos eventos, nunca
+reescrevem o histórico. Agregações entre moedas exigem taxa, fonte e instante de
+conversão registrados.
+
+As visões podem derivar `gross_revenue`, `net_revenue`, `profit`, `margin`, `roi`,
+receita por mil visualizações, conversão por CTA e retorno por plataforma ou
+estratégia. Custos, receitas, lucro e ROI devem funcionar por conteúdo, canal,
+projeto e nicho; portfólio agrega somente valores comparáveis. Nenhum limiar
+financeiro para matar ou escalar experimento é definido agora.
+
+## 13. Experimentos de portfólio
+
+```mermaid
+flowchart LR
+    D[Descoberta] --> E[Experimento pequeno]
+    E --> C[Conteúdos]
+    C --> M[Métricas e economia]
+    M --> A[Avaliação]
+    A --> K[KILL]
+    A --> N[CONTINUE]
+    A --> S[SCALE]
+```
+
+Um experimento registra hipótese, escopo, configuração, janela, capacidade
+alocada, evidências e decisão. `ExperimentPolicy`, `KillPolicy` e `ScalePolicy`
+são configuráveis, versionadas e explicáveis. A recomendação não encerra canal,
+não publica e não aumenta orçamento sem validação humana ou política explícita
+aprovada em tópico próprio.
+
+## 14. Optimization Engine
+
+Entradas: histórico de conteúdo, características, métricas e economia. Saída:
 `OptimizationRecommendation`.
 
 O primeiro mecanismo usa estatísticas, médias, comparações e regras explícitas.
-Recomendações podem aumentar ou reduzir prioridade de temas, hooks, duração, CTA,
-horário, voz ou estilo, mas não alteram configuração nem disparam efeitos sem uma
-ação registrada do operador.
+Ele poderá correlacionar nicho, subnicho, tema, hook, roteiro, estrutura, duração,
+voz, visual, CTA, horário, plataforma, retenção, engajamento, conversão, custo,
+receita, lucro e ROI. Toda saída liga evidências e versão da política à sugestão.
+
+```text
+Evidence → Optimization Engine → Recommendation
+         → Human/Policy validation → Apply / Reject
+```
+
+Recomendações podem aumentar ou reduzir prioridade, mas não alteram configuração,
+regras financeiras, conteúdo, canal ou publicação sem ação registrada do operador.
+
+## 15. Portfolio Allocation
+
+Entrada: capacidade/orçamento disponível, ROI, margem, histórico econômico,
+crescimento, estabilidade, volume de dados, risco e custo. Saída:
+`AllocationRecommendation` explicável por nicho, projeto, canal ou experimento.
+
+Inicialmente a alocação apenas recomenda percentuais e explicita incerteza. Ela
+não reserva orçamento, agenda produção, escala canal nem executa transferência.
+Automação exige política e gate próprios.
+
+## 16. Estratégia de providers de IA
+
+Domínio e aplicação dependem de capacidades (`IdeaGenerator`, `ScriptGenerator`,
+`ContentAnalyzer`, `OptimizationAdvisor`, `EmbeddingProvider`, `LLMProvider`),
+nunca de SDKs. Para a geração do pipeline, OpenAI/GPT será o primeiro adapter:
+
+```text
+Application → AI Port → OpenAI Adapter → GPT
+```
+
+O Ollama já usado em Research permanece uma implementação isolada e não muda
+essa fronteira. Local models, self-hosted e modelos especializados são opções
+futuras. Não se implementam agora novos adapters, GPU, fine-tuning ou modelos
+próprios.
+
+## 17. Horizontes
+
+| Horizonte | Pipeline |
+|---|---|
+| Atual | `ProjectSnapshot`, Research e artefatos de shortlist por projeto. |
+| Próximo | `PipelineRun` persistido, depois linhagem e eventos de custo. |
+| Futuro | Produção, publicação, métricas, receitas, experimentos, otimização e alocação. |
 
 ## Estados e transições
 

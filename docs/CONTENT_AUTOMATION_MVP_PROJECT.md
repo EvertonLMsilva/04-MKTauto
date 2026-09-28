@@ -1,12 +1,24 @@
-# MKTauto — plataforma modular de conteúdo social
+# MKTauto — máquina Portfolio-First de ativos digitais
 
 ## 1. Visão
 
-O MKTauto permite que um operador individual administre um portfólio de canais
-temáticos e transforme uma estratégia editorial configurada em conteúdo original,
-revisável, publicável e mensurável. O produto evolui em etapas: primeiro gera um
-vídeo vertical completo para preview; depois publica, automatiza a rotina, coleta
-métricas e usa o histórico para melhorar sugestões futuras.
+O MKTauto permite que um operador individual crie e opere canais próprios como
+um portfólio de ativos digitais. A finalidade de curto e médio prazo é descobrir,
+produzir, medir, monetizar e escalar ativos lucrativos de forma sistemática. O
+produto evolui da máquina de conteúdo para experimentos de portfólio, economia
+do conteúdo e otimização; uma plataforma comercial só pode ser considerada após
+o modelo funcionar internamente.
+
+```text
+criar canais próprios → testar nichos e formatos → medir desempenho e receita
+→ encerrar experimentos ruins → escalar vencedores → reinvestir
+→ expandir canais, nichos e idiomas → acumular dados e inteligência
+```
+
+O objetivo não é maximizar volume, visualizações, likes ou seguidores
+isoladamente. A função econômica de longo prazo é **maximizar lucro sustentável
+por conteúdo, canal, nicho e unidade de capacidade utilizada**, sem sacrificar
+direitos, segurança, qualidade ou explicabilidade.
 
 A persona principal é **o operador individual de um portfólio de canais
 temáticos**. Várias configurações podem coexistir, mas cada execução processa um
@@ -26,6 +38,10 @@ determinísticas.
 - manter exportação manual como fallback de publicação;
 - isolar fornecedores atrás de interfaces pequenas e versionadas;
 - registrar linhagem, versões, transições e decisões relevantes;
+- preservar snapshots históricos de métricas, receita, custo e decisões, sem
+  atualização destrutiva;
+- avaliar prioridade pela contribuição para descobrir, produzir, medir ou escalar
+  ativos digitais lucrativos;
 - manter tokens, mídia privada, transcrições, payloads e runtime fora do Git;
 - implementar somente o necessário para a fase ativa.
 
@@ -91,7 +107,25 @@ Referências servem para identificar temas, hooks, estrutura, ritmo, CTA,
 frequência e linguagem visual. Elas nunca concedem direito de uso nem autorizam
 reprodução de materiais ou identidade.
 
-## 5. Módulos
+## 5. Modelo Portfolio-First
+
+`Portfolio` é o nível econômico superior e reúne nichos, projetos/canais próprios
+e experimentos. Um `Project` continua sendo a raiz operacional configurada e um
+`ProjectSnapshot` continua fixando sua versão em cada execução.
+
+```text
+Portfolio
+├── Niche
+│   ├── Project / Channel
+│   └── Project / Channel
+└── Experiments
+```
+
+Os níveis `Portfolio`, `Niche`, `Project`, `Channel`, `Content` e `Experiment`
+terão análises distintas. Isso é direção de domínio: o estado atual implementa
+projetos e pesquisa, mas ainda não implementa `Portfolio` nem `Experiment`.
+
+## 6. Módulos
 
 ```text
 Project Configuration
@@ -112,18 +146,28 @@ Social Publisher
         ↓ Publication
 Analytics
         ↓ MetricSnapshot
+Revenue Analytics
+        ↓ RevenueSnapshot / economics view
 Optimization Engine
         ↓ OptimizationRecommendation
+Portfolio Allocation
+        ↓ AllocationRecommendation
 ```
 
 Cada módulo consome contratos validados e produz artefatos rastreáveis. Falha
 obrigatória interrompe o item; nenhum módulo corrige silenciosamente a saída de
 outro ou pula uma aprovação.
 
-## 6. Entidades principais
+`Revenue Analytics` relacionará conteúdo a receita e custo; `Portfolio
+Allocation` recomendará onde investir capacidade. Ambos permanecem futuros e
+não autorizam decisão ou efeito automático.
+
+## 7. Entidades principais
 
 | Entidade | Responsabilidade mínima |
 |---|---|
+| `Portfolio` | Agrupar ativos próprios e oferecer contexto econômico comum. |
+| `Niche` | Classificar estratégia e análise entre projetos relacionados. |
 | `Project` | Identidade, nicho, público e versão da configuração. |
 | `ChannelProfile` | Preferências editoriais e destinos de um projeto. |
 | `ReferenceProfile` | Referência estratégica, origem e finalidade permitida. |
@@ -136,13 +180,21 @@ outro ou pula uma aprovação.
 | `PublishingJob` | Plataforma, agenda, tentativas e chave de idempotência. |
 | `Publication` | ID externo, estado reconciliado e versão publicada. |
 | `MetricSnapshot` | Métricas opcionais observadas em um instante. |
+| `Experiment` | Hipótese, janela, variantes, evidências e decisão registrada. |
+| `RevenueSource` | Tipo de monetização e referência externa sem credencial. |
+| `RevenueEvent` | Receita atribuída, moeda, origem e instante imutáveis. |
+| `RevenueSnapshot` | Visão histórica de receita em uma janela de análise. |
+| `CostLedger` | Eventos de custo atribuíveis a run, conteúdo ou projeto. |
 | `OptimizationDecision` | Recomendação explicável, evidências e aplicação. |
+| `AllocationRecommendation` | Distribuição sugerida de orçamento/capacidade. |
 
-Artefatos iniciais incluem `TopicCandidate`, `IdeaCandidate`, `IdeaScore`,
+As entidades de portfólio e economia são contratos futuros, não tabelas ou
+serviços autorizados por esta decisão. Artefatos iniciais incluem
+`TopicCandidate`, `IdeaCandidate`, `IdeaScore`,
 `Script`, `VoiceTrack`, `MediaAsset`, `VideoRender`, `SubtitleTrack`,
 `ContentMetadata` e `ValidationReport`.
 
-## 7. Estados
+## 8. Estados
 
 Fluxo normal de conteúdo:
 
@@ -165,7 +217,11 @@ Regras:
 Jobs de publicação usam `PENDING`, `PROCESSING`, `PUBLISHED`, `FAILED`,
 `RETRYING` e `CANCELLED`.
 
-## 8. Portas entre módulos
+Experimentos futuros registram uma recomendação `KILL`, `CONTINUE` ou `SCALE`,
+sempre sustentada por evidências, política versionada e validação humana. Uma IA
+não encerra canal, amplia orçamento nem muda regra financeira por conta própria.
+
+## 9. Portas entre módulos
 
 As interfaces representam capacidades, não fornecedores:
 
@@ -183,13 +239,23 @@ As interfaces representam capacidades, não fornecedores:
 - `SocialPublisher.publish(request)`, `getStatus(reference)` e
   `deletePublication(reference)` quando a plataforma permitir;
 - `AnalyticsProvider.collect(publication, cursor)`;
-- `OptimizationPolicy.recommend(history, projectSnapshot)`.
+- `RevenueProvider.collect(source, cursor)`;
+- `OptimizationAdvisor.recommend(evidence, policy)`;
+- `ExperimentPolicy.evaluate(experiment, evidence)`;
+- `AllocationPolicy.recommend(portfolio, capacity, evidence)`.
+
+Capacidades de IA são portas da aplicação, como `IdeaGenerator`,
+`ScriptGenerator`, `ContentAnalyzer`, `OptimizationAdvisor`,
+`EmbeddingProvider` e `LLMProvider`. OpenAI/GPT é o provider inicial previsto e
+entra somente por um `OpenAIAdapter`; domínio e aplicação não importam SDK,
+modelo ou tipos do fornecedor. Adapters locais, self-hosted ou especializados
+são possibilidades futuras, não requisitos atuais.
 
 Operações de publicação específicas por formato podem existir nas capacidades do
 adapter, mas o domínio não deve presumir que todas as redes aceitam vídeo, imagem,
 texto, exclusão ou as mesmas métricas.
 
-## 9. Estrutura futura
+## 10. Estrutura futura
 
 Esta é uma direção de organização, não uma autorização para mover arquivos antes
 de haver uma entrega que exija a mudança:
@@ -198,9 +264,11 @@ de haver uma entrega que exija a mudança:
 src/
 ├── domain/
 │   ├── projects/
+│   ├── portfolio/
 │   ├── content/
 │   ├── publishing/
-│   └── analytics/
+│   ├── analytics/
+│   └── economics/
 ├── application/
 │   ├── project-configuration/
 │   ├── content-pipeline/
@@ -224,36 +292,90 @@ src/
 Os arquivos atuais permanecem em seus locais até uma alteração pequena demonstrar
 valor e possuir testes que tornem a movimentação segura.
 
-## 10. Fases do produto
+## 11. Fases do produto
 
-### MVP 1 — Content Generator
+### Stage 1 — Machine / MVP 1 Content Machine
 
 Entrada: projeto, nicho, tema e referências estratégicas. Saída: ideia, roteiro,
 narração, mídia autorizada ou gerada, vídeo vertical, legenda, hashtags e preview.
 Não publica automaticamente.
 
-### MVP 2 — Publishing
+### Stage 2 — Portfolio / MVPs 2 a 6
 
-Adiciona validação, aprovação humana, agenda e um publisher por vez: Instagram,
-Facebook, Threads e TikTok, sempre condicionado à capacidade oficial disponível.
+Publica com aprovação humana, automatiza a rotina, coleta analytics e Revenue
+Analytics e opera pequenos experimentos de canais. O objetivo é descobrir nichos
+e formatos promissores, não aumentar volume sem evidência.
 
-### MVP 3 — Automação diária
+### Stage 3 — Scale / MVPs 7 e 8
 
-Executa pesquisa, geração, validação e preparação de agenda em horários
-configuráveis. Conteúdo continua aguardando aprovação humana antes de publicar.
+Otimização explicável e alocação recomendam onde ampliar produção. O objetivo é
+crescer audiência e lucro sem crescimento proporcional de trabalho manual.
 
-### MVP 4 — Analytics
+### Stage 4 — Monetization
 
-Coleta métricas opcionais por `content_id`, `project_id`, plataforma e publicação,
-preservando snapshots históricos e indisponibilidades explícitas.
+Refina múltiplas fontes — anúncios de plataforma, afiliados, produto próprio,
+leads, patrocínio, serviço, assinatura e outras — para maximizar lucro por ativo.
+Esta capacidade começa a ser medida antes desta etapa, mas só é otimizada quando
+há histórico confiável.
 
-### MVP 5 — Optimization Engine
+### Stage 5 — Platform / futuro
 
-Relaciona tema, hook, duração, CTA, horário, estilo e estrutura a métricas. Começa
-com médias, comparações históricas, regras e scoring. Toda recomendação é
-explicável; nenhuma altera regras estruturais ou publica conteúdo por conta própria.
+Somente após validação interna, capacidades podem virar SaaS, API, marketplace,
+templates ou intelligence platform. Multi-tenant, billing de clientes e demandas
+comerciais não influenciam o MVP atual.
 
-## 11. Quality Control
+### Sequência incremental dos MVPs
+
+1. Content Machine;
+2. Publishing;
+3. Daily Automation;
+4. Analytics;
+5. Revenue Analytics;
+6. Portfolio Experiments;
+7. Optimization Engine;
+8. Portfolio Allocation.
+
+Infraestrutura de IA própria e plataforma comercial permanecem futuras. Cada MVP
+é decomposto em tópicos menores no roadmap.
+
+## 12. Dados e economia como ativos
+
+Um dos principais ativos de longo prazo do MKTauto será seu histórico proprietário
+de experimentos, conteúdos, estratégias, desempenho e monetização. A cadeia
+prioritária é:
+
+```text
+ProjectSnapshot → PipelineRun → Artifact lineage → CostLedger
+```
+
+O histórico deve relacionar, quando existirem, `ProjectSnapshot`,
+`ContentVersion`, `GenerationConfiguration`, provider/modelo de IA, versão de
+prompt, tema, hook, roteiro, voz, mídia, vídeo, contexto de publicação, métricas,
+receita, custo e decisão de otimização. Isso viabiliza análises, backtests,
+ranking, recomendação, previsão e modelos próprios futuros sem torná-los requisito.
+
+Para todo artefato gerado por IA, a linhagem futura registra `provider`, `model`,
+`prompt_version`, configuração sanitizada, instante, hashes de entrada e saída,
+custo e latência. Segredos e prompts privados não entram em logs ou Git.
+
+`Content Economics` deverá responder quanto custou criar e distribuir, quanto
+gerou e quanto lucrou. `PipelineRun` permanece a unidade técnica; `CostLedger` e
+`RevenueEvent` preservam eventos imutáveis e permitem agregação por conteúdo,
+canal, projeto, nicho e portfólio.
+
+## 13. Capacidades por horizonte
+
+| Horizonte | Capacidade |
+|---|---|
+| Atual | Configuração versionada, Research, shortlist e rastreabilidade por projeto. |
+| Próximo | Persistir `PipelineRun`, linhagem de artefatos e custos desde o primeiro conteúdo. |
+| Futuro | Publicação, analytics, receitas, experimentos, otimização, alocação e providers próprios. |
+
+Não implementar antecipadamente SaaS, multi-tenant, billing, marketplace,
+infraestrutura GPU, modelos próprios, ML avançado, alocação, previsão, scaling ou
+monetização automáticos.
+
+## 14. Quality Control
 
 Antes de aprovação, validadores verificam pelo menos existência dos artefatos,
 duração, resolução, proporção, áudio, legendas, texto, limites conhecidos da
@@ -263,7 +385,7 @@ e sinais de conteúdo potencialmente inadequado.
 Validações obrigatórias falhas impedem aprovação. Alertas revisáveis permanecem
 visíveis ao operador e integram a decisão registrada.
 
-## 12. Segurança, direitos e privacidade
+## 15. Segurança, direitos e privacidade
 
 - credenciais entram somente por configuração segura e com menor privilégio;
 - logs e erros não incluem tokens, URLs privadas ou payloads sensíveis;
@@ -273,7 +395,7 @@ visíveis ao operador e integram a decisão registrada.
 - publicação e exclusão são efeitos externos auditáveis e idempotentes;
 - retenção, takedown e operação pública exigem gate específico antes do lançamento.
 
-## 13. Estratégia de testes
+## 16. Estratégia de testes
 
 - TDD para entidades, transições, permissões, idempotência e contratos;
 - testes de contrato para cada adapter com respostas sanitizadas;
@@ -283,7 +405,7 @@ visíveis ao operador e integram a decisão registrada.
 - publicação real nunca faz parte de uma suíte automática sem ambiente isolado e
   autorização explícita.
 
-## 14. Riscos principais
+## 17. Riscos principais
 
 | Risco | Mitigação inicial |
 |---|---|
@@ -296,8 +418,10 @@ visíveis ao operador e integram a decisão registrada.
 | Métricas incompatíveis | Modelo opcional por plataforma e snapshots brutos sanitizados. |
 | Vazamento de segredo ou mídia | Storage privado, menor privilégio e Git restrito. |
 | Otimização opaca ou nociva | Recomendações explicáveis, auditáveis e reversíveis. |
+| Receita ou custo atribuídos incorretamente | Eventos imutáveis, moeda/origem explícitas e regras de atribuição versionadas. |
+| Escala baseada em amostra fraca | Políticas configuráveis, qualidade de dados visível e validação humana. |
 
-## 15. Decisão V06
+## 18. Decisões V06 e V07
 
 V06 substitui a prioridade futura de transformar mídia-fonte pela prioridade de
 gerar conteúdo original a partir de uma configuração de projeto/canal. Ela não
@@ -308,3 +432,9 @@ continuam inexistentes até seus tópicos próprios.
 O roadmap executável e a decomposição do primeiro épico estão em
 `docs/TOPIC_ROADMAP.md`. Os artefatos, estados e regras de pipeline estão em
 `docs/MODULAR_VIDEO_PIPELINE.md`.
+
+V07 mantém essa arquitetura e muda a orientação estratégica de plataforma
+genérica para operação Portfolio-First de ativos próprios. Ela adiciona os
+domínios conceituais de experimentação, Revenue Analytics, Content Economics e
+Portfolio Allocation, sem implementar nenhum deles. SaaS deixa de orientar o
+MVP e passa a ser uma opção condicionada à validação interna no Stage 5.

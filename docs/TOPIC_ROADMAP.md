@@ -24,7 +24,8 @@
 | E02-R01 | CONCLUÍDO | Entrada versionada de Research | PR #31 mergeado em 27/09/2026 (`824c6f3`); contrato `research-input/1.0.0` e 139 testes passaram. |
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
 | E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
-| E02-R04 | PR ABERTO | Shortlist de Research vinculada ao projeto | PR #34 aberto; `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passando. |
+| E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
+| V07 | PR ABERTO | Estratégia documental Portfolio-First | PR #35 aberto; visão, pipeline e roadmap atualizados sem alteração de código; 169 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -36,15 +37,26 @@ do diff restrito a `README.md` e aos três documentos arquiteturais equivalentes
 O PR #24 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
 foram preservados e não integram a entrega.
 
-## Corte aprovado em V06
+V07 foi validado com a suíte completa de 169 testes, `git diff --check`, blocos
+Markdown balanceados e revisão do diff restrito aos quatro documentos aprovados.
+O PR #35 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
+continuam preservados e não integram a entrega.
 
-O primeiro MVP recebe configuração de projeto, nicho, tema e referências
+## Corte aprovado em V07
+
+V07 preserva o corte técnico de V06: o primeiro MVP recebe configuração de
+projeto, nicho, tema e referências
 estratégicas e produz ideia, roteiro, narração, mídia autorizada ou gerada, vídeo
 vertical, legendas, metadados e preview. Não há publicação automática no MVP 1.
+
+A finalidade muda de uma plataforma genérica para uma máquina própria de ativos
+digitais. O sistema deve descobrir, produzir, medir e escalar canais próprios com
+foco em lucro sustentável. SaaS é possibilidade futura e não orienta o MVP.
 
 Defaults:
 
 - persona única: operador individual de um portfólio de canais temáticos;
+- `Portfolio` é o contexto econômico; `Project` continua a raiz operacional;
 - um projeto e um conteúdo por execução;
 - conteúdo original, sem copiar referências;
 - formato inicial de vídeo curto vertical `9:16`;
@@ -52,6 +64,8 @@ Defaults:
 - aprovação humana da versão exata antes de efeitos externos;
 - mídia privada, tokens e runtime fora do Git;
 - interfaces de provider introduzidas somente quando consumidas pelo tópico;
+- OpenAI/GPT será o primeiro provider da geração, atrás de portas da aplicação;
+- histórico de métricas, custos, receitas e decisões nunca é sobrescrito;
 - exportação manual preservada como fallback.
 
 ## Épicos
@@ -60,7 +74,8 @@ Defaults:
 |---|---|---|---|
 | E01 | Project Configuration | Projeto versionado produz `ProjectSnapshot` válido. | V06 |
 | E02 | Research & Reference Analysis | Temas e padrões estratégicos rastreáveis alimentam ideias. | E01 + radar atual |
-| E03 | Content Intelligence | Ideias originais recebem score explicável e seleção humana. | E02 |
+| FND | Execution Economics Foundation | Run, linhagem e custo são rastreáveis desde o primeiro conteúdo. | PC05 + E02 |
+| E03 | Content Intelligence | Ideias originais recebem score explicável e seleção humana. | E02 + FND01 |
 | E04 | Script & Metadata | Ideia aprovada vira roteiro e metadados versionados. | E03 |
 | E05 | Voice Generation | Roteiro vira faixa de voz com direitos e hash. | E04 |
 | E06 | Media Pipeline | Necessidades visuais recebem ativos autorizados ou gerados. | E04 |
@@ -70,10 +85,50 @@ Defaults:
 | E10 | Scheduler & Daily Automation | Jobs persistidos executam agenda configurável com retry. | E09 |
 | E11 | Analytics | Snapshots opcionais reconciliam métricas oficiais. | E09 |
 | E12 | Optimization Engine | Regras explicáveis recomendam melhorias com base no histórico. | E11 + volume mínimo |
+| E13 | Revenue Analytics | Receita, custo, lucro e ROI possuem histórico atribuível. | E11 + FND |
+| E14 | Portfolio Experiments | Hipóteses recebem avaliação `KILL`, `CONTINUE` ou `SCALE`. | E13 + política aprovada |
+| E15 | Portfolio Allocation | Capacidade recebe recomendação explicável de distribuição. | E12 + E14 |
 
-MVP 1 termina em E08 com preview aprovado, embora E08 não publique. MVP 2 adiciona
-E09 e a fatia necessária de E10, uma rede por vez. MVP 3 completa automação diária;
-MVP 4 entrega E11; MVP 5 entrega E12.
+Ordem dos produtos: MVP 1 Content Machine; MVP 2 Publishing; MVP 3 Daily
+Automation; MVP 4 Analytics; MVP 5 Revenue Analytics; MVP 6 Portfolio
+Experiments; MVP 7 Optimization Engine; MVP 8 Portfolio Allocation. O MVP 1
+termina em E08 com preview aprovado e inclui as fundações FND conforme forem
+consumidas. Modelos próprios/infraestrutura de IA e plataforma comercial/SaaS
+permanecem futuros.
+
+## Fundação prioritária — FND Execution Economics
+
+A cadeia `ProjectSnapshot → PipelineRun → Artifact lineage → CostLedger` será
+entregue em tópicos independentes antes de automação agressiva:
+
+### FND01 — persistência de PipelineRun
+
+- persistir a identidade técnica da execução e o `ProjectSnapshot` exato;
+- registrar estado, início, término e erro sanitizado sem criar artefatos;
+- preservar idempotência e histórico imutável;
+- não implementar IA, geração, custos, receita ou portfólio.
+
+Aceite: iniciar ou retomar a mesma run não duplica registro; nova versão do
+projeto não altera a run existente; transições e conflitos possuem códigos
+estáveis e testes. Este é o **próximo tópico técnico recomendado**, somente após
+o merge de V07.
+
+### FND02 — linhagem comum de artefatos
+
+- ligar artefatos versionados a run, projeto, conteúdo, entradas e hashes;
+- prever provider, modelo, versão de prompt e configuração sanitizada quando IA
+  for usada;
+- não armazenar segredo, prompt privado ou mídia no Git.
+
+### FND03 — eventos de custo e CostLedger
+
+- registrar eventos append-only por run, conteúdo e projeto;
+- distinguir custos de IA, mídia, voz, produção e publicação;
+- manter moeda, instante, origem e regra de atribuição explícitos;
+- não criar receita, ROI, orçamento ou decisão automática.
+
+Revenue Analytics e regras de experimento permanecem nos épicos E13 e E14. Esta
+fundação não antecipa limiares financeiros nem entidades de SaaS.
 
 ## Primeiro épico — E01 Project Configuration
 
@@ -308,18 +363,21 @@ hashes, retry, migração 006→007 e regressão completa; `git diff --check` pa
 Riscos residuais: qualidade e cobertura continuam limitadas pelos scores e
 fontes do catálogo original; diversidade pode ser relaxada quando há poucos
 candidatos elegíveis.
-O PR #34 foi aberto em 27/09/2026.
+O PR #34 foi mergeado em 27/09/2026 (`3908856`).
 
 ## Ordem após E01
 
 1. adaptar o radar atual para consumir `ProjectSnapshot`, sem reescrever adapters;
 2. separar análise de referência de coleta de tendência;
-3. implementar ideias e scoring antes de roteiro;
-4. provar uma porta de voz e uma de mídia antes do composer;
-5. encerrar MVP 1 com preview, QC e aprovação humana;
-6. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
-7. adicionar agenda, analytics e otimização somente após o efeito anterior estar
-   estável e medido.
+3. persistir `PipelineRun` e completar linhagem/custos conforme os primeiros
+   artefatos consumidores surgirem;
+4. implementar ideias e scoring antes de roteiro;
+5. provar a porta OpenAI e uma porta de mídia antes do composer;
+6. encerrar MVP 1 com preview, QC e aprovação humana;
+7. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
+8. adicionar agenda, analytics, Revenue Analytics e experimentos somente após o
+   efeito anterior estar estável e medido;
+9. otimizar e recomendar alocação apenas com histórico suficiente.
 
 ## Gates
 
@@ -331,17 +389,24 @@ O PR #34 foi aberto em 27/09/2026.
 | G4 — publicação | Conta de teste, permissões e API oficial funcionam com fallback. |
 | G5 — operação pública | Direitos, privacidade, retenção, takedown e segurança são revisados. |
 | G6 — otimização | Há volume e qualidade de métricas suficientes para comparação útil. |
+| G7 — economia | Custos e receitas possuem origem, moeda, janela e atribuição reproduzíveis. |
+| G8 — escala | Política versionada, amostra suficiente e validação humana sustentam a recomendação. |
 
 ## Fronteiras e decisões
 
 - adapters de pesquisa social não são publishers;
 - nenhuma URL de referência autoriza download ou reutilização;
 - `ProjectSnapshot` é imutável dentro de uma run;
+- `PipelineRun` permanece a unidade técnica; portfólio é contexto econômico;
 - artefatos são versionados e ligados por IDs/hashes;
+- custos, receitas, métricas e decisões são históricos append-only;
+- nenhuma agregação converte moedas sem fonte, taxa e instante registrados;
 - edição posterior invalida validação e aprovação;
 - scheduler persiste antes de publicar e reconcilia antes de retry;
 - métrica indisponível permanece ausente, nunca vira zero;
 - recomendação de otimização não altera regra ou conteúdo automaticamente;
+- IA não publica, mata canal, muda regra financeira nem aloca capacidade;
+- OpenAI/GPT entra por adapter; domínio e aplicação não dependem do provider;
 - aprovação automática permanece fora do MVP.
 
 ## Riscos residuais
@@ -354,6 +419,9 @@ O PR #34 foi aberto em 27/09/2026.
 - retries mal projetados podem duplicar efeitos externos;
 - métricas disponíveis não são equivalentes entre plataformas;
 - otimização prematura pode reforçar ruído com pouca amostra.
+- atribuição incompleta pode distorcer lucro e ROI;
+- experimentos com pouca amostra podem levar a `KILL` ou `SCALE` incorretos;
+- custo, latência e disponibilidade de providers podem variar.
 
 Cada risco é tratado no tópico que introduz a capacidade; não justifica construir
 antecipadamente módulos ainda fora da fase ativa.

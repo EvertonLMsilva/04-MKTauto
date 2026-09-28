@@ -1,13 +1,19 @@
 # MKTauto
 
-Plataforma modular para um operador individual configurar canais temáticos e
-criar, revisar, publicar e melhorar conteúdo original para redes sociais.
+Máquina Portfolio-First para um operador individual criar e administrar canais
+próprios, testar nichos e formatos e transformar histórico de conteúdo,
+desempenho e monetização em decisões explicáveis.
 
 O primeiro MVP recebe projeto, nicho, tema e referências estratégicas e produz
 ideia, roteiro, narração, mídia autorizada ou gerada, vídeo vertical, legendas,
 metadados e preview. Publicação, automação diária, analytics e otimização entram
 em fases posteriores. Toda publicação do MVP exige aprovação humana da versão
 exata.
+
+O objetivo de longo prazo é maximizar lucro sustentável por conteúdo, canal,
+nicho e capacidade utilizada — não apenas volume, views ou seguidores. Revenue
+Analytics, experimentos, otimização e alocação entram incrementalmente. SaaS e
+modelos próprios são possibilidades futuras e não orientam o MVP atual.
 
 ## O que já funciona
 
@@ -97,11 +103,13 @@ stack trace ou detalhes internos.
   estrutura futura, fases, segurança e riscos;
 - `docs/MODULAR_VIDEO_PIPELINE.md`: artefatos, etapas, estados, validação,
   publicação idempotente e observabilidade;
-- `docs/TOPIC_ROADMAP.md`: histórico, épicos, gates e tópicos pequenos do E01;
+- `docs/TOPIC_ROADMAP.md`: histórico, fases Portfolio-First, épicos, gates e
+  tópicos incrementais;
 - `docs/PROJECT_WORKFLOW.md`: processo de análise, aprovação e entrega;
 - `AGENTS.md`: regras obrigatórias do repositório.
 
-## Próximo tópico
+## Estado e próximo tópico
 
-O épico E01 está em execução sequencial. O roadmap registra o tópico atual e o
-próximo passo desbloqueado somente após seu merge.
+Project Configuration e a entrada de Research por projeto estão concluídos. O
+roadmap define `FND01 — persistência de PipelineRun` como próxima entrega técnica,
+que só começa após o merge da atualização documental V07.
