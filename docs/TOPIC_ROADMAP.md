@@ -25,7 +25,8 @@
 | E02-R02 | CONCLUÍDO | Radar diário vinculado ao projeto | PR #32 mergeado em 27/09/2026 (`7e0cf31`); `research-topic-catalog/1.0.0`, identidade multi-projeto, plano de fontes e 145 testes passaram. |
 | E02-R03 | CONCLUÍDO | Análise de referências estratégicas | PR #33 mergeado em 27/09/2026 (`4cb6ce2`); `reference-insight/1.0.0`, consultas por handle, direitos restritos, migração 006 e 161 testes passaram. |
 | E02-R04 | CONCLUÍDO | Shortlist de Research vinculada ao projeto | PR #34 mergeado em 27/09/2026 (`3908856`); `research-shortlist/1.0.0`, política determinística, migração 007 e 169 testes passaram. |
-| V07 | PR ABERTO | Estratégia documental Portfolio-First | PR #35 aberto; visão, pipeline e roadmap atualizados sem alteração de código; 169 testes passaram. |
+| V07 | CONCLUÍDO | Estratégia documental Portfolio-First | PR #35 mergeado em 27/09/2026 (`e413b68`); visão, pipeline e roadmap atualizados sem alteração de código. |
+| V08 | PR ABERTO | Estratégia multimodelo de IA | PR #36 aberto; roteamento por política, telemetria e evolução para modelos próprios documentados sem alteração de código; 169 testes passaram. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -39,7 +40,12 @@ foram preservados e não integram a entrega.
 
 V07 foi validado com a suíte completa de 169 testes, `git diff --check`, blocos
 Markdown balanceados e revisão do diff restrito aos quatro documentos aprovados.
-O PR #35 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
+O PR #35 foi mergeado em 27/09/2026. Os arquivos locais não rastreados em `data/`
+continuam preservados e não integram a entrega.
+
+V08 foi validado com a suíte completa de 169 testes, `git diff --check`, blocos
+Markdown balanceados e revisão do diff restrito aos quatro documentos aprovados.
+O PR #36 foi aberto em 27/09/2026. Os arquivos locais não rastreados em `data/`
 continuam preservados e não integram a entrega.
 
 ## Corte aprovado em V07
@@ -111,7 +117,7 @@ entregue em tópicos independentes antes de automação agressiva:
 Aceite: iniciar ou retomar a mesma run não duplica registro; nova versão do
 projeto não altera a run existente; transições e conflitos possuem códigos
 estáveis e testes. Este é o **próximo tópico técnico recomendado**, somente após
-o merge de V07.
+o merge de V08.
 
 ### FND02 — linhagem comum de artefatos
 
@@ -129,6 +135,40 @@ o merge de V07.
 
 Revenue Analytics e regras de experimento permanecem nos épicos E13 e E14. Esta
 fundação não antecipa limiares financeiros nem entidades de SaaS.
+
+## Habilitação incremental de IA
+
+Estes tópicos entregam capacidades pequenas quando houver consumidor real; não
+formam um grande épico antecipado e não alteram a prioridade atual de `FND01`.
+
+### AI01 — OpenAI Adapter
+
+- implementar a primeira porta de geração consumida pelo pipeline e um
+  `OpenAIAdapter` sem expor SDK ou nomes de modelo ao domínio;
+- usar configuração sanitizada e o perfil default para a primeira tarefa simples;
+- não implementar múltiplos providers, escalonamento ou experimento.
+
+Aceite: uma capacidade real do pipeline produz artefato rastreável por adapter,
+com contrato testado e sem dependência de OpenAI no domínio.
+
+### AI02 — Model Routing Policy
+
+- introduzir `AIModelRouter` e política versionada por tarefa;
+- mapear perfis default, complex e exceptional para configuração de infraestrutura;
+- manter decisão determinística, explicável e testável.
+
+Aceite: tarefas simples não acionam automaticamente modelos complexos; toda
+seleção retorna política, perfil e justificativa rastreáveis. Este tópico entra
+somente quando existir a primeira tarefa complexa consumidora.
+
+### AI03 — Cost and Usage Telemetry
+
+- correlacionar chamada, artefato, `PipelineRun` e evento do `CostLedger`;
+- registrar tokens, cache, custo, latência, sucesso e fallback conhecidos;
+- preservar hashes opcionais sem armazenar segredo ou prompt privado.
+
+Aceite: uma chamada pode ser atribuída e comparada sem antecipar receita, ROI,
+A/B testing ou decisão automática. Depende de AI01, FND02 e FND03.
 
 ## Primeiro épico — E01 Project Configuration
 
@@ -406,7 +446,10 @@ O PR #34 foi mergeado em 27/09/2026 (`3908856`).
 - métrica indisponível permanece ausente, nunca vira zero;
 - recomendação de otimização não altera regra ou conteúdo automaticamente;
 - IA não publica, mata canal, muda regra financeira nem aloca capacidade;
-- OpenAI/GPT entra por adapter; domínio e aplicação não dependem do provider;
+- OpenAI/GPT entra por adapter e roteamento configurável; domínio e aplicação não
+  dependem do provider nem de nomes de modelo;
+- a política usa o menor modelo com qualidade suficiente e só escala quando o
+  ganho esperado justifica custo e latência;
 - aprovação automática permanece fora do MVP.
 
 ## Riscos residuais

@@ -37,6 +37,8 @@ determinísticas.
 - exigir aprovação humana da versão exata antes de qualquer publicação no MVP;
 - manter exportação manual como fallback de publicação;
 - isolar fornecedores atrás de interfaces pequenas e versionadas;
+- usar o menor modelo de IA capaz de entregar qualidade suficiente para cada
+  tarefa e só escalar quando o ganho esperado justificar custo e latência;
 - registrar linhagem, versões, transições e decisões relevantes;
 - preservar snapshots históricos de métricas, receita, custo e decisões, sem
   atualização destrutiva;
@@ -246,10 +248,20 @@ As interfaces representam capacidades, não fornecedores:
 
 Capacidades de IA são portas da aplicação, como `IdeaGenerator`,
 `ScriptGenerator`, `ContentAnalyzer`, `OptimizationAdvisor`,
-`EmbeddingProvider` e `LLMProvider`. OpenAI/GPT é o provider inicial previsto e
-entra somente por um `OpenAIAdapter`; domínio e aplicação não importam SDK,
-modelo ou tipos do fornecedor. Adapters locais, self-hosted ou especializados
-são possibilidades futuras, não requisitos atuais.
+`EmbeddingProvider` e `LLMProvider`. A aplicação solicita uma capacidade e uma
+política de tarefa versionada; um `AIModelRouter` de infraestrutura escolhe o
+provider e o modelo configurados antes de chamar o adapter:
+
+```text
+Application → AI Port → AIModelRouter → Provider Adapter → Model
+```
+
+OpenAI/GPT é o provider inicial previsto e entra somente por um
+`OpenAIAdapter`. Domínio e aplicação não importam SDK, nomes de modelos ou tipos
+do fornecedor; esses nomes pertencem à configuração e aos adapters. A política
+inicial é simples e determinística, sem routing por machine learning. Adapters
+locais, self-hosted ou especializados são possibilidades futuras, não requisitos
+atuais. A política detalhada está em `docs/MODULAR_VIDEO_PIPELINE.md`.
 
 Operações de publicação específicas por formato podem existir nas capacidades do
 adapter, mas o domínio não deve presumir que todas as redes aceitam vídeo, imagem,
@@ -349,14 +361,35 @@ ProjectSnapshot → PipelineRun → Artifact lineage → CostLedger
 ```
 
 O histórico deve relacionar, quando existirem, `ProjectSnapshot`,
-`ContentVersion`, `GenerationConfiguration`, provider/modelo de IA, versão de
-prompt, tema, hook, roteiro, voz, mídia, vídeo, contexto de publicação, métricas,
-receita, custo e decisão de otimização. Isso viabiliza análises, backtests,
-ranking, recomendação, previsão e modelos próprios futuros sem torná-los requisito.
+`ContentVersion`, `GenerationConfiguration`, provider/modelo de IA, tipo da
+tarefa, versão de prompt, tema, hook, roteiro, voz, mídia, vídeo, contexto de
+publicação, métricas, receita, custo e decisão de otimização. Isso viabiliza
+análises, backtests, ranking, recomendação, previsão e modelos próprios futuros
+sem torná-los requisito.
 
-Para todo artefato gerado por IA, a linhagem futura registra `provider`, `model`,
-`prompt_version`, configuração sanitizada, instante, hashes de entrada e saída,
-custo e latência. Segredos e prompts privados não entram em logs ou Git.
+Para toda chamada de IA, a observabilidade futura registra, quando disponível,
+`provider`, `model`, `task_type`, `prompt_version`, tokens de entrada, saída e
+cache, custo, latência, instante, sucesso, fallback e hashes de entrada e saída.
+O registro liga a chamada à `PipelineRun`, à linhagem do artefato e ao
+`CostLedger`. Segredos e prompts privados não entram em logs ou Git.
+
+Essa relação deve permitir comparar modelos por tarefa usando custo, latência,
+qualidade editorial, aprovação humana, retenção, engajamento, conversão, receita,
+lucro e ROI. A função objetivo futura combina custo, qualidade e impacto; ela não
+escolhe sempre o modelo mais barato.
+
+A evolução prevista é incremental:
+
+```text
+Fase A: OpenAI com modelos roteados por política
+Fase B: OpenAI + modelos locais experimentais
+Fase C: modelos próprios especializados + OpenAI como fallback
+Fase D: roteamento por qualidade, custo, latência e ROI históricos
+```
+
+Modelos próprios priorizam capacidades especializadas, como ranking de hooks,
+ideias e roteiros, classificação, previsão de performance e otimização, em vez de
+um único LLM geral. As fases B, C e D permanecem futuras.
 
 `Content Economics` deverá responder quanto custou criar e distribuir, quanto
 gerou e quanto lucrou. `PipelineRun` permanece a unidade técnica; `CostLedger` e
@@ -421,7 +454,7 @@ visíveis ao operador e integram a decisão registrada.
 | Receita ou custo atribuídos incorretamente | Eventos imutáveis, moeda/origem explícitas e regras de atribuição versionadas. |
 | Escala baseada em amostra fraca | Políticas configuráveis, qualidade de dados visível e validação humana. |
 
-## 18. Decisões V06 e V07
+## 18. Decisões V06, V07 e V08
 
 V06 substitui a prioridade futura de transformar mídia-fonte pela prioridade de
 gerar conteúdo original a partir de uma configuração de projeto/canal. Ela não
@@ -438,3 +471,8 @@ genérica para operação Portfolio-First de ativos próprios. Ela adiciona os
 domínios conceituais de experimentação, Revenue Analytics, Content Economics e
 Portfolio Allocation, sem implementar nenhum deles. SaaS deixa de orientar o
 MVP e passa a ser uma opção condicionada à validação interna no Stage 5.
+
+V08 define OpenAI como provider inicial multimodelo, com seleção determinística
+por tarefa, complexidade e criticidade atrás de `AIModelRouter`. Ela preserva
+Ports and Adapters, prepara telemetria comparável e evolução para modelos
+especializados próprios, sem implementar provider, router ou experimento.
