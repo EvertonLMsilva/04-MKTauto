@@ -42,7 +42,7 @@
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C03 | EM EXECUÇÃO | Porta de composer e orquestração idempotente de render | `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; validação final e PR pendentes. |
+| E07-C03 | PR ABERTO | Porta de composer e orquestração idempotente de render | PR #52 aberto; `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -664,7 +664,7 @@ arquitetural, plano exato, entrada imutável, propriedades explícitas, saída n
 confiável, duração e proporção medidas, chamada única, retry, conflito,
 cancelamento, rollback, leitura e migração. A suíte completa registrou 373
 testes aprovados e um smoke real ignorado por padrão; `git diff --check` também
-passou. A referência do PR será registrada após sua abertura.
+passou. O PR #52 foi aberto em 29/09/2026.
 Riscos residuais: adapter e produção efetiva do arquivo permanecem futuros;
 codec, bitrate, frame rate e compatibilidade dependerão da política do adapter;
 legendas e alinhamento por palavra continuam futuros; qualidade dependerá do
