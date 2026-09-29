@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import { ContractValidationError } from "./domain/contracts.js";
+import {
+  VIDEO_COMPOSITION_REQUEST_VERSION,
+  validateVideoCompositionRequest,
+  videoCompositionRequestHash,
+} from "./domain/video-composition-contracts.js";
 import { validateVideoRender, videoRenderIdentityHash } from "./domain/video-render-contracts.js";
 import { CompositionPlanRepository } from "./composition-plan-repository.js";
 
@@ -14,6 +19,66 @@ export class VideoRenderRepositoryError extends Error {
 }
 
 export class VideoRenderRepository extends CompositionPlanRepository {
+  registerVideoComposition({ request: requestValue, videoRender: renderValue }) {
+    let request;
+    let render;
+    try {
+      request = validateVideoCompositionRequest(requestValue);
+      render = validateVideoRender(renderValue);
+    } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.db.prepare(`SELECT request_hash, video_render_id
+        FROM video_composition_requests WHERE video_composition_request_id = ?`)
+        .get(request.videoCompositionRequestId);
+      if (prior) {
+        if (prior.request_hash !== request.contentHash) throw failure("VIDEO_COMPOSITION_REQUEST_ID_REUSED", "videoCompositionRequestId", "identidade já usada com conteúdo divergente");
+        return this.getVideoRender(prior.video_render_id);
+      }
+      verifyCompositionBinding(request, render);
+      const created = this.#registerValidated(render);
+      this.db.prepare(`INSERT INTO video_composition_requests
+        (video_composition_request_id, schema_version, request_hash,
+         composition_plan_id, composition_plan_content_hash, container_format,
+         width_pixels, height_pixels, video_render_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        request.videoCompositionRequestId, request.schemaVersion, request.contentHash,
+        request.compositionPlanId, request.compositionPlanContentHash,
+        request.containerFormat, request.widthPixels, request.heightPixels,
+        created.videoRenderId, request.requestedAt,
+      );
+      return created;
+    });
+  }
+
+  getVideoComposition(videoCompositionRequestId) {
+    requireIdentifier(videoCompositionRequestId, "videoCompositionRequestId", 180);
+    const row = this.db.prepare(`SELECT * FROM video_composition_requests
+      WHERE video_composition_request_id = ?`).get(videoCompositionRequestId);
+    if (!row) return null;
+    try {
+      const request = validateVideoCompositionRequest({
+        schemaVersion: row.schema_version,
+        videoCompositionRequestId: row.video_composition_request_id,
+        compositionPlanId: row.composition_plan_id,
+        compositionPlanContentHash: row.composition_plan_content_hash,
+        containerFormat: row.container_format,
+        widthPixels: row.width_pixels,
+        heightPixels: row.height_pixels,
+        requestedAt: row.created_at,
+        contentHash: row.request_hash,
+      });
+      if (row.schema_version !== VIDEO_COMPOSITION_REQUEST_VERSION
+        || videoCompositionRequestHash(request) !== row.request_hash) throw new Error("solicitação inválida");
+      const videoRender = this.getVideoRender(row.video_render_id);
+      if (!videoRender) throw new Error("composição incompleta");
+      verifyCompositionBinding(request, videoRender);
+      return deepFreeze({ requestHash: row.request_hash, videoRender });
+    } catch (caught) {
+      if (caught instanceof VideoRenderRepositoryError) throw caught;
+      throw failure("INVALID_PERSISTED_VIDEO_COMPOSITION", "videoCompositionRequestId", "composição persistida inválida", { cause: caught });
+    }
+  }
+
   registerVideoRender(value) {
     let render;
     try { render = validateVideoRender(value); }
@@ -168,6 +233,20 @@ function verifyScope(stored, expected, code) {
   }
 }
 
+function verifyCompositionBinding(request, render) {
+  if (render.videoRenderId !== `video_render:${request.videoCompositionRequestId}`
+    || render.compositionPlanId !== request.compositionPlanId
+    || render.compositionPlanContentHash !== request.compositionPlanContentHash
+    || render.containerFormat !== request.containerFormat
+    || render.widthPixels !== request.widthPixels
+    || render.heightPixels !== request.heightPixels
+    || render.createdAt !== request.requestedAt
+    || render.revision !== 1
+    || render.supersedesVideoRenderId !== null) {
+    throw failure("VIDEO_COMPOSITION_SCOPE_MISMATCH", "videoCompositionRequestId", "solicitação e render divergentes");
+  }
+}
+
 function verifyPersistedColumns(render, row) {
   const expected = {
     video_render_id: render.videoRenderId, schema_version: render.schemaVersion,
@@ -195,6 +274,8 @@ function mapError(caught) {
   if (message.includes("artifact_lineage.artifact_type, artifact_lineage.content_identity, artifact_lineage.artifact_version")) return failure("VIDEO_RENDER_REVISION_CONFLICT", "revision", "revisão já registrada", { cause: caught });
   if (message.includes("artifact_lineage.artifact_id")) return failure("VIDEO_RENDER_ID_REUSED", "videoRenderId", "ID já registrado", { cause: caught });
   if (message.includes("IMMUTABLE_VIDEO_RENDER")) return failure("IMMUTABLE_VIDEO_RENDER", "videoRenderId", "render imutável", { cause: caught });
+  if (message.includes("IMMUTABLE_VIDEO_COMPOSITION_REQUEST")) return failure("IMMUTABLE_VIDEO_COMPOSITION_REQUEST", "videoCompositionRequestId", "solicitação imutável", { cause: caught });
+  if (message.includes("VIDEO_COMPOSITION_SCOPE_MISMATCH")) return failure("VIDEO_COMPOSITION_SCOPE_MISMATCH", "videoCompositionRequestId", "solicitação fora do escopo", { cause: caught });
   if (message.includes("VIDEO_RENDER_SCOPE_MISMATCH")) return failure("VIDEO_RENDER_SCOPE_MISMATCH", "videoRender", "artefatos fora do escopo", { cause: caught });
   if (message.includes("VIDEO_RENDER_REVISION_MISMATCH")) return failure("VIDEO_RENDER_REVISION_MISMATCH", "revision", "revisão inválida", { cause: caught });
   if (typeof caught?.code === "string" && caught.code.startsWith("ERR_SQLITE")) return failure("VIDEO_RENDER_PERSISTENCE_FAILED", "videoRender", "não foi possível persistir o render", { cause: caught });
@@ -202,3 +283,5 @@ function mapError(caught) {
 }
 function sha256(value) { return createHash("sha256").update(value).digest("hex"); }
 function failure(code, field, message, options) { return new VideoRenderRepositoryError(code, field, message, options); }
+function deepFreeze(value) { const clone = structuredClone(value); freeze(clone); return clone; }
+function freeze(value) { if (!value || typeof value !== "object" || Object.isFrozen(value)) return value; Object.values(value).forEach(freeze); return Object.freeze(value); }

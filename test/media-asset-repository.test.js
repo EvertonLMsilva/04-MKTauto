@@ -138,6 +138,7 @@ test("migração 019 é aditiva e preserva ativos existentes", () => {
     repository.close();
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TABLE video_composition_requests;
       DROP TABLE video_renders;
       DROP TABLE composition_plan_segments;
       DROP TABLE composition_plans;
@@ -145,6 +146,7 @@ test("migração 019 é aditiva e preserva ativos existentes", () => {
       DROP TRIGGER media_acquisition_requests_no_update;
       DROP TRIGGER media_acquisition_requests_validate_scope;
       DROP TABLE media_acquisition_requests;
+      DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       DELETE FROM schema_migrations WHERE version = 20;
       DELETE FROM schema_migrations WHERE version = 19;
@@ -156,8 +158,8 @@ test("migração 019 é aditiva e preserva ativos existentes", () => {
     migrated.close();
     const raw = new DatabaseSync(path);
     assert.equal(raw.prepare("SELECT media_asset_id FROM media_assets").get().media_asset_id, "media_asset_001");
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 21);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 21);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
     raw.close();
   });
 });
@@ -168,6 +170,7 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
     repository.close();
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TABLE video_composition_requests;
       DROP TABLE video_renders;
       DROP TABLE composition_plan_segments;
       DROP TABLE composition_plans;
@@ -180,6 +183,7 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
       DROP TRIGGER media_assets_validate_revision;
       DROP TRIGGER media_assets_validate_scope;
       DROP TABLE media_assets;
+      DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       DELETE FROM schema_migrations WHERE version = 20;
       DELETE FROM schema_migrations WHERE version = 19;
@@ -192,8 +196,8 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
     assert.deepEqual(migrated.listMediaAssetsByPipelineRun("run_e06_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 21);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 21);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
     raw.close();
   });
 });
