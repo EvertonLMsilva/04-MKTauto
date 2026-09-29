@@ -44,7 +44,7 @@
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 | V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
-| E05-V03 | EM EXECUÇÃO | Real Voice Adapter | OpenAI Speech API produz WAV físico validado atrás da porta existente; implementação e testes concluídos, aguardando PR. |
+| E05-V03 | PR ABERTO | Real Voice Adapter | PR #54 aberto; OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
 | E06-M03 | PENDENTE | Real Media Adapter | Uma estratégia inicial produzirá ou adquirirá mídia física real e autorizada. |
 | E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
 | E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
@@ -943,6 +943,7 @@ cobrada antes de falha local; após a promoção do arquivo, rollback SQLite pod
 deixar objeto content-addressed órfão, mas nunca `VoiceTrack` falso; não há
 garantia distribuída de `exactly-once`. Os diretórios locais não rastreados
 `data/` e `templates/` foram preservados e não integram a entrega.
+O PR #54 foi aberto em 29/09/2026.
 
 ## Primeiro épico — E01 Project Configuration
 
