@@ -32,6 +32,22 @@ test("retry terminal retorna ativo persistido sem nova chamada", async () => {
   assert.equal(provider.calls.length, 0);
 });
 
+test("liga telemetria e custo comprovável ao ativo sem inventar custo ausente", async () => {
+  const repository = fakeRepository();
+  const provider = fakeProvider({ telemetry: observation() });
+  await new MediaAcquisitionService(repository, provider, { now: () => "2026-09-29T12:00:01.000Z" }).acquire(request());
+  const persisted = repository.persisted[0];
+  assert.equal(persisted.telemetry.artifactId, "media_asset:media_acquisition_001");
+  assert.equal(persisted.telemetry.requestHash, request().contentHash);
+  assert.equal(persisted.costEvent.category, "media_cost");
+  assert.equal(persisted.costEvent.amount, "0.0605");
+
+  const withoutUsage = fakeRepository();
+  await new MediaAcquisitionService(withoutUsage, fakeProvider({ telemetry: observation({ inputTokens: null, outputTokens: null, usageOrigin: null, costAmount: null, currency: null, costOrigin: null }) })).acquire(request());
+  assert.equal(withoutUsage.persisted[0].telemetry.costEventId, null);
+  assert.equal(withoutUsage.persisted[0].costEvent, null);
+});
+
 test("conflito de identidade falha antes de roteiro e provider", async () => {
   const repository = fakeRepository();
   repository.prior = { requestHash: "f".repeat(64), mediaAsset: {} };
@@ -56,6 +72,8 @@ test("rejeita saída não confiável ou divergente sem persistir", async () => {
     [{ assetType: "VIDEO", technicalProperties: { format: "mp4", widthPixels: 1080, heightPixels: 1920, durationMilliseconds: 1000 } }, "MEDIA_ASSET_TYPE_MISMATCH", "assetType"],
     [{ mediaReference: "C:/private/image.png" }, "INVALID_MEDIA_REFERENCE", "mediaReference"],
     [{ rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: false } }, "COMMERCIAL_USE_REQUIRED", "rights.commercialUseAllowed"],
+    [{ telemetry: observation({ provider: "other" }) }, "PROVIDER_TELEMETRY_MISMATCH", "provider"],
+    [{ telemetry: observation({ outputHash: "c".repeat(64) }) }, "PROVIDER_TELEMETRY_MISMATCH", "outputHash"],
   ]) {
     const repository = fakeRepository();
     await assert.rejects(new MediaAcquisitionService(repository, fakeProvider(change)).acquire(request()), acquisitionError(code, field));
@@ -125,6 +143,18 @@ function request(overrides = {}) {
   };
   value.contentHash = mediaAcquisitionRequestHash(value);
   return value;
+}
+
+function observation(overrides = {}) {
+  return {
+    provider: "provider_test", model: "gpt-image-2.5-flare-2026-09-08",
+    taskType: "image_generation", promptVersion: "openai-image-prompt/1.0.0",
+    inputTokens: 100, outputTokens: 2000, cachedInputTokens: null,
+    usageOrigin: "provider_response", costAmount: "0.0605", currency: "USD",
+    costOrigin: "calculated_openai_image_pricing_2026_09_29", latencyMs: 125,
+    occurredAt: "2026-09-29T12:00:00.000Z", fallback: false,
+    inputHash: "c".repeat(64), outputHash: "b".repeat(64), ...overrides,
+  };
 }
 
 function acquisitionError(code, field) { return (caught) => caught instanceof MediaAcquisitionError && caught.code === code && caught.field === field; }

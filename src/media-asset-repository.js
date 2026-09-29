@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
+import { validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import { ContractValidationError } from "./domain/contracts.js";
+import { validateCostEvent } from "./domain/cost-event-contracts.js";
 import {
   MEDIA_ACQUISITION_REQUEST_VERSION,
   mediaAcquisitionRequestHash,
@@ -26,12 +28,16 @@ export class MediaAssetRepository extends ScriptRepository {
     return this.#transaction(() => this.#registerValidated(asset));
   }
 
-  registerAcquiredMediaAsset({ request: requestValue, mediaAsset: assetValue }) {
+  registerAcquiredMediaAsset({ request: requestValue, mediaAsset: assetValue, telemetry: telemetryValue = null, costEvent: costEventValue = null }) {
     let request;
     let asset;
+    let telemetry;
+    let costEvent;
     try {
       request = validateMediaAcquisitionRequest(requestValue);
       asset = validateMediaAsset(assetValue);
+      telemetry = telemetryValue === null ? null : validateAiCallTelemetry(telemetryValue);
+      costEvent = costEventValue === null ? null : validateCostEvent(costEventValue);
     } catch (caught) { throw mapError(caught); }
     return this.#transaction(() => {
       const prior = this.db.prepare(`SELECT request_hash, media_asset_id
@@ -42,6 +48,7 @@ export class MediaAssetRepository extends ScriptRepository {
         return this.getMediaAsset(prior.media_asset_id);
       }
       verifyAcquisitionBinding(request, asset);
+      verifyTelemetryBinding(request, asset, telemetry, costEvent);
       const created = this.#registerValidated(asset);
       this.db.prepare(`INSERT INTO media_acquisition_requests
         (media_acquisition_request_id, schema_version, request_hash, script_id,
@@ -51,6 +58,8 @@ export class MediaAssetRepository extends ScriptRepository {
         request.scriptId, request.scriptContentHash, request.visualDirectionPosition,
         request.assetType, created.mediaAssetId, request.requestedAt,
       );
+      this.#insertCostEvent(costEvent);
+      this.#insertTelemetry(telemetry);
       return created;
     });
   }
@@ -215,6 +224,40 @@ export class MediaAssetRepository extends ScriptRepository {
     for (const input of artifact.inputs) insert.run(artifact.artifactId, input.position, input.kind, input.inputId, input.contentHash);
   }
 
+  #insertCostEvent(event) {
+    if (event === null) return;
+    this.db.prepare(`INSERT INTO cost_events
+      (cost_event_id, schema_version, identity_hash, category, pipeline_run_id,
+       project_id, project_version, content_identity, artifact_id, amount, currency,
+       occurred_at, origin, attribution_rule_version, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      event.costEventId, event.schemaVersion, sha256(JSON.stringify(event)), event.category,
+      event.pipelineRunId, event.projectId, event.projectVersion, event.contentIdentity,
+      event.artifactId, event.amount, event.currency, event.occurredAt, event.origin,
+      event.attributionRuleVersion, event.recordedAt,
+    );
+  }
+
+  #insertTelemetry(value) {
+    if (value === null) return;
+    this.db.prepare(`INSERT INTO ai_call_telemetry
+      (ai_call_id, logical_call_id, schema_version, identity_hash, request_hash,
+       pipeline_run_id, project_id, project_version, artifact_id, cost_event_id,
+       provider, model, task_type, prompt_version, input_tokens, output_tokens,
+       cached_input_tokens, usage_origin, cost_amount, currency, cost_origin,
+       latency_ms, occurred_at, fallback, input_hash, output_hash, outcome,
+       failure_code, recorded_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+      value.aiCallId, value.logicalCallId, value.schemaVersion, sha256(JSON.stringify(value)),
+      value.requestHash, value.pipelineRunId, value.projectId, value.projectVersion,
+      value.artifactId, value.costEventId, value.provider, value.model, value.taskType,
+      value.promptVersion, value.inputTokens, value.outputTokens, value.cachedInputTokens,
+      value.usageOrigin, value.costAmount, value.currency, value.costOrigin,
+      value.latencyMs, value.occurredAt, value.fallback === null ? null : Number(value.fallback),
+      value.inputHash, value.outputHash, value.outcome, value.failureCode, value.recordedAt,
+    );
+  }
+
   #transaction(operation) {
     try {
       this.db.exec("BEGIN IMMEDIATE");
@@ -245,6 +288,42 @@ function verifyAcquisitionBinding(request, asset) {
   if (request.requestedAt !== asset.createdAt) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "requestedAt", "solicitação diverge do ativo");
   if (asset.mediaAssetId !== `media_asset:${request.mediaAcquisitionRequestId}`) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "mediaAssetId", "solicitação diverge do ativo");
   if (asset.revision !== 1 || asset.supersedesMediaAssetId !== null) throw failure("MEDIA_ACQUISITION_SCOPE_MISMATCH", "revision", "aquisição inicial inválida");
+}
+
+function verifyTelemetryBinding(request, asset, telemetry, costEvent) {
+  if (telemetry === null) {
+    if (costEvent !== null) throw failure("MEDIA_ACQUISITION_COST_MISMATCH", "costEvent", "custo sem telemetria");
+    return;
+  }
+  const expected = {
+    aiCallId: `ai_call:${request.mediaAcquisitionRequestId}`,
+    logicalCallId: request.mediaAcquisitionRequestId,
+    requestHash: request.contentHash,
+    pipelineRunId: asset.pipelineRunId,
+    projectId: asset.projectId,
+    projectVersion: asset.projectVersion,
+    artifactId: asset.mediaAssetId,
+    outcome: "SUCCESS",
+  };
+  for (const [field, value] of Object.entries(expected)) if (telemetry[field] !== value) throw failure("MEDIA_ACQUISITION_TELEMETRY_MISMATCH", field, "telemetria diverge da aquisição");
+  if (telemetry.provider !== asset.provider) throw failure("MEDIA_ACQUISITION_TELEMETRY_MISMATCH", "provider", "telemetria diverge do provider do ativo");
+  if (telemetry.outputHash !== asset.contentHash) throw failure("MEDIA_ACQUISITION_TELEMETRY_MISMATCH", "outputHash", "telemetria diverge do conteúdo físico");
+  if (telemetry.costEventId === null) {
+    if (costEvent !== null) throw failure("MEDIA_ACQUISITION_COST_MISMATCH", "costEvent", "custo ausente na telemetria");
+    return;
+  }
+  if (costEvent === null) throw failure("MEDIA_ACQUISITION_COST_MISMATCH", "costEvent", "evento de custo obrigatório");
+  const costExpected = {
+    costEventId: telemetry.costEventId, category: "media_cost",
+    pipelineRunId: asset.pipelineRunId, projectId: asset.projectId,
+    projectVersion: asset.projectVersion,
+    contentIdentity: `media-asset:${asset.scriptId}:${asset.visualDirectionPosition}:${asset.assetType.toLowerCase()}`,
+    artifactId: asset.mediaAssetId, amount: telemetry.costAmount,
+    currency: telemetry.currency, occurredAt: telemetry.occurredAt,
+    origin: `ai_telemetry:${telemetry.costOrigin}`,
+    attributionRuleVersion: telemetry.schemaVersion, recordedAt: telemetry.recordedAt,
+  };
+  for (const [field, value] of Object.entries(costExpected)) if (costEvent[field] !== value) throw failure("MEDIA_ACQUISITION_COST_MISMATCH", field, "custo diverge da telemetria");
 }
 
 function verifyScope(stored, expected, code) {

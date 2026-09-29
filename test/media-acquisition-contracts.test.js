@@ -34,6 +34,13 @@ test("revalida integralmente evidência pública retornada pelo provider", () =>
   assert.throws(() => validateMediaProviderOutput({ ...output(), technicalProperties: { ...output().technicalProperties, widthPixels: null } }), contractError("INVALID_MEDIA_DIMENSION", "technicalProperties.widthPixels"));
 });
 
+test("aceita observação genérica opcional sem expor payload do provider", () => {
+  const value = validateMediaProviderOutput({ ...output(), telemetry: observation() });
+  assert.equal(value.telemetry.usageOrigin, "provider_response");
+  assert.equal(value.telemetry.costAmount, "0.0605");
+  assert.throws(() => validateMediaProviderOutput({ ...output(), telemetry: { ...observation(), rawResponse: "private" } }), contractError("UNKNOWN_FIELD", "observation.rawResponse"));
+});
+
 test("não infere direito comercial nem provider", () => {
   const absent = output(); delete absent.rights;
   assert.throws(() => validateMediaProviderOutput(absent), contractError("REQUIRED_FIELD", "output.rights"));
@@ -62,6 +69,18 @@ function output() {
     contentHash: "b".repeat(64), mediaReference: "media:acquired_001",
     origin: "PROVIDER_GENERATED", provider: "provider_test",
     rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true },
+  };
+}
+
+function observation() {
+  return {
+    provider: "openai", model: "gpt-image-2.5-flare-2026-09-08",
+    taskType: "image_generation", promptVersion: "openai-image-prompt/1.0.0",
+    inputTokens: 100, outputTokens: 2000, cachedInputTokens: null,
+    usageOrigin: "provider_response", costAmount: "0.0605", currency: "USD",
+    costOrigin: "calculated_openai_image_pricing_2026_09_29", latencyMs: 125,
+    occurredAt: "2026-09-29T12:00:00.000Z", fallback: false,
+    inputHash: "c".repeat(64), outputHash: "b".repeat(64),
   };
 }
 

@@ -44,8 +44,8 @@
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 | V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
-| E05-V03 | PR ABERTO | Real Voice Adapter | PR #54 aberto; OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
-| E06-M03 | PENDENTE | Real Media Adapter | Uma estratégia inicial produzirá ou adquirirá mídia física real e autorizada. |
+| E05-V03 | CONCLUÍDO | Real Voice Adapter | PR #54 mergeado em 29/09/2026 (`e6e7c42`); OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
+| E06-M03 | EM EXECUÇÃO | Real Media Adapter | OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
 | E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
 | E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
 | E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
@@ -943,7 +943,54 @@ cobrada antes de falha local; após a promoção do arquivo, rollback SQLite pod
 deixar objeto content-addressed órfão, mas nunca `VoiceTrack` falso; não há
 garantia distribuída de `exactly-once`. Os diretórios locais não rastreados
 `data/` e `templates/` foram preservados e não integram a entrega.
-O PR #54 foi aberto em 29/09/2026.
+O PR #54 foi mergeado em 29/09/2026 (`e6e7c42`).
+
+### E06-M03 — Real Media Adapter
+
+A estratégia inicial usa exclusivamente geração texto→imagem pela OpenAI Image
+API, com snapshot `gpt-image-2.5-flare-2026-09-08`, `quality: medium`, PNG
+opaco e uma saída `1152x2048`, proporção 9:16 exata. A porta `MediaProvider`
+continua genérica; modelo, credencial, timeout, limites, direitos e pricing
+versionado existem apenas na infraestrutura. O prompt é formado somente pela
+direção visual e pelo contexto público do `ProjectSnapshot`; campos extras,
+URLs, domínios, handles, referências estratégicas e conteúdo-fonte são
+recusados antes da chamada.
+
+A resposta JSON é lida com limite explícito e nenhum redirect ou download
+secundário é aceito. Base64, formato declarado e metadados são não confiáveis.
+O parser deriva o formato exclusivamente dos bytes e valida assinatura PNG,
+ordem e limites de chunks, CRC, `IHDR`, `IDAT`, `IEND`, parâmetros técnicos,
+dimensões e dados de pixels descomprimidos completos. O SHA-256 é calculado
+diretamente sobre o PNG físico. O storage content-addressed cria
+`media:sha256_<hash>` sem expor caminho; hash existente é relido, validado e
+reutilizado, e conflito nunca é sobrescrito.
+
+`commercialUseAllowed` só é verdadeiro quando a execução confirma
+explicitamente a base `PROVIDER_TERMS` e a versão observada dos termos; ausência
+ou falsidade bloqueia a rede. A política `openai-image-pricing/1.0.0` somente
+calcula USD quando `input_tokens` e `output_tokens` completos permitem aritmética
+decimal determinística pelas taxas versionadas. Sem uso completo, o custo
+permanece ausente. `MediaAsset`, solicitação, linhagem, telemetria e eventual
+`CostEvent` de `media_cost` são persistidos na mesma transação local.
+
+Evidência: os testes focados cobrem porta e isolamento arquitetural,
+configuração, direitos, prompt sem referências, limites prévios, PNG físico,
+CRC, truncamento, dimensões, formato/MIME divergentes, SHA-256, referência
+opaca, reuso e conflito de storage, timeout, cancelamento, redirects,
+sanitização, cleanup, custo comprovável, ausência de custo inventado,
+idempotência e rollback transacional. O smoke real é opt-in e ignorado por
+padrão. A suíte completa registrou 393 testes aprovados e 3 smokes opt-in
+ignorados; `git diff --check` passou. Nenhuma migration ou dependência externa
+foi adicionada.
+
+Riscos residuais: qualidade e adequação visual dependem do futuro QC e da
+aprovação humana; disponibilidade, latência, rate limit, cobrança, termos e
+preços dependem do provider; uma chamada pode ser cobrada antes de falha local;
+rollback SQLite posterior à promoção pode deixar objeto content-addressed
+órfão, mas nunca `MediaAsset` falso; retry após efeito externo sem conclusão
+local pode gerar outra imagem e outro custo; não há garantia distribuída de
+`exactly-once`. Os diretórios locais não rastreados `data/` e `templates/`
+foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
