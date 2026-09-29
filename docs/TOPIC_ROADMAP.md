@@ -43,8 +43,8 @@
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
-| V10 | PR ABERTO | Critical Path explícito do MVP 1 | PR #53 aberto; replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
-| E05-V03 | PENDENTE | Real Voice Adapter | Um provider TTS inicial produzirá áudio físico real atrás da porta existente. |
+| V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
+| E05-V03 | EM EXECUÇÃO | Real Voice Adapter | OpenAI Speech API produz WAV físico validado atrás da porta existente; implementação e testes concluídos, aguardando PR. |
 | E06-M03 | PENDENTE | Real Media Adapter | Uma estratégia inicial produzirá ou adquirirá mídia física real e autorizada. |
 | E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
 | E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
@@ -903,6 +903,46 @@ Evidência V10: estrutura Markdown e marcadores do Critical Path validados,
 `git diff --check` aprovado e diff restrito a este roadmap. O PR #53 foi aberto
 em 29/09/2026. Os arquivos locais não rastreados em `data/` e `templates/` foram
 preservados e não integram a entrega.
+
+### E05-V03 — Real Voice Adapter
+
+O adapter inicial usa exclusivamente a OpenAI Speech API com
+`gpt-4o-mini-tts`, voz built-in `marin`, política
+`openai-voice-policy/1.0.0` e saída WAV. Modelo, voz, formato, limite efetivo de
+4096 caracteres, timeout, tamanho máximo e confirmação dos direitos comerciais
+são configuração reproduzível de infraestrutura. A execução falha fechada se a
+base comercial não estiver explicitamente confirmada; essa confirmação retrata
+a configuração observada para a execução e não presume termos imutáveis.
+
+O download binário é limitado e gravado em temporário privado. O parser aceita
+somente o subconjunto necessário ao MVP — RIFF/WAVE, PCM linear, mono, 24 kHz,
+16 bits, chunks `fmt ` e `data` canônicos — e rejeita estruturas, parâmetros,
+tamanho ou conteúdo mínimo incompatíveis. A duração é medida pelos frames
+físicos, e o SHA-256 é calculado diretamente sobre os bytes gravados. O storage
+content-addressed cria o objeto sem sobrescrita: um hash já presente é relido,
+revalidado e reutilizado; divergência falha sem alterar o objeto existente. O
+`VoiceTrack` recebe somente `object:voice/sha256/<hash>`, nunca bytes, caminho ou
+URL privada.
+
+Timeout e cancelamento usam `AbortController`; falhas HTTP, de rede, formato,
+storage ou direitos são sanitizadas, e temporários são removidos. A voz
+customizada e estilos fora da allowlist — inclusive clonagem, imitação e
+personificação — falham antes da chamada externa. A resposta binária normal do
+endpoint não fornece custo individual confiável, portanto nenhum custo ou uso é
+inventado e nenhuma telemetria de IA é criada sem evidência.
+
+Evidência: 6 testes focados novos cobrem configuração e direitos explícitos,
+porta existente, chamada oficial, arquivo físico, duração, SHA-256, referência
+opaca, limites prévios, estilos recusados, WAV inválido/não suportado, tamanho,
+silêncio, reuso e conflito de storage, timeout, cancelamento, sanitização e
+cleanup. O smoke real é opt-in e ignorado por padrão. A suíte completa registrou
+380 testes aprovados e 2 smokes opt-in ignorados; `git diff --check` passou.
+Riscos residuais: qualidade e pronúncia dependem do QC futuro; o endpoint limita
+o texto e segmentação permanece fora do tópico; uma chamada externa pode ser
+cobrada antes de falha local; após a promoção do arquivo, rollback SQLite pode
+deixar objeto content-addressed órfão, mas nunca `VoiceTrack` falso; não há
+garantia distribuída de `exactly-once`. Os diretórios locais não rastreados
+`data/` e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
