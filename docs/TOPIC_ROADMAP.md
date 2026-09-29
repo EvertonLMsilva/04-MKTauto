@@ -45,7 +45,7 @@
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 | V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
 | E05-V03 | CONCLUÍDO | Real Voice Adapter | PR #54 mergeado em 29/09/2026 (`e6e7c42`); OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
-| E06-M03 | EM EXECUÇÃO | Real Media Adapter | OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
+| E06-M03 | PR ABERTO | Real Media Adapter | PR #55 aberto; OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
 | E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
 | E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
 | E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
@@ -991,6 +991,7 @@ rollback SQLite posterior à promoção pode deixar objeto content-addressed
 local pode gerar outra imagem e outro custo; não há garantia distribuída de
 `exactly-once`. Os diretórios locais não rastreados `data/` e `templates/`
 foram preservados e não integram a entrega.
+O PR #55 foi aberto em 29/09/2026 (`c0e9b75`).
 
 ## Primeiro épico — E01 Project Configuration
 
