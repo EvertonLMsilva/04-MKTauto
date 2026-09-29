@@ -18,3 +18,10 @@ test("orquestração não consulta latest nem promete exactly-once distribuído"
   const source = readFileSync(new URL("../src/media-acquisition-service.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /getLatest|findLatest|\.latest\s*\(|exactly.?once/i);
 });
+
+test("adapter real permanece na infraestrutura e usa somente APIs nativas", () => {
+  const source = readFileSync(new URL("../src/adapters/openai-image.js", import.meta.url), "utf8");
+  assert.match(source, /extends MediaProvider/);
+  assert.doesNotMatch(source, /from\s+["']openai["']/i);
+  assert.doesNotMatch(source, /process\.env|OPENAI_API_KEY/);
+});

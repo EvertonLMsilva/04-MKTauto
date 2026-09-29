@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { validateAiCallObservation } from "./ai-call-telemetry-contracts.js";
 import { ContractValidationError } from "./contracts.js";
 
 export const MEDIA_ACQUISITION_REQUEST_VERSION = "media-acquisition-request/1.0.0";
@@ -9,8 +10,9 @@ const REQUEST_FIELDS = Object.freeze([
 ]);
 const OUTPUT_FIELDS = Object.freeze([
   "assetType", "technicalProperties", "contentHash", "mediaReference", "origin",
-  "provider", "rights",
+  "provider", "rights", "telemetry",
 ]);
+const REQUIRED_OUTPUT_FIELDS = Object.freeze(OUTPUT_FIELDS.filter((field) => field !== "telemetry"));
 const TECHNICAL_FIELDS = Object.freeze(["format", "widthPixels", "heightPixels", "durationMilliseconds"]);
 const RIGHTS_FIELDS = Object.freeze(["usageBasis", "commercialUseAllowed"]);
 const ASSET_TYPES = Object.freeze(["IMAGE", "VIDEO"]);
@@ -43,7 +45,7 @@ export function mediaAcquisitionRequestHash(value) {
 
 export function validateMediaProviderOutput(value) {
   record(value, "output");
-  exact(value, OUTPUT_FIELDS, "output");
+  exactAllowedRequired(value, OUTPUT_FIELDS, REQUIRED_OUTPUT_FIELDS, "output");
   if (!ASSET_TYPES.includes(value.assetType)) fail("INVALID_ASSET_TYPE", "assetType");
   technicalProperties(value.technicalProperties, value.assetType);
   hash(value.contentHash, "contentHash");
@@ -54,7 +56,9 @@ export function validateMediaProviderOutput(value) {
   if (!PROVIDER_ORIGINS.has(value.origin) && value.provider !== null) fail("PROVIDER_NOT_APPLICABLE", "provider");
   rights(value.rights);
   validateRightsOrigin(value.origin, value.rights.usageBasis);
-  return deepFreeze(structuredClone(value));
+  const normalized = structuredClone(value);
+  if (value.telemetry !== undefined) normalized.telemetry = validateAiCallObservation(value.telemetry);
+  return deepFreeze(normalized);
 }
 
 function technicalProperties(value, assetType) {
@@ -91,6 +95,7 @@ function mediaReference(value) {
 
 function record(value, path) { if (!value || typeof value !== "object" || Array.isArray(value)) fail("INVALID_TYPE", path); }
 function exact(value, fields, path) { for (const key of Object.keys(value)) if (!fields.includes(key)) fail("UNKNOWN_FIELD", `${path}.${key}`); for (const key of fields) if (!(key in value)) fail("REQUIRED_FIELD", `${path}.${key}`); }
+function exactAllowedRequired(value, allowed, required, path) { for (const key of Object.keys(value)) if (!allowed.includes(key)) fail("UNKNOWN_FIELD", `${path}.${key}`); for (const key of required) if (!(key in value)) fail("REQUIRED_FIELD", `${path}.${key}`); }
 function identifier(value, path, max = 80) { if (typeof value !== "string" || value.length > max || !/^[a-z0-9][a-z0-9_:-]{2,}$/.test(value)) fail("INVALID_IDENTIFIER", path); }
 function positiveInteger(value, path, code) { if (!Number.isSafeInteger(value) || value < 1) fail(code, path); }
 function boundedPositiveInteger(value, path, code, max) { if (!Number.isSafeInteger(value) || value < 1 || value > max) fail(code, path); }

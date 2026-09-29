@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
+import { AI_CALL_TELEMETRY_CONTRACT_VERSION } from "../src/domain/ai-call-telemetry-contracts.js";
+import { COST_EVENT_CONTRACT_VERSION } from "../src/domain/cost-event-contracts.js";
 import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
 import { MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestHash } from "../src/domain/media-acquisition-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
@@ -113,6 +115,32 @@ test("persiste solicitação, ativo e linhagem na mesma transação", () => {
     assert.equal(count(path, "media_acquisition_requests"), 1);
     assert.equal(count(path, "media_assets"), 1);
     assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'media_asset'"), 1);
+  });
+});
+
+test("persiste ativo, telemetria e custo observado na mesma transação", () => {
+  withService(({ repository, script, path }) => {
+    const request = acquisitionRequest(script);
+    const asset = mediaAsset(script, { mediaAssetId: `media_asset:${request.mediaAcquisitionRequestId}`, createdAt: request.requestedAt, origin: "PROVIDER_GENERATED", provider: "openai", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true } });
+    const telemetry = acquisitionTelemetry(request, asset);
+    const costEvent = acquisitionCost(asset, telemetry);
+    assert.deepEqual(repository.registerAcquiredMediaAsset({ request, mediaAsset: asset, telemetry, costEvent }), asset);
+    assert.equal(repository.getAiCallTelemetry(telemetry.aiCallId).artifactId, asset.mediaAssetId);
+    assert.equal(count(path, "ai_call_telemetry"), 1);
+    assert.equal(count(path, "cost_events"), 1);
+  });
+});
+
+test("falha de telemetria reverte solicitação, ativo, linhagem e custo", () => {
+  withService(({ repository, script, path }) => {
+    const request = acquisitionRequest(script);
+    const asset = mediaAsset(script, { mediaAssetId: `media_asset:${request.mediaAcquisitionRequestId}`, createdAt: request.requestedAt, origin: "PROVIDER_GENERATED", provider: "openai", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true } });
+    const telemetry = acquisitionTelemetry(request, asset);
+    const costEvent = acquisitionCost(asset, telemetry);
+    repository.db.exec("CREATE TRIGGER reject_media_telemetry BEFORE INSERT ON ai_call_telemetry BEGIN SELECT RAISE(ABORT, 'PRIVATE provider payload'); END;");
+    assert.throws(() => repository.registerAcquiredMediaAsset({ request, mediaAsset: asset, telemetry, costEvent }), repositoryError("MEDIA_ASSET_PERSISTENCE_FAILED", "mediaAsset"));
+    for (const table of ["media_acquisition_requests", "media_assets", "ai_call_telemetry", "cost_events"]) assert.equal(count(path, table), 0);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'media_asset'"), 0);
   });
 });
 
@@ -290,6 +318,36 @@ function acquisitionRequest(script, overrides = {}) {
   };
   value.contentHash = mediaAcquisitionRequestHash(value);
   return value;
+}
+
+function acquisitionTelemetry(request, asset) {
+  return {
+    schemaVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    aiCallId: `ai_call:${request.mediaAcquisitionRequestId}`,
+    logicalCallId: request.mediaAcquisitionRequestId, requestHash: request.contentHash,
+    pipelineRunId: asset.pipelineRunId, projectId: asset.projectId,
+    projectVersion: asset.projectVersion, artifactId: asset.mediaAssetId,
+    costEventId: `cost:ai_call:${request.mediaAcquisitionRequestId}`,
+    provider: "openai", model: "gpt-image-2.5-flare-2026-09-08",
+    taskType: "image_generation", promptVersion: "openai-image-prompt/1.0.0",
+    inputTokens: 100, outputTokens: 2000, cachedInputTokens: null,
+    usageOrigin: "provider_response", costAmount: "0.0605", currency: "USD",
+    costOrigin: "calculated_openai_image_pricing_2026_09_29", latencyMs: 125,
+    occurredAt: "2026-09-29T12:00:00.000Z", fallback: false,
+    inputHash: "c".repeat(64), outputHash: asset.contentHash,
+    outcome: "SUCCESS", failureCode: null, recordedAt: "2026-09-29T12:00:01.000Z",
+  };
+}
+function acquisitionCost(asset, telemetry) {
+  return {
+    schemaVersion: COST_EVENT_CONTRACT_VERSION, costEventId: telemetry.costEventId,
+    category: "media_cost", pipelineRunId: asset.pipelineRunId,
+    projectId: asset.projectId, projectVersion: asset.projectVersion,
+    contentIdentity: `media-asset:${asset.scriptId}:${asset.visualDirectionPosition}:image`,
+    artifactId: asset.mediaAssetId, amount: telemetry.costAmount, currency: telemetry.currency,
+    occurredAt: telemetry.occurredAt, origin: `ai_telemetry:${telemetry.costOrigin}`,
+    attributionRuleVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION, recordedAt: telemetry.recordedAt,
+  };
 }
 
 function project() {

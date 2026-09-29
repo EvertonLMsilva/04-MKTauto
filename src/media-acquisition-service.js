@@ -1,4 +1,6 @@
 import { ContractValidationError } from "./domain/contracts.js";
+import { AI_CALL_TELEMETRY_CONTRACT_VERSION, validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
+import { COST_EVENT_CONTRACT_VERSION, validateCostEvent } from "./domain/cost-event-contracts.js";
 import {
   validateMediaAcquisitionRequest,
   validateMediaProviderOutput,
@@ -15,12 +17,14 @@ export class MediaAcquisitionError extends Error {
 }
 
 export class MediaAcquisitionService {
-  constructor(repository, provider) {
+  constructor(repository, provider, { now = () => new Date().toISOString() } = {}) {
     const methods = ["getMediaAcquisition", "getScript", "getRun", "registerAcquiredMediaAsset"];
     if (!repository || methods.some((method) => typeof repository[method] !== "function")) throw new TypeError("repositório de aquisição de mídia obrigatório");
     if (!provider || typeof provider.provide !== "function") throw new TypeError("MediaProvider obrigatório");
+    if (typeof now !== "function") throw new TypeError("relógio obrigatório");
     this.repository = repository;
     this.provider = provider;
+    this.now = now;
   }
 
   async acquire(value, { signal } = {}) {
@@ -52,10 +56,51 @@ export class MediaAcquisitionService {
     try {
       const output = validateMediaProviderOutput(rawOutput);
       if (output.assetType !== request.assetType) throw failure("MEDIA_ASSET_TYPE_MISMATCH", "assetType", "tipo retornado diverge do solicitado");
+      if (output.telemetry !== undefined && output.telemetry.provider !== output.provider) throw failure("PROVIDER_TELEMETRY_MISMATCH", "provider", "telemetria diverge do provider");
+      if (output.telemetry !== undefined && output.telemetry.outputHash !== output.contentHash) throw failure("PROVIDER_TELEMETRY_MISMATCH", "outputHash", "telemetria diverge do conteúdo físico");
       const mediaAsset = buildMediaAsset(request, script, run, output);
-      return this.repository.registerAcquiredMediaAsset({ request, mediaAsset });
+      const telemetry = buildTelemetry(request, mediaAsset, output.telemetry, this.now());
+      const costEvent = buildCostEvent(mediaAsset, telemetry);
+      return this.repository.registerAcquiredMediaAsset({ request, mediaAsset, telemetry, costEvent });
     } catch (caught) { throw mapError(caught); }
   }
+}
+
+function buildTelemetry(request, asset, observation, recordedAt) {
+  if (observation === undefined) return null;
+  return validateAiCallTelemetry({
+    schemaVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    aiCallId: `ai_call:${request.mediaAcquisitionRequestId}`,
+    logicalCallId: request.mediaAcquisitionRequestId,
+    requestHash: request.contentHash,
+    pipelineRunId: asset.pipelineRunId,
+    projectId: asset.projectId,
+    projectVersion: asset.projectVersion,
+    artifactId: asset.mediaAssetId,
+    costEventId: observation.costAmount === null ? null : `cost:ai_call:${request.mediaAcquisitionRequestId}`,
+    ...observation,
+    outcome: "SUCCESS", failureCode: null, recordedAt,
+  });
+}
+
+function buildCostEvent(asset, telemetry) {
+  if (telemetry?.costEventId === null || telemetry === null) return null;
+  return validateCostEvent({
+    schemaVersion: COST_EVENT_CONTRACT_VERSION,
+    costEventId: telemetry.costEventId,
+    category: "media_cost",
+    pipelineRunId: asset.pipelineRunId,
+    projectId: asset.projectId,
+    projectVersion: asset.projectVersion,
+    contentIdentity: `media-asset:${asset.scriptId}:${asset.visualDirectionPosition}:${asset.assetType.toLowerCase()}`,
+    artifactId: asset.mediaAssetId,
+    amount: telemetry.costAmount,
+    currency: telemetry.currency,
+    occurredAt: telemetry.occurredAt,
+    origin: `ai_telemetry:${telemetry.costOrigin}`,
+    attributionRuleVersion: AI_CALL_TELEMETRY_CONTRACT_VERSION,
+    recordedAt: telemetry.recordedAt,
+  });
 }
 
 function buildProviderInput(request, direction, run) {
