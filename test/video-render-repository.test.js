@@ -9,6 +9,7 @@ import { COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanContentHash } from ".
 import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { VIDEO_RENDER_CONTRACT_VERSION } from "../src/domain/video-render-contracts.js";
+import { VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestHash } from "../src/domain/video-composition-contracts.js";
 import { VOICE_TRACK_CONTRACT_VERSION } from "../src/domain/voice-track-contracts.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
@@ -28,6 +29,53 @@ test("persiste render e linhagem do plano exato com retry idempotente", () => {
     ]);
     assert.equal(count(path, "video_renders"), 1);
     assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'video_render'"), 1);
+  });
+});
+
+test("persiste solicitação, render e linhagem atomicamente com retry terminal", () => {
+  withService(({ repository, compositionPlan, path }) => {
+    const value = compositionRequest(compositionPlan);
+    const videoRender = render(compositionPlan, {
+      videoRenderId: `video_render:${value.videoCompositionRequestId}`,
+      createdAt: value.requestedAt,
+    });
+    assert.deepEqual(repository.registerVideoComposition({ request: value, videoRender }), videoRender);
+    assert.deepEqual(repository.registerVideoComposition({ request: value, videoRender }), videoRender);
+    assert.deepEqual(repository.getVideoComposition(value.videoCompositionRequestId), {
+      requestHash: value.contentHash, videoRender,
+    });
+    assert.equal(count(path, "video_composition_requests"), 1);
+    assert.equal(count(path, "video_renders"), 1);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'video_render'"), 1);
+  });
+});
+
+test("conflito de solicitação e falha de persistência não deixam estado parcial", () => {
+  withService(({ repository, compositionPlan, path }) => {
+    const value = compositionRequest(compositionPlan);
+    const videoRender = render(compositionPlan, {
+      videoRenderId: `video_render:${value.videoCompositionRequestId}`,
+      createdAt: value.requestedAt,
+    });
+    repository.registerVideoComposition({ request: value, videoRender });
+    assert.throws(() => repository.registerVideoComposition({
+      request: compositionRequest(compositionPlan, { containerFormat: "webm" }),
+      videoRender,
+    }), repositoryError("VIDEO_COMPOSITION_REQUEST_ID_REUSED", "videoCompositionRequestId"));
+    assert.equal(count(path, "video_composition_requests"), 1);
+  });
+
+  withService(({ repository, compositionPlan, path }) => {
+    repository.db.exec("CREATE TRIGGER reject_video_composition BEFORE INSERT ON video_composition_requests BEGIN SELECT RAISE(ABORT, 'PRIVATE request failure'); END;");
+    const value = compositionRequest(compositionPlan);
+    const videoRender = render(compositionPlan, {
+      videoRenderId: `video_render:${value.videoCompositionRequestId}`,
+      createdAt: value.requestedAt,
+    });
+    assert.throws(() => repository.registerVideoComposition({ request: value, videoRender }), repositoryError("VIDEO_RENDER_PERSISTENCE_FAILED", "videoRender"));
+    assert.equal(count(path, "video_composition_requests"), 0);
+    assert.equal(count(path, "video_renders"), 0);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'video_render'"), 0);
   });
 });
 
@@ -93,17 +141,49 @@ test("leitura revalida colunas, payload, identidade, escopo e linhagem", () => {
   });
 });
 
-test("migração 021 é aditiva, não cria renders retroativos e preserva planos", () => {
+test("migração 022 é aditiva, não cria solicitações ou renders retroativos e preserva planos", () => {
   withDatabase((path) => {
     const context = setup(path);
     context.repository.close();
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TRIGGER video_composition_requests_no_delete;
+      DROP TRIGGER video_composition_requests_no_update;
+      DROP TRIGGER video_composition_requests_validate_scope;
+      DROP TABLE video_composition_requests;
+      DELETE FROM schema_migrations WHERE version = 22;
+      PRAGMA user_version = 21;
+    `);
+    before.close();
+    const migrated = new VideoRenderRepository(path);
+    assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
+    migrated.close();
+    const raw = new DatabaseSync(path);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
+    raw.close();
+  });
+});
+
+test("migração 021 continua recuperável junto da 022", () => {
+  withDatabase((path) => {
+    const context = setup(path);
+    context.repository.close();
+    const before = new DatabaseSync(path);
+    before.exec(`
+      DROP TRIGGER video_composition_requests_no_delete;
+      DROP TRIGGER video_composition_requests_no_update;
+      DROP TRIGGER video_composition_requests_validate_scope;
+      DROP TABLE video_composition_requests;
       DROP TRIGGER video_renders_no_delete;
       DROP TRIGGER video_renders_no_update;
       DROP TRIGGER video_renders_validate_revision;
       DROP TRIGGER video_renders_validate_scope;
       DROP TABLE video_renders;
+      DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       PRAGMA user_version = 20;
     `);
@@ -112,8 +192,9 @@ test("migração 021 é aditiva, não cria renders retroativos e preserva planos
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 21);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 21);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
     raw.close();
@@ -236,6 +317,20 @@ function render(compositionPlan, overrides = {}) { return {
   createdAt: "2026-09-28T23:30:00.000Z", revision: 1, supersedesVideoRenderId: null,
   ...overrides,
 }; }
+
+function compositionRequest(compositionPlan, overrides = {}) {
+  const value = {
+    schemaVersion: VIDEO_COMPOSITION_REQUEST_VERSION,
+    videoCompositionRequestId: "video_composition_001",
+    compositionPlanId: compositionPlan.compositionPlanId,
+    compositionPlanContentHash: compositionPlan.contentHash,
+    containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920,
+    requestedAt: "2026-09-29T00:00:00.000Z", contentHash: "0".repeat(64),
+    ...overrides,
+  };
+  value.contentHash = videoCompositionRequestHash(value);
+  return value;
+}
 
 function project() { return {
   id: "project_curiosidades_ia", name: "Curiosidades IA", version: 1,

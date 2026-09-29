@@ -17,7 +17,7 @@ import { createResearchArtifact } from "./domain/research-artifact-contracts.js"
 import { createReferenceInsight } from "./domain/reference-insight-contracts.js";
 import { createResearchShortlist } from "./domain/research-shortlist-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 21;
+const CATALOG_SCHEMA_VERSION = 22;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
@@ -40,6 +40,7 @@ const MIGRATIONS = new Map([
   [19, ["019_media_acquisition", readFileSync(new URL("./db/migrations/019_media_acquisition.sql", import.meta.url), "utf8")]],
   [20, ["020_composition_plans", readFileSync(new URL("./db/migrations/020_composition_plans.sql", import.meta.url), "utf8")]],
   [21, ["021_video_renders", readFileSync(new URL("./db/migrations/021_video_renders.sql", import.meta.url), "utf8")]],
+  [22, ["022_video_compositions", readFileSync(new URL("./db/migrations/022_video_compositions.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {

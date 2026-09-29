@@ -161,10 +161,10 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     repository.close();
 
     const before = new DatabaseSync(path);
-    before.exec(`DROP TABLE video_renders; DROP TABLE composition_plan_segments; DROP TABLE composition_plans; DROP TABLE media_acquisition_requests; DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DROP TABLE idea_selections; DROP TABLE idea_candidate_evidence; DROP TABLE idea_scores;
+    before.exec(`DROP TABLE video_composition_requests; DROP TABLE video_renders; DROP TABLE composition_plan_segments; DROP TABLE composition_plans; DROP TABLE media_acquisition_requests; DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DROP TABLE idea_selections; DROP TABLE idea_candidate_evidence; DROP TABLE idea_scores;
       DROP TABLE idea_candidates; DROP TABLE idea_batches;
       DROP TRIGGER cost_events_no_update; DROP TRIGGER cost_events_no_delete;
-      DROP TABLE cost_events; DELETE FROM schema_migrations WHERE version = 21; DELETE FROM schema_migrations WHERE version = 20; DELETE FROM schema_migrations WHERE version = 19; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; DELETE FROM schema_migrations WHERE version = 12;
+      DROP TABLE cost_events; DELETE FROM schema_migrations WHERE version = 22; DELETE FROM schema_migrations WHERE version = 21; DELETE FROM schema_migrations WHERE version = 20; DELETE FROM schema_migrations WHERE version = 19; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; DELETE FROM schema_migrations WHERE version = 12;
       DELETE FROM schema_migrations WHERE version = 11;
       DELETE FROM schema_migrations WHERE version = 10; PRAGMA user_version = 9;`);
     before.close();
@@ -175,8 +175,8 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 21);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 21);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM pipeline_runs").get().total, 1);
     raw.close();
   });

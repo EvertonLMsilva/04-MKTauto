@@ -41,7 +41,8 @@
 | E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C02 | PR ABERTO | Contrato e persistência append-only de render de vídeo | PR #51 aberto; `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C03 | PR ABERTO | Porta de composer e orquestração idempotente de render | PR #52 aberto; `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -554,7 +555,6 @@ Quality Control; disponibilidade, latência, cobrança, limites e retenção
 dependerão do provider; uma falha local após futura chamada externa poderá
 exigir reconciliação; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
-O PR #51 foi aberto em 28/09/2026.
 O PR #49 foi mergeado em 28/09/2026 (`d427594`).
 
 ### E07-C01 — CompositionPlan Contract and Persistence
@@ -633,6 +633,43 @@ do arquivo permanece para o futuro `VideoComposer`; codec, bitrate, frame rate
 e compatibilidade de plataforma exigirão política posterior; legendas e
 Quality Control continuam futuros; referências opacas dependem do ciclo de
 vida do storage externo; SQLite mantém escritor único. Os arquivos locais não
+rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
+
+O PR #51 foi mergeado em 28/09/2026 (`3d5a5a0`).
+
+### E07-C03 — VideoComposer Port and Render Orchestration
+
+O contrato `video-composition-request/1.0.0` registra identidade, o
+`CompositionPlan` e hash exatos, container e dimensões desejados, instante e
+hash reproduzível. A proporção é validada contra o plano por multiplicação
+cruzada inteira. Nenhuma resolução, codec ou outra propriedade técnica é
+inferida.
+
+A porta `VideoComposer` recebe somente `logicalCallId`, o plano persistido
+integralmente revalidado e os requisitos técnicos explícitos. Não há seleção
+por `latest` nem reconstrução parcial. A saída é não confiável e seu contrato
+fechado revalida duração medida, container, dimensões, SHA-256 do conteúdo e
+referência lógica opaca antes de criar o `VideoRender` determinístico.
+
+A migração 022 é aditiva e não cria solicitações ou renders retroativos.
+Solicitação concluída, `VideoRender` e linhagem são persistidos na mesma
+transação. Retry terminal retorna o render persistido sem nova chamada;
+reutilização divergente e conflito conhecido falham antes do composer.
+Cancelamento anterior à chamada e saída inválida não deixam estado parcial. Uma
+falha local após futura chamada externa bem-sucedida ainda poderá exigir
+reconciliação: não há garantia distribuída de `exactly-once`.
+
+Evidência: 15 testes novos cobrem contrato, hash, segurança, isolamento
+arquitetural, plano exato, entrada imutável, propriedades explícitas, saída não
+confiável, duração e proporção medidas, chamada única, retry, conflito,
+cancelamento, rollback, leitura e migração. A suíte completa registrou 373
+testes aprovados e um smoke real ignorado por padrão; `git diff --check` também
+passou. O PR #52 foi aberto em 29/09/2026.
+Riscos residuais: adapter e produção efetiva do arquivo permanecem futuros;
+codec, bitrate, frame rate e compatibilidade dependerão da política do adapter;
+legendas e alinhamento por palavra continuam futuros; qualidade dependerá do
+render real e do Quality Control; referências opacas dependem do ciclo de vida
+do storage externo; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
