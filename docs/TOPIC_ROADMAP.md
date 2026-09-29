@@ -43,7 +43,7 @@
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
-| V10 | EM EXECUÇÃO | Critical Path explícito do MVP 1 | Replanejamento documental aprovado para ligar E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
+| V10 | PR ABERTO | Critical Path explícito do MVP 1 | PR #53 aberto; replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
 | E05-V03 | PENDENTE | Real Voice Adapter | Um provider TTS inicial produzirá áudio físico real atrás da porta existente. |
 | E06-M03 | PENDENTE | Real Media Adapter | Uma estratégia inicial produzirá ou adquirirá mídia física real e autorizada. |
 | E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
@@ -898,6 +898,11 @@ a cadeia por IDs/hashes.
 Toda a cadeia deve preservar run, projeto, versão, artefatos, hashes, lineage,
 direitos, custos conhecidos, histórico e idempotência. Publicação automática
 permanece fora do MVP 1 e começa em E09.
+
+Evidência V10: estrutura Markdown e marcadores do Critical Path validados,
+`git diff --check` aprovado e diff restrito a este roadmap. O PR #53 foi aberto
+em 29/09/2026. Os arquivos locais não rastreados em `data/` e `templates/` foram
+preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
