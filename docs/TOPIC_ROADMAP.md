@@ -42,7 +42,15 @@
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C02 | CONCLUÍDO | Contrato e persistência append-only de render de vídeo | PR #51 mergeado em 28/09/2026 (`3d5a5a0`); `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C03 | PR ABERTO | Porta de composer e orquestração idempotente de render | PR #52 aberto; `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
+| V10 | EM EXECUÇÃO | Critical Path explícito do MVP 1 | Replanejamento documental aprovado para ligar E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
+| E05-V03 | PENDENTE | Real Voice Adapter | Um provider TTS inicial produzirá áudio físico real atrás da porta existente. |
+| E06-M03 | PENDENTE | Real Media Adapter | Uma estratégia inicial produzirá ou adquirirá mídia física real e autorizada. |
+| E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
+| E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
+| E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
+| E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
+| E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará a versão final legendada por seu hash exato. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -664,13 +672,232 @@ arquitetural, plano exato, entrada imutável, propriedades explícitas, saída n
 confiável, duração e proporção medidas, chamada única, retry, conflito,
 cancelamento, rollback, leitura e migração. A suíte completa registrou 373
 testes aprovados e um smoke real ignorado por padrão; `git diff --check` também
-passou. O PR #52 foi aberto em 29/09/2026.
+passou. O PR #52 foi mergeado em 29/09/2026 (`a3fcf32`).
 Riscos residuais: adapter e produção efetiva do arquivo permanecem futuros;
 codec, bitrate, frame rate e compatibilidade dependerão da política do adapter;
 legendas e alinhamento por palavra continuam futuros; qualidade dependerá do
 render real e do Quality Control; referências opacas dependem do ciclo de vida
 do storage externo; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
+
+## Critical Path — Fechamento do MVP 1
+
+Após E07-C03, a prioridade absoluta é produzir um preview real ponta a ponta.
+Novos tópicos puramente estruturais ou de fundação não serão priorizados, salvo
+quando desbloquearem diretamente uma capacidade do fluxo real do MVP. Uma nova
+abstração, persistência ou porta precisa ter consumidor imediato neste Critical
+Path; as decisões já implementadas continuam válidas e não serão reconstruídas.
+
+O caminho restante possui **5 entregas até o preview real e 7 até o MVP 1
+DONE**:
+
+```text
+E07-C03 concluído
+→ E05-V03 Real Voice
+→ E06-M03 Real Media
+→ E07-C04 Real Composer
+→ E07-S01 Subtitles
+→ E07-P01 End-to-End Preview        (5 entregas)
+→ E08-Q01 Quality Control
+→ E08-A01 Human Approval
+→ MVP 1 DONE                        (7 entregas)
+```
+
+Este replanejamento preserva Ports and Adapters, contratos versionados, TDD,
+persistência append-only, identidades explícitas, hashes, artifact lineage,
+`PipelineRun`, `CostLedger`, idempotência, ausência de consultas implícitas a
+`latest`, transações e rollback, erros sanitizados, validação de outputs externos
+como não confiáveis, credenciais fora do domínio, referências lógicas/opacas,
+direitos comerciais explícitos, separação entre provider e domínio, histórico
+imutável, ausência de custo fictício e aprovação humana antes de efeitos externos.
+
+### MVP Critical Path Rule
+
+Enquanto G3 não estiver concluído:
+
+- P0: voz real, mídia real, render real, legendas, preview, QC e aprovação;
+- P1: correções arquiteturais ou de segurança necessárias para uma entrega P0;
+- adiar, salvo bloqueio concreto: AI02, múltiplos providers, roteamento
+  inteligente, modelos próprios, GPU, dashboards, analytics sofisticado,
+  optimization engine, portfolio allocation, SaaS, scheduler, publicação,
+  Revenue, ROAS e experimentação comercial.
+
+Esses tópicos não estão cancelados; permanecem depois do gate correto. E09
+continua sendo o início de Publishing. Após E09, E10 Daily Automation e E11
+Offer & Campaign podem evoluir em paralelo; E11 depende de E09, não de E10.
+Nenhuma alteração em E11–E18 é antecipada por este replanejamento.
+
+### Princípio de excelência executável
+
+O projeto busca excelência por contratos claros, testes, segurança,
+observabilidade, direitos, reprodutibilidade e capacidade real de execução.
+Excelência não significa implementar antecipadamente toda complexidade possível.
+Antes de ampliar a arquitetura, responder:
+
+```text
+Esta implementação é necessária para produzir,
+validar ou operar o próximo artefato real do MVP?
+```
+
+Se não for, documentar, adiar e não implementar agora. Não criar tópico separado
+apenas para contrato, migration, repository ou interface que componha uma única
+capacidade pequena e coesa. Dividir somente quando riscos, rollback, efeito
+externo, revisão segura, testes ou dependências exigirem fronteira independente.
+
+### E05-V03 — Real Voice Adapter
+
+Objetivo: transformar o `VoiceProvider` existente em geração de áudio físico
+real a partir do `Script`, com um único provider TTS inicial.
+
+Aceite mínimo:
+
+- provider atrás da porta existente, sem SDK no domínio ou aplicação;
+- credenciais somente em infraestrutura/runtime, com timeout e cancelamento;
+- output externo tratado como não confiável, com formato e duração reais medidos;
+- SHA-256 calculado sobre o áudio físico e referência de storage lógica/opaca;
+- origem, provider e direitos comerciais explicitamente válidos;
+- clonagem, imitação e personificação recusadas;
+- custo registrado somente quando observado/conhecido e ligado à telemetria
+  existente quando aplicável;
+- suíte padrão determinística e sem internet, com smoke externo opt-in.
+
+Fora de escopo: múltiplos TTS, AI02, fallback sofisticado, clonagem de voz e
+otimização avançada.
+
+### E06-M03 — Real Media Adapter
+
+Objetivo: produzir ou adquirir ao menos um `MediaAsset` físico real consumível
+pelo pipeline, usando somente uma estratégia inicial — geração de imagem,
+geração de vídeo ou biblioteca oficial/licenciada.
+
+Aceite mínimo:
+
+- `MediaProvider` existente permanece a porta e recebe somente dados permitidos;
+- output externo é revalidado quanto a tipo, formato, dimensões e duração real
+  quando aplicável;
+- SHA-256 é calculado sobre o conteúdo físico e a referência permanece
+  lógica/opaca, com bytes fora do domínio;
+- origem, provider quando aplicável e direitos comerciais são explícitos; direito
+  ausente ou presumido bloqueia o ativo;
+- credenciais ficam fora dos contratos e custo existe somente quando conhecido;
+- suíte padrão usa fake determinístico; smoke externo é opt-in.
+
+Fora de escopo: vários fornecedores, scraping, download de referências
+estratégicas, reutilização indevida de terceiros e seleção automática complexa.
+
+### E07-C04 — Real VideoComposer / FFmpeg Adapter
+
+Objetivo: converter `CompositionPlan`, `VoiceTrack` e `MediaAsset` físicos em um
+MP4 vertical real por adapter FFmpeg atrás da porta `VideoComposer`.
+
+Aceite mínimo:
+
+- FFmpeg existe somente na infraestrutura e recebe argumentos construídos por
+  allowlist, nunca shell ou argumentos arbitrários derivados de input externo;
+- resolução inicial 9:16 e container inicial são explícitos e versionados;
+- timeline segue o `CompositionPlan` e termina na duração real da voz;
+- comportamento determinístico produz arquivo real com duração, dimensões,
+  container, SHA-256 e referência opaca medidos;
+- paths são validados contra traversal e temporários recebem cleanup seguro;
+- falha ou cancelamento não produz `VideoRender` falso nem estado parcial;
+- integration test local prova o composer sem depender de provider externo.
+
+Codec avançado, múltiplos formatos, transições sofisticadas e otimização de
+bitrate permanecem fora de escopo.
+
+### E07-S01 — SubtitleTrack & Rendering
+
+Objetivo: derivar legendas reais do `Script` persistido, sincronizá-las à duração
+real da voz e renderizá-las no vídeo.
+
+Aceite mínimo:
+
+- timing determinístico, sem intervalo fora da duração real;
+- representação SRT, ASS ou equivalente, com estilo inicial versionado;
+- idioma do `ProjectSnapshot`, Unicode, quebras controladas, contraste, tamanho
+  legível e safe area vertical são preservados;
+- intervalos e sobreposições inválidos são recusados;
+- alterar texto, timing, estilo, áudio, mídia ou plano produz nova versão/hash;
+- a saída legendada é o **render final candidato ao preview**; o render anterior
+  sem legendas não pode receber QC ou aprovação como versão final do MVP.
+
+Fora de escopo: karaoke, destaque palavra por palavra, animações complexas,
+múltiplos estilos automáticos, escolha de layout por IA e efeitos avançados.
+
+### E07-P01 — End-to-End Real Preview
+
+Objetivo: executar uma única `PipelineRun` de `ProjectSnapshot` até preview físico
+real, usando as identidades explícitas dos artefatos e sem seleção por `latest`.
+
+Aceite mínimo:
+
+- validar run, projeto/versão, roteiro, `VoiceTrack`, `MediaAsset`,
+  `CompositionPlan`, `VideoRender`, `SubtitleTrack`, arquivo final, duração,
+  proporção, direitos, referências, hashes, lineage e custos conhecidos;
+- preview reproduz exatamente a versão final legendada e seu hash;
+- provar pelo menos uma execução com áudio, mídia, vídeo e legendas físicos reais
+  no caminho final; fixture, mock, stub ou fake não satisfaz esse aceite;
+- manter obrigatoriamente fakes determinísticos na suíte padrão;
+- cobrir fluxo fake completo, integração local do composer, smoke externo opt-in,
+  retry, falha intermediária, ausência de artefato final falso e lineage ponta a
+  ponta;
+- segredos, bytes privados, transcrições, logs e runtime permanecem fora do Git.
+
+### E08-Q01 — Quality Control
+
+Objetivo: produzir QC determinístico sobre a versão final legendada e sua cadeia
+exata antes de qualquer aprovação.
+
+Aceite mínimo:
+
+- arquivo existe, é acessível, não vazio, legível, não corrompido, possui
+  container suportado e hash consistente;
+- vídeo possui proporção, resolução, duração e timeline válidas;
+- áudio existe, tem duração coerente e faixa utilizável, sem ausência total;
+- legendas existem, respeitam duração, intervalos, safe area e texto esperado;
+- ativos possuem origem, direitos comerciais, hashes e referências válidos;
+- relatório referencia `PipelineRun`, projeto/versão, `Script`, `VoiceTrack`,
+  `MediaAsset`, `CompositionPlan`, `SubtitleTrack` e `VideoRender` exatos;
+- `ERROR` bloqueia aprovação; `WARNING` permanece visível ao operador.
+
+Análise acústica sofisticada permanece fora do corte inicial.
+
+### E08-A01 — Human Approval
+
+Objetivo: permitir que o operador assista e aprove ou rejeite exatamente uma
+versão final legendada que tenha passado por QC.
+
+Aceite mínimo:
+
+- apresentar preview, identificador, revisão, hash, QC, warnings, projeto,
+  conteúdo e data/hora;
+- estados mínimos `APPROVED` e `REJECTED`; `CHANGES_REQUESTED` entra somente se
+  houver necessidade demonstrada;
+- aprovação referencia o hash exato da versão final legendada;
+- qualquer alteração cria nova versão e não herda a aprovação anterior;
+- histórico é append-only e aprovação não migra implicitamente entre renders;
+- efeito externo futuro só pode consumir versão aprovada.
+
+### Política de testes do Critical Path
+
+Cada tópico usa testes primeiro e cobre, conforme aplicável, unidade, contrato,
+arquitetura, persistência, idempotência, conflito, falhas, rollback, segurança e
+regressão completa. Adapters externos usam fake/stub determinístico na suíte
+padrão; smoke real é opt-in, recebe credenciais somente pelo ambiente e nunca é
+obrigatório no CI padrão. Toda entrega termina com `git diff --check`.
+
+### Definition of Done do MVP 1
+
+O MVP 1 somente estará DONE quando um operador conseguir selecionar um projeto,
+iniciar uma `PipelineRun`, gerar ou selecionar pesquisa, chegar a uma ideia, gerar
+roteiro, narração física real e mídia física real autorizada, construir o
+`CompositionPlan`, renderizar vídeo vertical real, gerar legendas, assistir ao
+preview, executar QC, aprovar ou rejeitar a versão e recuperar posteriormente toda
+a cadeia por IDs/hashes.
+
+Toda a cadeia deve preservar run, projeto, versão, artefatos, hashes, lineage,
+direitos, custos conhecidos, histórico e idempotência. Publicação automática
+permanece fora do MVP 1 e começa em E09.
 
 ## Primeiro épico — E01 Project Configuration
 
@@ -1021,17 +1248,20 @@ commit `d78309f`.
 3. persistir `PipelineRun` e completar linhagem/custos conforme os primeiros
    artefatos consumidores surgirem;
 4. implementar ideias e scoring antes de roteiro;
-5. provar a porta OpenAI e uma porta de mídia antes do composer;
-6. encerrar MVP 1 com preview, QC e aprovação humana;
-7. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
-8. após E09, evoluir E10 Daily Automation e E11 Offer & Campaign em paralelo;
+5. provar a porta OpenAI e as portas de voz, mídia e composer;
+6. após E07-C03, executar sem intercalação estrutural o Critical Path:
+   E05-V03, E06-M03, E07-C04, E07-S01, E07-P01, E08-Q01 e E08-A01;
+7. encerrar o MVP 1 somente com preview físico real, QC aprovado e aprovação
+   humana sobre o hash exato da versão final legendada;
+8. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
+9. após E09, evoluir E10 Daily Automation e E11 Offer & Campaign em paralelo;
    oferta e campanha vinculam projeto/canal, oferta, conteúdo/artefato e CTA
    comercial, sem exigir `Attribution` efetiva;
-9. criar atribuição efetiva e registrar tráfego em E12 antes de conversão, e
-   conversão antes de receita em ledger próprio;
-10. construir analytics comercial e experimentos somente sobre essa cadeia de
+10. criar atribuição efetiva e registrar tráfego em E12 antes de conversão, e
+    conversão antes de receita em ledger próprio;
+11. construir analytics comercial e experimentos somente sobre essa cadeia de
     evidência;
-11. otimizar e recomendar alocação apenas com histórico suficiente.
+12. otimizar e recomendar alocação apenas com histórico suficiente.
 
 ## Gates
 
@@ -1039,7 +1269,7 @@ commit `d78309f`.
 |---|---|
 | G1 — configuração | Snapshot representa a estratégia sem segredo e é reproduzível. |
 | G2 — originalidade | Ideia e roteiro não reproduzem material de referência. |
-| G3 — produção | Preview vertical passa por direitos, formato e QC. |
+| G3 — Real Production Gate | Uma execução completa produz áudio, mídia, vídeo e legendas físicos reais; o preview reproduz a versão final legendada, passa por direitos e QC, preserva lineage completa e recebe aprovação humana vinculada ao hash exato. Fixture, mock, stub ou fake não participa do caminho final aprovado. |
 | G4 — publicação | Conta de teste, permissões e API oficial funcionam com fallback. |
 | G5 — operação pública | Direitos, privacidade, retenção, takedown e segurança são revisados. |
 | G6 — atribuição | Campanha, CTA, origem e limitações de tracking são reproduzíveis. |
@@ -1059,6 +1289,8 @@ commit `d78309f`.
 - receitas, métricas e decisões preservam histórico sem sobrescrita destrutiva;
 - nenhuma agregação converte moedas sem fonte, taxa e instante registrados;
 - edição posterior invalida validação e aprovação;
+- a versão legendada é o render final candidato a preview, QC e aprovação;
+- fixtures e fakes são obrigatórios nos testes, mas nunca satisfazem G3;
 - scheduler persiste antes de publicar e reconcilia antes de retry;
 - Daily Automation e Offer & Campaign podem avançar em paralelo após E09;
 - métrica indisponível permanece ausente, nunca vira zero;
