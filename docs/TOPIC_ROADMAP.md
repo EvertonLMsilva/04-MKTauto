@@ -41,7 +41,7 @@
 | E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
 | E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C02 | EM EXECUÇÃO | Contrato e persistência append-only de render de vídeo | `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C02 | PR ABERTO | Contrato e persistência append-only de render de vídeo | PR #51 aberto; `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -554,6 +554,7 @@ Quality Control; disponibilidade, latência, cobrança, limites e retenção
 dependerão do provider; uma falha local após futura chamada externa poderá
 exigir reconciliação; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
+O PR #51 foi aberto em 28/09/2026.
 O PR #49 foi mergeado em 28/09/2026 (`d427594`).
 
 ### E07-C01 — CompositionPlan Contract and Persistence
