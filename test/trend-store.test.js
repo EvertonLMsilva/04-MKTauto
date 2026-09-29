@@ -19,19 +19,20 @@ test("migra banco vazio e reabre o catálogo sem alteração destrutiva", () => 
     assert.equal(second.getRun("run-2026-09-26").candidates.length, 1);
     second.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 20);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 20);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 21);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 21);
     raw.close();
   });
 });
 
-test("migrações 007 a 020 preservam catálogo e análises existentes da versão 6", () => {
+test("migrações 007 a 021 preservam catálogo e análises existentes da versão 6", () => {
   withDatabase((path) => {
     const first = new TrendCatalogStore(path);
     first.recordOperation(batch({ key: "before-reference-migration", at: DAY_ONE, views: 100 }));
     first.close();
     const raw = new DatabaseSync(path);
     raw.exec(`
+      DROP TABLE video_renders;
       DROP TABLE composition_plan_segments;
       DROP TABLE composition_plans;
       DROP TABLE media_acquisition_requests;
@@ -63,6 +64,7 @@ test("migrações 007 a 020 preservam catálogo e análises existentes da versã
       DROP TABLE pipeline_run_transitions;
       DROP TABLE pipeline_runs;
       DROP TABLE research_shortlists;
+      DELETE FROM schema_migrations WHERE version = 21;
       DELETE FROM schema_migrations WHERE version = 20;
       DELETE FROM schema_migrations WHERE version = 19;
       DELETE FROM schema_migrations WHERE version = 18;
@@ -256,7 +258,7 @@ test("falha por chave estrangeira reverte toda a transação com código estáve
 test("rejeita versão futura do catálogo com código estável", () => {
   withDatabase((path) => {
     const raw = new DatabaseSync(path);
-    raw.exec("PRAGMA user_version = 21");
+    raw.exec("PRAGMA user_version = 22");
     raw.close();
     assert.throws(
       () => new TrendCatalogStore(path),

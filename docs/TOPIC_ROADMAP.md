@@ -40,7 +40,8 @@
 | E05-V02 | CONCLUÍDO | Porta de provider e orquestração de geração de voz | PR #47 mergeado em 28/09/2026 (`f66e5c`); `voice-generation-request/1.0.0`, porta `VoiceProvider`, migração SQLite 017 e orquestração idempotente; 294 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M01 | CONCLUÍDO | Contrato e persistência append-only de ativo de mídia | PR #48 mergeado em 28/09/2026 (`2689359`); `media-asset/1.0.0`, migração SQLite 018, direitos comerciais explícitos, referência lógica opaca e linhagem transacional com roteiro e direção visual exatos; 308 testes passaram e 1 smoke opt-in foi ignorado. |
 | E06-M02 | CONCLUÍDO | Porta de provider e orquestração de aquisição de mídia | PR #49 mergeado em 28/09/2026 (`d427594`); `media-acquisition-request/1.0.0`, porta `MediaProvider`, migração SQLite 019 e orquestração idempotente; 323 testes passaram e 1 smoke opt-in foi ignorado. |
-| E07-C01 | PR ABERTO | Contrato e persistência append-only de plano de composição | PR #50 aberto; `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C01 | CONCLUÍDO | Contrato e persistência append-only de plano de composição | PR #50 mergeado em 28/09/2026 (`bc2f162`); `composition-plan/1.0.0`, timeline contínua em milissegundos, migração SQLite 020 e linhagem transacional com roteiro, voz e mídia exatos; 341 testes passaram e 1 smoke opt-in foi ignorado. |
+| E07-C02 | PR ABERTO | Contrato e persistência append-only de render de vídeo | PR #51 aberto; `video-render/1.0.0`, migração SQLite 021, propriedades reais informadas, proporção por aritmética inteira e linhagem transacional com o plano exato; 358 testes passaram e 1 smoke opt-in foi ignorado. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -553,6 +554,7 @@ Quality Control; disponibilidade, latência, cobrança, limites e retenção
 dependerão do provider; uma falha local após futura chamada externa poderá
 exigir reconciliação; SQLite mantém escritor único. Os arquivos locais não
 rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
+O PR #51 foi aberto em 28/09/2026.
 O PR #49 foi mergeado em 28/09/2026 (`d427594`).
 
 ### E07-C01 — CompositionPlan Contract and Persistence
@@ -593,7 +595,45 @@ para o composer; legendas e alinhamento por palavra continuam futuros; qualidade
 visual dependerá de render e Quality Control; referências opacas dependem do
 ciclo de vida do storage externo; SQLite mantém escritor único. Os arquivos
 locais não rastreados em `data/` e `templates/` foram preservados e não integram
-a entrega. O PR #50 foi aberto em 28/09/2026.
+a entrega. O PR #50 foi mergeado em 28/09/2026 (`bc2f162`).
+
+### E07-C02 — VideoRender Contract and Persistence
+
+O contrato `video-render/1.0.0` registra identidade e revisão, `PipelineRun`,
+projeto e versão, `CompositionPlan` e hash exatos, proporção de saída, duração
+medida em milissegundos, container, dimensões reais, SHA-256 do conteúdo
+renderizado e referência lógica opaca. Duração, dimensões e container precisam
+ser fornecidos explicitamente: nenhum valor é inferido do plano ou escolhido por
+default. As dimensões são comparadas à proporção declarada por multiplicação
+cruzada inteira com `BigInt`, sem depender de ponto flutuante.
+
+Antes da persistência, run, snapshot, plano, hash, escopo, proporção e duração
+são recuperados por identidade explícita e revalidados. Como a leitura do plano
+revalida toda a sua cadeia, a duração permanece vinculada à `VoiceTrack` exata.
+O `contentHash` é o SHA-256 informado do conteúdo renderizado identificado pelo
+artefato; ele não é derivado de JSON, metadados, referência ou localização. A
+referência aceita somente identificador lógico sanitizado e rejeita URL,
+caminho, esquema de storage e segmentos sensíveis.
+
+A migração 021 é aditiva e não cria renders retroativos. Render e linhagem
+`artifact-lineage/1.0.0`, cuja única entrada é o `CompositionPlan` exato, são
+gravados na mesma transação. Retry idêntico não duplica dados; reutilização
+divergente de ID ou revisão falha sem alterar o histórico; correções criam nova
+revisão append-only. A leitura revalida contrato, identidade, colunas, escopo,
+plano e linhagem. Nenhuma consulta a `latest`, byte, renderização, localização
+física ou dependência de composer, FFmpeg, SDK, fornecedor ou storage foi
+introduzida.
+
+Evidência: 17 testes novos cobrem contrato, propriedades medidas, proporção
+inteira, SHA-256 do conteúdo, referência opaca, segurança, isolamento
+arquitetural, escopo, duração, idempotência, conflitos, revisão, imutabilidade,
+linhagem, rollback, leitura e migração. A suíte completa registrou 358 testes
+aprovados e um smoke real ignorado por padrão. Riscos residuais: produção real
+do arquivo permanece para o futuro `VideoComposer`; codec, bitrate, frame rate
+e compatibilidade de plataforma exigirão política posterior; legendas e
+Quality Control continuam futuros; referências opacas dependem do ciclo de
+vida do storage externo; SQLite mantém escritor único. Os arquivos locais não
+rastreados em `data/` e `templates/` foram preservados e não integram a entrega.
 
 ## Primeiro épico — E01 Project Configuration
 
