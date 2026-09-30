@@ -81,6 +81,15 @@ test("nova versão exige versão esperada e preserva integralmente o histórico"
   });
 });
 
+test("lista projetos e versões persistidas para seleção explícita do operador", () => {
+  withRepository((repository) => {
+    repository.create(project(), { createdAt: CREATED_AT });
+    repository.createVersion(project({ version: 2, name: "Curiosidades IA Diário" }), { expectedVersion: 1, createdAt: UPDATED_AT });
+    assert.deepEqual(repository.listProjects().map(({ id, latestVersion }) => [id, latestVersion]), [["project_curiosidades_ia", 2]]);
+    assert.deepEqual(repository.listProjectVersions("project_curiosidades_ia").map(({ project }) => [project.version, project.name]), [[1, "Curiosidades IA"], [2, "Curiosidades IA Diário"]]);
+  });
+});
+
 test("impede colisões de identificação e versão com códigos e campos estáveis", () => {
   withRepository((repository) => {
     assert.throws(

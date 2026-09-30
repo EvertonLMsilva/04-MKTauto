@@ -84,6 +84,18 @@ export class PipelineRunRepository extends ProjectRepository {
     }
   }
 
+  listRunsByProjectVersion(projectId, projectVersion) {
+    if (typeof projectId !== "string" || projectId.length > 80 || !/^[a-z0-9][a-z0-9_-]{2,}$/.test(projectId)) {
+      throw failure("INVALID_PROJECT_ID", "projectId", "identificador inválido");
+    }
+    if (!Number.isSafeInteger(projectVersion) || projectVersion < 1) {
+      throw failure("INVALID_PROJECT_VERSION", "projectVersion", "versão inválida");
+    }
+    return this.db.prepare(`SELECT pipeline_run_id FROM pipeline_runs
+      WHERE project_id = ? AND project_version = ? ORDER BY started_at DESC, pipeline_run_id`)
+      .all(projectId, projectVersion).map(({ pipeline_run_id: id }) => this.getRun(id));
+  }
+
   transitionRun({ pipelineRunId, nextState, completedAt, error = null }) {
     requireIdentifier(pipelineRunId);
     if (!["SUCCEEDED", "FAILED"].includes(nextState)) {
