@@ -55,7 +55,7 @@
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
-| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PRs #68 e #69 mergeados; correção do schema OpenAI no PR #70; a console cria/retoma uma `PipelineRun`, executa Research e shortlist reais, persiste candidatos/score e registra a seleção humana explícita antes do Preview; 507 testes passaram, com 6 integrações opt-in ignoradas. |
+| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PRs #68–#72 mergeados; o PR #73 reúne as correções operacionais pendentes e a faixa-alvo conservadora de roteiro; 509 de 515 testes passaram, com 6 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1126,7 +1126,8 @@ chunks auxiliares e tamanhos de streaming válidos, preserva códigos públicos 
 falha do provider, aceita `generation_id` na resposta de imagem, decodifica a
 identidade opaca do vídeo, melhora a legibilidade das legendas e usa a faixa alvo
 conservadora do roteiro sem alterar os limites físicos. A suíte completa aprovou
-509 de 515 testes e ignorou 6 integrações opt-in; `git diff --check` passou.
+509 de 515 testes e ignorou 6 integrações opt-in; `git diff --check` passou. O
+PR #73 foi aberto.
 
 ### E08-A01 — Human Approval
 
