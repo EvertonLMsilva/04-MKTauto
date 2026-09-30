@@ -52,7 +52,7 @@
 | E07-S01C | CONCLUÍDO | Physical Subtitle Rendering | PR #59 mergeado em 30/09/2026 (`8039974`); burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
 | E07-P01 | CONCLUÍDO | End-to-End Real Preview | PR #60 mergeado em 30/09/2026 (`d60375f`); uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
-| E08-Q01 | EM EXECUÇÃO | Quality Control | QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
+| E08-Q01 | PR ABERTO | Quality Control | PR #63; QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | PENDENTE | Operator Preview Console | Interface web mínima permitirá iniciar e acompanhar o pipeline, reproduzir o render final, consultar QC e decidir sobre a versão exata. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
 
@@ -1030,6 +1030,7 @@ aprovar ou publicar. `FAIL` define `approvalBlocked: true`; `WARN` permanece
 explícito. Evidência: 12 testes focados passaram; a integração física opt-in
 validou o MP4 legendado real com FFmpeg/FFprobe; a suíte completa aprovou 468
 testes e ignorou 6 integrações opt-in; `git diff --check` passou.
+O PR #63 foi aberto em 30/09/2026.
 
 ### E08-U01 — Operator Preview Console
 
