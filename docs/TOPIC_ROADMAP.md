@@ -54,7 +54,7 @@
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
-| E08-A01 | EM EXECUÇÃO | Human Approval | Decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos; 488 testes passaram e 6 integrações opt-in foram ignoradas. |
+| E08-A01 | PR ABERTO | Human Approval | PR #66; decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos; 488 testes passaram e 6 integrações opt-in foram ignoradas. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -1103,7 +1103,8 @@ publicação.
 Evidências: 17 testes focados cobrem contrato, `PASS`/`WARN`/`FAIL`, justificativa,
 bindings divergentes, nova identidade, retry, conflito, migration, imutabilidade,
 consulta aprovada explícita, refresh, HTTP, UI e sanitização. A suíte completa
-aprovou 488 testes e ignorou 6 integrações opt-in.
+aprovou 488 testes e ignorou 6 integrações opt-in. `git diff --check` passou.
+O PR #66 foi aberto em 30/09/2026.
 
 Risco residual: sem autenticação, por decisão explícita de escopo, o ator é uma
 identificação declarada pelo operador local; autenticação e multiusuário continuam
