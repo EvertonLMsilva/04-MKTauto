@@ -17,7 +17,7 @@ export class OpenAIIdeaAdapter {
         headers: { authorization: `Bearer ${this.config.apiKey}`, "content-type": "application/json" },
         body: JSON.stringify(requestBody(projectSnapshot, shortlist, this.config)), signal: controller.signal,
       });
-      if (!response.ok) throw failure(response.status === 429 ? "PROVIDER_RATE_LIMITED" : "PROVIDER_REQUEST_REJECTED", "provider", "provider recusou a geração de ideias");
+      if (!response.ok) throw httpFailure(response.status);
       const body = await response.json();
       const text = outputText(body);
       let parsed; try { parsed = JSON.parse(text); } catch (caught) { throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta estruturada inválida", { cause: caught }); }
@@ -57,4 +57,12 @@ function validateOutput(value, allowed) {
 function text(value, min, max, field) { const normalized = typeof value === "string" ? value.normalize("NFC").trim().replace(/\s+/g, " ") : ""; if (normalized.length < min || normalized.length > max || /(?:bearer\s+\S+|sk-[a-z0-9_-]{8,})/i.test(normalized)) throw failure("PROVIDER_INVALID_RESPONSE", field, "texto inválido"); return normalized; }
 function outputText(body) { const texts = body?.output?.flatMap((item) => item?.content ?? []).filter((item) => item?.type === "output_text" && typeof item.text === "string") ?? []; if (body?.status !== "completed" || texts.length !== 1) throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta estruturada ausente"); return texts[0].text; }
 function validateConfig(config) { if (!config || !config.apiKey || !config.model || !Number.isSafeInteger(config.timeoutMs) || !Number.isSafeInteger(config.maxOutputTokens)) throw failure("OPENAI_CONFIGURATION_MISSING", "config", "configuração obrigatória ausente"); }
+function httpFailure(status) {
+  if (status === 401) return failure("PROVIDER_AUTHENTICATION_FAILED", "provider", "autenticação do provider falhou");
+  if (status === 403) return failure("PROVIDER_PERMISSION_DENIED", "provider", "provider recusou a operação");
+  if (status === 408) return failure("PROVIDER_TIMEOUT", "provider", "provider excedeu o tempo limite");
+  if (status === 429) return failure("PROVIDER_RATE_LIMITED", "provider", "limite temporário do provider atingido");
+  if (status >= 500) return failure("PROVIDER_UNAVAILABLE", "provider", "provider temporariamente indisponível");
+  return failure("PROVIDER_REQUEST_REJECTED", "provider", "provider rejeitou a solicitação");
+}
 function failure(code, field, message, options) { return new OpenAIAdapterError(code, field, message, options); }
