@@ -48,8 +48,8 @@
 | E06-M03 | CONCLUÍDO | Real Media Adapter | PR #55 mergeado em 29/09/2026 (`1a28d5d`); OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
 | E07-C04 | CONCLUÍDO | Real VideoComposer / FFmpeg Adapter | PR #56 mergeado em 29/09/2026 (`2e2b1d2`); FFmpeg/FFprobe compõem WAV e PNG exatos em MP4 vertical físico, inspecionado e armazenado por conteúdo. |
 | E07-S01A | CONCLUÍDO | SubtitleTrack Contract and Persistence | PR #57 mergeado em 29/09/2026 (`5be9534`); contrato fechado e persistência append-only ligam cues ao Script e VoiceTrack exatos. |
-| E07-S01B | PR ABERTO | Deterministic Subtitle Cues and ASS/SRT | Política fechada gera cues e representações ASS/SRT determinísticas em memória, sem filesystem ou FFmpeg. |
-| E07-S01C | PENDENTE | Physical Subtitle Rendering | Burn-in no MP4 depende de E07-S01B. |
+| E07-S01B | CONCLUÍDO | Deterministic Subtitle Cues and ASS/SRT | PR #58 mergeado em 29/09/2026 (`05268fd`); política fechada gera cues e representações ASS/SRT determinísticas em memória. |
+| E07-S01C | PR ABERTO | Physical Subtitle Rendering | PR #59; burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
 | E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
 | E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará a versão final legendada por seu hash exato. |
@@ -869,8 +869,34 @@ E07-S01C e E08-Q01.
 
 ### E07-S01C — Physical Subtitle Rendering
 
-Objetivo futuro: renderizar fisicamente a legenda no MP4 e produzir a versão
-final candidata ao preview.
+Aceite demonstrado: `subtitle-render-request/1.0.0`,
+`subtitle-render-result/1.0.0` e `ffmpeg-subtitle-render-policy/1.0.0` fecham a
+identidade lógica, a tolerância de 34 ms e as propriedades físicas esperadas.
+O adapter consome o MP4 e a `SubtitleTrack` exatos, materializa o ASS somente em
+staging privado, executa FFmpeg sem shell com áudio em `copy`, exige decode e
+FFprobe válidos e promove o resultado por SHA-256. A saída é um `VideoRender`
+revisão 2 append-only; revisão 1 permanece imutável. Lineage registra plano,
+vídeo original e legenda, e a toolchain efetiva relevante fica auditável sem
+promessa de bytes iguais entre ambientes diferentes.
+
+Retry terminal não reexecuta FFmpeg. A reconciliação por receipt e alias interno
+reutiliza uma promoção sem commit somente após validar request hash, SHA-256
+físico, decode, FFprobe e política. Request normalizada, resultado e lineage são
+persistidos em uma transação SQLite; falhas fazem rollback e sempre limpam o
+staging. A implementação reutiliza a migration 023 e não cria migration nova.
+
+Evidência: 13 novos testes cobrem contratos, identidade, cadeia, hashes, escopo,
+lineage, ASS, allowlist, escaping por basename controlado, staging, falhas do
+processo, timeout, cancelamento, logs sanitizados, FFprobe, áudio, tolerância,
+storage, reconciliação, retry, rollback e isolamento arquitetural. A integração
+local real com FFmpeg passou; a suíte completa aprovou 446 testes e ignorou 5
+integrações/smokes opt-in; `git diff --check` passou. O PR #59 foi aberto em
+29/09/2026.
+
+Riscos residuais: versão de FFmpeg/libass e resolução da fonte podem alterar os
+bytes entre toolchains; o hash persiste os bytes efetivos, enquanto a identidade
+lógica permanece estável. Qualidade visual e sincronização percebida continuam
+para QC posterior.
 
 Continuam fora do escopo do corte inicial: karaoke, destaque palavra por
 palavra, animações complexas, múltiplos estilos automáticos, escolha de layout

@@ -10,10 +10,13 @@ import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contract
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { VIDEO_RENDER_CONTRACT_VERSION } from "../src/domain/video-render-contracts.js";
 import { VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestHash } from "../src/domain/video-composition-contracts.js";
+import { SUBTITLE_RENDER_POLICY_VERSION, SUBTITLE_RENDER_REQUEST_VERSION, subtitleRenderIdentityHash, subtitleRenderRequestHash } from "../src/domain/subtitle-render-contracts.js";
+import { SUBTITLE_TRACK_CONTRACT_VERSION, SUBTITLE_STYLE_POLICY_VERSION, subtitleTrackContentHash } from "../src/domain/subtitle-track-contracts.js";
 import { VOICE_TRACK_CONTRACT_VERSION } from "../src/domain/voice-track-contracts.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
 import { VoiceTrackRepository } from "../src/voice-track-repository.js";
+import { SubtitleTrackRepository } from "../src/subtitle-track-repository.js";
 import { VideoRenderRepository, VideoRenderRepositoryError } from "../src/video-render-repository.js";
 import { VideoRenderService } from "../src/video-render-service.js";
 
@@ -47,6 +50,38 @@ test("persiste solicitação, render e linhagem atomicamente com retry terminal"
     assert.equal(count(path, "video_composition_requests"), 1);
     assert.equal(count(path, "video_renders"), 1);
     assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'video_render'"), 1);
+  });
+});
+
+test("persiste burn-in como revisão 2 imutável, request normalizada e lineage exata sem migration", () => {
+  withService(({ repository, compositionPlan, path }) => {
+    const source = repository.registerVideoRender(render(compositionPlan));
+    const subtitles = new SubtitleTrackRepository(path); subtitles.getScript = repository.getScript; const track = subtitleTrack(compositionPlan);
+    try { subtitles.registerSubtitleTrack(track); } finally { subtitles.close(); }
+    const request = subtitleRenderRequest(source, track, compositionPlan); const result = subtitleRenderResult(request);
+    const burned = render(compositionPlan, { videoRenderId: `video_render:subtitle:${request.subtitleRenderRequestId.slice("subtitle_render:".length)}`, contentHash: result.contentHash,
+      logicalReference: result.logicalReference, createdAt: request.requestedAt, revision: 2, supersedesVideoRenderId: source.videoRenderId });
+    assert.deepEqual(repository.registerSubtitleRendering({ request, result, videoRender: burned }), burned);
+    assert.deepEqual(repository.registerSubtitleRendering({ request, result, videoRender: burned }), burned);
+    assert.deepEqual(repository.getSubtitleRendering(request.subtitleRenderRequestId), { requestHash: request.contentHash, videoRender: burned });
+    assert.deepEqual(repository.getArtifact(burned.videoRenderId).inputs, [
+      { position: 1, kind: "INTERNAL_ARTIFACT", inputId: compositionPlan.compositionPlanId, contentHash: compositionPlan.contentHash },
+      { position: 2, kind: "INTERNAL_ARTIFACT", inputId: source.videoRenderId, contentHash: source.contentHash },
+      { position: 3, kind: "INTERNAL_ARTIFACT", inputId: track.subtitleTrackId, contentHash: track.contentHash },
+    ]);
+    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 23"), 0);
+    assert.throws(() => repository.db.prepare("UPDATE video_renders SET content_hash = ? WHERE video_render_id = ?").run("0".repeat(64), burned.videoRenderId), /IMMUTABLE_VIDEO_RENDER/);
+  });
+});
+
+test("falha no burn-in reverte revisão 2, request normalizada e lineage", () => {
+  withService(({ repository, compositionPlan, path }) => {
+    const source = repository.registerVideoRender(render(compositionPlan)); const subtitles = new SubtitleTrackRepository(path); subtitles.getScript = repository.getScript; const track = subtitleTrack(compositionPlan);
+    try { subtitles.registerSubtitleTrack(track); } finally { subtitles.close(); }
+    const request = subtitleRenderRequest(source, track, compositionPlan); const result = subtitleRenderResult(request); const burned = render(compositionPlan, { videoRenderId: `video_render:subtitle:${request.subtitleRenderRequestId.slice("subtitle_render:".length)}`, contentHash: result.contentHash, logicalReference: result.logicalReference, createdAt: request.requestedAt, revision: 2, supersedesVideoRenderId: source.videoRenderId });
+    repository.db.exec("CREATE TRIGGER reject_subtitle_render BEFORE INSERT ON video_renders WHEN NEW.revision = 2 BEGIN SELECT RAISE(ABORT, 'PRIVATE failure'); END;");
+    assert.throws(() => repository.registerSubtitleRendering({ request, result, videoRender: burned }), repositoryError("VIDEO_RENDER_PERSISTENCE_FAILED", "videoRender"));
+    assert.equal(count(path, "video_renders"), 1); assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'video_render'"), 1);
   });
 });
 
@@ -331,6 +366,19 @@ function compositionRequest(compositionPlan, overrides = {}) {
   value.contentHash = videoCompositionRequestHash(value);
   return value;
 }
+
+function subtitleTrack(planValue) { const value = { schemaVersion: SUBTITLE_TRACK_CONTRACT_VERSION, subtitleTrackId: "subtitle_track_render_001", pipelineRunId: planValue.pipelineRunId, projectId: planValue.projectId, projectVersion: planValue.projectVersion,
+  scriptId: planValue.scriptId, scriptContentHash: planValue.scriptContentHash, voiceTrackId: planValue.voiceTrackId, voiceTrackContentHash: planValue.voiceTrackContentHash, language: "pt-BR", timeUnit: "MILLISECONDS", durationMilliseconds: planValue.durationMilliseconds,
+  stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, cues: [{ position: 1, text: "Legenda física", startMilliseconds: 0, endMilliseconds: 9880 }], createdAt: "2026-09-29T10:00:00.000Z", revision: 1, supersedesSubtitleTrackId: null, contentHash: "0".repeat(64) };
+  value.contentHash = subtitleTrackContentHash(value); return value; }
+function subtitleRenderRequest(source, track, planValue) { const value = { schemaVersion: SUBTITLE_RENDER_REQUEST_VERSION, subtitleRenderRequestId: "pending", pipelineRunId: source.pipelineRunId, projectId: source.projectId, projectVersion: source.projectVersion,
+  videoRenderId: source.videoRenderId, videoRenderContentHash: source.contentHash, compositionPlanId: planValue.compositionPlanId, compositionPlanContentHash: planValue.contentHash,
+  subtitleTrackId: track.subtitleTrackId, subtitleTrackContentHash: track.contentHash, scriptId: track.scriptId, scriptContentHash: track.scriptContentHash, voiceTrackId: track.voiceTrackId, voiceTrackContentHash: track.voiceTrackContentHash,
+  stylePolicyVersion: track.stylePolicyVersion, renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION, requestedAt: "2026-09-29T12:00:00.000Z", contentHash: "0".repeat(64) };
+  value.subtitleRenderRequestId = `subtitle_render:${subtitleRenderIdentityHash(value)}`; value.contentHash = subtitleRenderRequestHash(value); return value; }
+function subtitleRenderResult(requestValue) { const contentHash = "9".repeat(64); return { schemaVersion: "subtitle-render-result/1.0.0", subtitleRenderRequestId: requestValue.subtitleRenderRequestId, requestContentHash: requestValue.contentHash,
+  durationMilliseconds: 10000, containerFormat: "mp4", outputAspectRatio: "9:16", widthPixels: 1080, heightPixels: 1920, frameRate: 30, videoCodec: "h264", audioCodec: "aac", audioSampleRate: 48000, audioChannels: 1,
+  contentHash, logicalReference: `render:sha256_${contentHash}`, toolchain: { ffmpegVersion: "ffmpeg version test", libassFingerprint: "8".repeat(64), fontFamily: "Arial", fontProvider: "libass-default" } }; }
 
 function project() { return {
   id: "project_curiosidades_ia", name: "Curiosidades IA", version: 1,
