@@ -15,9 +15,9 @@ import {
 import { MediaProvider } from "../src/media-provider.js";
 import { validateMediaProviderOutput } from "../src/domain/media-acquisition-contracts.js";
 
-test("configura snapshot, 9:16 exato, direitos e pricing versionados", () => {
+test("configura snapshot, 9:16 exato, direitos automáticos e pricing versionados", () => {
   const root = join(tmpdir(), "image-config-test");
-  const config = loadOpenAIImageConfig(env(root));
+  const config = loadOpenAIImageConfig(env(root), { now: () => Date.parse("2026-09-30T23:59:59.000Z") });
   assert.equal(config.model, OPENAI_IMAGE_MODEL);
   assert.equal(config.widthPixels, 1152);
   assert.equal(config.heightPixels, 2048);
@@ -25,10 +25,10 @@ test("configura snapshot, 9:16 exato, direitos e pricing versionados", () => {
   assert.equal(config.policyVersion, OPENAI_IMAGE_POLICY_VERSION);
   assert.equal(config.pricing.version, "openai-image-pricing/1.0.0");
   assert.deepEqual(config.rights, { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true });
+  assert.equal(config.termsVersion, "2026-09-30");
   assert.equal(JSON.stringify(config.publicConfiguration).includes("sk-test"), false);
   assert.equal(JSON.stringify(config.publicConfiguration).includes(root), false);
-  assert.throws(() => loadOpenAIImageConfig(env(root, { OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED: "false" })), adapterError("OPENAI_IMAGE_RIGHTS_NOT_CONFIRMED", "OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED"));
-  assert.throws(() => loadOpenAIImageConfig(env(root, { OPENAI_IMAGE_TERMS_VERSION: "" })), adapterError("OPENAI_IMAGE_RIGHTS_NOT_CONFIRMED", "OPENAI_IMAGE_TERMS_VERSION"));
+  assert.doesNotThrow(() => loadOpenAIImageConfig(env(root, { OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED: undefined, OPENAI_IMAGE_TERMS_VERSION: undefined })));
   assert.throws(() => loadOpenAIImageConfig(env(root, { OPENAI_IMAGE_MODEL: "gpt-image-other" })), adapterError("OPENAI_IMAGE_CONFIGURATION_INVALID", "OPENAI_IMAGE_MODEL"));
 });
 
@@ -157,7 +157,6 @@ test("timeout, cancelamento, redirect e erros externos são sanitizados", async 
 function env(root, overrides = {}) {
   return {
     OPENAI_API_KEY: "sk-test-only", OPENAI_IMAGE_MODEL: OPENAI_IMAGE_MODEL,
-    OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED: "true", OPENAI_IMAGE_TERMS_VERSION: "2026-09-21",
     OPENAI_IMAGE_STORAGE_ROOT: root, OPENAI_IMAGE_TIMEOUT_MS: "1000",
     OPENAI_IMAGE_MAX_RESPONSE_BYTES: "30000000", OPENAI_IMAGE_MAX_IMAGE_BYTES: "20000000",
     ...overrides,
