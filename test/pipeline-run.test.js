@@ -265,7 +265,7 @@ test("migrações 008 a 024 são aditivas e preservam dados existentes", () => {
       DROP TRIGGER pipeline_run_transitions_no_delete;
       DROP TABLE pipeline_run_transitions;
       DROP TABLE pipeline_runs;
-      DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       DELETE FROM schema_migrations WHERE version = 20;
       DELETE FROM schema_migrations WHERE version = 19;
@@ -290,8 +290,8 @@ test("migrações 008 a 024 são aditivas e preservam dados existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
     raw.close();
   });

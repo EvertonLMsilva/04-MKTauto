@@ -50,8 +50,10 @@ test("status vincula MP4 e QC ao mesmo VideoRender final por ID e SHA-256", () =
   assert.equal(status.qualityControl.videoRenderContentHash, status.videoRender.sha256);
   assert.equal(status.qualityControl.result, "WARN");
   assert.equal(status.qualityControl.approvalBlocked, false);
-  assert.equal(status.approval.available, false);
-  assert.match(status.approval.message, /E08-A01/);
+  assert.equal(status.approval.available, true);
+  assert.equal(status.approval.approveAllowed, true);
+  assert.equal(status.approval.decision, null);
+  assert.match(status.approval.message, /decisão humana/i);
 });
 
 test("FAIL permanece explícito e bloqueia visualmente aprovação", () => {
@@ -59,7 +61,39 @@ test("FAIL permanece explícito e bloqueia visualmente aprovação", () => {
   assert.equal(status.qualityControl.result, "FAIL");
   assert.equal(status.qualityControl.approvalBlocked, true);
   assert.equal(status.approval.blocked, true);
+  assert.equal(status.approval.approveAllowed, false);
+  assert.equal(status.approval.available, true);
   assert.match(status.approval.message, /bloqueia aprovação/i);
+});
+
+test("decisão usa render e QC exatos e refresh recupera persistência e histórico", async () => {
+  const decisions = [];
+  const runtimeFactory = () => {
+    const runtime = fakeRuntime({ videoPath: null, calls: { resolved: [] } });
+    runtime.catalog.findHumanApprovalDecision = () => decisions.at(-1) ?? null;
+    runtime.catalog.listHumanApprovalDecisionsByPipelineRun = () => decisions;
+    runtime.approvals = { decide: (value) => {
+      const persisted = { humanApprovalDecisionId: "human_approval:console", ...value, decidedAt: "2026-09-30T18:00:00.000Z", contentHash: HASH };
+      decisions.push(persisted); return persisted;
+    } };
+    return runtime;
+  };
+  const console = new OperatorPreviewConsole({ database: "fixture.sqlite", env: {}, readRuntimeFactory: runtimeFactory });
+  const before = await console.status(scope);
+  const request = {
+    projectId: scope.projectId, projectVersion: scope.projectVersion, pipelineRunId: scope.pipelineRunId,
+    videoRenderId: before.videoRender.id, videoRenderRevision: before.videoRender.revision,
+    videoRenderContentHash: before.videoRender.sha256,
+    qualityControlReportId: before.qualityControl.reportId,
+    qualityControlReportContentHash: before.qualityControl.contentHash,
+    decision: "APPROVED", actor: "operador_local", justification: null,
+  };
+  await console.decide(request);
+  const refreshed = await console.status(scope);
+  assert.equal(refreshed.approval.decision.decision, "APPROVED");
+  assert.equal(refreshed.approval.history.length, 1);
+  assert.equal(refreshed.approval.decision.videoRenderContentHash, before.videoRender.sha256);
+  assert.equal(refreshed.approval.decision.qualityControlReportContentHash, before.qualityControl.contentHash);
 });
 
 test("status não associa QC de outro VideoRender da mesma execução", async () => {
@@ -169,6 +203,8 @@ function fakeRuntime({ videoPath, calls }) {
       listSubtitleTracksByPipelineRun: () => artifacts.subtitleTracks,
       listVideoRendersByPipelineRun: () => artifacts.videoRenders,
       findQualityControlReport: () => artifacts.qualityControl,
+      findHumanApprovalDecision: () => null,
+      listHumanApprovalDecisionsByPipelineRun: () => [],
       getRun: () => run("RUNNING"), getSelection: () => selection(),
       getVideoRender: () => artifacts.videoRenders.at(-1),
     },
@@ -186,7 +222,7 @@ function completedArtifacts(result) {
     compositionPlans: [{ compositionPlanId: "plan_console", scriptId: script.scriptId, voiceTrackId: "voice_console", contentHash: HASH }],
     subtitleTracks: [{ subtitleTrackId: "subtitle_console", scriptId: script.scriptId, voiceTrackId: "voice_console", contentHash: HASH }],
     videoRenders: [video],
-    qualityControl: { qualityControlReportId: "quality_control:console", videoRenderId: video.videoRenderId, videoRenderContentHash: video.contentHash, result, approvalBlocked: result === "FAIL", findings: [{ code: "VIDEO_SHA256_MATCH", status: result, subjectType: "VIDEO_RENDER", subjectId: video.videoRenderId, message: "Hash conferido.", observed: video.contentHash, expected: video.contentHash }] },
+    qualityControl: { qualityControlReportId: "quality_control:console", contentHash: HASH, checkedAt: "2026-09-30T17:00:00.000Z", videoRenderId: video.videoRenderId, videoRenderContentHash: video.contentHash, result, approvalBlocked: result === "FAIL", findings: [{ code: "VIDEO_SHA256_MATCH", status: result, subjectType: "VIDEO_RENDER", subjectId: video.videoRenderId, message: "Hash conferido.", observed: video.contentHash, expected: video.contentHash }] },
   };
 }
 

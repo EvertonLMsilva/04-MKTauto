@@ -9,8 +9,9 @@ import { loadOpenAIImageConfig } from "./openai-image-config.js";
 import { loadOpenAIVoiceConfig } from "./openai-voice-config.js";
 import { MediaAcquisitionService } from "./media-acquisition-service.js";
 import { PipelineRunService } from "./pipeline-run-service.js";
-import { QualityControlRepository } from "./quality-control-repository.js";
 import { QualityControlService } from "./quality-control-service.js";
+import { HumanApprovalRepository } from "./human-approval-repository.js";
+import { HumanApprovalService } from "./human-approval-service.js";
 import { RealPreviewService } from "./real-preview-service.js";
 import { ScriptGenerationService } from "./script-generation-service.js";
 import { SubtitleGenerationService } from "./subtitle-generation-service.js";
@@ -32,7 +33,7 @@ import { OpenAIVoiceAdapter } from "./adapters/openai-voice.js";
 export function createPreviewRuntime({ database, env = process.env }) {
   const repositories = [];
   try {
-    const videoRepository = repository(QualityControlRepository, database, repositories);
+    const videoRepository = repository(HumanApprovalRepository, database, repositories);
     const voiceRepository = repository(VoiceTrackRepository, database, repositories);
     const subtitleRepository = repository(SubtitleTrackRepository, database, repositories);
     const costRepository = repository(CostLedgerRepository, database, repositories);
@@ -87,7 +88,7 @@ export function createPreviewRuntime({ database, env = process.env }) {
 export function createPreviewReadRuntime({ database, env = process.env }) {
   const repositories = [];
   try {
-    const videoRepository = repository(QualityControlRepository, database, repositories);
+    const videoRepository = repository(HumanApprovalRepository, database, repositories);
     const voiceRepository = repository(VoiceTrackRepository, database, repositories);
     const subtitleRepository = repository(SubtitleTrackRepository, database, repositories);
     return Object.freeze({
@@ -103,10 +104,13 @@ export function createPreviewReadRuntime({ database, env = process.env }) {
         listSubtitleTracksByPipelineRun: (runId) => subtitleRepository.listSubtitleTracksByPipelineRun(runId),
         listVideoRendersByPipelineRun: (runId) => videoRepository.listVideoRendersByPipelineRun(runId),
         findQualityControlReport: (policy, videoId, hash) => videoRepository.findQualityControlReport(policy, videoId, hash),
+        findHumanApprovalDecision: (identity) => videoRepository.findHumanApprovalDecision(identity),
+        listHumanApprovalDecisionsByPipelineRun: (runId) => videoRepository.listHumanApprovalDecisionsByPipelineRun(runId),
         getRun: (runId) => videoRepository.getRun(runId),
         getSelection: (selectionId) => videoRepository.getSelection(selectionId),
         getVideoRender: (videoId) => videoRepository.getVideoRender(videoId),
       }),
+      approvals: new HumanApprovalService({ repository: videoRepository }),
       referenceResolver: Object.freeze({
         resolveVideo: (reference) => new LocalCompositionReferenceResolver(loadFfmpegVideoConfig(env)).resolveVideo(reference),
       }),

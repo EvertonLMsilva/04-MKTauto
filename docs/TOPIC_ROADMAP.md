@@ -54,7 +54,7 @@
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
-| E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
+| E08-A01 | PR ABERTO | Human Approval | PR #66; decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos; 488 testes passaram e 6 integrações opt-in foram ignoradas. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -1085,6 +1085,30 @@ Aceite mínimo:
 - qualquer alteração cria nova versão e não herda a aprovação anterior;
 - histórico é append-only e aprovação não migra implicitamente entre renders;
 - efeito externo futuro só pode consumir versão aprovada.
+
+Implementação: `human-approval-decision/1.0.0` admite somente `APPROVED` e
+`REJECTED`, deriva a identidade lógica do projeto/versão, `PipelineRun`,
+`VideoRender` ID/revisão/SHA-256 e relatório de QC ID/SHA-256 exatos e exige
+justificativa para rejeição. O service revalida render e QC persistidos, bloqueia
+aprovação em `FAIL`, preserva `WARN`, retorna a decisão existente no retry
+idêntico e rejeita conflito de decisão, ator ou justificativa.
+
+A migration 025 adiciona o histórico imutável com triggers de binding e de
+append-only. A consulta de aprovação exige todo o escopo explícito e possui ordem
+determinística; não existe consulta implícita a `latest`. O console e o endpoint
+HTTP permanecem adapters finos: apresentam hashes, QC, warnings, ator, instante,
+justificativa e histórico, recuperam a decisão após refresh e não executam
+publicação.
+
+Evidências: 17 testes focados cobrem contrato, `PASS`/`WARN`/`FAIL`, justificativa,
+bindings divergentes, nova identidade, retry, conflito, migration, imutabilidade,
+consulta aprovada explícita, refresh, HTTP, UI e sanitização. A suíte completa
+aprovou 488 testes e ignorou 6 integrações opt-in. `git diff --check` passou.
+O PR #66 foi aberto em 30/09/2026.
+
+Risco residual: sem autenticação, por decisão explícita de escopo, o ator é uma
+identificação declarada pelo operador local; autenticação e multiusuário continuam
+fora do MVP.
 
 ### Política de testes do Critical Path
 

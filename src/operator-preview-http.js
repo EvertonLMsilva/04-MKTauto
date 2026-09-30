@@ -21,6 +21,10 @@ export async function handleOperatorPreviewRequest(request, response, adapter) {
       adapter.start(scope);
       return sendJson(response, 202, await adapter.status(scope));
     }
+    if (request.method === "POST" && url.pathname === "/api/operator-preview/approvals") {
+      exactQuery(url, []);
+      return sendJson(response, 200, await adapter.decide(await readJson(request)));
+    }
     const video = /^\/api\/operator-preview\/videos\/([a-z0-9][a-z0-9_:-]{2,199})$/.exec(url.pathname);
     if (request.method === "GET" && video) {
       exactQuery(url, ["sha256"]);
@@ -60,4 +64,4 @@ function publicError(caught) {
   if (caught instanceof OperatorPreviewError || caught instanceof PreviewExecutionError) return { status: statusFor(caught.code), code: caught.code, field: caught.field, message: caught.publicMessage };
   return { status: 500, code: "INTERNAL_ERROR", field: "preview", message: "a operação local não foi concluída" };
 }
-function statusFor(code) { if (code.endsWith("NOT_FOUND")) return 404; if (["CONSOLE_CLOSED"].includes(code)) return 503; return 400; }
+function statusFor(code) { if (code.endsWith("NOT_FOUND")) return 404; if (["CONSOLE_CLOSED"].includes(code)) return 503; if (code.includes("CONFLICT") || code.endsWith("_FAILED") || code.includes("BINDING_MISMATCH")) return 409; return 400; }

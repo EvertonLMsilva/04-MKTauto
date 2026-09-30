@@ -50,8 +50,35 @@ export class OperatorPreviewConsole {
         ? videoRenders.find((item) => item.videoRenderId === withoutQc.videoRender.id && item.contentHash === withoutQc.videoRender.sha256)
         : null;
       const qualityControl = final ? catalog.findQualityControlReport(QUALITY_CONTROL_POLICY_VERSION, final.videoRenderId, final.contentHash) : null;
-      return reconstructPreviewStatus({ scope, run, selection, artifacts: { ...persisted, qualityControl }, active, operationError });
+      const approvalIdentity = final && qualityControl ? {
+        projectId: scope.projectId, projectVersion: scope.projectVersion, pipelineRunId: scope.pipelineRunId,
+        videoRenderId: final.videoRenderId, videoRenderRevision: final.revision,
+        videoRenderContentHash: final.contentHash,
+        qualityControlReportId: qualityControl.qualityControlReportId,
+        qualityControlReportContentHash: qualityControl.contentHash,
+      } : null;
+      const humanApprovalDecision = approvalIdentity ? catalog.findHumanApprovalDecision(approvalIdentity) : null;
+      const approvalHistory = catalog.listHumanApprovalDecisionsByPipelineRun(scope.pipelineRunId);
+      return reconstructPreviewStatus({ scope, run, selection, artifacts: { ...persisted, qualityControl, humanApprovalDecision, approvalHistory }, active, operationError });
     });
+  }
+
+  async decide(value) {
+    if (this.closed) throw failure("CONSOLE_CLOSED", "approval", "console encerrada");
+    try { return await this.#read(({ approvals }) => approvals.decide(value)); }
+    catch (caught) {
+      if (typeof caught?.code !== "string" || !caught.code.startsWith("HUMAN_APPROVAL_")) throw caught;
+      const messages = {
+        HUMAN_APPROVAL_DECISION_CONFLICT: "já existe decisão divergente para este render e QC",
+        HUMAN_APPROVAL_QC_FAILED: "QC com FAIL bloqueia aprovação",
+        HUMAN_APPROVAL_VIDEO_BINDING_MISMATCH: "decisão não corresponde ao render final exato",
+        HUMAN_APPROVAL_QC_BINDING_MISMATCH: "decisão não corresponde ao QC exato",
+        HUMAN_APPROVAL_JUSTIFICATION_REQUIRED: "informe a justificativa da rejeição",
+        HUMAN_APPROVAL_REQUEST_INVALID: "requisição de decisão inválida",
+        HUMAN_APPROVAL_BINDING_MISMATCH: "decisão não corresponde ao render e QC exatos",
+      };
+      throw failure(caught.code, safeField(caught.field), messages[caught.code] ?? "decisão humana não registrada");
+    }
   }
 
   start(value) {
@@ -113,12 +140,22 @@ export function reconstructPreviewStatus({ scope, run, selection, artifacts, act
     return Object.freeze({ name, state });
   });
   const approvalBlocked = qc?.approvalBlocked === true;
+  const currentDecision = artifacts.humanApprovalDecision ? approvalDecisionView(artifacts.humanApprovalDecision) : null;
+  const history = (artifacts.approvalHistory ?? []).map(approvalDecisionView);
+  const approvalAvailable = Boolean(qc);
   return Object.freeze({
     scope, pipelineRun: Object.freeze({ id: run.pipelineRunId, state: run.state, startedAt: run.startedAt, completedAt: run.completedAt }),
     stages, active: Boolean(active),
     videoRender: video ? Object.freeze({ id: video.videoRenderId, revision: video.revision, sha256: video.contentHash, logicalReference: video.logicalReference, streamUrl: `/api/operator-preview/videos/${encodeURIComponent(video.videoRenderId)}?sha256=${video.contentHash}` }) : null,
     qualityControl: qc,
-    approval: Object.freeze({ available: false, blocked: approvalBlocked, message: approvalBlocked ? "FAIL bloqueia aprovação." : "Aprovação e rejeição pertencem ao tópico E08-A01." }),
+    approval: Object.freeze({
+      available: approvalAvailable, approveAllowed: approvalAvailable && !approvalBlocked && currentDecision === null,
+      rejectAllowed: approvalAvailable && currentDecision === null, blocked: approvalBlocked,
+      decision: currentDecision, history,
+      message: currentDecision ? `Decisão ${currentDecision.decision} registrada em ${currentDecision.decidedAt}.`
+        : approvalBlocked ? "FAIL bloqueia aprovação; a rejeição permanece disponível."
+          : approvalAvailable ? "Registre a decisão humana sobre este render e QC exatos." : "Aguardando QC correspondente.",
+    }),
     error: publicPersistedError(run.error) ?? operationError,
   });
 }
@@ -126,10 +163,22 @@ export function reconstructPreviewStatus({ scope, run, selection, artifacts, act
 function qualityControlView(report, video) {
   if (report.videoRenderId !== video.videoRenderId || report.videoRenderContentHash !== video.contentHash) throw failure("QC_BINDING_MISMATCH", "qualityControl", "QC não corresponde ao render final");
   return Object.freeze({
-    reportId: report.qualityControlReportId, videoRenderId: report.videoRenderId,
+    reportId: report.qualityControlReportId, contentHash: report.contentHash, checkedAt: report.checkedAt,
+    videoRenderId: report.videoRenderId,
     videoRenderContentHash: report.videoRenderContentHash, result: report.result,
     approvalBlocked: report.approvalBlocked,
     findings: report.findings.map(({ code, status, subjectType, subjectId, message, observed, expected }) => Object.freeze({ code, status, subjectType, subjectId, message, observed, expected })),
+  });
+}
+function approvalDecisionView(value) {
+  return Object.freeze({
+    id: value.humanApprovalDecisionId, projectId: value.projectId, projectVersion: value.projectVersion,
+    pipelineRunId: value.pipelineRunId, videoRenderId: value.videoRenderId,
+    videoRenderRevision: value.videoRenderRevision, videoRenderContentHash: value.videoRenderContentHash,
+    qualityControlReportId: value.qualityControlReportId,
+    qualityControlReportContentHash: value.qualityControlReportContentHash,
+    decision: value.decision, actor: value.actor, justification: value.justification,
+    decidedAt: value.decidedAt,
   });
 }
 function verifyScope(run, selection, scope) {

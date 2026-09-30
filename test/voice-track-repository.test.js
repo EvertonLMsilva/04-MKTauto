@@ -117,7 +117,7 @@ test("migração 016 é aditiva e preserva os dados existentes", () => {
     const { repository } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
+    before.exec("DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
     before.exec(`
       DROP TABLE subtitle_cues;
       DROP TABLE subtitle_tracks;
@@ -145,8 +145,8 @@ test("migração 016 é aditiva e preserva os dados existentes", () => {
     assert.deepEqual(migrated.listVoiceTracksByPipelineRun("run_e05_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     raw.close();
   });
 });
@@ -167,7 +167,7 @@ test("migração 017 é aditiva e preserva os dados existentes", () => {
       DROP TRIGGER voice_generation_requests_no_update;
       DROP TRIGGER voice_generation_requests_validate_scope;
       DROP TABLE voice_generation_requests;
-      DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       DELETE FROM schema_migrations WHERE version = 20;
       DELETE FROM schema_migrations WHERE version = 19;
@@ -181,8 +181,8 @@ test("migração 017 é aditiva e preserva os dados existentes", () => {
     assert.equal(migrated.getVoiceGeneration("voice_generation_001"), null);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     raw.close();
   });
 });
