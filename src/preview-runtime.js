@@ -29,6 +29,16 @@ import { LocalPreviewVerifier } from "./adapters/local-preview-verifier.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 import { OpenAIImageAdapter } from "./adapters/openai-image.js";
 import { OpenAIVoiceAdapter } from "./adapters/openai-voice.js";
+import { OpenAIIdeaAdapter } from "./adapters/openai-idea.js";
+import { IdeaSelectionRepository } from "./idea-selection-repository.js";
+import { IdeaService } from "./idea-service.js";
+import { IdeaSelectionService } from "./idea-selection-service.js";
+import { ResearchInputService } from "./research-input-service.js";
+import { TrendCatalogStore } from "./trend-store.js";
+import { runDailyTrendCatalog } from "./trend-daily.js";
+import { buildResearchShortlist } from "./research-shortlist.js";
+import { OperatorIdeaBootstrapService } from "./operator-idea-bootstrap-service.js";
+import { configFromEnvironment } from "./trend-config.js";
 
 export function createPreviewRuntime({ database, env = process.env }) {
   const repositories = [];
@@ -97,6 +107,7 @@ export function createPreviewReadRuntime({ database, env = process.env }) {
         listProjectVersions: (projectId) => videoRepository.listProjectVersions(projectId),
         listRunsByProjectVersion: (projectId, version) => videoRepository.listRunsByProjectVersion(projectId, version),
         listSelectionsByPipelineRun: (runId) => videoRepository.listSelectionsByPipelineRun(runId),
+        listIdeasByPipelineRun: (runId) => videoRepository.listIdeasByPipelineRun(runId),
         listScriptsByPipelineRun: (runId) => videoRepository.listScriptsByPipelineRun(runId),
         listVoiceTracksByPipelineRun: (runId) => voiceRepository.listVoiceTracksByPipelineRun(runId),
         listMediaAssetsByPipelineRun: (runId) => videoRepository.listMediaAssetsByPipelineRun(runId),
@@ -122,11 +133,35 @@ export function createPreviewReadRuntime({ database, env = process.env }) {
   }
 }
 
+export function createIdeaBootstrapRuntime({ database, env = process.env }) {
+  const repositories = [];
+  try {
+    const repository = repositoryOf(IdeaSelectionRepository, database, repositories);
+    const store = new TrendCatalogStore(database); repositories.push(store);
+    const bootstrap = new OperatorIdeaBootstrapService({
+      pipelineRuns: new PipelineRunService(repository), researchInputs: new ResearchInputService(repository),
+      research: runDailyTrendCatalog, shortlist: buildResearchShortlist,
+      ideas: new IdeaService(repository), generator: new OpenAIIdeaAdapter(loadOpenAIConfig(env)),
+      store, researchConfig: configFromEnvironment(env),
+    });
+    return Object.freeze({ bootstrap, selections: new IdeaSelectionService(repository), close: () => closeAll(repositories) });
+  } catch (caught) { closeAll(repositories); throw caught; }
+}
+
+export function createIdeaSelectionRuntime({ database }) {
+  const repositories = [];
+  try {
+    const repository = repositoryOf(IdeaSelectionRepository, database, repositories);
+    return Object.freeze({ selections: new IdeaSelectionService(repository), close: () => closeAll(repositories) });
+  } catch (caught) { closeAll(repositories); throw caught; }
+}
+
 function repository(Type, database, repositories) {
   const value = new Type(database);
   repositories.push(value);
   return value;
 }
+function repositoryOf(Type, database, repositories) { return repository(Type, database, repositories); }
 
 function subtitleConfig(config) {
   return Object.freeze({

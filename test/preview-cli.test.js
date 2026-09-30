@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runPreviewCli } from "../src/preview-cli.js";
-import { createPreviewReadRuntime, createPreviewRuntime } from "../src/preview-runtime.js";
+import { createIdeaSelectionRuntime, createPreviewReadRuntime, createPreviewRuntime } from "../src/preview-runtime.js";
 
 test("package expõe npm run preview com carregamento opcional do .env", () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -108,6 +108,12 @@ test("runtime de leitura recupera catálogo sem exigir providers ou FFmpeg", () 
     assert.equal(typeof runtime.referenceResolver.resolveVideo, "function");
     runtime.close();
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test("runtime de seleção de ideia não exige configuração de provider", () => {
+  const root = mkdtempSync(join(tmpdir(), "mktauto-idea-selection-runtime-"));
+  try { const runtime = createIdeaSelectionRuntime({ database: join(root, "mktauto.sqlite"), env: {} }); assert.equal(typeof runtime.selections.select, "function"); runtime.close(); }
+  finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 function args(database) {
