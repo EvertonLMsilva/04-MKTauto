@@ -55,6 +55,7 @@
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | PR ABERTO | Human Approval | PR #66; decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos; 488 testes passaram e 6 integrações opt-in foram ignoradas. |
+| E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -1109,6 +1110,32 @@ O PR #66 foi aberto em 30/09/2026.
 Risco residual: sem autenticação, por decisão explícita de escopo, o ator é uma
 identificação declarada pelo operador local; autenticação e multiusuário continuam
 fora do MVP.
+
+### E09 — Social Publishing (BLOQUEADO)
+
+A análise de entrada de 30/09/2026 não autoriza implementação nem publicação. A
+configuração local de projeto menciona Instagram como rede pretendida, mas isso
+não constitui seleção formal de plataforma para E09 nem comprova elegibilidade
+para publicar. As configurações existentes também não demonstram conta oficial
+de teste, scopes de publicação ou acesso publicador à API oficial. O requisito de
+exportação manual está documentado, porém ainda não há fallback operacional
+demonstrado para o `VideoRender` exato aprovado.
+
+G3 também permanece aberto na evidência operacional local: o banco
+`data/mktauto.sqlite` contém zero decisões `APPROVED`. Logo, não existe uma tupla
+recuperável por escopo explícito que vincule projeto/versão, `PipelineRun`,
+`VideoRender` ID/revisão/SHA-256 e relatório de QC ID/SHA-256 válidos. Testes,
+fixtures e a implementação do contrato de aprovação não substituem essa evidência
+física real.
+
+Condição de retomada: selecionar explicitamente uma única plataforma oficial;
+disponibilizar conta oficial de teste elegível; confirmar os scopes mínimos de
+publicação; permitir validação segura e sanitizada da API oficial sem expor
+credenciais; definir e demonstrar a exportação manual do artefato exato; e produzir
+uma execução física real com QC válido e decisão humana `APPROVED` sobre os IDs,
+revisão e hashes exatos. Somente então E09 poderá analisar capacidades, limites,
+custos e riscos da plataforma e propor sua decomposição e o menor corte para
+aprovação. Nenhuma chamada de publicação foi realizada nesta análise.
 
 ### Política de testes do Critical Path
 
