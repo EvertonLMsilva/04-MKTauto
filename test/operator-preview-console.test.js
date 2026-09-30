@@ -186,6 +186,11 @@ test("console cria run por bootstrap e persiste seleção por service sem lógic
   assert.deepEqual(calls.map(([name]) => name), ["bootstrap", "close-bootstrap", "select", "close-selection"]);
 });
 
+test("bootstrap preserva campo público indexado sem refletir detalhe privado", async () => {
+  const console = new OperatorPreviewConsole({ database: "fixture.sqlite", env: {}, bootstrapRuntimeFactory: () => ({ bootstrap: { start: async () => { const error = new Error("C:\\private sk-secret"); error.code = "INVALID_IDENTIFIER"; error.field = "orderedCandidates[0].candidate.id"; throw error; } }, close() {} }) });
+  await assert.rejects(() => console.createRun({}), (error) => error.code === "INVALID_IDENTIFIER" && error.field === "orderedCandidates[0].candidate.id" && !error.publicMessage.includes("private"));
+});
+
 function consoleFixture({ videoPath = null } = {}) {
   let resolveExecution;
   const execution = new Promise((resolve) => { resolveExecution = resolve; });
