@@ -6,6 +6,7 @@
   "scripts": {
     "start": "node --env-file-if-exists=.env src/server.js",
     "project": "node --env-file-if-exists=.env src/project-cli.js",
+    "preview": "node --env-file-if-exists=.env src/preview-cli.js",
     "trend:daily": "node --env-file-if-exists=.env src/trend-cli.js daily",
     "trend:shortlist": "node --env-file-if-exists=.env src/trend-cli.js shortlist",
     "trend:export": "node --env-file-if-exists=.env src/trend-cli.js export",
