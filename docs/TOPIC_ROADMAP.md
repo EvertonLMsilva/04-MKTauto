@@ -53,7 +53,7 @@
 | E07-P01 | CONCLUÍDO | End-to-End Real Preview | PR #60 mergeado em 30/09/2026 (`d60375f`); uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
-| E08-U01 | EM EXECUÇÃO | Operator Preview Console | Interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
+| E08-U01 | PR ABERTO | Operator Preview Console | PR #64; interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1068,6 +1068,7 @@ com 483 testes e 6 integrações opt-in ignoradas; `git diff --check` passou.
 Risco residual: reiniciar o processo interrompe uma chamada externa em andamento;
 os artefatos já persistidos continuam recuperáveis e o retry retoma o pipeline
 pelas identidades determinísticas existentes.
+O PR #64 foi aberto em 30/09/2026.
 
 ### E08-A01 — Human Approval
 
