@@ -18,7 +18,7 @@ export const IDEA_GENERATION_POLICY = Object.freeze({
           properties: {
             title: { type: "string", minLength: 8, maxLength: 160 },
             editorialAngle: { type: "string", minLength: 8, maxLength: 400 },
-            evidenceCandidateIds: { type: "array", minItems: 1, maxItems: 3, uniqueItems: true, items: { type: "string" } },
+            evidenceCandidateIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
           },
         },
       },
