@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createProjectSnapshot, validateProjectSnapshot } from "./domain/project-contracts.js";
 
-const PROJECT_SCHEMA_VERSION = 24;
+const PROJECT_SCHEMA_VERSION = 25;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", migration("001_trend_catalog.sql")]],
   [2, ["002_daily_catalog", migration("002_daily_catalog.sql")]],
@@ -29,6 +29,7 @@ const MIGRATIONS = new Map([
   [22, ["022_video_compositions", migration("022_video_compositions.sql")]],
   [23, ["023_subtitle_tracks", migration("023_subtitle_tracks.sql")]],
   [24, ["024_quality_control", migration("024_quality_control.sql")]],
+  [25, ["025_human_approval", migration("025_human_approval.sql")]],
 ]);
 
 export class ProjectRepositoryError extends Error {

@@ -56,12 +56,12 @@ test("service persiste uma vez, reutiliza retry e não reaproveita QC para hash 
   await assert.rejects(service.inspect({ ...request, videoRenderContentHash: "0".repeat(64) }), (error) => error.code === "QUALITY_CONTROL_VIDEO_BINDING_MISMATCH" && !error.message.includes("0".repeat(64)));
 });
 
-test("repository aplica migration 24, persiste findings imutáveis e deduplica retry", () => {
+test("repository preserva QC após migration 25, persiste findings imutáveis e deduplica retry", () => {
   const root = mkdtempSync(join(tmpdir(), "mktauto-qc-repository-")); const path = join(root, "catalog.sqlite");
   class FixtureRepository extends QualityControlRepository { getVideoRender() { return scenario().videoRender; } }
   const repository = new FixtureRepository(path);
   try {
-    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 24);
+    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 25);
     repository.db.exec("PRAGMA foreign_keys = OFF; DROP TRIGGER quality_control_reports_validate_binding;");
     const context = scenario(); const report = reportFor(context, evaluateQualityControl(context));
     const first = repository.registerQualityControlReport(report); const retry = repository.registerQualityControlReport(report);

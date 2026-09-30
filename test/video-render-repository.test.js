@@ -69,7 +69,7 @@ test("persiste burn-in como revisão 2 imutável, request normalizada e lineage 
       { position: 2, kind: "INTERNAL_ARTIFACT", inputId: source.videoRenderId, contentHash: source.contentHash },
       { position: 3, kind: "INTERNAL_ARTIFACT", inputId: track.subtitleTrackId, contentHash: track.contentHash },
     ]);
-    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 24"), 0);
+    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 25"), 0);
     assert.throws(() => repository.db.prepare("UPDATE video_renders SET content_hash = ? WHERE video_render_id = ?").run("0".repeat(64), burned.videoRenderId), /IMMUTABLE_VIDEO_RENDER/);
   });
 });
@@ -186,7 +186,7 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
       DROP TRIGGER video_composition_requests_no_update;
       DROP TRIGGER video_composition_requests_validate_scope;
       DROP TABLE video_composition_requests;
-      DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       PRAGMA user_version = 21;
     `);
     before.close();
@@ -194,8 +194,8 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
@@ -218,7 +218,7 @@ test("migração 021 continua recuperável junto da 022", () => {
       DROP TRIGGER video_renders_validate_revision;
       DROP TRIGGER video_renders_validate_scope;
       DROP TABLE video_renders;
-      DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       PRAGMA user_version = 20;
     `);
@@ -227,8 +227,8 @@ test("migração 021 continua recuperável junto da 022", () => {
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);

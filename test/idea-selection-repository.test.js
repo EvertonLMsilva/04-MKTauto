@@ -132,7 +132,7 @@ test("migração 012 é aditiva e preserva ideias existentes", () => {
     const ideas = new IdeaService(repository).registerBatch(submission());
     repository.close();
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
+    before.exec("DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
     before.exec("DROP TABLE video_composition_requests; DROP TABLE video_renders; DROP TABLE composition_plan_segments; DROP TABLE composition_plans; DROP TABLE media_acquisition_requests; DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DROP TABLE idea_selections; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22; DELETE FROM schema_migrations WHERE version = 21; DELETE FROM schema_migrations WHERE version = 20; DELETE FROM schema_migrations WHERE version = 19; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; DELETE FROM schema_migrations WHERE version = 12; PRAGMA user_version = 11;");
     before.close();
     const migrated = new IdeaSelectionRepository(path);
@@ -140,8 +140,8 @@ test("migração 012 é aditiva e preserva ideias existentes", () => {
     assert.deepEqual(migrated.listSelectionsByPipelineRun("run_e03_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
     raw.close();
   });
 });

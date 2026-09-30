@@ -6,12 +6,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleOperatorPreviewRequest } from "../src/operator-preview-http.js";
 
-test("HTTP expõe catálogo, status e início sem endpoint de aprovação", async () => {
-  const calls = { start: 0 };
+test("HTTP expõe catálogo, status, início e decisão humana", async () => {
+  const calls = { start: 0, decide: 0 };
   const adapter = {
     catalog: async () => ({ projects: [{ id: "project_console" }], versions: [], runs: [], selections: [] }),
     status: async (scope) => ({ scope, stages: [] }),
     start: (scope) => { calls.start += 1; return Promise.resolve({ scope }); },
+    decide: async (value) => { calls.decide += 1; return { ...value, humanApprovalDecisionId: "human_approval:http" }; },
   };
   await withServer(adapter, async (base) => {
     assert.equal((await getJson(`${base}/api/operator-preview/catalog`)).status, 200);
@@ -20,7 +21,10 @@ test("HTTP expõe catálogo, status e início sem endpoint de aprovação", asyn
     const started = await fetch(`${base}/api/operator-preview/executions`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ projectId: "project_console", projectVersion: 1, pipelineRunId: "run_console", selectionId: "selection_console" }) });
     assert.equal(started.status, 202);
     assert.equal(calls.start, 1);
-    assert.equal((await fetch(`${base}/api/operator-preview/approvals`, { method: "POST" })).status, 404);
+    const approval = await fetch(`${base}/api/operator-preview/approvals`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ decision: "APPROVED" }) });
+    assert.equal(approval.status, 200);
+    assert.equal((await approval.json()).humanApprovalDecisionId, "human_approval:http");
+    assert.equal(calls.decide, 1);
   });
 });
 
