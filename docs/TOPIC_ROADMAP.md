@@ -51,7 +51,7 @@
 | E07-S01B | CONCLUÍDO | Deterministic Subtitle Cues and ASS/SRT | PR #58 mergeado em 29/09/2026 (`05268fd`); política fechada gera cues e representações ASS/SRT determinísticas em memória. |
 | E07-S01C | PR ABERTO | Physical Subtitle Rendering | PR #59; burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
 | E07-P01 | CONCLUÍDO | End-to-End Real Preview | PR #60 mergeado em 30/09/2026 (`d60375f`); uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
-| E07-P02 | PENDENTE | Local Preview Runner | CLI fina permitirá ao operador executar ou retomar o pipeline real e localizar o MP4 final sem depender de testes internos. |
+| E07-P02 | PR ABERTO | Local Preview Runner | PR #62; `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
 | E08-Q01 | PENDENTE | Quality Control | QC automático verificará o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | PENDENTE | Operator Preview Console | Interface web mínima permitirá iniciar e acompanhar o pipeline, reproduzir o render final, consultar QC e decidir sobre a versão exata. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
@@ -974,6 +974,23 @@ Aceite mínimo:
   regras nem introduz arquitetura, contrato ou migration.
 
 Frontend, QC, aprovação e publicação permanecem fora deste tópico.
+
+Aceite demonstrado: `npm run preview` recebe projeto, versão e seleção
+explicitamente, recupera a `PipelineRun` vinculada e executa o
+`RealPreviewService` com os repositories, services, adapters OpenAI e FFmpeg já
+existentes. A identidade determinística do preview permite retomar efeitos
+parciais e reutilizar estado terminal sem duplicá-los. O operador recebe progresso
+resumido, modo `NEW`, `RESUMED` ou `REUSED_TERMINAL`, status, run ID,
+`VideoRender` ID, SHA-256, referência lógica e path físico validado.
+
+O path local é resolvido somente depois da verificação do hash e existe apenas na
+saída do processo; não integra contratos, banco ou logs. Erros públicos preservam
+somente código, campo e mensagem controlada, sem credenciais, payload bruto, path
+privado ou stack trace. Não houve contrato, migration, frontend, QC, aprovação ou
+publicação. Evidência: 6 testes novos cobrem comando operacional, entrada
+explícita, modos de execução, escopo, composição real e sanitização; 47 testes
+focados passaram e a suíte completa aprovou 462 testes, com 6 integrações opt-in
+ignoradas. `git diff --check` passou. O PR #62 foi aberto em 30/09/2026.
 
 ### E08-Q01 — Quality Control
 

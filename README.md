@@ -97,6 +97,29 @@ exportação contém somente o `ProjectSnapshot` normalizado. Falhas retornam c�
 de saída `1` e JSON em `stderr` com `code`, `field` e mensagem acionável, sem
 stack trace ou detalhes internos.
 
+### Preview local
+
+Com um projeto versionado, uma seleção humana persistida e a respectiva
+`PipelineRun`, execute o pipeline real com:
+
+```powershell
+npm run preview -- --project-id project_curiosidades_ia --project-version 1 --selection-id selection_ID
+```
+
+O banco usa `PREVIEW_DATABASE` do `.env` ou `data/mktauto.sqlite`; `--database`
+pode sobrescrever esse valor. O `.env` também deve conter a configuração real da
+OpenAI e do FFmpeg descrita em `.env.example`, com os roots de voz e mídia do
+provider iguais aos roots usados pelo FFmpeg. Os direitos comerciais de voz e
+imagem precisam estar explicitamente confirmados.
+
+O comando infere o run ID da seleção, revalida projeto e versão e informa
+`NEW`, `RESUMED` ou `REUSED_TERMINAL`. Progresso resumido é emitido em JSON Lines
+no `stderr`; o resultado final em `stdout` contém status, run ID, `VideoRender`
+ID, SHA-256, referência lógica e o path físico validado do MP4. Esse path existe
+somente na saída local do processo: contratos e persistência continuam usando a
+referência lógica. Falhas públicas não incluem credenciais, payloads, paths
+privados ou stack traces.
+
 ## Arquitetura e planejamento
 
 - `docs/CONTENT_AUTOMATION_MVP_PROJECT.md`: visão, domínio, módulos, interfaces,
