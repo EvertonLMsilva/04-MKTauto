@@ -64,6 +64,23 @@ test("gera WAV físico, mede duração, calcula hash dos bytes e devolve referê
   });
 });
 
+test("aceita WAV PCM válido com chunks auxiliares e tamanhos de streaming", () => {
+  for (const bytes of [chunkedWav(), chunkedWav({ streamingSizes: true })]) {
+    assert.deepEqual(inspectMvpWav(bytes), {
+      durationMilliseconds: 250, audioFormat: "wav", sampleRate: 24000, channels: 1, bitsPerSample: 16,
+    });
+  }
+});
+
+test("rejeita chunks WAV duplicados, truncados ou com streaming fora de data", () => {
+  const duplicate = chunkedWav({ duplicateFormat: true });
+  const invalidStreaming = Buffer.from(chunkedWav());
+  invalidStreaming.writeUInt32LE(0xffffffff, 40);
+  for (const bytes of [duplicate, chunkedWav().subarray(0, -1), invalidStreaming]) {
+    assert.throws(() => inspectMvpWav(bytes), adapterError("PROVIDER_INVALID_AUDIO", "audio"));
+  }
+});
+
 test("falha fechado para limites do endpoint, estilo não suportado e custom voice antes da rede", async () => {
   await withRoot(async (root) => {
     let calls = 0;
@@ -165,6 +182,22 @@ function wav({ durationMilliseconds = 250, sampleRate = 24000, channels = 1, bit
   value.write("data", 36); value.writeUInt32LE(dataSize, 40);
   if (!silent && dataSize > 1) value.writeInt16LE(1000, 44);
   return value;
+}
+
+function chunkedWav({ durationMilliseconds = 250, streamingSizes = false, duplicateFormat = false } = {}) {
+  const dataSize = Math.round(24000 * durationMilliseconds / 1000) * 2;
+  const format = Buffer.alloc(24);
+  format.write("fmt ", 0); format.writeUInt32LE(16, 4); format.writeUInt16LE(1, 8);
+  format.writeUInt16LE(1, 10); format.writeUInt32LE(24000, 12); format.writeUInt32LE(48000, 16);
+  format.writeUInt16LE(2, 20); format.writeUInt16LE(16, 22);
+  const metadata = Buffer.alloc(12);
+  metadata.write("JUNK", 0); metadata.writeUInt32LE(3, 4); metadata.write("abc", 8);
+  const data = Buffer.alloc(8 + dataSize);
+  data.write("data", 0); data.writeUInt32LE(streamingSizes ? 0xffffffff : dataSize, 4); data.writeInt16LE(1000, 8);
+  const body = Buffer.concat([format, ...(duplicateFormat ? [format] : []), metadata, data]);
+  const header = Buffer.alloc(12);
+  header.write("RIFF", 0); header.writeUInt32LE(streamingSizes ? 0xffffffff : body.length + 4, 4); header.write("WAVE", 8);
+  return Buffer.concat([header, body]);
 }
 
 async function* chunks(value) { yield value.subarray(0, 17); yield value.subarray(17); }

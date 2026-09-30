@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { ContractValidationError } from "./contracts.js";
 
 export const SUBTITLE_TRACK_CONTRACT_VERSION = "subtitle-track/1.0.0";
-export const SUBTITLE_STYLE_POLICY_VERSION = "subtitle-style-policy/1.0.0";
+export const SUBTITLE_STYLE_POLICY_VERSION = "subtitle-style-policy/1.1.0";
 
 const FIELDS = Object.freeze([
   "schemaVersion", "subtitleTrackId", "pipelineRunId", "projectId", "projectVersion",

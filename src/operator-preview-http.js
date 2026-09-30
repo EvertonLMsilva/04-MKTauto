@@ -33,10 +33,12 @@ export async function handleOperatorPreviewRequest(request, response, adapter) {
       exactQuery(url, []);
       return sendJson(response, 200, await adapter.decide(await readJson(request)));
     }
-    const video = /^\/api\/operator-preview\/videos\/([a-z0-9][a-z0-9_:-]{2,199})$/.exec(url.pathname);
+    const decodedPathname = decodeURIComponent(url.pathname);
+
+    const video = /^\/api\/operator-preview\/videos\/([a-z0-9][a-z0-9_:-]{2,199})$/.exec(decodedPathname);
     if (request.method === "GET" && video) {
       exactQuery(url, ["sha256"]);
-      return streamVideo(request, response, await adapter.openVideo(decodeURIComponent(video[1]), url.searchParams.get("sha256")));
+      return streamVideo(request, response, await adapter.openVideo(video[1], url.searchParams.get("sha256")));
     }
     return false;
   } catch (caught) {

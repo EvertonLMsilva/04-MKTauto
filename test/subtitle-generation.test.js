@@ -18,7 +18,7 @@ const REQUESTED_AT = "2026-09-29T20:00:00.000Z";
 test("política fechada normaliza Unicode e segmenta sem perda, duplicação ou invenção", () => {
   assert.deepEqual(SUBTITLE_STYLE_POLICY, {
     version: SUBTITLE_STYLE_POLICY_VERSION, maximumWordsPerCue: 12,
-    maximumLinesPerCue: 2, maximumCharactersPerLine: 42,
+    maximumLinesPerCue: 2, maximumCharactersPerLine: 34,
     minimumCueDurationMilliseconds: 600, gapMilliseconds: 80, tailMilliseconds: 120,
   });
   assert.ok(Object.isFrozen(SUBTITLE_STYLE_POLICY));

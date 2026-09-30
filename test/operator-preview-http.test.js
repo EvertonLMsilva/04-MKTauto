@@ -54,6 +54,20 @@ test("HTTP transmite MP4 exato com range sem aceitar path do cliente", async () 
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("HTTP decodifica identidade opaca do vídeo antes de consultar o adapter", async () => {
+  const root = mkdtempSync(join(tmpdir(), "mktauto-console-http-"));
+  try {
+    const path = join(root, "video.mp4"); writeFileSync(path, "0123456789");
+    let openedId;
+    const adapter = { openVideo: async (id, hash) => { openedId = id; return { path, size: 10, id, sha256: hash }; } };
+    await withServer(adapter, async (base) => {
+      const response = await fetch(`${base}/api/operator-preview/videos/video_render%3Afinal?sha256=${"a".repeat(64)}`);
+      assert.equal(response.status, 200);
+      assert.equal(openedId, "video_render:final");
+    });
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("HTTP sanitiza erro público sem stack, path ou segredo", async () => {
   const adapter = { catalog: async () => { throw new Error("sk-secret C:\\Users\\private payload"); } };
   await withServer(adapter, async (base) => {

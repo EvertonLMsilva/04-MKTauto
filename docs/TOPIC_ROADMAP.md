@@ -55,7 +55,7 @@
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
-| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PRs #68 e #69 mergeados; correção do schema OpenAI no PR #70; a console cria/retoma uma `PipelineRun`, executa Research e shortlist reais, persiste candidatos/score e registra a seleção humana explícita antes do Preview; 507 testes passaram, com 6 integrações opt-in ignoradas. |
+| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PRs #68–#72 mergeados; o PR #73 reúne as correções operacionais pendentes e a faixa-alvo conservadora de roteiro; 509 de 515 testes passaram, com 6 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -357,7 +357,11 @@ deterministicamente para `script/1.0.0`; nenhuma referência textual é enviada 
 provider e nenhuma consulta usa `latest`.
 
 O `OpenAIAdapter` usa Responses com saída estruturada, política pública
-`script-generation-prompt/1.0.0`, timeout e cancelamento. Credencial e modelo
+`script-generation-prompt/1.1.0`, timeout e cancelamento. A faixa enviada ao
+modelo é um alvo conservador derivado sem mutação dos limites físicos: `25–45s`
+vira `28–38s`, com fallback determinístico para a faixa física quando as margens
+não couberem. O serviço e o Voice continuam validando o intervalo físico original.
+Credencial e modelo
 vêm do ambiente; somente provider, modelo, tarefa, versão da política, hash e
 configuração pública sanitizada entram na linhagem. Prompt, mensagens, payload
 e resposta brutos não são persistidos ou registrados.
@@ -886,10 +890,14 @@ aprovou 434 testes e ignorou 4 integrações/smokes opt-in; `git diff --check`
 passou.
 
 Riscos residuais: timings são proporcionais ao texto, não alinhamento acústico;
-palavras indivisíveis podem exceder o alvo visual de 42 caracteres; ASS reduz a
+palavras indivisíveis podem exceder o alvo visual original de 42 caracteres; ASS reduz a
 representação para centésimos, preservando a timeline canônica em milissegundos.
 Renderização física, qualidade visual e sincronização observada permanecem para
 E07-S01C e E08-Q01.
+
+A correção operacional posterior evolui a política visual para
+`subtitle-style-policy/1.1.0`, reduz o alvo para 34 caracteres por linha e ajusta
+fonte e margens do ASS sem alterar a timeline canônica.
 
 ### E07-S01C — Physical Subtitle Rendering
 
@@ -1112,8 +1120,14 @@ confirmação manual de direitos da configuração de imagem, assume a autoriza�
 operacional definida para o produto e registra dinamicamente a data UTC; 501 de
 507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi
 mergeado. A correção visual seguinte mantém etapas ociosas em `PENDING`, usa
-`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; 502 de
-508 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
+`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; o PR
+#72 foi mergeado. A correção operacional posterior amplia o parser WAV para
+chunks auxiliares e tamanhos de streaming válidos, preserva códigos públicos de
+falha do provider, aceita `generation_id` na resposta de imagem, decodifica a
+identidade opaca do vídeo, melhora a legibilidade das legendas e usa a faixa alvo
+conservadora do roteiro sem alterar os limites físicos. A suíte completa aprovou
+509 de 515 testes e ignorou 6 integrações opt-in; `git diff --check` passou. O
+PR #73 foi aberto.
 
 ### E08-A01 — Human Approval
 
@@ -1229,9 +1243,11 @@ base comercial não estiver explicitamente confirmada; essa confirmação retrat
 a configuração observada para a execução e não presume termos imutáveis.
 
 O download binário é limitado e gravado em temporário privado. O parser aceita
-somente o subconjunto necessário ao MVP — RIFF/WAVE, PCM linear, mono, 24 kHz,
-16 bits, chunks `fmt ` e `data` canônicos — e rejeita estruturas, parâmetros,
-tamanho ou conteúdo mínimo incompatíveis. A duração é medida pelos frames
+somente o subconjunto necessário ao MVP — RIFF/WAVE, PCM linear, mono, 24 kHz e
+16 bits —, percorre chunks com padding, ignora metadados auxiliares seguros e
+aceita tamanhos sentinela de streaming somente no RIFF e em `data`; duplicidade,
+truncamento, parâmetros, tamanho ou conteúdo mínimo incompatíveis são rejeitados.
+A duração é medida pelos frames
 físicos, e o SHA-256 é calculado diretamente sobre os bytes gravados. O storage
 content-addressed cria o objeto sem sobrescrita: um hash já presente é relido,
 revalidado e reutilizado; divergência falha sem alterar o objeto existente. O

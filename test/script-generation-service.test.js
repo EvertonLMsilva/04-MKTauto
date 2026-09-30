@@ -90,6 +90,26 @@ test("saída inválida, duração incompatível e falha do provider não deixam 
   assert.equal(failedRepository.failed[0].telemetry.failureCode, "PROVIDER_FAILED");
 });
 
+test("serviço mantém a validação de duração na faixa física original", async () => {
+  const acceptedRepository = fakeRepository();
+  const accepted = await new ScriptGenerationService(
+    acceptedRepository,
+    fakeGenerator({ output: { ...providerOutput(), estimatedDurationSeconds: 42 } }),
+  ).generate(request());
+  assert.equal(accepted.estimatedDurationSeconds, 42);
+
+  for (const duration of [24, 46]) {
+    const repository = fakeRepository();
+    await assert.rejects(
+      new ScriptGenerationService(
+        repository,
+        fakeGenerator({ output: { ...providerOutput(), estimatedDurationSeconds: duration } }),
+      ).generate(request()),
+      generationError("SCRIPT_DURATION_OUT_OF_RANGE", "estimatedDurationSeconds"),
+    );
+  }
+});
+
 test("custo conhecido cria evento correlacionado e retry não o duplica", async () => {
   const repository = fakeRepository();
   const generator = fakeGenerator({ telemetry: observation({

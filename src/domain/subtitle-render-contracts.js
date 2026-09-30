@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { ContractValidationError } from "./contracts.js";
+import { SUBTITLE_STYLE_POLICY_VERSION } from "./subtitle-track-contracts.js";
 
 export const SUBTITLE_RENDER_REQUEST_VERSION = "subtitle-render-request/1.0.0";
 export const SUBTITLE_RENDER_RESULT_VERSION = "subtitle-render-result/1.0.0";
@@ -29,7 +30,7 @@ export function validateSubtitleRenderRequest(value) {
   positive(value.projectVersion, "projectVersion", "INVALID_PROJECT_VERSION");
   for (const field of ["videoRenderId", "compositionPlanId", "subtitleTrackId", "scriptId", "voiceTrackId"]) identifier(value[field], field, 200);
   for (const field of ["videoRenderContentHash", "compositionPlanContentHash", "subtitleTrackContentHash", "scriptContentHash", "voiceTrackContentHash", "contentHash"]) hash(value[field], field);
-  if (value.stylePolicyVersion !== "subtitle-style-policy/1.0.0") fail("UNSUPPORTED_STYLE_POLICY", "stylePolicyVersion");
+  if (value.stylePolicyVersion !== SUBTITLE_STYLE_POLICY_VERSION) fail("UNSUPPORTED_STYLE_POLICY", "stylePolicyVersion");
   if (value.renderPolicyVersion !== SUBTITLE_RENDER_POLICY_VERSION) fail("UNSUPPORTED_RENDER_POLICY", "renderPolicyVersion");
   timestamp(value.requestedAt, "requestedAt");
   if (value.subtitleRenderRequestId !== `subtitle_render:${subtitleRenderIdentityHash(value)}`) fail("IDENTITY_MISMATCH", "subtitleRenderRequestId");

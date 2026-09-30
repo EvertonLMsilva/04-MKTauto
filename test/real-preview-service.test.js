@@ -68,7 +68,19 @@ test("falhas de provider, mídia, legenda e burn-in não deixam preview final fa
   }
 });
 
-function scenario({ cancelAfterVoice = null, failAt = null } = {}) {
+test("preserva código público específico de falha do provider na run", async () => {
+  const providerError = Object.assign(new Error("resposta privada"), { code: "PROVIDER_INVALID_AUDIO", field: "audio" });
+  const fixture = scenario({ failAt: "voice", failure: providerError });
+  let caught;
+  try { await fixture.service.execute(request()); } catch (error) { caught = error; }
+  assert.equal(caught instanceof RealPreviewError, true);
+  assert.equal(caught.code, "PROVIDER_INVALID_AUDIO");
+  assert.equal(caught.field, "audio");
+  assert.equal(caught.message.includes("privada"), false);
+  assert.equal(fixture.calls.some(({ stage }) => stage === "fail"), true);
+});
+
+function scenario({ cancelAfterVoice = null, failAt = null, failure = null } = {}) {
   const calls = []; const effects = { script: 0, voice: 0, media: 0, compose: 0, burn: 0 }; const seenTimestamps = [];
   const cache = new Map();
   const run = { pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: "project_e07", version: 1 } } };
@@ -77,7 +89,7 @@ function scenario({ cancelAfterVoice = null, failAt = null } = {}) {
   const assets = [asset(1, script), asset(2, script)];
   const final = { videoRenderId: "video_render:subtitle:final", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, compositionPlanId: "composition_plan:preview_e07_001", compositionPlanContentHash: "d".repeat(64), outputAspectRatio: "9:16", durationMilliseconds: 10000, containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920, contentHash: "f".repeat(64), logicalReference: `render:sha256_${"f".repeat(64)}`, revision: 2, supersedesVideoRenderId: "video_render:preview_e07_001:video" };
   const stage = (name, make, effect) => async (value) => {
-    calls.push({ stage: name, value }); if (failAt === name) throw new Error("private payload"); seenTimestamps.push(value.requestedAt ?? value.createdAt);
+    calls.push({ stage: name, value }); if (failAt === name) throw failure ?? new Error("private payload"); seenTimestamps.push(value.requestedAt ?? value.createdAt);
     const key = `${name}:${JSON.stringify(value).replace(value.requestedAt ?? value.createdAt, script.createdAt)}`;
     if (!cache.has(key)) { if (effect) effects[effect] += 1; cache.set(key, make(value)); }
     return cache.get(key);

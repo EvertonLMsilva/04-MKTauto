@@ -131,7 +131,8 @@ function imageOutput(body, config) {
   if (body.quality !== undefined && body.quality !== config.quality) throw failure("PROVIDER_INVALID_RESPONSE", "response.quality", "qualidade declarada diverge da política");
   const image = body.data[0];
   if (!image || typeof image !== "object" || Array.isArray(image) || "url" in image) throw failure("PROVIDER_INVALID_RESPONSE", "response.data", "URL externa ou item inválido não é aceito");
-  for (const key of Object.keys(image)) if (!["b64_json", "revised_prompt"].includes(key)) throw failure("PROVIDER_INVALID_RESPONSE", `response.data.${key}`, "campo externo não permitido");
+
+  for (const key of Object.keys(image)) if (!["b64_json", "revised_prompt", "generation_id"].includes(key)) throw failure("PROVIDER_INVALID_RESPONSE", `response.data.${key}`, "campo externo não permitido");
   const encoded = image.b64_json;
   if (typeof encoded !== "string" || !strictBase64(encoded)) throw failure("PROVIDER_INVALID_IMAGE", "image", "imagem base64 ausente ou inválida");
   const bytes = Buffer.from(encoded, "base64");

@@ -1,11 +1,11 @@
-export const SCRIPT_PROMPT_POLICY_VERSION = "script-generation-prompt/1.0.0";
+export const SCRIPT_PROMPT_POLICY_VERSION = "script-generation-prompt/1.1.0";
 
 export const SCRIPT_GENERATION_POLICY = deepFreeze({
   version: SCRIPT_PROMPT_POLICY_VERSION,
   taskType: "script_generation",
   instructions: [
     "Produza conteúdo original sem copiar ou parafrasear de perto referências.",
-    "Respeite idioma, formato, público e limites de duração informados.",
+    "Respeite idioma, formato e público informados; trate minDurationSeconds e maxDurationSeconds como a faixa alvo desejada para a duração estimada do roteiro.",
     "Liste toda afirmação sensível e exija verificação de fonte ou revisão humana.",
     "Não represente aprovação editorial nem autorização para publicação.",
   ],
