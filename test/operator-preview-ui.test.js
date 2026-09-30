@@ -13,4 +13,5 @@ test("console web contém bootstrap, seleção de ideia, preview, QC e decisão 
   assert.match(client, /\/api\/operator-preview\/runs/);
   assert.match(client, /\/api\/operator-preview\/idea-selections/);
   assert.match(client, /qualityControlReportContentHash/);
+  assert.match(client, /if \(completeScope\(\) && view\.active\) refreshTimer/);
 });

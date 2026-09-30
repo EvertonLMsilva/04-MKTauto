@@ -142,7 +142,7 @@ async function submitDecision(decision) {
   } catch (error) { elements.status.textContent = error.message; renderApproval(currentView.approval); }
 }
 
-function startPolling(view) { clearTimeout(refreshTimer); if (completeScope() && (view.active || view.stages.some(({ state }) => state === "RUNNING"))) refreshTimer = setTimeout(refresh, 2000); }
+function startPolling(view) { clearTimeout(refreshTimer); if (completeScope() && view.active) refreshTimer = setTimeout(refresh, 2000); }
 function scope() { return { projectId: elements.project.value, projectVersion: Number(elements.version.value), pipelineRunId: elements.run.value, selectionId: elements.selection.value }; }
 function completeScope() { return Boolean(elements.project.value && elements.version.value && elements.run.value && elements.selection.value); }
 function resetAfter(name) { const order = ["project", "version", "run", "selection"]; for (const id of order.slice(order.indexOf(name) + 1)) fill(elements[id], []); if (name !== "selection") { currentCandidates = []; if (name !== "run") currentRuns = []; renderIdeas([]); } elements.execute.disabled = true; elements["new-run"].disabled = !(elements.project.value && elements.version.value); }

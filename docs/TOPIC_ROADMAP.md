@@ -1110,7 +1110,10 @@ oficiais mistos foi mergeada no PR #69. A remoção de `uniqueItems`, não supor
 pelo Structured Outputs, foi mergeada no PR #70. A correção seguinte remove a
 confirmação manual de direitos da configuração de imagem, assume a autorização
 operacional definida para o produto e registra dinamicamente a data UTC; 501 de
-507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi aberto.
+507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi
+mergeado. A correção visual seguinte mantém etapas ociosas em `PENDING`, usa
+`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; 502 de
+508 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
 
 ### E08-A01 — Human Approval
 
