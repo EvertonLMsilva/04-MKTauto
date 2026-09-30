@@ -904,22 +904,37 @@ por IA e efeitos avançados.
 
 ### E07-P01 — End-to-End Real Preview
 
-Objetivo: executar uma única `PipelineRun` de `ProjectSnapshot` até preview físico
-real, usando as identidades explícitas dos artefatos e sem seleção por `latest`.
+Aceite demonstrado: `real-preview-request/1.0.0` mantém identidade reproduzível
+independente de `requestedAt`; o timestamp do primeiro roteiro persistido torna-se
+canônico para retries. Uma única chamada valida a `PipelineRun`, projeto e versão
+explícitos e orquestra roteiro, voz, mídias na ordem das direções visuais, plano,
+render revisão 1, legenda e burn-in revisão 2 sem consultar `latest`.
 
-Aceite mínimo:
+A timeline divide a duração física da voz por `floor(i * D / N)`, cobre exatamente
+`D` milissegundos e recusa segmentos vazios. Cada fronteira revalida escopo,
+IDs, hashes, direitos e ancestry; antes de expor o preview, a orquestração confere
+a lineage persistida completa e o SHA-256 físico do render revisão 2 no storage
+content-addressed. Revisão 1 e ascendentes permanecem append-only. Custos presentes
+no ledger são reportados; etapas sem custo comprovado permanecem explicitamente
+indisponíveis, nunca zero.
 
-- validar run, projeto/versão, roteiro, `VoiceTrack`, `MediaAsset`,
-  `CompositionPlan`, `VideoRender`, `SubtitleTrack`, arquivo final, duração,
-  proporção, direitos, referências, hashes, lineage e custos conhecidos;
-- preview reproduz exatamente a versão final legendada e seu hash;
-- provar pelo menos uma execução com áudio, mídia, vídeo e legendas físicos reais
-  no caminho final; fixture, mock, stub ou fake não satisfaz esse aceite;
-- manter obrigatoriamente fakes determinísticos na suíte padrão;
-- cobrir fluxo fake completo, integração local do composer, smoke externo opt-in,
-  retry, falha intermediária, ausência de artefato final falso e lineage ponta a
-  ponta;
-- segredos, bytes privados, transcrições, logs e runtime permanecem fora do Git.
+Retry reutiliza todos os efeitos terminais persistidos. Cancelamento interrompe
+efeitos restantes, não produz resultado e mantém a run retomável; falha definitiva
+é sanitizada e transiciona a run para `FAILED`. QC, aprovação e publicação não são
+executados. Não houve migration.
+
+Evidência: 10 testes novos da suíte padrão cobrem contratos, identidade, timeline,
+ordem, hashes, direitos, custos, lineage, retry, retomada, cancelamento, falhas e
+isolamento. A integração opt-in executou áudio WAV e mídia PNG físicos, composição
+e burn-in FFmpeg reais e confirmou o SHA-256 do MP4 final. A suíte completa aprovou
+456 testes e ignorou 6 integrações/smokes opt-in. Os smokes OpenAI de voz e imagem
+permanecem dependentes de credenciais e desabilitados por padrão;
+`git diff --check` passou.
+
+Riscos residuais: versões de FFmpeg/libass e fontes podem alterar bytes entre
+ambientes; disponibilidade, cobrança e limites dos providers externos permanecem
+fora da integração local. Qualidade visual e sincronização percebida seguem para
+E08-Q01.
 
 ### E08-Q01 — Quality Control
 
