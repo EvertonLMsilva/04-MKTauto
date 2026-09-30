@@ -8,7 +8,7 @@
   </head>
   <body>
     <header class="page-header">
-      <div><p class="eyebrow">MKTauto / E08-A01</p><h1>Operator Preview Console</h1></div>
+      <div><p class="eyebrow">MKTauto / E08-U02</p><h1>Operator Preview Console</h1></div>
       <a href="/">Voltar para descoberta</a>
       <p>Selecione o escopo persistido, inicie ou retome o preview e confira o MP4 e o QC exatos.</p>
     </header>
@@ -22,7 +22,14 @@
           <label>Execução<select id="run" disabled><option value="">Selecione</option></select></label>
           <label>Seleção<select id="selection" disabled><option value="">Selecione</option></select></label>
         </div>
-        <div class="actions"><button id="execute" disabled>Iniciar ou retomar</button><span id="status" role="status">Carregando projetos…</span></div>
+        <div class="actions"><div><button id="new-run" disabled>Nova execução</button> <button id="execute" disabled>Gerar Preview</button></div><span id="status" role="status">Carregando projetos…</span></div>
+      </section>
+
+      <section class="panel" aria-labelledby="ideas-title">
+        <div class="section-title"><div><p class="eyebrow">Escolha humana</p><h2 id="ideas-title">Candidatos de ideia</h2></div><span id="ideas-state" class="badge">AGUARDANDO RUN</span></div>
+        <div class="approval-form"><label>Ator humano<input id="idea-actor" value="operador_local" maxlength="120" autocomplete="off" /></label><label>Justificativa editorial<textarea id="idea-rationale" maxlength="500" placeholder="Informe quando a decisão editorial exigir contexto"></textarea></label></div>
+        <div class="table-wrap"><table><thead><tr><th></th><th>Rank</th><th>Score</th><th>Ideia</th><th>Ângulo editorial</th></tr></thead><tbody id="idea-candidates"><tr><td colspan="5" class="empty">Crie ou selecione uma execução.</td></tr></tbody></table></div>
+        <div class="actions"><button id="select-idea" disabled>Selecionar ideia</button></div>
       </section>
 
       <section class="panel" aria-labelledby="progress-title">

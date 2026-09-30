@@ -172,6 +172,20 @@ test("vídeo aceita somente ID e hash válidos e resolve referência persistida"
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
+test("console cria run por bootstrap e persiste seleção por service sem lógica HTTP", async () => {
+  const calls = [];
+  const candidate = { idea: { ideaBatchId: "idea_batch_console", ideaCandidateId: "idea_candidate_console", title: "Ideia válida", editorialAngle: "Ângulo editorial válido", contentHash: HASH }, score: { ideaScoreId: "idea_score_console", rank: 1, total: 0.8, contentHash: VIDEO_HASH } };
+  const console = new OperatorPreviewConsole({ database: "fixture.sqlite", env: {},
+    bootstrapRuntimeFactory: () => ({ bootstrap: { start: async (value) => { calls.push(["bootstrap", value]); return { run: run("RUNNING"), candidates: [candidate] }; } }, close() { calls.push(["close-bootstrap"]); } }),
+    selectionRuntimeFactory: () => ({ selections: { select: (value) => { calls.push(["select", value]); return value; } }, close() { calls.push(["close-selection"]); } }),
+  });
+  const created = await console.createRun({ pipelineRunId: scope.pipelineRunId });
+  assert.equal(created.candidates[0].ideaCandidateId, candidate.idea.ideaCandidateId);
+  const selected = await console.selectIdea({ ideaSelectionId: scope.selectionId });
+  assert.equal(selected.ideaSelectionId, scope.selectionId);
+  assert.deepEqual(calls.map(([name]) => name), ["bootstrap", "close-bootstrap", "select", "close-selection"]);
+});
+
 function consoleFixture({ videoPath = null } = {}) {
   let resolveExecution;
   const execution = new Promise((resolve) => { resolveExecution = resolve; });
@@ -196,6 +210,7 @@ function fakeRuntime({ videoPath, calls }) {
       listProjectVersions: () => [{ project: { id: scope.projectId, version: 1, name: "Projeto Console" } }],
       listRunsByProjectVersion: () => [run("RUNNING")],
       listSelectionsByPipelineRun: () => [selection()],
+      listIdeasByPipelineRun: () => [],
       listScriptsByPipelineRun: () => artifacts.scripts,
       listVoiceTracksByPipelineRun: () => artifacts.voiceTracks,
       listMediaAssetsByPipelineRun: () => artifacts.mediaAssets,

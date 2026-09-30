@@ -21,6 +21,14 @@ export async function handleOperatorPreviewRequest(request, response, adapter) {
       adapter.start(scope);
       return sendJson(response, 202, await adapter.status(scope));
     }
+    if (request.method === "POST" && url.pathname === "/api/operator-preview/runs") {
+      exactQuery(url, []);
+      return sendJson(response, 201, await adapter.createRun(await readJson(request)));
+    }
+    if (request.method === "POST" && url.pathname === "/api/operator-preview/idea-selections") {
+      exactQuery(url, []);
+      return sendJson(response, 201, await adapter.selectIdea(await readJson(request)));
+    }
     if (request.method === "POST" && url.pathname === "/api/operator-preview/approvals") {
       exactQuery(url, []);
       return sendJson(response, 200, await adapter.decide(await readJson(request)));

@@ -19,6 +19,7 @@ textarea { min-height: 6rem; resize: vertical; }
 button:not(:disabled) { cursor: pointer; background: #79e0b7; color: #092018; font-weight: 800; }
 button.danger:not(:disabled) { background: #ff9d9d; color: #321010; }
 button:disabled { opacity: .55; }
+.idea-choice { accent-color: #79e0b7; }
 .stages { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .6rem; padding: 0; margin: 1.25rem 0 0; list-style: none; }
 .stage { min-height: 5rem; display: grid; align-content: space-between; padding: .75rem; border-radius: .7rem; border: 1px solid #344a43; background: #0b1915; }
 .stage strong, .badge, .finding { font: 800 .72rem/1.2 ui-monospace, monospace; }

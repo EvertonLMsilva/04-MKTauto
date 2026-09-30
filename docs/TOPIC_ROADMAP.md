@@ -54,7 +54,8 @@
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
-| E08-A01 | PR ABERTO | Human Approval | PR #66; decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos; 488 testes passaram e 6 integrações opt-in foram ignoradas. |
+| E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
+| E08-U02 | EM EXECUÇÃO | Operator Run & Idea Bootstrap | A console cria/retoma uma `PipelineRun`, executa Research e shortlist reais, persiste candidatos/score e registra a seleção humana explícita antes do Preview; 502 testes passaram, com 6 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1070,6 +1071,39 @@ Risco residual: reiniciar o processo interrompe uma chamada externa em andamento
 os artefatos já persistidos continuam recuperáveis e o retry retoma o pipeline
 pelas identidades determinísticas existentes.
 O PR #64 foi mergeado em 30/09/2026 (`de7de83`).
+
+### E08-U02 — Operator Run & Idea Bootstrap
+
+Objetivo: fechar o gap operacional entre `ProjectVersion` e `IdeaSelection` para
+que o operador consiga iniciar todo o MVP 1 pela interface existente.
+
+Implementação: um caso de uso fino inicia ou retoma a identidade explícita pela
+`PipelineRunService`, deriva o `ResearchInput`, executa o radar e a shortlist
+persistidos e solicita propostas estruturadas ao provider OpenAI já adotado. IDs
+de evidência retornados pelo provider são tratados como entrada não confiável e
+precisam pertencer à shortlist exata. `IdeaService` continua responsável por
+contratos, scoring determinístico, hashes, lineage e persistência.
+
+A console expõe somente endpoints mínimos para criar a run/bootstrap e registrar
+a seleção. A escolha envia candidato, score e hashes exatos ao
+`IdeaSelectionService`, com ator `HUMAN`, decisão `SELECTED` e justificativa
+editorial opcional. Nenhuma ideia é selecionada automaticamente. Catálogo,
+candidatos e seleção são reconstruídos do SQLite após refresh; o Preview existente
+continua sendo iniciado somente após uma seleção persistida.
+
+Não houve migration nova. A configuração do radar foi extraída para composição
+compartilhada entre CLI e console, evitando duplicação de regras operacionais.
+
+Evidências: 28 testes focados passaram para bootstrap, adapter estruturado,
+runtime, console, HTTP e UI. A suíte completa aprovou 496 de 502 testes e ignorou
+6 integrações físicas/externas opt-in; `git diff --check` passou. A cobertura inclui
+retry sem repetir Research/provider após persistência, ausência de auto-select,
+evidência inventada, seleção pelo service, recuperação persistida e sanitização.
+
+Risco residual: uma nova execução depende das credenciais e elegibilidades reais
+das fontes configuradas, do modelo de clustering e do provider de ideias. Quedas
+durante chamadas externas exigem retry pelo mesmo `pipelineRunId`; etapas já
+persistidas são retomadas e nenhum candidato parcial é apresentado como válido.
 
 ### E08-A01 — Human Approval
 

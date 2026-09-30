@@ -2,7 +2,7 @@ import { stat } from "node:fs/promises";
 import { resolve } from "node:path";
 import { QUALITY_CONTROL_POLICY_VERSION } from "./domain/quality-control-contracts.js";
 import { executePreviewSelection, validateExecutionScope } from "./preview-execution.js";
-import { createPreviewReadRuntime, createPreviewRuntime } from "./preview-runtime.js";
+import { createIdeaBootstrapRuntime, createIdeaSelectionRuntime, createPreviewReadRuntime, createPreviewRuntime } from "./preview-runtime.js";
 
 const STAGE_NAMES = Object.freeze(["Script", "Voice", "Media", "Composition", "Subtitles", "Preview", "QC"]);
 
@@ -10,10 +10,14 @@ export class OperatorPreviewConsole {
   constructor({
     database = resolve(process.env.PREVIEW_DATABASE ?? "data/mktauto.sqlite"), env = process.env,
     readRuntimeFactory = createPreviewReadRuntime, executionRuntimeFactory = createPreviewRuntime,
+    bootstrapRuntimeFactory = createIdeaBootstrapRuntime,
+    selectionRuntimeFactory = createIdeaSelectionRuntime,
     executePreview = executePreviewSelection, now = () => new Date().toISOString(),
   } = {}) {
     this.database = database; this.env = env; this.readRuntimeFactory = readRuntimeFactory;
     this.executionRuntimeFactory = executionRuntimeFactory; this.executePreview = executePreview; this.now = now;
+    this.bootstrapRuntimeFactory = bootstrapRuntimeFactory;
+    this.selectionRuntimeFactory = selectionRuntimeFactory;
     this.active = new Map(); this.failures = new Map(); this.closed = false;
   }
 
@@ -26,8 +30,25 @@ export class OperatorPreviewConsole {
       const versions = projectId ? catalog.listProjectVersions(projectId).map(({ project }) => ({ projectId: project.id, version: project.version, name: project.name })) : [];
       const runs = projectId && projectVersion ? catalog.listRunsByProjectVersion(projectId, projectVersion).map((run) => ({ pipelineRunId: run.pipelineRunId, state: run.state, startedAt: run.startedAt, completedAt: run.completedAt })) : [];
       const selections = pipelineRunId ? catalog.listSelectionsByPipelineRun(pipelineRunId).map((item) => ({ selectionId: item.ideaSelectionId, revision: item.revision, decision: item.decision, decidedAt: item.decidedAt })) : [];
-      return Object.freeze({ projects, versions, runs, selections });
+      const candidates = pipelineRunId ? catalog.listIdeasByPipelineRun(pipelineRunId).map(candidateView) : [];
+      return Object.freeze({ projects, versions, runs, candidates, selections });
     });
+  }
+
+  async createRun(value) {
+    if (this.closed) throw failure("CONSOLE_CLOSED", "run", "console encerrada");
+    const runtime = this.bootstrapRuntimeFactory({ database: this.database, env: this.env });
+    try { const result = await runtime.bootstrap.start(value); return Object.freeze({ pipelineRun: result.run, candidates: result.candidates.map(candidateView) }); }
+    catch (caught) { throw publicDomainFailure(caught, "RUN_BOOTSTRAP_FAILED", "run", "não foi possível preparar a execução e as ideias"); }
+    finally { runtime.close(); }
+  }
+
+  async selectIdea(value) {
+    if (this.closed) throw failure("CONSOLE_CLOSED", "selection", "console encerrada");
+    const runtime = this.selectionRuntimeFactory({ database: this.database, env: this.env });
+    try { return await runtime.selections.select(value); }
+    catch (caught) { throw publicDomainFailure(caught, "IDEA_SELECTION_FAILED", "selection", "não foi possível registrar a seleção"); }
+    finally { runtime.close(); }
   }
 
   async status(value) {
@@ -181,6 +202,7 @@ function approvalDecisionView(value) {
     decidedAt: value.decidedAt,
   });
 }
+function candidateView({ idea, score }) { return Object.freeze({ ideaBatchId: idea.ideaBatchId, ideaCandidateId: idea.ideaCandidateId, ideaScoreId: score.ideaScoreId, title: idea.title, editorialAngle: idea.editorialAngle, rank: score.rank, score: score.total, ideaContentHash: idea.contentHash, ideaScoreContentHash: score.contentHash }); }
 function verifyScope(run, selection, scope) {
   if (!run) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
   if (!selection) throw failure("IDEA_SELECTION_NOT_FOUND", "selectionId", "seleção não encontrada");
@@ -197,5 +219,6 @@ function positiveInteger(value) { const parsed = typeof value === "string" && /^
 function contentHash(value) { if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw failure("INVALID_HASH", "sha256", "hash inválido"); return value; }
 function safeToken(value, fallback = "PREVIEW_FAILED") { return typeof value === "string" && /^[A-Z][A-Z0-9_]{2,79}$/.test(value) ? value : fallback; }
 function safeField(value) { return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.]{0,119}$/.test(value) ? value : "preview"; }
+function publicDomainFailure(caught, fallbackCode, fallbackField, message) { return failure(safeToken(caught?.code, fallbackCode), safeField(caught?.field ?? caught?.path ?? fallbackField), message); }
 export class OperatorPreviewError extends Error { constructor(code, field, publicMessage) { super(publicMessage); this.name = "OperatorPreviewError"; this.code = code; this.field = field; this.publicMessage = publicMessage; } }
 function failure(code, field, message) { return new OperatorPreviewError(code, field, message); }

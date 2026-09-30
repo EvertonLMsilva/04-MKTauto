@@ -28,6 +28,16 @@ test("HTTP expõe catálogo, status, início e decisão humana", async () => {
   });
 });
 
+test("HTTP cria run/bootstrap e registra seleção de ideia pelos endpoints mínimos", async () => {
+  const adapter = { createRun: async (value) => ({ pipelineRun: { id: value.pipelineRunId }, candidates: [] }), selectIdea: async (value) => ({ ...value, persisted: true }) };
+  await withServer(adapter, async (base) => {
+    const run = await fetch(`${base}/api/operator-preview/runs`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ pipelineRunId: "run_http_001" }) });
+    assert.equal(run.status, 201); assert.equal((await run.json()).pipelineRun.id, "run_http_001");
+    const selection = await fetch(`${base}/api/operator-preview/idea-selections`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ ideaCandidateId: "idea_http_001" }) });
+    assert.equal(selection.status, 201); assert.equal((await selection.json()).persisted, true);
+  });
+});
+
 test("HTTP transmite MP4 exato com range sem aceitar path do cliente", async () => {
   const root = mkdtempSync(join(tmpdir(), "mktauto-console-http-"));
   try {
