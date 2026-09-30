@@ -218,7 +218,7 @@ function identifier(value, field, max) { if (typeof value !== "string" || value.
 function positiveInteger(value) { const parsed = typeof value === "string" && /^[1-9]\d*$/.test(value) ? Number(value) : value; if (!Number.isSafeInteger(parsed) || parsed < 1) throw failure("INVALID_VERSION", "projectVersion", "versão inválida"); return parsed; }
 function contentHash(value) { if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) throw failure("INVALID_HASH", "sha256", "hash inválido"); return value; }
 function safeToken(value, fallback = "PREVIEW_FAILED") { return typeof value === "string" && /^[A-Z][A-Z0-9_]{2,79}$/.test(value) ? value : fallback; }
-function safeField(value) { return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.]{0,119}$/.test(value) ? value : "preview"; }
+function safeField(value) { return typeof value === "string" && /^[A-Za-z][A-Za-z0-9_.\[\]]{0,119}$/.test(value) ? value : "preview"; }
 function publicDomainFailure(caught, fallbackCode, fallbackField, message) { return failure(safeToken(caught?.code, fallbackCode), safeField(caught?.field ?? caught?.path ?? fallbackField), message); }
 export class OperatorPreviewError extends Error { constructor(code, field, publicMessage) { super(publicMessage); this.name = "OperatorPreviewError"; this.code = code; this.field = field; this.publicMessage = publicMessage; } }
 function failure(code, field, message) { return new OperatorPreviewError(code, field, message); }

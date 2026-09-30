@@ -147,7 +147,8 @@ function rejectSensitive(value) {
 function record(value, path) { if (!value || typeof value !== "object" || Array.isArray(value)) fail("INVALID_TYPE", path); }
 function exact(value, fields, path) { for (const key of Object.keys(value)) if (!fields.includes(key)) fail("UNKNOWN_FIELD", `${path}.${key}`); for (const key of fields) if (!(key in value)) fail("REQUIRED_FIELD", `${path}.${key}`); }
 function identifier(value, path, max = 80) { if (typeof value !== "string" || value.length > max || !/^[a-z0-9][a-z0-9_:-]{2,}$/.test(value)) fail("INVALID_IDENTIFIER", path); }
-function identifiers(value, path, nonempty) { if (!Array.isArray(value) || (nonempty && value.length === 0)) fail("INVALID_TYPE", path); const seen = new Set(); value.forEach((item, index) => { identifier(item, `${path}.${index}`, 200); if (seen.has(item)) fail("DUPLICATE_VALUE", `${path}.${index}`); seen.add(item); }); }
+function identifiers(value, path, nonempty) { if (!Array.isArray(value) || (nonempty && value.length === 0)) fail("INVALID_TYPE", path); const seen = new Set(); value.forEach((item, index) => { externalIdentifier(item, `${path}.${index}`); if (seen.has(item)) fail("DUPLICATE_VALUE", `${path}.${index}`); seen.add(item); }); }
+function externalIdentifier(value, path) { if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,200}$/.test(value)) fail("INVALID_IDENTIFIER", path); }
 function contentIdentity(value) { if (typeof value !== "string" || !/^idea:[a-f0-9]{64}$/.test(value)) fail("INVALID_CONTENT_IDENTITY", "contentIdentity"); }
 function positiveInteger(value, path) { if (!Number.isSafeInteger(value) || value < 1) fail("INVALID_INTEGER", path); }
 function decimal(value, path) { if (!Number.isFinite(value) || value < 0 || value > 1 || value !== round(value)) fail("INVALID_NORMALIZED_VALUE", path); }

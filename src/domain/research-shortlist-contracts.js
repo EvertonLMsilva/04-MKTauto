@@ -81,7 +81,7 @@ export function createResearchShortlist(value) {
     const path = `decisions[${index}]`;
     record(decision, path);
     exact(decision, DECISION_FIELDS, path);
-    identifier(decision.candidateId, `${path}.candidateId`, 200);
+    externalIdentifier(decision.candidateId, `${path}.candidateId`);
     if (decisionIds.has(decision.candidateId)) fail("DUPLICATE_CANDIDATE", `${path}.candidateId`);
     decisionIds.add(decision.candidateId);
     if (!["INCLUDED", "EXCLUDED"].includes(decision.decision)) fail("INVALID_DECISION", `${path}.decision`);
@@ -118,6 +118,7 @@ function validatePolicy(value) { validateResearchShortlistPolicy(value); }
 function record(value, path) { if (!value || typeof value !== "object" || Array.isArray(value)) fail("INVALID_TYPE", path); }
 function exact(value, fields, path) { for (const key of Object.keys(value)) if (!fields.includes(key)) fail("UNKNOWN_FIELD", `${path}.${key}`); for (const key of fields) if (!(key in value)) fail("REQUIRED_FIELD", `${path}.${key}`); }
 function identifier(value, path, max = 80) { if (typeof value !== "string" || value.length > max || !/^[a-z0-9][a-z0-9_:-]{2,}$/.test(value)) fail("INVALID_IDENTIFIER", path); }
+function externalIdentifier(value, path) { if (typeof value !== "string" || !/^[A-Za-z0-9._:-]{1,160}$/.test(value)) fail("INVALID_IDENTIFIER", path); }
 function hash(value, path) { if (typeof value !== "string" || !/^[a-f0-9]{64}$/.test(value)) fail("INVALID_HASH", path); }
 function strings(value, path) { if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || item === "")) fail("INVALID_TYPE", path); }
 function enums(value, allowed, path, nonempty = false) { strings(value, path); if ((nonempty && value.length === 0) || value.some((item) => !allowed.includes(item))) fail("INVALID_ENUM", path); }

@@ -16,6 +16,12 @@ test("valida e congela IdeaCandidate normalizado", () => {
   assert.throws(() => { idea.title = "alterado"; }, TypeError);
 });
 
+test("aceita IDs oficiais mistos como evidência sem afrouxar IDs internos", () => {
+  const value = candidate({ evidenceCandidateIds: ["youtube:AbC_123-X"] });
+  assert.deepEqual(validateIdeaCandidate(value).evidenceCandidateIds, ["youtube:AbC_123-X"]);
+  assert.throws(() => validateIdeaCandidate(candidate({ ideaCandidateId: "Idea_Internal" })), contractError("INVALID_IDENTIFIER", "ideaCandidateId"));
+});
+
 test("rejeita campos desconhecidos, conteúdo sensível e evidência duplicada", () => {
   assert.throws(() => validateIdeaCandidate(candidate({ prompt: "privado" })), contractError("UNKNOWN_FIELD", "idea.prompt"));
   assert.throws(() => validateIdeaCandidate(candidate({ evidenceCandidateIds: ["candidate-1", "candidate-1"] })), contractError("DUPLICATE_VALUE", "evidenceCandidateIds.1"));

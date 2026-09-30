@@ -14,6 +14,13 @@ test("contrato de shortlist aceita resultado vazio com lacunas e congela a linha
   assert.equal(Object.isFrozen(artifact.coverage), true);
 });
 
+test("preserva ID oficial misto nas decisões da shortlist", () => {
+  const value = validShortlist();
+  const mixed = "youtube:AbC_123-X";
+  value.decisions = [{ candidateId: mixed, decision: "EXCLUDED", position: null, reasons: ["CATALOG_EXCLUSION"] }];
+  assert.equal(createResearchShortlist(value).decisions[0].candidateId, mixed);
+});
+
 test("contrato rejeita versão, política, direitos e campos desconhecidos", () => {
   assert.throws(() => createResearchShortlist({ ...validShortlist(), schemaVersion: "research-shortlist/9.0.0" }), (error) => error.code === "UNSUPPORTED_SCHEMA_VERSION");
   assert.throws(() => createResearchShortlist({ ...validShortlist(), policy: { ...DEFAULT_RESEARCH_SHORTLIST_POLICY, shortlistLimit: 10 } }), (error) => error.code === "INVALID_POLICY");
