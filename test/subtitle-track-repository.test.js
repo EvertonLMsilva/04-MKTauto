@@ -124,6 +124,7 @@ test("migration 023 é aditiva e preserva dados existentes", () => {
     const { repository } = setup(path);
     repository.close();
     const before = new DatabaseSync(path);
+    before.exec("DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
     before.exec(`
       DROP TRIGGER subtitle_cues_no_delete;
       DROP TRIGGER subtitle_cues_no_update;
@@ -142,8 +143,8 @@ test("migration 023 é aditiva e preserva dados existentes", () => {
     assert.deepEqual(migrated.listSubtitleTracksByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 23);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 23);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
     raw.close();
   });
 });

@@ -9,17 +9,19 @@ import { loadOpenAIImageConfig } from "./openai-image-config.js";
 import { loadOpenAIVoiceConfig } from "./openai-voice-config.js";
 import { MediaAcquisitionService } from "./media-acquisition-service.js";
 import { PipelineRunService } from "./pipeline-run-service.js";
+import { QualityControlRepository } from "./quality-control-repository.js";
+import { QualityControlService } from "./quality-control-service.js";
 import { RealPreviewService } from "./real-preview-service.js";
 import { ScriptGenerationService } from "./script-generation-service.js";
 import { SubtitleGenerationService } from "./subtitle-generation-service.js";
 import { SubtitleRenderingService } from "./subtitle-rendering-service.js";
 import { SubtitleTrackRepository } from "./subtitle-track-repository.js";
 import { VideoCompositionService } from "./video-composition-service.js";
-import { VideoRenderRepository } from "./video-render-repository.js";
 import { VoiceGenerationService } from "./voice-generation-service.js";
 import { VoiceTrackRepository } from "./voice-track-repository.js";
 import { CompositionArtifactCatalog } from "./adapters/composition-artifact-catalog.js";
 import { FfmpegSubtitleRenderer } from "./adapters/ffmpeg-subtitle-renderer.js";
+import { FfmpegQualityInspector } from "./adapters/ffmpeg-quality-inspector.js";
 import { FfmpegVideoComposer } from "./adapters/ffmpeg-video-composer.js";
 import { LocalCompositionReferenceResolver } from "./adapters/local-composition-reference-resolver.js";
 import { LocalPreviewVerifier } from "./adapters/local-preview-verifier.js";
@@ -30,7 +32,7 @@ import { OpenAIVoiceAdapter } from "./adapters/openai-voice.js";
 export function createPreviewRuntime({ database, env = process.env }) {
   const repositories = [];
   try {
-    const videoRepository = repository(VideoRenderRepository, database, repositories);
+    const videoRepository = repository(QualityControlRepository, database, repositories);
     const voiceRepository = repository(VoiceTrackRepository, database, repositories);
     const subtitleRepository = repository(SubtitleTrackRepository, database, repositories);
     const costRepository = repository(CostLedgerRepository, database, repositories);
@@ -43,6 +45,11 @@ export function createPreviewRuntime({ database, env = process.env }) {
     const artifactCatalog = new CompositionArtifactCatalog({ voiceRepository, mediaRepository: videoRepository });
     const composer = new FfmpegVideoComposer(videoConfig, { artifactCatalog, referenceResolver });
     const subtitleRenderer = new FfmpegSubtitleRenderer(subtitleConfig(videoConfig), { referenceResolver });
+    const qualityInspector = new FfmpegQualityInspector({
+      ffmpegPath: videoConfig.ffmpegPath, ffprobePath: videoConfig.ffprobePath,
+      maxOutputBytes: videoConfig.maxOutputBytes, maxMediaBytes: videoConfig.maxImageBytes,
+      timeoutMs: videoConfig.timeoutMs, maxLogBytes: videoConfig.maxLogBytes,
+    }, { referenceResolver });
 
     const pipelineRuns = new PipelineRunService(videoRepository);
     const lookup = Object.freeze({ getScript: (scriptId) => videoRepository.getScript(scriptId) });
@@ -60,11 +67,13 @@ export function createPreviewRuntime({ database, env = process.env }) {
       lookup,
       lineage: new ArtifactLineageService(videoRepository),
     });
+    const qualityControl = new QualityControlService({ repository: videoRepository, voices: voiceRepository, inspector: qualityInspector });
 
     return Object.freeze({
       selections: Object.freeze({ get: (selectionId) => videoRepository.getSelection(selectionId) }),
       pipelineRuns,
       previews,
+      qualityControl,
       lookup,
       referenceResolver,
       close: () => closeAll(repositories),

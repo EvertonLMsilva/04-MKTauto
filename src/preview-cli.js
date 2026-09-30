@@ -48,6 +48,8 @@ export async function runPreviewCli(argv, dependencies = {}) {
     const result = await runtime.previews.execute(request);
     const finalRun = runtime.pipelineRuns.get(existingRun.pipelineRunId);
     const video = result.previewVideoRender;
+    progress(dependencies, "QUALITY_CONTROL");
+    const qualityControl = await runtime.qualityControl.inspect({ pipelineRunId: existingRun.pipelineRunId, videoRenderId: video.id, videoRenderContentHash: video.contentHash });
     const localPath = await runtime.referenceResolver.resolveVideo(video.logicalReference);
     progress(dependencies, "COMPLETED");
     return success({
@@ -58,6 +60,12 @@ export async function runPreviewCli(argv, dependencies = {}) {
       sha256: video.contentHash,
       logicalReference: video.logicalReference,
       localPath,
+      qualityControl: {
+        reportId: qualityControl.qualityControlReportId,
+        result: qualityControl.result,
+        approvalBlocked: qualityControl.approvalBlocked,
+        findings: qualityControl.findings.map(({ code, status }) => ({ code, status })),
+      },
     });
   } catch (caught) {
     return failureResult(caught);

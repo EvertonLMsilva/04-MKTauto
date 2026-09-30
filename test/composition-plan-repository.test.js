@@ -111,7 +111,7 @@ test("migração 020 é aditiva, não cria planos retroativos e preserva ativos"
     before.exec(`
       DROP TABLE video_composition_requests;
       DROP TABLE video_renders;
-      DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       DROP TRIGGER composition_plan_segments_no_delete;
       DROP TRIGGER composition_plan_segments_no_update;
@@ -130,8 +130,8 @@ test("migração 020 é aditiva, não cria planos retroativos e preserva ativos"
     assert.deepEqual(migrated.listCompositionPlansByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 23);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 23);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 24);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 24);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM media_assets").get().total, 2);
     raw.close();
