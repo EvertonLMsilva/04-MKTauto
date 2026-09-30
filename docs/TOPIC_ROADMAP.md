@@ -50,7 +50,7 @@
 | E07-S01A | CONCLUÍDO | SubtitleTrack Contract and Persistence | PR #57 mergeado em 29/09/2026 (`5be9534`); contrato fechado e persistência append-only ligam cues ao Script e VoiceTrack exatos. |
 | E07-S01B | CONCLUÍDO | Deterministic Subtitle Cues and ASS/SRT | PR #58 mergeado em 29/09/2026 (`05268fd`); política fechada gera cues e representações ASS/SRT determinísticas em memória. |
 | E07-S01C | PR ABERTO | Physical Subtitle Rendering | PR #59; burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
-| E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
+| E07-P01 | PR ABERTO | End-to-End Real Preview | PR #60; uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
 | E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará a versão final legendada por seu hash exato. |
 
@@ -929,7 +929,7 @@ isolamento. A integração opt-in executou áudio WAV e mídia PNG físicos, com
 e burn-in FFmpeg reais e confirmou o SHA-256 do MP4 final. A suíte completa aprovou
 456 testes e ignorou 6 integrações/smokes opt-in. Os smokes OpenAI de voz e imagem
 permanecem dependentes de credenciais e desabilitados por padrão;
-`git diff --check` passou.
+`git diff --check` passou. O PR #60 foi aberto em 30/09/2026.
 
 Riscos residuais: versões de FFmpeg/libass e fontes podem alterar bytes entre
 ambientes; disponibilidade, cobrança e limites dos providers externos permanecem
