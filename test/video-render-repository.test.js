@@ -151,7 +151,7 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
       DROP TRIGGER video_composition_requests_no_update;
       DROP TRIGGER video_composition_requests_validate_scope;
       DROP TABLE video_composition_requests;
-      DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       PRAGMA user_version = 21;
     `);
     before.close();
@@ -159,8 +159,8 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 23);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 23);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
@@ -183,7 +183,7 @@ test("migração 021 continua recuperável junto da 022", () => {
       DROP TRIGGER video_renders_validate_revision;
       DROP TRIGGER video_renders_validate_scope;
       DROP TABLE video_renders;
-      DELETE FROM schema_migrations WHERE version = 22;
+      DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
       DELETE FROM schema_migrations WHERE version = 21;
       PRAGMA user_version = 20;
     `);
@@ -192,8 +192,8 @@ test("migração 021 continua recuperável junto da 022", () => {
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 22);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 22);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 23);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 23);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);

@@ -46,8 +46,10 @@
 | V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
 | E05-V03 | CONCLUÍDO | Real Voice Adapter | PR #54 mergeado em 29/09/2026 (`e6e7c42`); OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
 | E06-M03 | CONCLUÍDO | Real Media Adapter | PR #55 mergeado em 29/09/2026 (`1a28d5d`); OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
-| E07-C04 | PR ABERTO | Real VideoComposer / FFmpeg Adapter | PR #56 aberto; FFmpeg/FFprobe compõem WAV e PNG exatos em MP4 vertical físico, inspecionado e armazenado por conteúdo. |
-| E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
+| E07-C04 | CONCLUÍDO | Real VideoComposer / FFmpeg Adapter | PR #56 mergeado em 29/09/2026 (`2e2b1d2`); FFmpeg/FFprobe compõem WAV e PNG exatos em MP4 vertical físico, inspecionado e armazenado por conteúdo. |
+| E07-S01A | EM EXECUÇÃO | SubtitleTrack Contract and Persistence | Contrato fechado e persistência append-only ligam cues ao Script e VoiceTrack exatos. |
+| E07-S01B | PENDENTE | Deterministic Subtitle Cues and ASS/SRT | Geração determinística e representações físicas dependem de E07-S01A. |
+| E07-S01C | PENDENTE | Physical Subtitle Rendering | Burn-in no MP4 depende de E07-S01B. |
 | E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
 | E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará a versão final legendada por seu hash exato. |
@@ -688,7 +690,7 @@ quando desbloquearem diretamente uma capacidade do fluxo real do MVP. Uma nova
 abstração, persistência ou porta precisa ter consumidor imediato neste Critical
 Path; as decisões já implementadas continuam válidas e não serão reconstruídas.
 
-O caminho restante possui **5 entregas até o preview real e 7 até o MVP 1
+O caminho restante possui **7 entregas até o preview real e 9 até o MVP 1
 DONE**:
 
 ```text
@@ -696,11 +698,13 @@ E07-C03 concluído
 → E05-V03 Real Voice
 → E06-M03 Real Media
 → E07-C04 Real Composer
-→ E07-S01 Subtitles
-→ E07-P01 End-to-End Preview        (5 entregas)
+→ E07-S01A Subtitle Contract
+→ E07-S01B Deterministic Cues
+→ E07-S01C Physical Rendering
+→ E07-P01 End-to-End Preview        (7 entregas)
 → E08-Q01 Quality Control
 → E08-A01 Human Approval
-→ MVP 1 DONE                        (7 entregas)
+→ MVP 1 DONE                        (9 entregas)
 ```
 
 Este replanejamento preserva Ports and Adapters, contratos versionados, TDD,
@@ -805,24 +809,48 @@ Aceite mínimo:
 Codec avançado, múltiplos formatos, transições sofisticadas e otimização de
 bitrate permanecem fora de escopo.
 
-### E07-S01 — SubtitleTrack & Rendering
+### E07-S01A — SubtitleTrack Contract and Persistence
 
-Objetivo: derivar legendas reais do `Script` persistido, sincronizá-las à duração
-real da voz e renderizá-las no vídeo.
+Objetivo: persistir `SubtitleTrack` versionada e append-only, ligada ao
+`PipelineRun`, `ProjectSnapshot`, `Script` e `VoiceTrack` exatos, sem gerar
+timings ou arquivos físicos.
 
 Aceite mínimo:
 
-- timing determinístico, sem intervalo fora da duração real;
-- representação SRT, ASS ou equivalente, com estilo inicial versionado;
-- idioma do `ProjectSnapshot`, Unicode, quebras controladas, contraste, tamanho
-  legível e safe area vertical são preservados;
-- intervalos e sobreposições inválidos são recusados;
-- alterar texto, timing, estilo, áudio, mídia ou plano produz nova versão/hash;
-- a saída legendada é o **render final candidato ao preview**; o render anterior
-  sem legendas não pode receber QC ou aprovação como versão final do MVP.
+- `subtitle-track/1.0.0` fecha campos, normaliza Unicode e usa SHA-256 canônico;
+- cues têm posições e intervalos explícitos em milissegundos, começam em zero,
+  não se sobrepõem e nunca excedem a duração física registrada da voz;
+- lacunas entre cues são permitidas por design e o último cue não precisa
+  terminar na duração da `VoiceTrack`;
+- idioma, duração, IDs, hashes, run, projeto e versão são revalidados contra
+  `Script`, `VoiceTrack` e `ProjectSnapshot` persistidos;
+- revisão, supersessão, retry idempotente, rollback local e lineage ordenada são
+  atômicos; não existe consulta por `latest`;
+- serviço permanece fachada mínima de validação e persistência, sem geração de
+  cues, timings, SRT/ASS ou lógica editorial.
 
-Fora de escopo: karaoke, destaque palavra por palavra, animações complexas,
-múltiplos estilos automáticos, escolha de layout por IA e efeitos avançados.
+Evidência: 17 testes focados cobrem contrato, hash, Unicode, gaps intencionais,
+intervalos, cadeia exata, persistência, retry, revisão, lineage, rollback,
+migration aditiva e isolamento arquitetural. A suíte completa aprovou 423 testes
+e ignorou 4 integrações/smokes opt-in; `git diff --check` passou.
+
+Riscos residuais: a detecção de conteúdo sensível usa padrões determinísticos e
+não substitui revisão humana; a migration é aditiva e não possui downgrade
+destrutivo; geração e qualidade editorial dos cues permanecem para E07-S01B.
+
+### E07-S01B — Deterministic Subtitle Cues and ASS/SRT
+
+Objetivo futuro: gerar cues determinísticos e representações ASS/SRT a partir
+das identidades persistidas por E07-S01A, sem renderizar vídeo.
+
+### E07-S01C — Physical Subtitle Rendering
+
+Objetivo futuro: renderizar fisicamente a legenda no MP4 e produzir a versão
+final candidata ao preview.
+
+Continuam fora do escopo do corte inicial: karaoke, destaque palavra por
+palavra, animações complexas, múltiplos estilos automáticos, escolha de layout
+por IA e efeitos avançados.
 
 ### E07-P01 — End-to-End Real Preview
 
@@ -1028,8 +1056,8 @@ Riscos residuais: trocas visuais são quantizadas à grade de 30 fps;
 reprodutibilidade byte a byte depende da mesma política e toolchain; falha
 SQLite depois da promoção pode deixar MP4 content-addressed órfão, nunca
 `VideoRender` falso; roots locais privados ainda dependem das permissões do
-host. `data/` e `templates/` foram preservados. O PR #56 foi aberto em
-29/09/2026 (`30d0267`).
+host. `data/` e `templates/` foram preservados. O PR #56 foi mergeado em
+29/09/2026 (`2e2b1d2`).
 
 ## Primeiro épico — E01 Project Configuration
 
@@ -1382,7 +1410,8 @@ commit `d78309f`.
 4. implementar ideias e scoring antes de roteiro;
 5. provar a porta OpenAI e as portas de voz, mídia e composer;
 6. após E07-C03, executar sem intercalação estrutural o Critical Path:
-   E05-V03, E06-M03, E07-C04, E07-S01, E07-P01, E08-Q01 e E08-A01;
+   E05-V03, E06-M03, E07-C04, E07-S01A, E07-S01B, E07-S01C, E07-P01,
+   E08-Q01 e E08-A01;
 7. encerrar o MVP 1 somente com preview físico real, QC aprovado e aprovação
    humana sobre o hash exato da versão final legendada;
 8. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
