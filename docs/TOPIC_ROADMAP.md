@@ -1107,7 +1107,10 @@ durante chamadas externas exigem retry pelo mesmo `pipelineRunId`; etapas já
 persistidas são retomadas e nenhum candidato parcial é apresentado como válido.
 O PR #68 foi mergeado em 30/09/2026 (`129b476`). A correção pós-merge para IDs
 oficiais mistos foi mergeada no PR #69. A remoção de `uniqueItems`, não suportado
-pelo Structured Outputs, foi aberta no PR #70.
+pelo Structured Outputs, foi mergeada no PR #70. A correção seguinte remove a
+confirmação manual de direitos da configuração de imagem, assume a autorização
+operacional definida para o produto e registra dinamicamente a data UTC; 501 de
+507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi aberto.
 
 ### E08-A01 — Human Approval
 
@@ -1273,9 +1276,10 @@ diretamente sobre o PNG físico. O storage content-addressed cria
 `media:sha256_<hash>` sem expor caminho; hash existente é relido, validado e
 reutilizado, e conflito nunca é sobrescrito.
 
-`commercialUseAllowed` só é verdadeiro quando a execução confirma
-explicitamente a base `PROVIDER_TERMS` e a versão observada dos termos; ausência
-ou falsidade bloqueia a rede. A política `openai-image-pricing/1.0.0` somente
+`commercialUseAllowed` é assumido como verdadeiro para a geração própria via
+provider adotado, com base `PROVIDER_TERMS`; a data UTC da configuração é
+registrada dinamicamente sem exigir confirmação manual por variável de ambiente.
+A política `openai-image-pricing/1.0.0` somente
 calcula USD quando `input_tokens` e `output_tokens` completos permitem aritmética
 decimal determinística pelas taxas versionadas. Sem uso completo, o custo
 permanece ausente. `MediaAsset`, solicitação, linhagem, telemetria e eventual

@@ -148,7 +148,7 @@ function runtimeEnv(root) {
   return {
     OPENAI_API_KEY: "test-key", OPENAI_MODEL: "test-model",
     OPENAI_VOICE_COMMERCIAL_USE_ALLOWED: "true", OPENAI_VOICE_STORAGE_ROOT: join(root, "voice"),
-    OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED: "true", OPENAI_IMAGE_TERMS_VERSION: "2026-09-30", OPENAI_IMAGE_STORAGE_ROOT: join(root, "media"),
+    OPENAI_IMAGE_STORAGE_ROOT: join(root, "media"),
     FFMPEG_PATH: join(root, "ffmpeg.exe"), FFPROBE_PATH: join(root, "ffprobe.exe"),
     FFMPEG_VOICE_ROOT: join(root, "voice"), FFMPEG_MEDIA_ROOT: join(root, "media"), FFMPEG_RENDER_ROOT: join(root, "render"),
   };

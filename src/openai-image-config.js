@@ -11,13 +11,10 @@ export const OPENAI_IMAGE_HEIGHT = 2048;
 export const OPENAI_IMAGE_FORMAT = "png";
 export const OPENAI_IMAGE_QUALITY = "medium";
 
-export function loadOpenAIImageConfig(env = process.env) {
+export function loadOpenAIImageConfig(env = process.env, { now = Date.now } = {}) {
   const apiKey = required(env.OPENAI_API_KEY, "OPENAI_API_KEY");
   const model = exact(env.OPENAI_IMAGE_MODEL ?? OPENAI_IMAGE_MODEL, OPENAI_IMAGE_MODEL, "OPENAI_IMAGE_MODEL");
-  if (env.OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED !== "true") {
-    throw failure("OPENAI_IMAGE_RIGHTS_NOT_CONFIRMED", "OPENAI_IMAGE_COMMERCIAL_USE_ALLOWED", "direitos comerciais precisam ser confirmados para esta execução");
-  }
-  const termsVersion = rightsVersion(env.OPENAI_IMAGE_TERMS_VERSION, "OPENAI_IMAGE_TERMS_VERSION");
+  const termsVersion = executionDate(now);
   const storageRoot = resolve(required(env.OPENAI_IMAGE_STORAGE_ROOT, "OPENAI_IMAGE_STORAGE_ROOT"));
   const timeoutMs = integer(env.OPENAI_IMAGE_TIMEOUT_MS ?? "120000", "OPENAI_IMAGE_TIMEOUT_MS", 1, 300000);
   const maxResponseBytes = integer(env.OPENAI_IMAGE_MAX_RESPONSE_BYTES ?? "31457280", "OPENAI_IMAGE_MAX_RESPONSE_BYTES", 1024, 104857600);
@@ -54,11 +51,11 @@ function required(value, field) {
   if (typeof value !== "string" || value.trim() === "") throw failure("OPENAI_IMAGE_CONFIGURATION_MISSING", field, "configuração obrigatória ausente");
   return value.trim();
 }
-function rightsVersion(value, field) {
-  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value) || !Number.isFinite(Date.parse(`${value}T00:00:00Z`))) {
-    throw failure("OPENAI_IMAGE_RIGHTS_NOT_CONFIRMED", field, "versão observada dos termos precisa ser confirmada");
-  }
-  return value;
+function executionDate(now) {
+  if (typeof now !== "function") throw failure("OPENAI_IMAGE_CONFIGURATION_INVALID", "now", "relógio inválido");
+  const value = new Date(now());
+  if (!Number.isFinite(value.getTime())) throw failure("OPENAI_IMAGE_CONFIGURATION_INVALID", "now", "relógio inválido");
+  return value.toISOString().slice(0, 10);
 }
 function exact(value, expected, field) {
   if (value !== expected) throw failure("OPENAI_IMAGE_CONFIGURATION_INVALID", field, "configuração fora da política versionada");
