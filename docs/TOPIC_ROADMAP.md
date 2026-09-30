@@ -1112,8 +1112,10 @@ confirmação manual de direitos da configuração de imagem, assume a autoriza�
 operacional definida para o produto e registra dinamicamente a data UTC; 501 de
 507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi
 mergeado. A correção visual seguinte mantém etapas ociosas em `PENDING`, usa
-`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; 502 de
-508 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
+`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso. O mesmo
+PR amplia o parser WAV para chunks auxiliares e tamanhos de streaming válidos,
+mantém a política PCM e preserva códigos públicos de falha do provider; 505 de
+511 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
 
 ### E08-A01 — Human Approval
 
@@ -1229,9 +1231,11 @@ base comercial não estiver explicitamente confirmada; essa confirmação retrat
 a configuração observada para a execução e não presume termos imutáveis.
 
 O download binário é limitado e gravado em temporário privado. O parser aceita
-somente o subconjunto necessário ao MVP — RIFF/WAVE, PCM linear, mono, 24 kHz,
-16 bits, chunks `fmt ` e `data` canônicos — e rejeita estruturas, parâmetros,
-tamanho ou conteúdo mínimo incompatíveis. A duração é medida pelos frames
+somente o subconjunto necessário ao MVP — RIFF/WAVE, PCM linear, mono, 24 kHz e
+16 bits —, percorre chunks com padding, ignora metadados auxiliares seguros e
+aceita tamanhos sentinela de streaming somente no RIFF e em `data`; duplicidade,
+truncamento, parâmetros, tamanho ou conteúdo mínimo incompatíveis são rejeitados.
+A duração é medida pelos frames
 físicos, e o SHA-256 é calculado diretamente sobre os bytes gravados. O storage
 content-addressed cria o objeto sem sobrescrita: um hash já presente é relido,
 revalidado e reutilizado; divergência falha sem alterar o objeto existente. O
