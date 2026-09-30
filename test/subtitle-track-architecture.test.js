@@ -34,3 +34,10 @@ test("serviço é fachada mínima com identidades explícitas e sem geração ou
   assert.deepEqual(calls, [["register", value], ["get", "subtitle_track_001"], ["run", "run_e07_001"], ["script", "script_001"], ["voice", "voice_track_001"]]);
   for (const forbidden of ["latest", "generate", "generateCues", "generateTimings", "render"]) assert.equal(forbidden in service, false);
 });
+
+test("geração e representações de legenda não dependem de filesystem, FFmpeg ou latest", () => {
+  for (const file of ["../src/domain/subtitle-generation.js", "../src/subtitle-generation-service.js"]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.doesNotMatch(source, /node:(?:fs|path|child_process)|ffmpeg|ffprobe|\blatest\b/i);
+  }
+});

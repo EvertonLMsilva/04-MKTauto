@@ -12,6 +12,7 @@ import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-hando
 import { PipelineRunService } from "../src/pipeline-run-service.js";
 import { SubtitleTrackRepository, SubtitleTrackRepositoryError } from "../src/subtitle-track-repository.js";
 import { SubtitleTrackService } from "../src/subtitle-track-service.js";
+import { SubtitleGenerationService } from "../src/subtitle-generation-service.js";
 
 const STARTED_AT = "2026-09-29T12:00:00.000Z";
 
@@ -27,6 +28,24 @@ test("persiste legenda e lineage exata com retry idempotente", () => {
       { position: 1, kind: "INTERNAL_ARTIFACT", inputId: script.scriptId, contentHash: script.contentHash },
       { position: 2, kind: "INTERNAL_ARTIFACT", inputId: voice.voiceTrackId, contentHash: voice.contentHash },
     ]);
+    assert.equal(count(path, "subtitle_tracks"), 1);
+    assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'subtitle_track'"), 1);
+  });
+});
+
+test("geração usa o repository SQLite existente e retry não duplica estado", () => {
+  withService(({ repository, script, voice, path }) => {
+    const generation = new SubtitleGenerationService(repository);
+    const request = {
+      pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: script.projectVersion,
+      scriptId: script.scriptId, scriptContentHash: script.contentHash,
+      voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash,
+      stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, requestedAt: "2026-09-29T20:00:00.000Z",
+    };
+    const first = generation.generate(request);
+    const retry = generation.generate({ ...request, requestedAt: "2026-09-29T21:00:00.000Z" });
+    assert.deepEqual(retry, first);
+    assert.equal(repository.getSubtitleTrack(first.subtitleTrack.subtitleTrackId).contentHash, first.subtitleTrack.contentHash);
     assert.equal(count(path, "subtitle_tracks"), 1);
     assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'subtitle_track'"), 1);
   });
