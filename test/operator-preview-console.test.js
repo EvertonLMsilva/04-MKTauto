@@ -29,11 +29,22 @@ test("estado das sete etapas e QC e reconstruído somente de artefatos persistid
   });
 
   assert.deepEqual(status.stages.map(({ name, state }) => [name, state]), [
-    ["Script", "SUCCEEDED"], ["Voice", "SUCCEEDED"], ["Media", "RUNNING"],
+    ["Script", "SUCCEEDED"], ["Voice", "SUCCEEDED"], ["Media", "PENDING"],
     ["Composition", "PENDING"], ["Subtitles", "PENDING"], ["Preview", "PENDING"], ["QC", "PENDING"],
   ]);
   assert.equal(status.videoRender, null);
   assert.equal(status.qualityControl, null);
+});
+
+test("run persistida não simula etapa ativa antes de Gerar Preview", () => {
+  const artifacts = { scripts: [], voiceTracks: [], mediaAssets: [], compositionPlans: [], subtitleTracks: [], videoRenders: [], qualityControl: null };
+  const idle = reconstructPreviewStatus({ scope, run: run("RUNNING"), selection: selection(), artifacts, active: false });
+  const executing = reconstructPreviewStatus({ scope, run: run("RUNNING"), selection: selection(), artifacts, active: true });
+
+  assert.deepEqual(idle.stages.map(({ state }) => state), Array(7).fill("PENDING"));
+  assert.equal(idle.active, false);
+  assert.equal(executing.stages[0].state, "RUNNING");
+  assert.equal(executing.active, true);
 });
 
 test("status vincula MP4 e QC ao mesmo VideoRender final por ID e SHA-256", () => {

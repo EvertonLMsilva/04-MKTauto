@@ -150,13 +150,12 @@ export function reconstructPreviewStatus({ scope, run, selection, artifacts, act
   const video = plan ? artifacts.videoRenders.filter((item) => item.compositionPlanId === plan.compositionPlanId && item.revision === 2).at(-1) ?? null : null;
   const qc = video && artifacts.qualityControl ? qualityControlView(artifacts.qualityControl, video) : null;
   const complete = [Boolean(script), Boolean(voice), mediaComplete, Boolean(plan), Boolean(subtitle), Boolean(video), Boolean(qc)];
-  const partial = [false, false, media.length > 0 && !mediaComplete, false, false, false, false];
   const firstIncomplete = complete.findIndex((value) => !value);
   const stages = STAGE_NAMES.map((name, index) => {
-    let state = complete[index] ? "SUCCEEDED" : partial[index] ? "RUNNING" : "PENDING";
+    let state = complete[index] ? "SUCCEEDED" : "PENDING";
     if (index === firstIncomplete && !complete[index]) {
       if (run.state === "FAILED" || operationError) state = "FAILED";
-      else if (active || run.state === "RUNNING") state = "RUNNING";
+      else if (active) state = "RUNNING";
     }
     return Object.freeze({ name, state });
   });
