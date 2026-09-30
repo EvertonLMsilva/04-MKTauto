@@ -55,7 +55,7 @@
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
-| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PR #68; a console cria/retoma uma `PipelineRun`, executa Research e shortlist reais, persiste candidatos/score e registra a seleção humana explícita antes do Preview; 505 testes passaram, com 6 integrações opt-in ignoradas. |
+| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PR #68 mergeado; correção de IDs oficiais mistos no PR #69; a console cria/retoma uma `PipelineRun`, executa Research e shortlist reais, persiste candidatos/score e registra a seleção humana explícita antes do Preview; 505 testes passaram, com 6 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1105,7 +1105,8 @@ Risco residual: uma nova execução depende das credenciais e elegibilidades rea
 das fontes configuradas, do modelo de clustering e do provider de ideias. Quedas
 durante chamadas externas exigem retry pelo mesmo `pipelineRunId`; etapas já
 persistidas são retomadas e nenhum candidato parcial é apresentado como válido.
-O PR #68 foi aberto em 30/09/2026.
+O PR #68 foi mergeado em 30/09/2026 (`129b476`). A correção pós-merge para IDs
+oficiais mistos foi aberta no PR #69.
 
 ### E08-A01 — Human Approval
 
