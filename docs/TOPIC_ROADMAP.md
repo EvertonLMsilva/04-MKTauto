@@ -1113,7 +1113,7 @@ operacional definida para o produto e registra dinamicamente a data UTC; 501 de
 507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi
 mergeado. A correção visual seguinte mantém etapas ociosas em `PENDING`, usa
 `RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; 502 de
-508 testes passaram e 6 integrações opt-in foram ignoradas.
+508 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
 
 ### E08-A01 — Human Approval
 
