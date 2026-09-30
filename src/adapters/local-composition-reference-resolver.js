@@ -4,15 +4,21 @@ import { ffmpegFailure } from "./ffmpeg-video-error.js";
 
 const VOICE_REFERENCE = /^object:voice\/sha256\/([a-f0-9]{64})$/;
 const MEDIA_REFERENCE = /^media:sha256_([a-f0-9]{64})$/;
+const VIDEO_REFERENCE = /^render:sha256_([a-f0-9]{64})$/;
 
 export class LocalCompositionReferenceResolver {
-  constructor({ voiceRoot, mediaRoot }) {
+  constructor({ voiceRoot, mediaRoot, renderRoot }) {
     this.voiceRoot = requiredRoot(voiceRoot, "voiceRoot");
     this.mediaRoot = requiredRoot(mediaRoot, "mediaRoot");
+    this.renderRoot = renderRoot === undefined ? null : requiredRoot(renderRoot, "renderRoot");
   }
 
   async resolveVoice(reference) { return this.#resolve(reference, VOICE_REFERENCE, this.voiceRoot, "wav"); }
   async resolveMedia(reference) { return this.#resolve(reference, MEDIA_REFERENCE, this.mediaRoot, "png"); }
+  async resolveVideo(reference) {
+    if (!this.renderRoot) throw ffmpegFailure("FFMPEG_CONFIGURATION_MISSING", "renderRoot", "root obrigatório");
+    return this.#resolve(reference, VIDEO_REFERENCE, this.renderRoot, "mp4");
+  }
 
   async #resolve(reference, pattern, root, extension) {
     const match = typeof reference === "string" ? pattern.exec(reference) : null;

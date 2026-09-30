@@ -7,6 +7,8 @@ import {
   videoCompositionRequestHash,
 } from "./domain/video-composition-contracts.js";
 import { validateVideoRender, videoRenderIdentityHash } from "./domain/video-render-contracts.js";
+import { validateSubtitleTrack, subtitleTrackIdentityHash } from "./domain/subtitle-track-contracts.js";
+import { validateSubtitleRenderRequest, validateSubtitleRenderResult } from "./domain/subtitle-render-contracts.js";
 import { CompositionPlanRepository } from "./composition-plan-repository.js";
 
 export class VideoRenderRepositoryError extends Error {
@@ -19,6 +21,58 @@ export class VideoRenderRepositoryError extends Error {
 }
 
 export class VideoRenderRepository extends CompositionPlanRepository {
+  registerSubtitleRendering({ request: requestValue, result: resultValue, videoRender: renderValue }) {
+    let request; let result; let render;
+    try { request = validateSubtitleRenderRequest(requestValue); result = validateSubtitleRenderResult(resultValue); render = validateVideoRender(renderValue); }
+    catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.getSubtitleRendering(request.subtitleRenderRequestId);
+      if (prior) {
+        if (prior.requestHash !== request.contentHash) throw failure("SUBTITLE_RENDER_REQUEST_ID_REUSED", "subtitleRenderRequestId", "identidade já usada com conteúdo divergente");
+        return prior.videoRender;
+      }
+      const source = this.getVideoRender(request.videoRenderId); const track = this.getSubtitleTrack(request.subtitleTrackId); const plan = this.getCompositionPlan(request.compositionPlanId);
+      if (!source) throw failure("VIDEO_RENDER_NOT_FOUND", "videoRenderId", "render não encontrado");
+      if (!track) throw failure("SUBTITLE_TRACK_NOT_FOUND", "subtitleTrackId", "legenda não encontrada");
+      if (!plan) throw failure("COMPOSITION_PLAN_NOT_FOUND", "compositionPlanId", "plano não encontrado");
+      verifySubtitleBinding(request, result, render, source, track, plan);
+      const inputs = [
+        { position: 1, kind: "INTERNAL_ARTIFACT", inputId: plan.compositionPlanId, contentHash: plan.contentHash },
+        { position: 2, kind: "INTERNAL_ARTIFACT", inputId: source.videoRenderId, contentHash: source.contentHash },
+        { position: 3, kind: "INTERNAL_ARTIFACT", inputId: track.subtitleTrackId, contentHash: track.contentHash },
+      ];
+      const generationMetadata = { provider: "ffmpeg", model: "libx264", taskType: "subtitle-burn-in", promptVersion: request.schemaVersion, configurationHash: request.contentHash,
+        publicConfiguration: { requestId: request.subtitleRenderRequestId, requestedAt: request.requestedAt, renderPolicyVersion: request.renderPolicyVersion, stylePolicyVersion: request.stylePolicyVersion,
+          measuredDurationMilliseconds: result.durationMilliseconds, ffmpegVersion: result.toolchain.ffmpegVersion, libassFingerprint: result.toolchain.libassFingerprint,
+          fontFamily: result.toolchain.fontFamily, fontProvider: result.toolchain.fontProvider } };
+      return this.#registerValidated(render, { inputs, generationMetadata });
+    });
+  }
+
+  getSubtitleRendering(subtitleRenderRequestId) {
+    requireIdentifier(subtitleRenderRequestId, "subtitleRenderRequestId", 200);
+    if (!subtitleRenderRequestId.startsWith("subtitle_render:")) return null;
+    const id = `video_render:subtitle:${subtitleRenderRequestId.slice("subtitle_render:".length)}`;
+    if (!this.db.prepare("SELECT 1 FROM video_renders WHERE video_render_id = ?").get(id)) return null;
+    const videoRender = this.getVideoRender(id); const metadata = this.getArtifact(id)?.generationMetadata;
+    if (metadata?.taskType !== "subtitle-burn-in" || metadata.promptVersion !== "subtitle-render-request/1.0.0" || metadata.publicConfiguration?.requestId !== subtitleRenderRequestId) throw failure("INVALID_PERSISTED_SUBTITLE_RENDERING", "subtitleRenderRequestId", "renderização persistida inválida");
+    return deepFreeze({ requestHash: metadata.configurationHash, videoRender });
+  }
+
+  getSubtitleTrack(subtitleTrackId) {
+    requireIdentifier(subtitleTrackId, "subtitleTrackId", 200);
+    const row = this.db.prepare("SELECT * FROM subtitle_tracks WHERE subtitle_track_id = ?").get(subtitleTrackId); if (!row) return null;
+    try {
+      const track = validateSubtitleTrack(JSON.parse(row.payload_json));
+      if (subtitleTrackIdentityHash(track) !== row.identity_hash || row.content_hash !== track.contentHash || row.pipeline_run_id !== track.pipelineRunId || row.project_id !== track.projectId || row.project_version !== track.projectVersion) throw new Error("legenda divergente");
+      const cues = this.db.prepare("SELECT position, text, start_milliseconds, end_milliseconds FROM subtitle_cues WHERE subtitle_track_id = ? ORDER BY position").all(subtitleTrackId).map((cue) => ({ position: cue.position, text: cue.text, startMilliseconds: cue.start_milliseconds, endMilliseconds: cue.end_milliseconds }));
+      if (JSON.stringify(cues) !== JSON.stringify(track.cues)) throw new Error("cues divergentes");
+      const lineage = this.getArtifact(track.subtitleTrackId); const expected = [{ position: 1, kind: "INTERNAL_ARTIFACT", inputId: track.scriptId, contentHash: track.scriptContentHash }, { position: 2, kind: "INTERNAL_ARTIFACT", inputId: track.voiceTrackId, contentHash: track.voiceTrackContentHash }];
+      if (!lineage || lineage.artifactType !== "subtitle_track" || lineage.contentHash !== track.contentHash || JSON.stringify(lineage.inputs) !== JSON.stringify(expected)) throw new Error("linhagem divergente");
+      return track;
+    } catch (caught) { throw failure("INVALID_PERSISTED_SUBTITLE_TRACK", "subtitleTrackId", "legenda persistida inválida", { cause: caught }); }
+  }
+
   registerVideoComposition({ request: requestValue, videoRender: renderValue }) {
     let request;
     let render;
@@ -98,7 +152,7 @@ export class VideoRenderRepository extends CompositionPlanRepository {
       this.#verifyRelated(render, related);
       const lineage = this.getArtifact(render.videoRenderId);
       if (!lineage || lineage.artifactType !== "video_render" || lineage.contentHash !== render.contentHash
-        || JSON.stringify(lineage.inputs) !== JSON.stringify(lineageInputs(render))) throw new Error("linhagem divergente");
+        || !validRenderLineage(render, lineage)) throw new Error("linhagem divergente");
       return render;
     } catch (caught) {
       if (caught instanceof VideoRenderRepositoryError) throw caught;
@@ -120,7 +174,7 @@ export class VideoRenderRepository extends CompositionPlanRepository {
       .map(({ video_render_id: id }) => this.getVideoRender(id));
   }
 
-  #registerValidated(render) {
+  #registerValidated(render, { inputs = lineageInputs(render), generationMetadata = null } = {}) {
     const identityHash = videoRenderIdentityHash(render);
     const prior = this.db.prepare("SELECT identity_hash FROM video_renders WHERE video_render_id = ?").get(render.videoRenderId);
     if (prior) {
@@ -134,7 +188,7 @@ export class VideoRenderRepository extends CompositionPlanRepository {
     const related = this.#relatedArtifacts(render);
     this.#verifyRelated(render, related);
     this.#validateRevision(render);
-    this.#insertLineage(render);
+    this.#insertLineage(render, inputs, generationMetadata);
     this.db.prepare(`INSERT INTO video_renders
       (video_render_id, schema_version, identity_hash, pipeline_run_id, project_id,
        project_version, composition_plan_id, composition_plan_content_hash,
@@ -181,30 +235,30 @@ export class VideoRenderRepository extends CompositionPlanRepository {
     return previous;
   }
 
-  #insertLineage(render) {
+  #insertLineage(render, inputs = lineageInputs(render), generationMetadata = null) {
     const artifact = validateArtifactLineage({
       schemaVersion: ARTIFACT_LINEAGE_CONTRACT_VERSION,
       artifactId: render.videoRenderId, artifactType: "video_render",
       artifactVersion: render.revision, pipelineRunId: render.pipelineRunId,
       projectId: render.projectId, projectVersion: render.projectVersion,
       contentIdentity: `video-render:${render.compositionPlanId}`, hashAlgorithm: "sha256",
-      contentHash: render.contentHash, inputs: lineageInputs(render),
-      generationMetadata: null, createdAt: render.createdAt,
+      contentHash: render.contentHash, inputs,
+      generationMetadata, createdAt: render.createdAt,
     });
     this.db.prepare(`INSERT INTO artifact_lineage
       (artifact_id, schema_version, artifact_type, artifact_version, identity_hash,
        pipeline_run_id, project_id, project_version, content_identity, hash_algorithm,
        content_hash, generation_metadata_json, created_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`).run(
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
       artifact.artifactId, artifact.schemaVersion, artifact.artifactType,
       artifact.artifactVersion, sha256(JSON.stringify(artifact)), artifact.pipelineRunId,
       artifact.projectId, artifact.projectVersion, artifact.contentIdentity,
-      artifact.hashAlgorithm, artifact.contentHash, artifact.createdAt,
+      artifact.hashAlgorithm, artifact.contentHash,
+      artifact.generationMetadata === null ? null : JSON.stringify(artifact.generationMetadata), artifact.createdAt,
     );
-    const input = artifact.inputs[0];
-    this.db.prepare(`INSERT INTO artifact_lineage_inputs
-      (artifact_id, position, kind, input_id, content_hash) VALUES (?, ?, ?, ?, ?)`)
-      .run(artifact.artifactId, input.position, input.kind, input.inputId, input.contentHash);
+    const insert = this.db.prepare(`INSERT INTO artifact_lineage_inputs
+      (artifact_id, position, kind, input_id, content_hash) VALUES (?, ?, ?, ?, ?)`);
+    for (const input of artifact.inputs) insert.run(artifact.artifactId, input.position, input.kind, input.inputId, input.contentHash);
   }
 
   #transaction(operation) {
@@ -227,6 +281,15 @@ function lineageInputs(render) {
   }];
 }
 
+function validRenderLineage(render, lineage) {
+  if (lineage.generationMetadata?.taskType !== "subtitle-burn-in") return JSON.stringify(lineage.inputs) === JSON.stringify(lineageInputs(render));
+  const inputs = lineage.inputs;
+  return render.revision === 2 && inputs.length === 3
+    && inputs[0].inputId === render.compositionPlanId && inputs[0].contentHash === render.compositionPlanContentHash
+    && inputs[1].inputId === render.supersedesVideoRenderId
+    && inputs[2].kind === "INTERNAL_ARTIFACT";
+}
+
 function verifyScope(stored, expected, code) {
   for (const field of ["pipelineRunId", "projectId", "projectVersion"]) {
     if (stored[field] !== expected[field]) throw failure(code, field, "escopo divergente");
@@ -245,6 +308,25 @@ function verifyCompositionBinding(request, render) {
     || render.supersedesVideoRenderId !== null) {
     throw failure("VIDEO_COMPOSITION_SCOPE_MISMATCH", "videoCompositionRequestId", "solicitação e render divergentes");
   }
+}
+
+function verifySubtitleBinding(request, result, render, source, track, plan) {
+  const expectedId = `video_render:subtitle:${request.subtitleRenderRequestId.slice("subtitle_render:".length)}`;
+  const scope = ["pipelineRunId", "projectId", "projectVersion"];
+  if (scope.some((field) => source[field] !== request[field] || track[field] !== request[field] || plan[field] !== request[field] || render[field] !== request[field])
+    || source.videoRenderId !== request.videoRenderId || source.contentHash !== request.videoRenderContentHash || source.revision !== 1
+    || track.subtitleTrackId !== request.subtitleTrackId || track.contentHash !== request.subtitleTrackContentHash
+    || plan.compositionPlanId !== request.compositionPlanId || plan.contentHash !== request.compositionPlanContentHash
+    || render.videoRenderId !== expectedId || render.revision !== 2 || render.supersedesVideoRenderId !== source.videoRenderId
+    || render.compositionPlanId !== plan.compositionPlanId || render.compositionPlanContentHash !== plan.contentHash
+    || result.subtitleRenderRequestId !== request.subtitleRenderRequestId || result.requestContentHash !== request.contentHash
+    || render.contentHash !== result.contentHash || render.logicalReference !== result.logicalReference || render.createdAt !== request.requestedAt
+    || render.durationMilliseconds !== source.durationMilliseconds || render.containerFormat !== result.containerFormat
+    || render.widthPixels !== result.widthPixels || render.heightPixels !== result.heightPixels) {
+    throw failure("SUBTITLE_RENDER_SCOPE_MISMATCH", "subtitleRenderRequestId", "solicitação e resultado divergentes");
+  }
+  for (const field of ["scriptId", "scriptContentHash", "voiceTrackId", "voiceTrackContentHash"]) if (plan[field] !== request[field] || track[field] !== request[field]) throw failure("SUBTITLE_RENDER_SCOPE_MISMATCH", field, "ascendência divergente");
+  if (track.stylePolicyVersion !== request.stylePolicyVersion || track.durationMilliseconds !== source.durationMilliseconds || Math.abs(result.durationMilliseconds - source.durationMilliseconds) > 34) throw failure("SUBTITLE_RENDER_SCOPE_MISMATCH", "durationMilliseconds", "política divergente");
 }
 
 function verifyPersistedColumns(render, row) {
