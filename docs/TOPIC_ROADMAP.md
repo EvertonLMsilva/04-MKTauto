@@ -50,9 +50,11 @@
 | E07-S01A | CONCLUÍDO | SubtitleTrack Contract and Persistence | PR #57 mergeado em 29/09/2026 (`5be9534`); contrato fechado e persistência append-only ligam cues ao Script e VoiceTrack exatos. |
 | E07-S01B | CONCLUÍDO | Deterministic Subtitle Cues and ASS/SRT | PR #58 mergeado em 29/09/2026 (`05268fd`); política fechada gera cues e representações ASS/SRT determinísticas em memória. |
 | E07-S01C | PR ABERTO | Physical Subtitle Rendering | PR #59; burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
-| E07-P01 | PR ABERTO | End-to-End Real Preview | PR #60; uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
-| E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
-| E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará a versão final legendada por seu hash exato. |
+| E07-P01 | CONCLUÍDO | End-to-End Real Preview | PR #60 mergeado em 30/09/2026 (`d60375f`); uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
+| E07-P02 | PENDENTE | Local Preview Runner | CLI fina permitirá ao operador executar ou retomar o pipeline real e localizar o MP4 final sem depender de testes internos. |
+| E08-Q01 | PENDENTE | Quality Control | QC automático verificará o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
+| E08-U01 | PENDENTE | Operator Preview Console | Interface web mínima permitirá iniciar e acompanhar o pipeline, reproduzir o render final, consultar QC e decidir sobre a versão exata. |
+| E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
 os **replaneja**, sem apagar suas decisões: transcrição de mídia-fonte, cortes,
@@ -690,7 +692,7 @@ quando desbloquearem diretamente uma capacidade do fluxo real do MVP. Uma nova
 abstração, persistência ou porta precisa ter consumidor imediato neste Critical
 Path; as decisões já implementadas continuam válidas e não serão reconstruídas.
 
-O caminho restante possui **7 entregas até o preview real e 9 até o MVP 1
+O caminho planejado possui **7 entregas até o preview real e 11 até o MVP 1
 DONE**:
 
 ```text
@@ -702,9 +704,29 @@ E07-C03 concluído
 → E07-S01B Deterministic Cues
 → E07-S01C Physical Rendering
 → E07-P01 End-to-End Preview        (7 entregas)
+→ E07-P02 Local Preview Runner
 → E08-Q01 Quality Control
+→ E08-U01 Operator Preview Console
 → E08-A01 Human Approval
-→ MVP 1 DONE                        (9 entregas)
+→ MVP 1 DONE                        (11 entregas)
+```
+
+No fechamento funcional, E07-P01 prova tecnicamente o pipeline; E07-P02 o torna
+executável pelo operador; E08-Q01 valida automaticamente a saída; E08-U01 torna
+o MVP utilizável visualmente; e E08-A01 fecha o ciclo humano:
+
+```text
+E07-P01 — End-to-End Real Preview
+↓
+E07-P02 — Local Preview Runner
+↓
+E08-Q01 — Quality Control
+↓
+E08-U01 — Operator Preview Console
+↓
+E08-A01 — Human Approval
+↓
+MVP 1 DONE
 ```
 
 Este replanejamento preserva Ports and Adapters, contratos versionados, TDD,
@@ -936,6 +958,23 @@ ambientes; disponibilidade, cobrança e limites dos providers externos permanece
 fora da integração local. Qualidade visual e sincronização percebida seguem para
 E08-Q01.
 
+### E07-P02 — Local Preview Runner
+
+Objetivo: fornecer um ponto de entrada operacional simples, como
+`npm run preview`, para executar o `RealPreviewService` fora dos testes internos.
+
+Aceite mínimo:
+
+- CLI/runner fino carrega `.env`, recebe projeto, versão e seleção explicitamente,
+  monta somente dependências reais existentes e inicia ou retoma a `PipelineRun`;
+- progresso resumido e erros públicos sanitizados são apresentados ao operador;
+- ao final, informa status, run ID, `VideoRender` ID, SHA-256, referência lógica e
+  caminho operacional/local seguro para abrir o MP4 reproduzível;
+- domínio e services existentes permanecem como fonte de verdade; a CLI não duplica
+  regras nem introduz arquitetura, contrato ou migration.
+
+Frontend, QC, aprovação e publicação permanecem fora deste tópico.
+
 ### E08-Q01 — Quality Control
 
 Objetivo: produzir QC determinístico sobre a versão final legendada e sua cadeia
@@ -943,17 +982,38 @@ exata antes de qualquer aprovação.
 
 Aceite mínimo:
 
-- arquivo existe, é acessível, não vazio, legível, não corrompido, possui
-  container suportado e hash consistente;
-- vídeo possui proporção, resolução, duração e timeline válidas;
-- áudio existe, tem duração coerente e faixa utilizável, sem ausência total;
-- legendas existem, respeitam duração, intervalos, safe area e texto esperado;
-- ativos possuem origem, direitos comerciais, hashes e referências válidos;
+- arquivo existe, é acessível, não vazio, legível, decodificável, não corrompido,
+  possui container suportado e SHA-256 consistente;
+- vídeo possui resolução correta, proporção 9:16, duração e timeline válidas;
+- áudio e streams esperados estão presentes e coerentes;
+- legenda está incorporada conforme a política e corresponde ao artefato esperado;
+- `MediaAsset`s possuem origem, direitos comerciais, hashes e referências válidos;
 - relatório referencia `PipelineRun`, projeto/versão, `Script`, `VoiceTrack`,
   `MediaAsset`, `CompositionPlan`, `SubtitleTrack` e `VideoRender` exatos;
-- `ERROR` bloqueia aprovação; `WARNING` permanece visível ao operador.
+- resultado e findings estruturados, rastreáveis e classificados como `PASS`,
+  `FAIL` ou `WARN`; `FAIL` bloqueia aprovação e `WARN` permanece visível.
 
-Análise acústica sofisticada permanece fora do corte inicial.
+Julgamento subjetivo avançado de criatividade e análise acústica sofisticada não
+bloqueiam o corte inicial.
+
+### E08-U01 — Operator Preview Console
+
+Objetivo: fornecer uma interface web mínima, reutilizando servidor e frontend
+existentes quando possível, para o operador usar o MVP sem CLI.
+
+Aceite mínimo:
+
+- selecionar projeto, versão e execução/seleção, iniciar o preview e acompanhar
+  `Script`, `Voice`, `Media`, `Composition`, `Subtitles`, `Preview`, `QC` e
+  `Approval` com estados equivalentes a `PENDING`, `RUNNING`, `SUCCEEDED` e
+  `FAILED` quando aplicáveis;
+- reproduzir o `VideoRender` final exato e apresentar seu ID, revisão, SHA-256 e QC;
+- permitir aprovação ou rejeição e retomada quando suportada;
+- em falha, mostrar etapa e mensagem sanitizada, sem API keys, paths privados,
+  payloads externos brutos ou stack traces sensíveis.
+
+A interface é adapter fino sobre capacidades existentes e não cria novo framework,
+arquitetura, contrato ou migration sem necessidade demonstrada.
 
 ### E08-A01 — Human Approval
 
@@ -966,7 +1026,7 @@ Aceite mínimo:
   conteúdo e data/hora;
 - estados mínimos `APPROVED` e `REJECTED`; `CHANGES_REQUESTED` entra somente se
   houver necessidade demonstrada;
-- aprovação referencia o hash exato da versão final legendada;
+- decisão referencia `VideoRender` ID, revisão, SHA-256 e QC correspondentes;
 - qualquer alteração cria nova versão e não herda a aprovação anterior;
 - histórico é append-only e aprovação não migra implicitamente entre renders;
 - efeito externo futuro só pode consumir versão aprovada.
@@ -981,12 +1041,23 @@ obrigatório no CI padrão. Toda entrega termina com `git diff --check`.
 
 ### Definition of Done do MVP 1
 
-O MVP 1 somente estará DONE quando um operador conseguir selecionar um projeto,
-iniciar uma `PipelineRun`, gerar ou selecionar pesquisa, chegar a uma ideia, gerar
-roteiro, narração física real e mídia física real autorizada, construir o
-`CompositionPlan`, renderizar vídeo vertical real, gerar legendas, assistir ao
-preview, executar QC, aprovar ou rejeitar a versão e recuperar posteriormente toda
-a cadeia por IDs/hashes.
+O MVP 1 somente estará DONE quando o operador conseguir:
+
+1. abrir a interface;
+2. selecionar projeto e versão;
+3. iniciar uma execução;
+4. acompanhar o progresso;
+5. obter voz real;
+6. obter mídia real;
+7. obter MP4 real;
+8. obter legendas;
+9. assistir ao preview;
+10. consultar QC;
+11. aprovar ou rejeitar;
+12. recuperar posteriormente a execução e seus artefatos.
+
+O mesmo pipeline também deve ser executável por CLI mediante `npm run preview` ou
+comando equivalente documentado.
 
 Toda a cadeia deve preservar run, projeto, versão, artefatos, hashes, lineage,
 direitos, custos conhecidos, histórico e idempotência. Publicação automática
@@ -1476,7 +1547,7 @@ commit `d78309f`.
 5. provar a porta OpenAI e as portas de voz, mídia e composer;
 6. após E07-C03, executar sem intercalação estrutural o Critical Path:
    E05-V03, E06-M03, E07-C04, E07-S01A, E07-S01B, E07-S01C, E07-P01,
-   E08-Q01 e E08-A01;
+   E07-P02, E08-Q01, E08-U01 e E08-A01;
 7. encerrar o MVP 1 somente com preview físico real, QC aprovado e aprovação
    humana sobre o hash exato da versão final legendada;
 8. validar um publisher oficial por vez, começando pelo acesso realmente elegível;
