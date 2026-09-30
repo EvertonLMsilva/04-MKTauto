@@ -18,3 +18,12 @@ test("orquestração não consulta latest nem promete exactly-once distribuído"
   const source = readFileSync(new URL("../src/video-composition-service.js", import.meta.url), "utf8");
   assert.doesNotMatch(source, /getLatest|findLatest|\.latest\s*\(|exactly.?once/i);
 });
+
+test("processos e paths físicos ficam somente na infraestrutura FFmpeg", () => {
+  const application = readFileSync(new URL("../src/video-composition-service.js", import.meta.url), "utf8");
+  const domain = readFileSync(new URL("../src/domain/video-composition-contracts.js", import.meta.url), "utf8");
+  const adapter = readFileSync(new URL("../src/adapters/ffmpeg-video-composer.js", import.meta.url), "utf8");
+  assert.doesNotMatch(application + domain, /node:child_process|ffprobe|spawn\s*\(|physicalPath/i);
+  assert.match(adapter, /node:child_process/);
+  assert.match(adapter, /shell:\s*false/);
+});
