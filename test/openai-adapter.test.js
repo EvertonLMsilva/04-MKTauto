@@ -60,6 +60,50 @@ test("adapter usa Responses com schema estrito e não devolve payload bruto", as
   assert.deepEqual(Object.keys(result).sort(), ["generationMetadata", "output", "telemetry"]);
 });
 
+test("adapter envia faixa alvo segura sem mutar os limites físicos", async () => {
+  const requests = [];
+  const source = input();
+  const original = structuredClone(source);
+  const adapter = new OpenAIAdapter(config(), { fetchImpl: async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return response(200, providerResponse(validOutput()));
+  } });
+
+  await adapter.generate(source);
+  await adapter.generate(source);
+
+  const contexts = requests.map((body) => JSON.parse(body.input[1].content[0].text));
+  assert.equal(contexts[0].channel.minDurationSeconds, 28);
+  assert.equal(contexts[0].channel.maxDurationSeconds, 38);
+  assert.deepEqual(contexts[1], contexts[0]);
+  assert.deepEqual(source, original);
+  assert.equal(source.projectSnapshot.channel.minDurationSeconds, 25);
+  assert.equal(source.projectSnapshot.channel.maxDurationSeconds, 45);
+});
+
+test("adapter usa fallback físico determinístico quando as margens inverteriam a faixa", async () => {
+  const requests = [];
+  const source = input();
+  source.projectSnapshot.channel.minDurationSeconds = 10;
+  source.projectSnapshot.channel.maxDurationSeconds = 11;
+  const original = structuredClone(source);
+  const adapter = new OpenAIAdapter(config(), { fetchImpl: async (_url, options) => {
+    requests.push(JSON.parse(options.body));
+    return response(200, providerResponse(validOutput()));
+  } });
+
+  await adapter.generate(source);
+  await adapter.generate(source);
+
+  const contexts = requests.map((body) => JSON.parse(body.input[1].content[0].text));
+  assert.deepEqual(
+    [contexts[0].channel.minDurationSeconds, contexts[0].channel.maxDurationSeconds],
+    [10, 11],
+  );
+  assert.deepEqual(contexts[1], contexts[0]);
+  assert.deepEqual(source, original);
+});
+
 test("adapter classifica resposta inválida, falhas HTTP, timeout e cancelamento sem vazar detalhes", async () => {
   const invalid = new OpenAIAdapter(config(), { fetchImpl: async () => response(200, providerResponse({ secret: "private" })) });
   await assert.rejects(invalid.generate(input()), adapterError("PROVIDER_INVALID_RESPONSE", "response"));

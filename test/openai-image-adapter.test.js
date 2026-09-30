@@ -170,7 +170,7 @@ function input(overrides = {}) {
     ...overrides,
   };
 }
-function providerResponse(bytes, usage) { return { created: 1, output_format: "png", quality: "medium", size: "1152x2048", data: [{ b64_json: bytes.toString("base64") }], ...(usage ? { usage } : {}) }; }
+function providerResponse(bytes, usage) { return { created: 1, output_format: "png", quality: "medium", size: "1152x2048", data: [{ b64_json: bytes.toString("base64"), generation_id: "generation_test" }], ...(usage ? { usage } : {}) }; }
 function jsonResponse(value) { return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json; charset=utf-8" } }); }
 function png({ width = 1152, height = 2048 } = {}) {
   const row = width * 3 + 1;

@@ -6,6 +6,7 @@ import {
   subtitleRenderRequestHash, validateSubtitleRenderRequest,
   validateSubtitleRenderResult,
 } from "../src/domain/subtitle-render-contracts.js";
+import { SUBTITLE_STYLE_POLICY_VERSION } from "../src/domain/subtitle-track-contracts.js";
 
 test("contratos de render físico são fechados, versionados e reproduzíveis", () => {
   const value = request();
@@ -36,7 +37,7 @@ function request(overrides = {}) {
     subtitleTrackId: "subtitle_track_001", subtitleTrackContentHash: "c".repeat(64),
     scriptId: "script_001", scriptContentHash: "d".repeat(64),
     voiceTrackId: "voice_track_001", voiceTrackContentHash: "e".repeat(64),
-    stylePolicyVersion: "subtitle-style-policy/1.0.0", renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION,
+    stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION,
     requestedAt: "2026-09-29T12:00:00.000Z", contentHash: "0".repeat(64), ...overrides,
   };
   value.subtitleRenderRequestId = `subtitle_render:${subtitleRenderIdentityHash(value)}`;

@@ -357,7 +357,11 @@ deterministicamente para `script/1.0.0`; nenhuma referência textual é enviada 
 provider e nenhuma consulta usa `latest`.
 
 O `OpenAIAdapter` usa Responses com saída estruturada, política pública
-`script-generation-prompt/1.0.0`, timeout e cancelamento. Credencial e modelo
+`script-generation-prompt/1.1.0`, timeout e cancelamento. A faixa enviada ao
+modelo é um alvo conservador derivado sem mutação dos limites físicos: `25–45s`
+vira `28–38s`, com fallback determinístico para a faixa física quando as margens
+não couberem. O serviço e o Voice continuam validando o intervalo físico original.
+Credencial e modelo
 vêm do ambiente; somente provider, modelo, tarefa, versão da política, hash e
 configuração pública sanitizada entram na linhagem. Prompt, mensagens, payload
 e resposta brutos não são persistidos ou registrados.
@@ -886,10 +890,14 @@ aprovou 434 testes e ignorou 4 integrações/smokes opt-in; `git diff --check`
 passou.
 
 Riscos residuais: timings são proporcionais ao texto, não alinhamento acústico;
-palavras indivisíveis podem exceder o alvo visual de 42 caracteres; ASS reduz a
+palavras indivisíveis podem exceder o alvo visual original de 42 caracteres; ASS reduz a
 representação para centésimos, preservando a timeline canônica em milissegundos.
 Renderização física, qualidade visual e sincronização observada permanecem para
 E07-S01C e E08-Q01.
+
+A correção operacional posterior evolui a política visual para
+`subtitle-style-policy/1.1.0`, reduz o alvo para 34 caracteres por linha e ajusta
+fonte e margens do ASS sem alterar a timeline canônica.
 
 ### E07-S01C — Physical Subtitle Rendering
 
@@ -1112,10 +1120,13 @@ confirmação manual de direitos da configuração de imagem, assume a autoriza�
 operacional definida para o produto e registra dinamicamente a data UTC; 501 de
 507 testes passaram e 6 integrações opt-in foram ignoradas. O PR #71 foi
 mergeado. A correção visual seguinte mantém etapas ociosas em `PENDING`, usa
-`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso. O mesmo
-PR amplia o parser WAV para chunks auxiliares e tamanhos de streaming válidos,
-mantém a política PCM e preserva códigos públicos de falha do provider; 505 de
-511 testes passaram e 6 integrações opt-in foram ignoradas. O PR #72 foi aberto.
+`RUNNING` somente enquanto o job está ativo e interrompe polling ocioso; o PR
+#72 foi mergeado. A correção operacional posterior amplia o parser WAV para
+chunks auxiliares e tamanhos de streaming válidos, preserva códigos públicos de
+falha do provider, aceita `generation_id` na resposta de imagem, decodifica a
+identidade opaca do vídeo, melhora a legibilidade das legendas e usa a faixa alvo
+conservadora do roteiro sem alterar os limites físicos. A suíte completa aprovou
+509 de 515 testes e ignorou 6 integrações opt-in; `git diff --check` passou.
 
 ### E08-A01 — Human Approval
 

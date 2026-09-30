@@ -5,7 +5,7 @@ export const SUBTITLE_STYLE_POLICY = Object.freeze({
   version: SUBTITLE_STYLE_POLICY_VERSION,
   maximumWordsPerCue: 12,
   maximumLinesPerCue: 2,
-  maximumCharactersPerLine: 42,
+  maximumCharactersPerLine: 34,
   minimumCueDurationMilliseconds: 600,
   gapMilliseconds: 80,
   tailMilliseconds: 120,
@@ -76,7 +76,7 @@ export function serializeSubtitleAss(value) {
     "[Script Info]", "ScriptType: v4.00+", "PlayResX: 1080", "PlayResY: 1920", "WrapStyle: 2", "ScaledBorderAndShadow: yes", "",
     "[V4+ Styles]",
     "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding",
-    "Style: Default,Arial,64,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,80,80,140,1", "",
+    "Style: Default,Arial,56,&H00FFFFFF,&H00FFFFFF,&H00000000,&H80000000,-1,0,0,0,100,100,0,0,1,4,0,2,140,140,160,1", "",
     "[Events]", "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
   ];
   const events = track.cues.map((cue) => {

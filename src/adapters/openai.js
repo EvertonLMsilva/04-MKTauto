@@ -129,6 +129,7 @@ function emptyUsage() {
 }
 
 function requestBody(input, config) {
+  const targetDuration = targetDurationRange(input.projectSnapshot.channel);
   const context = {
     idea: { title: input.idea.title, editorialAngle: input.idea.editorialAngle },
     project: {
@@ -139,8 +140,8 @@ function requestBody(input, config) {
     channel: {
       format: input.projectSnapshot.channel.format,
       aspectRatio: input.projectSnapshot.channel.aspectRatio,
-      minDurationSeconds: input.projectSnapshot.channel.minDurationSeconds,
-      maxDurationSeconds: input.projectSnapshot.channel.maxDurationSeconds,
+      minDurationSeconds: targetDuration.minDurationSeconds,
+      maxDurationSeconds: targetDuration.maxDurationSeconds,
       editorialStyle: input.projectSnapshot.channel.editorialStyle,
       visualStyle: input.projectSnapshot.channel.visualStyle,
       voiceStyle: input.projectSnapshot.channel.voiceStyle,
@@ -156,6 +157,16 @@ function requestBody(input, config) {
     ],
     text: { format: { type: "json_schema", name: "script_generation", strict: true, schema: SCRIPT_GENERATION_POLICY.outputSchema } },
   };
+}
+
+function targetDurationRange(channel) {
+  const physicalMin = channel.minDurationSeconds;
+  const physicalMax = channel.maxDurationSeconds;
+  const targetMin = Math.max(physicalMin, Math.ceil(physicalMin * 1.1));
+  const targetMax = Math.floor(physicalMax * 0.85);
+  return targetMin <= targetMax
+    ? { minDurationSeconds: targetMin, maxDurationSeconds: targetMax }
+    : { minDurationSeconds: physicalMin, maxDurationSeconds: physicalMax };
 }
 
 function outputText(body) {

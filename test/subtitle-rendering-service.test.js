@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { SubtitleRenderingError, SubtitleRenderingService } from "../src/subtitle-rendering-service.js";
 import { SUBTITLE_RENDER_POLICY_VERSION, SUBTITLE_RENDER_REQUEST_VERSION, subtitleRenderIdentityHash, subtitleRenderRequestHash } from "../src/domain/subtitle-render-contracts.js";
+import { SUBTITLE_STYLE_POLICY_VERSION } from "../src/domain/subtitle-track-contracts.js";
 
 test("serviço revalida cadeia exata e cria VideoRender revisão 2 append-only", async () => {
   const repository = fakeRepository(); const renderer = fakeRenderer();
@@ -42,7 +43,7 @@ function fakeRepository() {
     createdAt: "2026-09-29T00:00:00.000Z", revision: 1, supersedesVideoRenderId: null };
   const track = { subtitleTrackId: "subtitle_track_001", contentHash: "c".repeat(64), pipelineRunId: plan.pipelineRunId, projectId: plan.projectId, projectVersion: 1,
     scriptId: plan.scriptId, scriptContentHash: plan.scriptContentHash, voiceTrackId: plan.voiceTrackId, voiceTrackContentHash: plan.voiceTrackContentHash,
-    durationMilliseconds: 10000, stylePolicyVersion: "subtitle-style-policy/1.0.0", cues: [{ position: 1, text: "Teste", startMilliseconds: 0, endMilliseconds: 9880 }] };
+    durationMilliseconds: 10000, stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, cues: [{ position: 1, text: "Teste", startMilliseconds: 0, endMilliseconds: 9880 }] };
   return { prior: null, writes: [], plan, video, track,
     run: { pipelineRunId: plan.pipelineRunId, projectId: plan.projectId, projectVersion: 1 },
     videoLineage: { inputs: [{ position: 1, kind: "INTERNAL_ARTIFACT", inputId: plan.compositionPlanId, contentHash: plan.contentHash }] },
@@ -58,7 +59,7 @@ function request(repository) { const value = { schemaVersion: SUBTITLE_RENDER_RE
   videoRenderId: repository.video.videoRenderId, videoRenderContentHash: "a".repeat(64), compositionPlanId: repository.plan.compositionPlanId,
   compositionPlanContentHash: repository.plan.contentHash, subtitleTrackId: repository.track.subtitleTrackId, subtitleTrackContentHash: "c".repeat(64),
   scriptId: repository.plan.scriptId, scriptContentHash: repository.plan.scriptContentHash, voiceTrackId: repository.plan.voiceTrackId,
-  voiceTrackContentHash: repository.plan.voiceTrackContentHash, stylePolicyVersion: "subtitle-style-policy/1.0.0", renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION,
+  voiceTrackContentHash: repository.plan.voiceTrackContentHash, stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION,
   requestedAt: "2026-09-29T12:00:00.000Z", contentHash: "0".repeat(64) };
   value.subtitleRenderRequestId = `subtitle_render:${subtitleRenderIdentityHash(value)}`; value.contentHash = subtitleRenderRequestHash(value); return value; }
 function fakeRenderer() { return { calls: [], async render(input) { this.calls.push(input); return { schemaVersion: "subtitle-render-result/1.0.0", subtitleRenderRequestId: input.request.subtitleRenderRequestId,
