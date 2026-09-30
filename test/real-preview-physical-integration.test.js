@@ -5,12 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FfmpegVideoComposer } from "../src/adapters/ffmpeg-video-composer.js";
 import { FfmpegSubtitleRenderer } from "../src/adapters/ffmpeg-subtitle-renderer.js";
+import { FfmpegQualityInspector } from "../src/adapters/ffmpeg-quality-inspector.js";
 import { LocalCompositionReferenceResolver } from "../src/adapters/local-composition-reference-resolver.js";
 import { LocalPreviewVerifier } from "../src/adapters/local-preview-verifier.js";
 import { compositionPlanContentHash, validateCompositionPlan } from "../src/domain/composition-plan-contracts.js";
 import { REAL_PREVIEW_REQUEST_VERSION, realPreviewRequestHash } from "../src/domain/real-preview-contracts.js";
 import { subtitleTrackContentHash } from "../src/domain/subtitle-track-contracts.js";
 import { RealPreviewService } from "../src/real-preview-service.js";
+import { evaluateQualityControl } from "../src/quality-control-service.js";
 import { png, sha256, wav } from "../test-support/physical-fixtures.js";
 
 test("uma chamada produz preview físico real com áudio, mídia, vídeo e legendas", {
@@ -44,6 +46,12 @@ test("uma chamada produz preview físico real com áudio, mídia, vídeo e legen
     const finalPath = join(roots.renderRoot, "sha256", result.previewVideoRender.contentHash.slice(0, 2), `${result.previewVideoRender.contentHash}.mp4`);
     assert.equal(result.previewVideoRender.revision, 2); assert.equal(result.previewVideoRender.contentHash, sha256(readFileSync(finalPath)));
     assert.equal(result.sourceVideoRender.id, source.videoRenderId); assert.equal(run.state, "SUCCEEDED");
+    const inspector = new FfmpegQualityInspector({ ffmpegPath: videoConfig.ffmpegPath, ffprobePath: videoConfig.ffprobePath, maxOutputBytes: videoConfig.maxOutputBytes, maxMediaBytes: videoConfig.maxImageBytes, timeoutMs: videoConfig.timeoutMs, maxLogBytes: videoConfig.maxLogBytes }, { referenceResolver: resolver });
+    const facts = await inspector.inspect({ videoRender: preview, mediaAssets: [media] });
+    const artifacts = [script, voice, media, plan, source, track, preview];
+    const lineages = new Map(artifacts.map((artifact) => { const id = artifact.videoRenderId ?? artifact.subtitleTrackId ?? artifact.compositionPlanId ?? artifact.mediaAssetId ?? artifact.voiceTrackId ?? artifact.scriptId; return [id, physicalLineage(id, { script, voice, media, plan, source, track, preview })]; }));
+    const findings = evaluateQualityControl({ run, script, voiceTrack: voice, mediaAssets: [media], compositionPlan: plan, sourceVideoRender: source, subtitleTrack: track, videoRender: preview, lineages, facts, maxOutputBytes: videoConfig.maxOutputBytes });
+    assert.equal(findings.some(({ status }) => status === "FAIL"), false);
   } finally { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); }
 });
 
@@ -63,5 +71,6 @@ function physicalLineage(id, { script, voice, media, plan, source, track, previe
     ...(preview && plan && source && track ? [[preview.videoRenderId, preview.contentHash, [internal(1, plan.compositionPlanId, plan.contentHash), internal(2, source.videoRenderId, source.contentHash), internal(3, track.subtitleTrackId, track.contentHash)]]] : []),
   ];
   const entry = entries.find(([entryId]) => entryId === id); if (!entry) return null;
-  return { artifactId: id, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, contentHash: entry[1], inputs: entry[2] };
+  const generationMetadata = id === preview?.videoRenderId ? { taskType: "subtitle-burn-in", publicConfiguration: { renderPolicyVersion: "ffmpeg-subtitle-render-policy/1.0.0" } } : null;
+  return { artifactId: id, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, contentHash: entry[1], inputs: entry[2], generationMetadata };
 }

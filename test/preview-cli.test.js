@@ -27,13 +27,20 @@ test("CLI executa seleção explícita e informa nova execução com referência
     localPath: fixture.localPath,
     logicalReference: fixture.preview.logicalReference,
     pipelineRunId: fixture.run.pipelineRunId,
+    qualityControl: {
+      approvalBlocked: false,
+      findings: [{ code: "VIDEO_SHA256_MATCH", status: "PASS" }],
+      reportId: "quality_control:fixture",
+      result: "PASS",
+    },
     sha256: fixture.preview.contentHash,
     status: "SUCCEEDED",
     videoRenderId: fixture.preview.id,
   });
-  assert.deepEqual(progress.map(({ stage }) => stage), ["VALIDATING", "PREPARING", "EXECUTING", "COMPLETED"]);
+  assert.deepEqual(progress.map(({ stage }) => stage), ["VALIDATING", "PREPARING", "EXECUTING", "QUALITY_CONTROL", "COMPLETED"]);
   assert.equal(fixture.calls.resume.length, 1);
   assert.equal(fixture.calls.execute.length, 1);
+  assert.equal(fixture.calls.qualityControl.length, 1);
   assert.equal(fixture.calls.close, 1);
   assert.equal(fixture.calls.execute[0].ideaSelectionId, fixture.selection.ideaSelectionId);
   assert.equal(fixture.calls.execute[0].contentHash.length, 64);
@@ -47,6 +54,7 @@ test("CLI distingue retomada e reutilização de estado terminal", async () => {
     assert.equal(result.exitCode, 0, result.stderr);
     assert.equal(JSON.parse(result.stdout).executionMode, expected);
     assert.equal(fixture.calls.execute.length, 1);
+    assert.equal(fixture.calls.qualityControl.length, 1);
   }
 });
 
@@ -82,6 +90,7 @@ test("runtime compõe somente adapters e services reais e fecha repositórios", 
     const runtime = createPreviewRuntime({ database, env: runtimeEnv(root) });
     assert.equal(typeof runtime.pipelineRuns.resume, "function");
     assert.equal(typeof runtime.previews.execute, "function");
+    assert.equal(typeof runtime.qualityControl.inspect, "function");
     assert.equal(typeof runtime.selections.get, "function");
     assert.equal(typeof runtime.lookup.getScript, "function");
     assert.equal(typeof runtime.referenceResolver.resolveVideo, "function");
@@ -103,7 +112,7 @@ function scenario({ state = "RUNNING", script = null, selection: selectionOverri
   const run = { pipelineRunId: selection.pipelineRunId, projectId: "project_e07", projectVersion: 1, state, startedAt: "2026-09-30T14:00:00.000Z" };
   const preview = { id: "video_render:subtitle:preview", contentHash: "f".repeat(64), logicalReference: `render:sha256_${"f".repeat(64)}` };
   const localPath = join(root, "render", `${preview.contentHash}.mp4`);
-  const calls = { resume: [], execute: [], close: 0 };
+  const calls = { resume: [], execute: [], qualityControl: [], close: 0 };
   const runtime = {
     selections: { get: () => selection },
     pipelineRuns: {
@@ -112,6 +121,7 @@ function scenario({ state = "RUNNING", script = null, selection: selectionOverri
     },
     lookup: { getScript: () => script },
     previews: { execute: async (value) => { calls.execute.push(value); run.state = "SUCCEEDED"; return { previewVideoRender: preview }; } },
+    qualityControl: { inspect: async (value) => { calls.qualityControl.push(value); return { qualityControlReportId: "quality_control:fixture", result: "PASS", approvalBlocked: false, findings: [{ code: "VIDEO_SHA256_MATCH", status: "PASS" }] }; } },
     referenceResolver: { resolveVideo: async () => localPath },
     close: () => { calls.close += 1; rmSync(root, { recursive: true, force: true }); },
   };
