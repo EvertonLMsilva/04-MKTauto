@@ -45,8 +45,8 @@
 | E07-C03 | CONCLUÍDO | Porta de composer e orquestração idempotente de render | PR #52 mergeado em 29/09/2026 (`a3fcf32`); `video-composition-request/1.0.0`, porta `VideoComposer`, migração SQLite 022 e persistência transacional de solicitação, `VideoRender` e linhagem; 373 testes passaram e 1 smoke opt-in foi ignorado. |
 | V10 | CONCLUÍDO | Critical Path explícito do MVP 1 | PR #53 mergeado em 29/09/2026 (`062d11b`); replanejamento documental liga E07-C03 ao primeiro preview físico real, QC e aprovação humana sem enfraquecer a arquitetura. |
 | E05-V03 | CONCLUÍDO | Real Voice Adapter | PR #54 mergeado em 29/09/2026 (`e6e7c42`); OpenAI Speech API produz WAV físico validado atrás da porta existente com voz `marin` e storage content-addressed. |
-| E06-M03 | PR ABERTO | Real Media Adapter | PR #55 aberto; OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
-| E07-C04 | PENDENTE | Real VideoComposer / FFmpeg Adapter | O plano existente produzirá MP4 vertical físico real por adapter de infraestrutura. |
+| E06-M03 | CONCLUÍDO | Real Media Adapter | PR #55 mergeado em 29/09/2026 (`1a28d5d`); OpenAI Image API produz PNG 9:16 físico validado, com storage content-addressed, direitos explícitos e custo somente sob evidência completa. |
+| E07-C04 | PR ABERTO | Real VideoComposer / FFmpeg Adapter | PR #56 aberto; FFmpeg/FFprobe compõem WAV e PNG exatos em MP4 vertical físico, inspecionado e armazenado por conteúdo. |
 | E07-S01 | PENDENTE | SubtitleTrack & Rendering | Legendas reais produzirão a versão final legendada candidata ao preview. |
 | E07-P01 | PENDENTE | End-to-End Real Preview | Uma `PipelineRun` completa produzirá preview físico real e rastreável. |
 | E08-Q01 | PENDENTE | Quality Control | QC verificará arquivo, vídeo, áudio, legendas, mídia, direitos e rastreabilidade. |
@@ -991,7 +991,45 @@ rollback SQLite posterior à promoção pode deixar objeto content-addressed
 local pode gerar outra imagem e outro custo; não há garantia distribuída de
 `exactly-once`. Os diretórios locais não rastreados `data/` e `templates/`
 foram preservados e não integram a entrega.
-O PR #55 foi aberto em 29/09/2026 (`c0e9b75`).
+O PR #55 foi mergeado em 29/09/2026 (`1a28d5d`).
+
+### E07-C04 — Real VideoComposer / FFmpeg Adapter
+
+A política `ffmpeg-video-policy/1.0.0` produz exclusivamente MP4 `1080x1920`
+com CFR `30/1`, H.264 `libx264` High level 4.0, CRF 20, preset medium,
+`yuv420p`, GOP 60 sem scene-cut e AAC-LC mono 48 kHz/192 kbps. FFmpeg e
+FFprobe permanecem na infraestrutura, executados por array de argumentos com
+`shell: false`; filtros, codecs e limites vêm somente da política fechada.
+
+Para o frame `n`, o PTS é `n/30`. O frame usa o segmento que contém esse
+timestamp e a troca visual ocorre no primeiro frame cujo PTS seja maior ou
+igual ao início do novo segmento. O container e o áudio terminam na duração
+física da voz; o stream CFR de vídeo pode terminar menos de um frame antes.
+
+Um catálogo dedicado recupera `VoiceTrack` e `MediaAsset` pelos IDs exatos sem
+ampliar `CompositionPlanRepository`. O resolver aceita somente as referências
+opacas conhecidas, confina arquivos por `lstat`/`realpath` aos roots autorizados
+e bloqueia traversal, symlink e ausência. Originais e cópias consumidas são
+revalidados por propriedades e SHA-256. O staging privado fica sob o
+`renderRoot`, no mesmo filesystem, e o MP4 só é promovido por hard-link depois
+de decode integral, inspeção FFprobe e hash dos bytes reais. Reuso exige objeto
+existente íntegro; conflito nunca sobrescreve conteúdo. Nenhum `CostEvent` é
+criado para processamento local.
+
+Evidência: 15 testes focados cobrem política, porta, catálogo, fake,
+isolamento, cadeia exata, direitos, formatos, referências, symlink, hashes das
+cópias, timeline, argumentos allowlisted, `shell: false`, inspeção, streams,
+timeout, cancelamento, logs, cleanup e storage. A integração local opt-in com
+FFmpeg 8.1.1 produziu duas vezes o mesmo MP4 e o mesmo SHA-256. A suíte completa
+registrou 406 testes aprovados e 4 integrações/smokes ignorados por padrão;
+`git diff --check` passou. Não houve migration nem alteração de contrato.
+
+Riscos residuais: trocas visuais são quantizadas à grade de 30 fps;
+reprodutibilidade byte a byte depende da mesma política e toolchain; falha
+SQLite depois da promoção pode deixar MP4 content-addressed órfão, nunca
+`VideoRender` falso; roots locais privados ainda dependem das permissões do
+host. `data/` e `templates/` foram preservados. O PR #56 foi aberto em
+29/09/2026 (`30d0267`).
 
 ## Primeiro épico — E01 Project Configuration
 
