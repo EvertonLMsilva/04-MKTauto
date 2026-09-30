@@ -5,14 +5,18 @@ import { loadConfig } from "./config.js";
 import { runFixture, runLive } from "./discovery.js";
 import { discoverApprovedSources } from "./source-discovery.js";
 import { RunStore } from "./store.js";
+import { OperatorPreviewConsole } from "./operator-preview-console.js";
+import { handleOperatorPreviewRequest } from "./operator-preview-http.js";
 
 const publicDir = new URL("../public/", import.meta.url);
 const config = await loadConfig();
 const store = new RunStore();
+const operatorPreview = new OperatorPreviewConsole();
 const port = Number(process.env.PORT || 3000);
 
 const server = createServer(async (request, response) => {
   try {
+    if (await handleOperatorPreviewRequest(request, response, operatorPreview)) return;
     if (request.method === "GET" && request.url === "/api/health") {
       return json(response, 200, {
         ok: true,
@@ -111,6 +115,7 @@ async function readJson(request) {
 
 function shutdown() {
   server.close(() => {
+    operatorPreview.close();
     store.close();
     process.exit(0);
   });

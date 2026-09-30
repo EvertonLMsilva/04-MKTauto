@@ -52,8 +52,8 @@
 | E07-S01C | CONCLUÍDO | Physical Subtitle Rendering | PR #59 mergeado em 30/09/2026 (`8039974`); burn-in FFmpeg produz `VideoRender` revisão 2 append-only, verificado por FFprobe e armazenado por conteúdo. |
 | E07-P01 | CONCLUÍDO | End-to-End Real Preview | PR #60 mergeado em 30/09/2026 (`d60375f`); uma `PipelineRun` explícita produz ou retoma o preview físico revisão 2, revalida lineage e confirma seu SHA-256 físico. |
 | E07-P02 | CONCLUÍDO | Local Preview Runner | PR #62 mergeado em 30/09/2026 (`9197add`); `npm run preview` executa ou retoma o pipeline real, distingue execução nova, retomada ou terminal reutilizada e apresenta a referência validada do MP4 final. |
-| E08-Q01 | PR ABERTO | Quality Control | PR #63; QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
-| E08-U01 | PENDENTE | Operator Preview Console | Interface web mínima permitirá iniciar e acompanhar o pipeline, reproduzir o render final, consultar QC e decidir sobre a versão exata. |
+| E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
+| E08-U01 | PR ABERTO | Operator Preview Console | PR #64; interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | PENDENTE | Human Approval | O operador aprovará ou rejeitará o `VideoRender` final identificado por ID, revisão, SHA-256 e QC correspondentes. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1044,12 +1044,31 @@ Aceite mínimo:
   `Approval` com estados equivalentes a `PENDING`, `RUNNING`, `SUCCEEDED` e
   `FAILED` quando aplicáveis;
 - reproduzir o `VideoRender` final exato e apresentar seu ID, revisão, SHA-256 e QC;
-- permitir aprovação ou rejeição e retomada quando suportada;
+- permitir retomada quando suportada e preparar a superfície de aprovação sem
+  registrar aprovação ou rejeição, que pertencem a E08-A01;
 - em falha, mostrar etapa e mensagem sanitizada, sem API keys, paths privados,
   payloads externos brutos ou stack traces sensíveis.
 
 A interface é adapter fino sobre capacidades existentes e não cria novo framework,
 arquitetura, contrato ou migration sem necessidade demonstrada.
+
+Implementação: o servidor HTTP existente ganhou rotas finas para catálogo,
+execução, estado e streaming do MP4. Projeto, versão, `PipelineRun` e seleção são
+sempre explícitos. A execução reutiliza o mesmo caso de uso compartilhado pela
+CLI e pelo console; refresh reconstrói as sete etapas a partir dos artefatos
+persistidos. O endpoint de vídeo recebe somente `VideoRender` ID e SHA-256,
+carrega a referência lógica persistida e a resolve pelo storage seguro. O QC é
+exibido apenas quando ID e hash correspondem ao mesmo render final.
+
+Evidências: testes cobrem catálogo, retomada concorrente idempotente, reconstrução
+de etapas, vínculo `VideoRender`/QC, `PASS`/`WARN`/`FAIL`, bloqueio visual de
+`FAIL`, streaming parcial seguro e sanitização de falhas. A suíte completa passou
+com 483 testes e 6 integrações opt-in ignoradas; `git diff --check` passou.
+
+Risco residual: reiniciar o processo interrompe uma chamada externa em andamento;
+os artefatos já persistidos continuam recuperáveis e o retry retoma o pipeline
+pelas identidades determinísticas existentes.
+O PR #64 foi aberto em 30/09/2026.
 
 ### E08-A01 — Human Approval
 

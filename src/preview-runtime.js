@@ -84,6 +84,40 @@ export function createPreviewRuntime({ database, env = process.env }) {
   }
 }
 
+export function createPreviewReadRuntime({ database, env = process.env }) {
+  const repositories = [];
+  try {
+    const videoRepository = repository(QualityControlRepository, database, repositories);
+    const voiceRepository = repository(VoiceTrackRepository, database, repositories);
+    const subtitleRepository = repository(SubtitleTrackRepository, database, repositories);
+    return Object.freeze({
+      catalog: Object.freeze({
+        listProjects: () => videoRepository.listProjects(),
+        listProjectVersions: (projectId) => videoRepository.listProjectVersions(projectId),
+        listRunsByProjectVersion: (projectId, version) => videoRepository.listRunsByProjectVersion(projectId, version),
+        listSelectionsByPipelineRun: (runId) => videoRepository.listSelectionsByPipelineRun(runId),
+        listScriptsByPipelineRun: (runId) => videoRepository.listScriptsByPipelineRun(runId),
+        listVoiceTracksByPipelineRun: (runId) => voiceRepository.listVoiceTracksByPipelineRun(runId),
+        listMediaAssetsByPipelineRun: (runId) => videoRepository.listMediaAssetsByPipelineRun(runId),
+        listCompositionPlansByPipelineRun: (runId) => videoRepository.listCompositionPlansByPipelineRun(runId),
+        listSubtitleTracksByPipelineRun: (runId) => subtitleRepository.listSubtitleTracksByPipelineRun(runId),
+        listVideoRendersByPipelineRun: (runId) => videoRepository.listVideoRendersByPipelineRun(runId),
+        findQualityControlReport: (policy, videoId, hash) => videoRepository.findQualityControlReport(policy, videoId, hash),
+        getRun: (runId) => videoRepository.getRun(runId),
+        getSelection: (selectionId) => videoRepository.getSelection(selectionId),
+        getVideoRender: (videoId) => videoRepository.getVideoRender(videoId),
+      }),
+      referenceResolver: Object.freeze({
+        resolveVideo: (reference) => new LocalCompositionReferenceResolver(loadFfmpegVideoConfig(env)).resolveVideo(reference),
+      }),
+      close: () => closeAll(repositories),
+    });
+  } catch (caught) {
+    closeAll(repositories);
+    throw caught;
+  }
+}
+
 function repository(Type, database, repositories) {
   const value = new Type(database);
   repositories.push(value);

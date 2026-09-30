@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { runPreviewCli } from "../src/preview-cli.js";
-import { createPreviewRuntime } from "../src/preview-runtime.js";
+import { createPreviewReadRuntime, createPreviewRuntime } from "../src/preview-runtime.js";
 
 test("package expõe npm run preview com carregamento opcional do .env", () => {
   const packageJson = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8"));
@@ -98,6 +98,16 @@ test("runtime compõe somente adapters e services reais e fecha repositórios", 
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("runtime de leitura recupera catálogo sem exigir providers ou FFmpeg", () => {
+  const root = mkdtempSync(join(tmpdir(), "mktauto-preview-read-runtime-"));
+  try {
+    const runtime = createPreviewReadRuntime({ database: join(root, "mktauto.sqlite"), env: {} });
+    assert.deepEqual(runtime.catalog.listProjects(), []);
+    assert.equal(typeof runtime.referenceResolver.resolveVideo, "function");
+    runtime.close();
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 function args(database) {

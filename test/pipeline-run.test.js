@@ -32,6 +32,14 @@ test("inicia, recupera e retoma a mesma PipelineRun sem duplicar registros", () 
   });
 });
 
+test("lista execuções somente pelo projeto e versão explícitos", () => {
+  withService(({ service, repository }) => {
+    service.start(request());
+    assert.deepEqual(repository.listRunsByProjectVersion("project_curiosidades_ia", 1).map(({ pipelineRunId }) => pipelineRunId), ["run_fnd01_001"]);
+    assert.deepEqual(repository.listRunsByProjectVersion("project_curiosidades_ia", 2), []);
+  });
+});
+
 test("reutilização incompatível de pipelineRunId falha antes de produzir efeitos", () => {
   withService(({ service, repository, path }) => {
     service.start(request());

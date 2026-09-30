@@ -94,6 +94,18 @@ export class ProjectRepository {
     });
   }
 
+  listProjects() {
+    return this.db.prepare("SELECT id FROM projects ORDER BY updated_at DESC, id")
+      .all().map(({ id }) => this.getProject(id));
+  }
+
+  listProjectVersions(projectId) {
+    requireProjectId(projectId);
+    return this.db.prepare(`SELECT version FROM project_snapshots
+      WHERE project_id = ? ORDER BY version`).all(projectId)
+      .map(({ version }) => this.get(projectId, version));
+  }
+
   archive(projectId, { expectedVersion, archivedAt = new Date().toISOString() } = {}) {
     requireProjectId(projectId);
     requireExpectedVersion(expectedVersion);
