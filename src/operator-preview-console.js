@@ -28,7 +28,7 @@ export class OperatorPreviewConsole {
     return this.#read(({ catalog }) => {
       const projects = catalog.listProjects().map((item) => ({ id: item.id, name: item.snapshot.project.name, latestVersion: item.latestVersion, archived: item.archivedAt !== null }));
       const versions = projectId ? catalog.listProjectVersions(projectId).map(({ project }) => ({ projectId: project.id, version: project.version, name: project.name })) : [];
-      const runs = projectId && projectVersion ? catalog.listRunsByProjectVersion(projectId, projectVersion).map((run) => ({ pipelineRunId: run.pipelineRunId, state: run.state, startedAt: run.startedAt, completedAt: run.completedAt })) : [];
+      const runs = projectId && projectVersion ? catalog.listRunsByProjectVersion(projectId, projectVersion).map((run) => ({ pipelineRunId: run.pipelineRunId, state: run.state, startedAt: run.startedAt, completedAt: run.completedAt, error: run.error ? { code: safeToken(run.error.code), field: safeField(run.error.field) } : null })) : [];
       const selections = pipelineRunId ? catalog.listSelectionsByPipelineRun(pipelineRunId).map((item) => ({ selectionId: item.ideaSelectionId, revision: item.revision, decision: item.decision, decidedAt: item.decidedAt })) : [];
       const candidates = pipelineRunId ? catalog.listIdeasByPipelineRun(pipelineRunId).map(candidateView) : [];
       return Object.freeze({ projects, versions, runs, candidates, selections });

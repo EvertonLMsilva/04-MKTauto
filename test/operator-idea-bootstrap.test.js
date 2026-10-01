@@ -26,8 +26,16 @@ test("retry com candidatos persistidos não repete Research nem provider", async
 test("Research sem evidência não cria candidatos nem seleção automática", async () => {
   const calls = []; const fixture = dependencies(calls); fixture.shortlist = () => ({ artifactId: "research-shortlist:empty", orderedCandidates: [] });
   await assert.rejects(() => new OperatorIdeaBootstrapService(fixture).start(request), (error) => error.code === "IDEA_RESEARCH_EMPTY");
+  assert.deepEqual(fixture.seen.failure, { pipelineRunId: request.pipelineRunId, completedAt: "2026-09-30T12:01:00.000Z", error: { code: "IDEA_RESEARCH_EMPTY", field: "researchShortlist" } });
   assert.equal(fixture.seen.submission, undefined);
   assert.equal("selections" in fixture, false);
+});
+
+test("falha do provider terminaliza a execução sem expor detalhes privados", async () => {
+  const calls = []; const fixture = dependencies(calls);
+  fixture.research = async () => { throw Object.assign(new Error("C:\\private\\ollama"), { code: "OLLAMA_RETRY_EXHAUSTED", field: "provider" }); };
+  await assert.rejects(() => new OperatorIdeaBootstrapService(fixture).start(request), /private/);
+  assert.deepEqual(fixture.seen.failure, { pipelineRunId: request.pipelineRunId, completedAt: "2026-09-30T12:01:00.000Z", error: { code: "OLLAMA_RETRY_EXHAUSTED", field: "provider" } });
 });
 
 test("bootstrap registra Research e Idea Generation na fundação por hashes explícitos", async () => {
@@ -42,10 +50,10 @@ test("bootstrap registra Research e Idea Generation na fundação por hashes exp
 
 function dependencies(calls, prior = []) {
   const seen = {};
-  const run = { pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: 1, startedAt: request.startedAt, projectSnapshot: { project: {}, channel: { publishing: { timezone: "America/Sao_Paulo" } } } };
+  const run = { pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: 1, state: "RUNNING", startedAt: request.startedAt, projectSnapshot: { project: {}, channel: { publishing: { timezone: "America/Sao_Paulo" } } } };
   const shortlist = { artifactId: "research-shortlist:operator", contentHash: "b".repeat(64), orderedCandidates: [{ candidate: { id: "trend_candidate_1" } }] };
   return { seen,
-    pipelineRuns: { start: () => { calls.push("start"); return run; } },
+    pipelineRuns: { start: () => { calls.push("start"); return run; }, fail: (_id, value) => { seen.failure = { pipelineRunId: _id, ...value }; return { ...run, state: "FAILED" }; } },
     researchInputs: { create: () => { calls.push("input"); return { schemaVersion: "research-input/1.0.0", execution: request }; } },
     research: async () => { calls.push("research"); return { artifact: { artifactId: "research-artifact:operator", contentHash: "a".repeat(64) } }; },
     shortlist: () => { calls.push("shortlist"); return shortlist; }, store: {}, researchConfig: {}, clock: () => new Date("2026-09-30T12:01:00.000Z"),
