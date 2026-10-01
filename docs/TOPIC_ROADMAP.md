@@ -1332,6 +1332,21 @@ local pode gerar outra imagem e outro custo; não há garantia distribuída de
 foram preservados e não integram a entrega.
 O PR #55 foi mergeado em 29/09/2026 (`1a28d5d`).
 
+Correção operacional em 30/09/2026: uma resposta HTTP 200 válida da Images
+API com PNG de aproximadamente 3,7 MB expôs `RangeError` no regex repetitivo que
+validava os quase 5 MB de `data[0].b64_json`; o adapter classificava a exceção
+como `PROVIDER_CONNECTION_FAILED` e a aplicação a reduzia a `PROVIDER_FAILED`.
+A validação Base64 agora percorre a string iterativamente, exige alfabeto,
+comprimento e padding estritos sem mutar a entrada, enquanto a validação física
+posterior do PNG permanece inalterada. `MediaAcquisitionService` preserva código
+e campo de erros no formato público `PROVIDER_[A-Z0-9_]+`, mantendo mensagem
+sanitizada e causa interna; erros comuns continuam genéricos. Evidência: 25
+testes focados e a suíte completa com 512 aprovados e 6 opt-in ignorados; smoke
+real da imagem e integração física de Composition, Subtitles, Preview e QC
+passaram. Risco residual: disponibilidade, latência, rate limit e cobrança
+continuam dependentes do provider; o código público permanece confiável apenas
+quanto ao formato e nunca expõe a mensagem externa.
+
 ### E07-C04 — Real VideoComposer / FFmpeg Adapter
 
 A política `ffmpeg-video-policy/1.0.0` produz exclusivamente MP4 `1080x1920`

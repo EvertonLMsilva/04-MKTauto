@@ -161,8 +161,10 @@ function verifyScope(script, run) {
 
 function mapProviderError(caught) {
   if (caught instanceof MediaAcquisitionError) return caught;
-  const publicCodes = new Set(["PROVIDER_CANCELLED", "PROVIDER_TIMEOUT", "PROVIDER_UNAVAILABLE", "PROVIDER_RATE_LIMITED"]);
-  if (publicCodes.has(caught?.code)) return failure(caught.code, "provider", "falha sanitizada do provider", { cause: caught });
+  if (typeof caught?.code === "string" && /^PROVIDER_[A-Z0-9_]+$/.test(caught.code)) {
+    const field = typeof caught.field === "string" && caught.field.length > 0 ? caught.field : "provider";
+    return failure(caught.code, field, "falha sanitizada do provider", { cause: caught });
+  }
   return failure("PROVIDER_FAILED", "provider", "não foi possível obter o ativo de mídia", { cause: caught });
 }
 

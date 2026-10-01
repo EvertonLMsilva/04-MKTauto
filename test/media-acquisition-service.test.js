@@ -89,11 +89,21 @@ test("sanitiza falha externa sem persistência parcial", async () => {
   assert.equal(caught?.message.includes("PRIVATE"), false);
   assert.equal(repository.persisted.length, 0);
 
-  const malicious = Object.assign(new Error("private"), { code: "PROVIDER_SECRET_TOKEN" });
-  await assert.rejects(
-    new MediaAcquisitionService(fakeRepository(), fakeProvider({}, malicious)).acquire(request()),
-    acquisitionError("PROVIDER_FAILED", "provider"),
-  );
+  const providerFailure = Object.assign(new Error("PRIVATE resposta e token"), { code: "PROVIDER_INVALID_IMAGE", field: "image" });
+  let preserved;
+  try { await new MediaAcquisitionService(fakeRepository(), fakeProvider({}, providerFailure)).acquire(request()); } catch (error) { preserved = error; }
+  assert.equal(preserved?.code, "PROVIDER_INVALID_IMAGE");
+  assert.equal(preserved?.field, "image");
+  assert.equal(preserved?.message.includes("PRIVATE"), false);
+  assert.equal(preserved?.cause, providerFailure);
+
+  const fallbackField = Object.assign(new Error("private"), { code: "PROVIDER_RATE_LIMITED" });
+  await assert.rejects(new MediaAcquisitionService(fakeRepository(), fakeProvider({}, fallbackField)).acquire(request()), acquisitionError("PROVIDER_RATE_LIMITED", "provider"));
+
+  for (const unsafe of [
+    Object.assign(new Error("private"), { code: "provider_invalid_image", field: "image" }),
+    Object.assign(new Error("private"), { code: "PROVIDER-INVALID-IMAGE", field: "image" }),
+  ]) await assert.rejects(new MediaAcquisitionService(fakeRepository(), fakeProvider({}, unsafe)).acquire(request()), acquisitionError("PROVIDER_FAILED", "provider"));
 });
 
 function fakeRepository() {
