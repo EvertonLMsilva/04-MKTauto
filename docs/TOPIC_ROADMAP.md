@@ -59,7 +59,7 @@
 | FND04 | CONCLUÍDO | Stage Recovery Foundation | PR #76 mergeado em 30/09/2026 (`ba32ef9`); contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
 | E06-M04 | CONCLUÍDO | Video Asset Acquisition V2 | PR #77 mergeado em 30/09/2026 (`f38f026`); perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
 | E07-C05 | CONCLUÍDO | Mixed Media VideoComposer V2 | PR #78 mergeado em 01/10/2026 (`653ef78`); `composition-plan/2.0.0`, política mista determinística, migration 028 append-only, FFmpeg `VIDEO + IMAGE + Voice` e integração com FND04; 547 de 554 testes passaram, com 7 integrações opt-in ignoradas. |
-| E08-U03 | EM IMPLEMENTAÇÃO | Recuperação de candidatos de ideia | Clustering Ollama em streaming e lotes determinísticos, falha terminal do bootstrap e erro operacional explícito; 552 de 559 testes passaram, com 7 integrações opt-in ignoradas. |
+| E08-U03 | PR ABERTO | Recuperação de candidatos de ideia | PR #79; clustering Ollama em streaming e lotes determinísticos, falha terminal do bootstrap e erro operacional explícito; 552 de 559 testes passaram, com 7 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1566,6 +1566,7 @@ Riscos residuais: tempo e qualidade semântica continuam dependentes do modelo e
 hardware locais; lotes reduzem contexto semântico cruzado, embora cobertura,
 identidades e ranking permaneçam validados deterministicamente. Execuções antigas
 que ficaram `RUNNING` não são reescritas; o operador deve iniciar uma nova run.
+O PR #79 foi aberto em 01/10/2026.
 
 ## Primeiro épico — E01 Project Configuration
 
