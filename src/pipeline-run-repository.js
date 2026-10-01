@@ -57,6 +57,8 @@ export class PipelineRunRepository extends ProjectRepository {
     if (!row) return null;
     const transitions = this.db.prepare(`SELECT previous_state, next_state, changed_at, error_json
       FROM pipeline_run_transitions WHERE pipeline_run_id = ? ORDER BY id`).all(pipelineRunId);
+    const recoveries = this.db.prepare(`SELECT previous_state, next_state, changed_at, NULL AS error_json
+      FROM pipeline_run_recoveries WHERE pipeline_run_id = ? ORDER BY id`).all(pipelineRunId);
     try {
       return validatePipelineRun({
         schemaVersion: row.schema_version,
@@ -68,7 +70,7 @@ export class PipelineRunRepository extends ProjectRepository {
         startedAt: row.started_at,
         completedAt: row.completed_at,
         error: parseNullableJson(row.error_json),
-        transitions: transitions.map((transition) => ({
+        transitions: [...transitions, ...recoveries].sort((left, right) => left.changed_at.localeCompare(right.changed_at)).map((transition) => ({
           previousState: transition.previous_state,
           nextState: transition.next_state,
           changedAt: transition.changed_at,
@@ -126,6 +128,19 @@ export class PipelineRunRepository extends ProjectRepository {
         (pipeline_run_id, previous_state, next_state, changed_at, error_json)
         VALUES (?, 'RUNNING', ?, ?, ?)`)
         .run(pipelineRunId, nextState, normalizedCompletedAt, errorJson);
+      return this.getRun(pipelineRunId);
+    });
+  }
+
+  resumeRun({ pipelineRunId, resumedAt }) {
+    requireIdentifier(pipelineRunId); const normalizedAt = requireTimestamp(resumedAt, "resumedAt");
+    return this.#transaction(() => {
+      const prior = this.db.prepare("SELECT state, completed_at FROM pipeline_runs WHERE pipeline_run_id = ?").get(pipelineRunId);
+      if (!prior) throw failure("PIPELINE_RUN_NOT_FOUND", "pipelineRunId", "execução não encontrada");
+      if (prior.state === "RUNNING" || prior.state === "SUCCEEDED") return this.getRun(pipelineRunId);
+      if (Date.parse(normalizedAt) < Date.parse(prior.completed_at)) throw failure("INVALID_RESUMED_AT", "resumedAt", "retomada anterior à falha");
+      this.db.prepare("UPDATE pipeline_runs SET state = 'RUNNING', completed_at = NULL, error_json = NULL WHERE pipeline_run_id = ? AND state = 'FAILED'").run(pipelineRunId);
+      this.db.prepare("INSERT INTO pipeline_run_recoveries (pipeline_run_id, previous_state, next_state, changed_at) VALUES (?, 'FAILED', 'RUNNING', ?)").run(pipelineRunId, normalizedAt);
       return this.getRun(pipelineRunId);
     });
   }

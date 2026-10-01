@@ -236,8 +236,8 @@ test("migrações 013 a 024 são aditivas e preservam seleção existente", () =
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
     raw.close();
   });
 });

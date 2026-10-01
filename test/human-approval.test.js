@@ -63,7 +63,7 @@ test("repository aplica migration 025, mantém histórico imutável e consulta a
   const path = join(root, "catalog.sqlite");
   const repository = new HumanApprovalRepository(path);
   try {
-    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 25);
+    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 26);
     repository.db.exec("PRAGMA foreign_keys = OFF; DROP TRIGGER human_approval_decisions_validate_binding;");
     const approved = decision();
     assert.deepEqual(repository.registerHumanApprovalDecision(approved), approved);

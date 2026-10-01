@@ -225,7 +225,7 @@ test("triggers impedem alteração da identidade, transições históricas e exc
   });
 });
 
-test("migrações 008 a 024 são aditivas e preservam dados existentes", () => {
+test("migrações 008 a 026 são aditivas e preservam dados existentes", () => {
   withDatabase((path) => {
     const repository = new PipelineRunRepository(path);
     repository.create(project(), { createdAt: STARTED_AT });
@@ -233,6 +233,14 @@ test("migrações 008 a 024 são aditivas e preservam dados existentes", () => {
 
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TRIGGER pipeline_stage_attempts_no_delete;
+      DROP TRIGGER pipeline_stage_attempts_identity_immutable;
+      DROP TRIGGER pipeline_stage_attempts_terminal_immutable;
+      DROP TABLE pipeline_stage_attempts;
+      DROP TRIGGER pipeline_run_recoveries_no_delete;
+      DROP TRIGGER pipeline_run_recoveries_no_update;
+      DROP TABLE pipeline_run_recoveries;
+      DELETE FROM schema_migrations WHERE version = 26;
       DROP TABLE video_composition_requests;
       DROP TABLE video_renders;
       DROP TABLE composition_plan_segments;
@@ -290,8 +298,8 @@ test("migrações 008 a 024 são aditivas e preservam dados existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
     raw.close();
   });

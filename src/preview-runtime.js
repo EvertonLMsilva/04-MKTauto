@@ -39,6 +39,8 @@ import { runDailyTrendCatalog } from "./trend-daily.js";
 import { buildResearchShortlist } from "./research-shortlist.js";
 import { OperatorIdeaBootstrapService } from "./operator-idea-bootstrap-service.js";
 import { configFromEnvironment } from "./trend-config.js";
+import { StageRecoveryRepository } from "./stage-recovery-repository.js";
+import { StageRecoveryService } from "./stage-recovery-service.js";
 
 export function createPreviewRuntime({ database, env = process.env }) {
   const repositories = [];
@@ -47,6 +49,7 @@ export function createPreviewRuntime({ database, env = process.env }) {
     const voiceRepository = repository(VoiceTrackRepository, database, repositories);
     const subtitleRepository = repository(SubtitleTrackRepository, database, repositories);
     const costRepository = repository(CostLedgerRepository, database, repositories);
+    const stageRepository = repository(StageRecoveryRepository, database, repositories);
 
     const scriptConfig = loadOpenAIConfig(env);
     const voiceConfig = loadOpenAIVoiceConfig(env);
@@ -63,7 +66,8 @@ export function createPreviewRuntime({ database, env = process.env }) {
     }, { referenceResolver });
 
     const pipelineRuns = new PipelineRunService(videoRepository);
-    const lookup = Object.freeze({ getScript: (scriptId) => videoRepository.getScript(scriptId) });
+    const stages = new StageRecoveryService(stageRepository);
+    const lookup = Object.freeze({ getScript: (scriptId) => videoRepository.getScript(scriptId), getSelection: (selectionId) => videoRepository.getSelection(selectionId) });
     const previews = new RealPreviewService({
       pipelineRuns,
       scripts: new ScriptGenerationService(videoRepository, new OpenAIAdapter(scriptConfig)),
@@ -76,7 +80,8 @@ export function createPreviewRuntime({ database, env = process.env }) {
       previewVerifier: new LocalPreviewVerifier(referenceResolver),
       costs: new CostLedgerService(costRepository),
       lookup,
-      lineage: new ArtifactLineageService(videoRepository),
+      lineage: new ArtifactLineageService(videoRepository), stages,
+      stageConfigurations: { script: scriptConfig.configurationHash, voice: voiceConfig.configurationHash, media: imageConfig.configurationHash, composition: videoConfig.configurationHash, preview: videoConfig.configurationHash },
     });
     const qualityControl = new QualityControlService({ repository: videoRepository, voices: voiceRepository, inspector: qualityInspector });
 
@@ -85,6 +90,7 @@ export function createPreviewRuntime({ database, env = process.env }) {
       pipelineRuns,
       previews,
       qualityControl,
+      stages,
       lookup,
       referenceResolver,
       close: () => closeAll(repositories),
@@ -137,11 +143,13 @@ export function createIdeaBootstrapRuntime({ database, env = process.env }) {
   const repositories = [];
   try {
     const repository = repositoryOf(IdeaSelectionRepository, database, repositories);
+    const stageRepository = repositoryOf(StageRecoveryRepository, database, repositories);
     const store = new TrendCatalogStore(database); repositories.push(store);
+    const ideaConfig = loadOpenAIConfig(env);
     const bootstrap = new OperatorIdeaBootstrapService({
       pipelineRuns: new PipelineRunService(repository), researchInputs: new ResearchInputService(repository),
       research: runDailyTrendCatalog, shortlist: buildResearchShortlist,
-      ideas: new IdeaService(repository), generator: new OpenAIIdeaAdapter(loadOpenAIConfig(env)),
+      ideas: new IdeaService(repository), generator: new OpenAIIdeaAdapter(ideaConfig), stages: new StageRecoveryService(stageRepository), generatorConfigurationHash: ideaConfig.configurationHash,
       store, researchConfig: configFromEnvironment(env),
     });
     return Object.freeze({ bootstrap, selections: new IdeaSelectionService(repository), close: () => closeAll(repositories) });

@@ -6,6 +6,8 @@ import { SUBTITLE_RENDER_POLICY_VERSION, SUBTITLE_RENDER_REQUEST_VERSION, subtit
 import { SUBTITLE_STYLE_POLICY_VERSION } from "./domain/subtitle-track-contracts.js";
 import { VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestHash } from "./domain/video-composition-contracts.js";
 import { VOICE_GENERATION_REQUEST_VERSION, voiceGenerationRequestHash } from "./domain/voice-generation-contracts.js";
+import { STAGE_RECOVERY_CONTRACT_VERSION } from "./domain/stage-recovery-contracts.js";
+import { createHash } from "node:crypto";
 
 const BASE_UNAVAILABLE_COST_STAGES = Object.freeze(["voice", "video_composition", "subtitle_generation", "subtitle_rendering"]);
 
@@ -14,12 +16,13 @@ export class RealPreviewError extends Error {
 }
 
 export class RealPreviewService {
-  constructor({ pipelineRuns, scripts, voices, media, plans, videos, subtitles, subtitleRendering, previewVerifier, costs, lookup, lineage, now = () => new Date().toISOString() }) {
+  constructor({ pipelineRuns, scripts, voices, media, plans, videos, subtitles, subtitleRendering, previewVerifier, costs, lookup, lineage, stages = null, stageConfigurations = {}, now = () => new Date().toISOString() }) {
     requireMethods(pipelineRuns, ["get", "succeed", "fail"], "pipelineRuns"); requireMethods(scripts, ["generate"], "scripts");
     requireMethods(voices, ["generate"], "voices"); requireMethods(media, ["acquire"], "media"); requireMethods(plans, ["register"], "plans");
     requireMethods(videos, ["compose"], "videos"); requireMethods(subtitles, ["generate"], "subtitles"); requireMethods(subtitleRendering, ["render"], "subtitleRendering");
     requireMethods(previewVerifier, ["verify"], "previewVerifier"); requireMethods(costs, ["getLedgerByPipelineRun"], "costs"); requireMethods(lookup, ["getScript"], "lookup"); requireMethods(lineage, ["get"], "lineage");
-    Object.assign(this, { pipelineRuns, scripts, voices, media, plans, videos, subtitles, subtitleRendering, previewVerifier, costs, lookup, lineage, now });
+    if (stages !== null) requireMethods(stages, ["execute"], "stages");
+    Object.assign(this, { pipelineRuns, scripts, voices, media, plans, videos, subtitles, subtitleRendering, previewVerifier, costs, lookup, lineage, stages, stageConfigurations, now });
   }
 
   async execute(value, { signal } = {}) {
@@ -31,24 +34,35 @@ export class RealPreviewService {
       const persistedScript = this.lookup.getScript(`script:${generationRequestId}`);
       const canonicalAt = persistedScript?.createdAt ?? request.requestedAt;
       const scriptRequest = withHash({ schemaVersion: SCRIPT_GENERATION_REQUEST_VERSION, generationRequestId, ideaSelectionId: request.ideaSelectionId, requestedAt: canonicalAt, contentHash: "" }, scriptGenerationRequestHash);
-      const script = await this.scripts.generate(scriptRequest, { signal }); verifyScope(script, request); abort(signal);
+      const selection = this.lookup.getSelection?.(request.ideaSelectionId) ?? null;
+      const script = await this.#stage(stageRequest(request, "SCRIPT", scriptRequest.contentHash, selection ? [stageInput("IDEA_SELECTION", selection.ideaSelectionId, selection.contentHash)] : [], { script: "script-generation-request/1.0.0" }, this.stageConfigurations.script),
+        () => this.scripts.generate(scriptRequest, { signal }), (value) => artifact(value.scriptId, value.contentHash, value)); verifyScope(script, request); abort(signal);
       const voiceRequest = withHash({ schemaVersion: VOICE_GENERATION_REQUEST_VERSION, generationRequestId: `${request.previewRequestId}:voice`, scriptId: script.scriptId, scriptContentHash: script.contentHash, requestedAt: script.createdAt, contentHash: "" }, voiceGenerationRequestHash);
-      const voice = await this.voices.generate(voiceRequest, { signal }); verifyAncestry(voice, request, script); abort(signal);
-      const assets = [];
-      for (const direction of script.visualDirections) {
-        const mediaRequest = withHash({ schemaVersion: MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestId: `${request.previewRequestId}:media:${direction.position}`, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: direction.position, assetType: "IMAGE", requestedAt: script.createdAt, contentHash: "" }, mediaAcquisitionRequestHash);
-        const asset = await this.media.acquire(mediaRequest, { signal }); verifyMedia(asset, request, script, direction.position); assets.push(asset); abort(signal);
-      }
-      const plan = this.plans.register(buildPlan(request, script, voice, assets)); abort(signal);
-      const videoRequest = withHash({ schemaVersion: VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestId: `${request.previewRequestId}:video`, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920, requestedAt: script.createdAt, contentHash: "" }, videoCompositionRequestHash);
-      const source = await this.videos.compose(videoRequest, { signal }); verifyVideo(source, request, plan, 1); abort(signal);
-      const generated = this.subtitles.generate({ pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: request.projectVersion, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, requestedAt: script.createdAt });
-      const track = generated.subtitleTrack; verifyTrack(track, request, script, voice); abort(signal);
+      const voice = await this.#stage(stageRequest(request, "VOICE", voiceRequest.contentHash, [stageInput("SCRIPT", script.scriptId, script.contentHash)], { voice: "voice-generation-request/1.0.0" }, this.stageConfigurations.voice),
+        () => this.voices.generate(voiceRequest, { signal }), (value) => artifact(value.voiceTrackId, value.contentHash, value)); verifyAncestry(voice, request, script); abort(signal);
+      const mediaRequests = script.visualDirections.map((direction) => withHash({ schemaVersion: MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestId: `${request.previewRequestId}:media:${direction.position}`, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: direction.position, assetType: "IMAGE", requestedAt: script.createdAt, contentHash: "" }, mediaAcquisitionRequestHash));
+      const assets = await this.#stage(stageRequest(request, "MEDIA", digest(mediaRequests.map(({ contentHash }) => contentHash)), [stageInput("SCRIPT", script.scriptId, script.contentHash)], { media: "media-acquisition-request/1.0.0" }, this.stageConfigurations.media), async () => {
+        const values = [];
+        for (const mediaRequest of mediaRequests) { const asset = await this.media.acquire(mediaRequest, { signal }); verifyMedia(asset, request, script, mediaRequest.visualDirectionPosition); values.push(asset); abort(signal); }
+        return values;
+      }, (values) => aggregateArtifact("media", values, (value) => value.mediaAssetId));
+      const planDraft = buildPlan(request, script, voice, assets);
+      const mediaSet = aggregateArtifact("media", assets, (value) => value.mediaAssetId);
+      const compositionInputs = [stageInput("VOICE", voice.voiceTrackId, voice.contentHash), stageInput("MEDIA", mediaSet.artifactId, mediaSet.contentHash)];
+      const composition = await this.#stage(stageRequest(request, "COMPOSITION", planDraft.contentHash, compositionInputs, { composition: "composition-plan/1.0.0" }, this.stageConfigurations.composition), async () => {
+        const plan = this.plans.register(planDraft); abort(signal);
+        const videoRequest = withHash({ schemaVersion: VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestId: `${request.previewRequestId}:video`, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920, requestedAt: script.createdAt, contentHash: "" }, videoCompositionRequestHash);
+        const source = await this.videos.compose(videoRequest, { signal }); verifyVideo(source, request, plan, 1); abort(signal); return { plan, source };
+      }, ({ plan, source }) => artifact(source.videoRenderId, source.contentHash, { plan, source }));
+      const { plan, source } = composition;
+      const subtitleIdentity = digest([script.contentHash, voice.contentHash, SUBTITLE_STYLE_POLICY_VERSION]);
+      const track = await this.#stage(stageRequest(request, "SUBTITLES", subtitleIdentity, [stageInput("SCRIPT", script.scriptId, script.contentHash), stageInput("VOICE", voice.voiceTrackId, voice.contentHash)], { subtitleStyle: SUBTITLE_STYLE_POLICY_VERSION }, null), () => this.subtitles.generate({ pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: request.projectVersion, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, stylePolicyVersion: SUBTITLE_STYLE_POLICY_VERSION, requestedAt: script.createdAt }).subtitleTrack, (value) => artifact(value.subtitleTrackId, value.contentHash, value)); verifyTrack(track, request, script, voice); abort(signal);
       const renderRequest = subtitleRequest(request, script, voice, plan, source, track);
-      const preview = await this.subtitleRendering.render(renderRequest, { signal }); verifyVideo(preview, request, plan, 2); if (preview.supersedesVideoRenderId !== source.videoRenderId) throw failure("PREVIEW_SUPERSESSION_MISMATCH", "supersedesVideoRenderId", "render final não sucede a revisão 1"); abort(signal);
-      verifyEndToEndLineage(this.lineage, request, script, voice, assets, plan, source, track, preview);
-      const verified = await this.previewVerifier.verify({ logicalReference: preview.logicalReference, contentHash: preview.contentHash }, { signal });
-      if (verified?.contentHash !== preview.contentHash) throw failure("PREVIEW_PHYSICAL_HASH_MISMATCH", "contentHash", "hash físico divergente"); abort(signal);
+      const preview = await this.#stage(stageRequest(request, "PREVIEW", renderRequest.contentHash, [stageInput("COMPOSITION", source.videoRenderId, source.contentHash), stageInput("SUBTITLES", track.subtitleTrackId, track.contentHash)], { subtitleRender: SUBTITLE_RENDER_POLICY_VERSION }, this.stageConfigurations.preview), async () => {
+        const value = await this.subtitleRendering.render(renderRequest, { signal }); verifyVideo(value, request, plan, 2); if (value.supersedesVideoRenderId !== source.videoRenderId) throw failure("PREVIEW_SUPERSESSION_MISMATCH", "supersedesVideoRenderId", "render final não sucede a revisão 1"); abort(signal);
+        verifyEndToEndLineage(this.lineage, request, script, voice, assets, plan, source, track, value);
+        const verified = await this.previewVerifier.verify({ logicalReference: value.logicalReference, contentHash: value.contentHash }, { signal }); if (verified?.contentHash !== value.contentHash) throw failure("PREVIEW_PHYSICAL_HASH_MISMATCH", "contentHash", "hash físico divergente"); abort(signal); return value;
+      }, (value) => artifact(value.videoRenderId, value.contentHash, value));
       const ledger = this.costs.getLedgerByPipelineRun(request.pipelineRunId);
       const result = validateRealPreviewResult(resultFor(request, script, voice, assets, plan, source, track, preview, ledger));
       const current = this.pipelineRuns.get(request.pipelineRunId); if (current.state === "RUNNING") this.pipelineRuns.succeed(request.pipelineRunId, { completedAt: this.now() });
@@ -60,6 +74,12 @@ export class RealPreviewService {
       if (current?.state === "RUNNING") this.pipelineRuns.fail(request.pipelineRunId, { completedAt: this.now(), error: mapped });
       throw mapped;
     }
+  }
+
+  async #stage(request, operation, describe) {
+    if (!this.stages) return operation();
+    const completed = await this.stages.execute(request, async () => describe(await operation()));
+    return completed.value;
   }
 }
 
@@ -100,6 +120,11 @@ function verifyEndToEndLineage(lineage, request, script, voice, assets, plan, so
   }
 }
 function withHash(value, calculate) { value.contentHash = calculate(value); return value; }
+function stageRequest(request, stage, requestHash, inputs, policyVersions, providerConfigHash) { return { schemaVersion: STAGE_RECOVERY_CONTRACT_VERSION, pipelineRunId: request.pipelineRunId, stage, requestHash, inputs, policyVersions, providerConfigHash: providerConfigHash ?? null }; }
+function stageInput(stage, artifactId, contentHash) { return { stage, artifactId, contentHash }; }
+function artifact(artifactId, contentHash, value) { return { artifactId, contentHash, value }; }
+function aggregateArtifact(stage, values, idOf) { const contentHash = digest(values.map((value) => ({ artifactId: idOf(value), contentHash: value.contentHash }))); return artifact(`${stage}:set:${contentHash.slice(0, 24)}`, contentHash, values); }
+function digest(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function abort(signal) { if (signal?.aborted) throw failure("PREVIEW_CANCELLED", "signal", "operação cancelada"); }
 function requireMethods(value, methods, name) { if (!value || methods.some((method) => typeof value[method] !== "function")) throw new TypeError(`${name} obrigatório`); }
 function mapError(caught) { if (caught instanceof RealPreviewError) return caught; if (caught?.name === "AbortError" || /CANCELLED$/.test(caught?.code ?? "")) return failure("PREVIEW_CANCELLED", "signal", "operação cancelada", { cause: caught }); if ((/^PROVIDER_[A-Z0-9_]+$/.test(caught?.code ?? "") || caught?.code === "VOICE_DURATION_OUT_OF_RANGE") && typeof caught?.field === "string") return failure(caught.code, caught.field, "etapa externa não concluída", { cause: caught }); if (caught?.code && caught?.field) return failure("PREVIEW_FAILED", caught.field, "preview não concluído", { cause: caught }); return failure("PREVIEW_FAILED", "preview", "preview não concluído", { cause: caught }); }

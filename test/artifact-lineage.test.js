@@ -253,8 +253,8 @@ test("migrações 009 a 024 são aditivas e não criam efeitos nos artefatos atu
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
     for (const table of ["research_artifacts", "reference_insights", "research_shortlists"]) {
       assert.equal(raw.prepare(`SELECT COUNT(*) AS total FROM ${table}`).get().total, 0);
     }

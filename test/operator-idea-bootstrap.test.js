@@ -30,14 +30,24 @@ test("Research sem evidência não cria candidatos nem seleção automática", a
   assert.equal("selections" in fixture, false);
 });
 
+test("bootstrap registra Research e Idea Generation na fundação por hashes explícitos", async () => {
+  const calls = []; const fixture = dependencies(calls); const requests = [];
+  fixture.stages = { execute: async (value, operation) => { requests.push(value); return { ...(await operation()), reused: false, attempt: 1 }; } };
+  fixture.generatorConfigurationHash = "d".repeat(64);
+  await new OperatorIdeaBootstrapService(fixture).start(request);
+  assert.deepEqual(requests.map(({ stage }) => stage), ["RESEARCH", "IDEA_GENERATION"]);
+  assert.equal(requests.every(({ requestHash }) => /^[a-f0-9]{64}$/.test(requestHash)), true);
+  assert.deepEqual(requests[1].inputs, [{ stage: "RESEARCH", artifactId: "research-artifact:operator", contentHash: "a".repeat(64) }]);
+});
+
 function dependencies(calls, prior = []) {
   const seen = {};
   const run = { pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: 1, startedAt: request.startedAt, projectSnapshot: { project: {}, channel: { publishing: { timezone: "America/Sao_Paulo" } } } };
-  const shortlist = { artifactId: "research-shortlist:operator", orderedCandidates: [{ candidate: { id: "trend_candidate_1" } }] };
+  const shortlist = { artifactId: "research-shortlist:operator", contentHash: "b".repeat(64), orderedCandidates: [{ candidate: { id: "trend_candidate_1" } }] };
   return { seen,
     pipelineRuns: { start: () => { calls.push("start"); return run; } },
-    researchInputs: { create: () => { calls.push("input"); return { execution: request }; } },
-    research: async () => { calls.push("research"); return { artifact: { artifactId: "research-artifact:operator" } }; },
+    researchInputs: { create: () => { calls.push("input"); return { schemaVersion: "research-input/1.0.0", execution: request }; } },
+    research: async () => { calls.push("research"); return { artifact: { artifactId: "research-artifact:operator", contentHash: "a".repeat(64) } }; },
     shortlist: () => { calls.push("shortlist"); return shortlist; }, store: {}, researchConfig: {}, clock: () => new Date("2026-09-30T12:01:00.000Z"),
     generator: { generate: async () => { calls.push("generate"); return [{ title: "Uma ideia original útil", editorialAngle: "Explicar o tema com aplicação prática", evidenceCandidateIds: ["trend_candidate_1"] }]; } },
     ideas: { listByPipelineRun: () => { calls.push("list"); return prior; }, registerBatch: (value) => { calls.push("register"); seen.submission = value; return value.proposals.map((idea) => ({ idea: { ...idea, pipelineRunId: value.pipelineRunId }, score: { rank: 1 } })); } },
