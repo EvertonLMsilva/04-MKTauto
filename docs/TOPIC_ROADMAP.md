@@ -57,7 +57,7 @@
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
 | E08-U02 | CONCLUÍDO | Operator Run & Idea Bootstrap | PRs #68–#75 mergeados; bootstrap, estabilização do preview, margem Script→Voice e tratamento seguro de respostas grandes foram concluídos. |
 | FND04 | CONCLUÍDO | Stage Recovery Foundation | PR #76 mergeado em 30/09/2026 (`ba32ef9`); contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
-| E06-M04 | EM EXECUÇÃO | Video Asset Acquisition V2 | Perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
+| E06-M04 | PR ABERTO | Video Asset Acquisition V2 | PR #77; perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
