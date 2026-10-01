@@ -1,4 +1,4 @@
-export const SCRIPT_PROMPT_POLICY_VERSION = "script-generation-prompt/1.1.0";
+export const SCRIPT_PROMPT_POLICY_VERSION = "script-generation-prompt/1.2.0";
 
 export const SCRIPT_GENERATION_POLICY = deepFreeze({
   version: SCRIPT_PROMPT_POLICY_VERSION,

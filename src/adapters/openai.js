@@ -163,7 +163,7 @@ function targetDurationRange(channel) {
   const physicalMin = channel.minDurationSeconds;
   const physicalMax = channel.maxDurationSeconds;
   const targetMin = Math.max(physicalMin, Math.ceil(physicalMin * 1.1));
-  const targetMax = Math.floor(physicalMax * 0.85);
+  const targetMax = Math.floor(physicalMax * 0.8);
   return targetMin <= targetMax
     ? { minDurationSeconds: targetMin, maxDurationSeconds: targetMax }
     : { minDurationSeconds: physicalMin, maxDurationSeconds: physicalMax };
