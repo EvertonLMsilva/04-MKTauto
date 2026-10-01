@@ -116,6 +116,44 @@ test("valida PNG somente por bytes, estrutura, CRC, dimensões e conteúdo compl
   });
 });
 
+test("aceita Base64 grande sem RangeError e preserva a validação física do PNG", async () => {
+  await withRoot(async (root) => {
+    const config = loadOpenAIImageConfig(env(root));
+    const valid = png({ noisy: true });
+    assert.ok(valid.length > 3_700_000);
+    const adapter = new OpenAIImageAdapter(config, { fetchImpl: async () => jsonResponse(providerResponse(valid)) });
+    let output;
+    await assert.doesNotReject(async () => { output = await adapter.provide(input()); });
+    assert.equal(output.contentHash, sha256(valid));
+
+    const invalid = Buffer.alloc(3_700_001, 0xa5);
+    const invalidAdapter = new OpenAIImageAdapter(config, { fetchImpl: async () => jsonResponse(providerResponse(invalid)) });
+    await assert.rejects(invalidAdapter.provide(input()), adapterError("PROVIDER_INVALID_IMAGE", "image"));
+  });
+});
+
+test("valida alfabetos e padding Base64 sem aceitar padding intermediário", async () => {
+  await withRoot(async (root) => {
+    const config = loadOpenAIImageConfig(env(root));
+    for (const suffix of ["", "=", "=="]) {
+      const bytes = pngWithBase64Suffix(suffix);
+      const encoded = bytes.toString("base64");
+      assert.equal(encoded.match(/=*$/)[0], suffix);
+      const adapter = new OpenAIImageAdapter(config, { fetchImpl: async () => jsonResponse(providerResponse(bytes)) });
+      await assert.doesNotReject(adapter.provide(input()));
+    }
+
+    const valid = png().toString("base64");
+    for (const encoded of [
+      "", `${valid.slice(0, 4)}=${valid.slice(5)}`, `${valid.slice(0, -1)}!`,
+      `${valid}=`, valid.slice(0, -1), `${valid}\n`,
+    ]) {
+      const adapter = new OpenAIImageAdapter(config, { fetchImpl: async () => jsonResponse(providerResponseBase64(encoded)) });
+      await assert.rejects(adapter.provide(input()), adapterError("PROVIDER_INVALID_IMAGE", "image"));
+    }
+  });
+});
+
 test("limita resposta e imagem sem deixar temporários", async () => {
   await withRoot(async (root) => {
     const responseLimited = loadOpenAIImageConfig(env(root, { OPENAI_IMAGE_MAX_RESPONSE_BYTES: "1024" }));
@@ -170,15 +208,26 @@ function input(overrides = {}) {
     ...overrides,
   };
 }
-function providerResponse(bytes, usage) { return { created: 1, output_format: "png", quality: "medium", size: "1152x2048", data: [{ b64_json: bytes.toString("base64"), generation_id: "generation_test" }], ...(usage ? { usage } : {}) }; }
+function providerResponse(bytes, usage) { return providerResponseBase64(bytes.toString("base64"), usage); }
+function providerResponseBase64(encoded, usage) { return { created: 1, output_format: "png", quality: "medium", size: "1152x2048", data: [{ b64_json: encoded, generation_id: "generation_test" }], ...(usage ? { usage } : {}) }; }
 function jsonResponse(value) { return new Response(JSON.stringify(value), { status: 200, headers: { "content-type": "application/json; charset=utf-8" } }); }
-function png({ width = 1152, height = 2048 } = {}) {
+function png({ width = 1152, height = 2048, noisy = false, ancillaryBytes = null } = {}) {
   const row = width * 3 + 1;
   const raw = Buffer.alloc(row * height);
+  if (noisy) {
+    let state = 0x12345678;
+    for (let offset = 0; offset < raw.length; offset += 1) {
+      if (offset % row === 0) continue;
+      state ^= state << 13; state ^= state >>> 17; state ^= state << 5;
+      raw[offset] = state & 0xff;
+    }
+  }
   const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
   const ihdr = Buffer.alloc(13); ihdr.writeUInt32BE(width, 0); ihdr.writeUInt32BE(height, 4); ihdr[8] = 8; ihdr[9] = 2;
-  return Buffer.concat([signature, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), chunk("IEND", Buffer.alloc(0))]);
+  const ancillary = ancillaryBytes === null ? [] : [chunk("tEXt", Buffer.alloc(ancillaryBytes, 65))];
+  return Buffer.concat([signature, chunk("IHDR", ihdr), chunk("IDAT", deflateSync(raw)), ...ancillary, chunk("IEND", Buffer.alloc(0))]);
 }
+function pngWithBase64Suffix(suffix) { for (let size = 0; size < 3; size += 1) { const bytes = png({ ancillaryBytes: size }); if (bytes.toString("base64").match(/=*$/)[0] === suffix) return bytes; } throw new Error("fixture Base64 indisponível"); }
 function chunk(type, data) {
   const name = Buffer.from(type); const value = Buffer.alloc(12 + data.length);
   value.writeUInt32BE(data.length, 0); name.copy(value, 4); data.copy(value, 8);

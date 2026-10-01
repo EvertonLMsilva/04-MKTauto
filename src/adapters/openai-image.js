@@ -173,7 +173,21 @@ function observation(config, usage, startedAt, finishedAt, inputHash, outputHash
 }
 function emptyUsage() { return { inputTokens: null, outputTokens: null, cachedInputTokens: null, usageOrigin: null, costAmount: null, currency: null, costOrigin: null }; }
 function validateContentType(value) { if (value !== null && !/^application\/json(?:\s*;|$)/i.test(value)) throw failure("PROVIDER_INVALID_RESPONSE", "response.contentType", "Content-Type externo incompatível"); }
-function strictBase64(value) { return value.length > 0 && value.length % 4 === 0 && /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value); }
+function strictBase64(value) {
+  if (value.length === 0 || value.length % 4 !== 0) return false;
+  let padding = 0;
+  if (value[value.length - 1] === "=") padding += 1;
+  if (value[value.length - 2] === "=") padding += 1;
+  const dataLength = value.length - padding;
+  for (let index = 0; index < dataLength; index += 1) {
+    const code = value.charCodeAt(index);
+    const valid = (code >= 65 && code <= 90) || (code >= 97 && code <= 122)
+      || (code >= 48 && code <= 57) || code === 43 || code === 47;
+    if (!valid) return false;
+  }
+  for (let index = dataLength; index < value.length; index += 1) if (value[index] !== "=") return false;
+  return padding === 0 || (padding === 1 && dataLength % 4 === 3) || (padding === 2 && dataLength % 4 === 2);
+}
 function optionalCount(value, field) { if (value === undefined || value === null) return null; if (!Number.isSafeInteger(value) || value < 0) throw failure("PROVIDER_INVALID_RESPONSE", field, "uso informado pelo provider é inválido"); return value; }
 function validateConfig(config) {
   if (!config || typeof config !== "object") throw failure("OPENAI_IMAGE_CONFIGURATION_MISSING", "config", "configuração obrigatória ausente");
