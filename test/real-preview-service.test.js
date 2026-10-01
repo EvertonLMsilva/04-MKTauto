@@ -92,8 +92,18 @@ test("preserva falha pública de duração física da voz na run", async () => {
   assert.equal(fixture.calls.some(({ stage }) => stage === "fail"), true);
 });
 
-function scenario({ cancelAfterVoice = null, failAt = null, failure = null } = {}) {
+test("integra etapas existentes com identidades explícitas na fundação de recovery", async () => {
+  const fixture = scenario({ trackStages: true });
+  await fixture.service.execute(request());
+  assert.deepEqual(fixture.trackedStages, ["SCRIPT", "VOICE", "MEDIA", "COMPOSITION", "SUBTITLES", "PREVIEW"]);
+  assert.equal(fixture.stageRequests.every(({ pipelineRunId, requestHash }) => pipelineRunId === "run_e07_001" && /^[a-f0-9]{64}$/.test(requestHash)), true);
+  assert.deepEqual(fixture.stageRequests.find(({ stage }) => stage === "VOICE").inputs.map(({ stage }) => stage), ["SCRIPT"]);
+  assert.deepEqual(fixture.stageRequests.find(({ stage }) => stage === "PREVIEW").inputs.map(({ stage }) => stage), ["COMPOSITION", "SUBTITLES"]);
+});
+
+function scenario({ cancelAfterVoice = null, failAt = null, failure = null, trackStages = false } = {}) {
   const calls = []; const effects = { script: 0, voice: 0, media: 0, compose: 0, burn: 0 }; const seenTimestamps = [];
+  const trackedStages = []; const stageRequests = [];
   const cache = new Map();
   const run = { pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: "project_e07", version: 1 } } };
   const script = { scriptId: "script:preview_e07_001:script", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, ideaSelectionId: "selection_e07_001", ideaSelectionContentHash: "9".repeat(64), contentHash: "a".repeat(64), createdAt: "2026-09-30T10:00:00.000Z", visualDirections: [{ position: 1 }, { position: 2 }] };
@@ -119,11 +129,12 @@ function scenario({ cancelAfterVoice = null, failAt = null, failure = null } = {
     costs: { getLedgerByPipelineRun: () => { calls.push({ stage: "costs" }); return { events: [{ costEventId: "cost_001", artifactId: null, amount: "0.01", currency: "USD" }] }; } },
     lookup: { getScript: () => cache.get("script:canonical") ?? null },
     lineage: { get: (id) => lineageFor(id, { run, script, voice, assets, final }) },
+    ...(trackStages ? { stages: { execute: async (value, operation) => { trackedStages.push(value.stage); stageRequests.push(value); return { ...(await operation()), reused: false, attempt: 1 }; } } } : {}),
     now: () => "2026-09-30T10:01:00.000Z",
   };
   const originalGenerate = dependencies.scripts.generate;
   dependencies.scripts.generate = async (value, options) => { const result = await originalGenerate(value, options); cache.set("script:canonical", result); return result; };
-  return { service: new RealPreviewService(dependencies), calls, effects, seenTimestamps, final };
+  return { service: new RealPreviewService(dependencies), calls, effects, seenTimestamps, final, trackedStages, stageRequests };
 }
 
 function request(overrides = {}) { const value = { schemaVersion: REAL_PREVIEW_REQUEST_VERSION, previewRequestId: "preview_e07_001", pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, ideaSelectionId: "selection_e07_001", requestedAt: "2026-09-30T10:00:00.000Z", contentHash: "0".repeat(64), ...overrides }; value.contentHash = realPreviewRequestHash(value); return value; }

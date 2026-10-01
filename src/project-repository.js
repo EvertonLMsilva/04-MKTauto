@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createProjectSnapshot, validateProjectSnapshot } from "./domain/project-contracts.js";
 
-const PROJECT_SCHEMA_VERSION = 25;
+const PROJECT_SCHEMA_VERSION = 26;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", migration("001_trend_catalog.sql")]],
   [2, ["002_daily_catalog", migration("002_daily_catalog.sql")]],
@@ -30,6 +30,7 @@ const MIGRATIONS = new Map([
   [23, ["023_subtitle_tracks", migration("023_subtitle_tracks.sql")]],
   [24, ["024_quality_control", migration("024_quality_control.sql")]],
   [25, ["025_human_approval", migration("025_human_approval.sql")]],
+  [26, ["026_stage_recovery", migration("026_stage_recovery.sql")]],
 ]);
 
 export class ProjectRepositoryError extends Error {
@@ -224,6 +225,12 @@ export class ProjectRepository {
       for (let version = current + 1; version <= PROJECT_SCHEMA_VERSION; version += 1) {
         const [name, sql] = MIGRATIONS.get(version) ?? [];
         if (!name) throw new Error(`migração ${version} ausente`);
+        const applied = version > 1 ? this.db.prepare("SELECT name FROM schema_migrations WHERE version = ?").get(version) : null;
+        if (applied) {
+          if (applied.name !== name) throw new Error(`migração ${version} possui nome divergente`);
+          this.db.exec(`PRAGMA user_version = ${version}`);
+          continue;
+        }
         this.db.exec(sql);
         this.db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
           .run(version, name, new Date().toISOString());

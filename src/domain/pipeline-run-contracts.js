@@ -77,7 +77,8 @@ function validateTransition(value, index) {
   const error = value.error === null ? null : validatePublicError(value.error, `${path}.error`);
   const valid = (previousState === null && nextState === "RUNNING" && error === null)
     || (previousState === "RUNNING" && nextState === "SUCCEEDED" && error === null)
-    || (previousState === "RUNNING" && nextState === "FAILED" && error !== null);
+    || (previousState === "RUNNING" && nextState === "FAILED" && error !== null)
+    || (previousState === "FAILED" && nextState === "RUNNING" && error === null);
   if (!valid) fail("INVALID_PIPELINE_RUN_TRANSITION", path, "transição não permitida");
   return deepFreeze({ previousState, nextState, changedAt, error });
 }
@@ -87,14 +88,15 @@ function validateTransitionHistory(transitions, state, startedAt, completedAt, e
   if (initial.previousState !== null || initial.nextState !== "RUNNING" || initial.changedAt !== startedAt) {
     fail("INVALID_TRANSITION_HISTORY", "transitions.0", "transição inicial inconsistente");
   }
-  if (transitions.length > 2) fail("INVALID_TRANSITION_HISTORY", "transitions", "histórico excede o corte FND01");
+  for (let index = 1; index < transitions.length; index += 1) {
+    if (transitions[index].previousState !== transitions[index - 1].nextState) fail("INVALID_TRANSITION_HISTORY", `transitions.${index}`, "sequência inconsistente");
+  }
   const last = transitions.at(-1);
   if (last.nextState !== state) fail("INVALID_TRANSITION_HISTORY", "state", "estado diverge do histórico");
-  if (state === "RUNNING" && transitions.length !== 1) {
-    fail("INVALID_TRANSITION_HISTORY", "transitions", "execução ativa possui transição terminal");
-  }
-  if (state !== "RUNNING") {
-    if (transitions.length !== 2 || last.changedAt !== completedAt || !sameError(last.error, error)) {
+  if (state === "RUNNING") {
+    if (completedAt !== null || error !== null || last.error !== null) fail("INVALID_TRANSITION_HISTORY", "transitions", "execução ativa inconsistente");
+  } else {
+    if (last.changedAt !== completedAt || !sameError(last.error, error)) {
       fail("INVALID_TRANSITION_HISTORY", "transitions", "transição terminal inconsistente");
     }
   }

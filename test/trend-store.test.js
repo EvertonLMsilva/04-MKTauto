@@ -19,8 +19,8 @@ test("migra banco vazio e reabre o catálogo sem alteração destrutiva", () => 
     assert.equal(second.getRun("run-2026-09-26").candidates.length, 1);
     second.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 25);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 25);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
     raw.close();
   });
 });
@@ -260,7 +260,7 @@ test("falha por chave estrangeira reverte toda a transação com código estáve
 test("rejeita versão futura do catálogo com código estável", () => {
   withDatabase((path) => {
     const raw = new DatabaseSync(path);
-    raw.exec("PRAGMA user_version = 26");
+    raw.exec("PRAGMA user_version = 27");
     raw.close();
     assert.throws(
       () => new TrendCatalogStore(path),

@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { REAL_PREVIEW_REQUEST_VERSION, realPreviewRequestHash } from "./domain/real-preview-contracts.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "./project-pipeline-handoff.js";
+import { STAGE_RECOVERY_CONTRACT_VERSION } from "./domain/stage-recovery-contracts.js";
+import { QUALITY_CONTROL_POLICY_VERSION } from "./domain/quality-control-contracts.js";
 
 export async function executePreviewSelection(value, { runtime, now = () => new Date().toISOString(), onProgress } = {}) {
   const scope = validateExecutionScope(value);
@@ -34,11 +36,12 @@ export async function executePreviewSelection(value, { runtime, now = () => new 
   const result = await runtime.previews.execute(request);
   const video = result.previewVideoRender;
   progress(onProgress, "QUALITY_CONTROL");
-  const qualityControl = await runtime.qualityControl.inspect({
-    pipelineRunId: existingRun.pipelineRunId,
-    videoRenderId: video.id,
-    videoRenderContentHash: video.contentHash,
-  });
+  const inspect = () => runtime.qualityControl.inspect({ pipelineRunId: existingRun.pipelineRunId, videoRenderId: video.id, videoRenderContentHash: video.contentHash });
+  const qualityControl = runtime.stages ? (await runtime.stages.execute({
+    schemaVersion: STAGE_RECOVERY_CONTRACT_VERSION, pipelineRunId: existingRun.pipelineRunId, stage: "QC",
+    requestHash: createHash("sha256").update(`${video.id}\n${video.contentHash}\n${QUALITY_CONTROL_POLICY_VERSION}`).digest("hex"),
+    inputs: [{ stage: "PREVIEW", artifactId: video.id, contentHash: video.contentHash }], policyVersions: { qualityControl: QUALITY_CONTROL_POLICY_VERSION }, providerConfigHash: null,
+  }, async () => { const value = await inspect(); return { artifactId: value.qualityControlReportId, contentHash: value.contentHash, value }; })).value : await inspect();
   progress(onProgress, "COMPLETED");
   return Object.freeze({
     status: runtime.pipelineRuns.get(existingRun.pipelineRunId).state,

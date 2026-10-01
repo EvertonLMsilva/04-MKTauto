@@ -55,7 +55,8 @@
 | E08-Q01 | CONCLUÍDO | Quality Control | PR #63 mergeado em 30/09/2026 (`9bd6585`); QC automático verifica o render final legendado, direitos e lineage, com findings estruturados `PASS`, `FAIL` ou `WARN`. |
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
-| E08-U02 | PR ABERTO | Operator Run & Idea Bootstrap | PRs #68–#73 mergeados; o PR #74 amplia a margem Script→Voice e preserva a falha pública de duração física; 510 de 516 testes passaram, com 6 integrações opt-in ignoradas. |
+| E08-U02 | CONCLUÍDO | Operator Run & Idea Bootstrap | PRs #68–#75 mergeados; bootstrap, estabilização do preview, margem Script→Voice e tratamento seguro de respostas grandes foram concluídos. |
+| FND04 | PR ABERTO | Stage Recovery Foundation | PR #76; contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -334,6 +335,75 @@ imutabilidade, rollback, erro sanitizado, leitura revalidada e migração
 009→010. Riscos residuais deliberados: SQLite mantém escritor único; correções
 financeiras, câmbio e validação contra uma tabela externa de códigos monetários
 permanecem fora deste corte. O PR #39 foi mergeado em 28/09/2026 (`439bb44`).
+
+### FND04 — Stage Recovery Foundation
+
+Objetivo: tornar cada etapa recuperável de forma seletiva, persistida e
+idempotente antes da introdução de Trend Format Analysis, Visual Motion Plan e
+Background Music.
+
+O contrato `stage-recovery/1.0.0` fecha os estados `PENDING`, `RUNNING`,
+`SUCCEEDED` e `FAILED`; distingue tentativas `INITIAL`, `AUTOMATIC` e `MANUAL`;
+e exige `pipelineRunId`, IDs e hashes dos inputs, versões de política, hash da
+configuração pública relevante e `requestHash` explícitos. Não existe consulta
+implícita a `latest`.
+
+A migration 026 é aditiva e preserva as runs e artefatos anteriores. Tentativas
+são numeradas e mantêm etapa, origem, início, término, resultado terminal,
+código/campo sanitizados, permissão de retry e artefato produzido. Tentativas
+terminais não podem ser atualizadas ou removidas. Uma `PipelineRun` falha pode
+voltar a `RUNNING` por uma recuperação auditável sem apagar suas transições.
+
+O grafo de dependências cobre:
+
+```text
+Research → Trend Format Analysis → Idea Generation → Idea Selection → Script
+Script → Voice ────────────────────────────────────────────────┐
+Script → Media → Visual Motion Plan ───────────────────────────┤
+Script → Background Music ─────────────────────────────────────┤
+Voice + Media + Visual Motion Plan + Background Music → Composition
+Script + Voice → Subtitles
+Composition + Subtitles → Preview → QC
+```
+
+Quando um novo resultado upstream possui outro hash, apenas tentativas
+descendentes que referenciam o ID/hash anterior passam a ser projetadas como
+`PENDING`; o histórico anterior permanece íntegro. Resultado terminal da mesma
+identidade é reutilizado. Retry automático aceita somente falhas transitórias,
+usa no máximo três tentativas e backoff exponencial determinístico. Retry manual
+é uma operação separada e exige a identidade exata da tentativa `FAILED`.
+
+A integração inicial registra Research, Idea Generation, Script, Voice, Media,
+Composition, Subtitles, Preview e QC. Idea Selection continua sendo decisão
+humana append-only e já possui etapa e dependência declaradas para o futuro
+controle operacional. Trend Format Analysis, Visual Motion Plan e Background
+Music permanecem sem implementação, mas deverão nascer sobre FND04.
+
+Fora do tópico: endpoint ou botão de retry, alteração da Operator UI, novos
+providers, publicação e implementação dos novos módulos de produção.
+
+Ordem planejada após o merge de FND04, sempre um tópico por branch:
+
+1. Trend Format Analysis — contrato/persistência e analyzer;
+2. Visual Motion Plan;
+3. FFmpeg Motion;
+4. Background Music;
+5. Audio Mixer;
+6. Operator retry controls sobre FND04;
+7. End-to-End recovery e QC das novas etapas.
+
+Evidência FND04: 525 de 531 testes passaram em 30/09/2026; 6 integrações
+físicas/externas opt-in foram ignoradas. A cobertura inclui contrato fechado,
+migration 026, upgrade parcial, retry seletivo, cache terminal, tentativa manual
+separada, retry automático transitório com limite e backoff, erro permanente,
+histórico imutável, sanitização, invalidação downstream por hash, reabertura de
+`PipelineRun`, reconciliação de tentativa interrompida após restart e integração
+das etapas existentes.
+`git diff --check` passou. Riscos residuais: SQLite mantém escritor único; uma
+queda enquanto a tentativa está `RUNNING` exige que o chamador invoque a
+recuperação explícita antes do retry manual; a exposição desse comando pertence
+aos futuros controles. As três novas etapas e a UI permanecem fora deste tópico.
+O PR #76 foi aberto em 30/09/2026.
 
 ## Habilitação incremental de IA
 

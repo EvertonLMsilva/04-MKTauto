@@ -17,7 +17,7 @@ import { createResearchArtifact } from "./domain/research-artifact-contracts.js"
 import { createReferenceInsight } from "./domain/reference-insight-contracts.js";
 import { createResearchShortlist } from "./domain/research-shortlist-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 25;
+const CATALOG_SCHEMA_VERSION = 26;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
@@ -44,6 +44,7 @@ const MIGRATIONS = new Map([
   [23, ["023_subtitle_tracks", readFileSync(new URL("./db/migrations/023_subtitle_tracks.sql", import.meta.url), "utf8")]],
   [24, ["024_quality_control", readFileSync(new URL("./db/migrations/024_quality_control.sql", import.meta.url), "utf8")]],
   [25, ["025_human_approval", readFileSync(new URL("./db/migrations/025_human_approval.sql", import.meta.url), "utf8")]],
+  [26, ["026_stage_recovery", readFileSync(new URL("./db/migrations/026_stage_recovery.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {
@@ -591,6 +592,12 @@ export class TrendCatalogStore {
       for (let version = current + 1; version <= CATALOG_SCHEMA_VERSION; version += 1) {
         const [name, sql] = MIGRATIONS.get(version) ?? [];
         if (!name) throw new Error(`migração ${version} ausente`);
+        const applied = version > 1 ? this.db.prepare("SELECT name FROM schema_migrations WHERE version = ?").get(version) : null;
+        if (applied) {
+          if (applied.name !== name) throw new Error(`migração ${version} possui nome divergente`);
+          this.db.exec(`PRAGMA user_version = ${version}`);
+          continue;
+        }
         this.db.exec(sql);
         this.db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)")
           .run(version, name, new Date().toISOString());
