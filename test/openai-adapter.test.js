@@ -74,7 +74,7 @@ test("adapter envia faixa alvo segura sem mutar os limites físicos", async () =
 
   const contexts = requests.map((body) => JSON.parse(body.input[1].content[0].text));
   assert.equal(contexts[0].channel.minDurationSeconds, 28);
-  assert.equal(contexts[0].channel.maxDurationSeconds, 38);
+  assert.equal(contexts[0].channel.maxDurationSeconds, 36);
   assert.deepEqual(contexts[1], contexts[0]);
   assert.deepEqual(source, original);
   assert.equal(source.projectSnapshot.channel.minDurationSeconds, 25);

@@ -80,6 +80,18 @@ test("preserva código público específico de falha do provider na run", async 
   assert.equal(fixture.calls.some(({ stage }) => stage === "fail"), true);
 });
 
+test("preserva falha pública de duração física da voz na run", async () => {
+  const durationError = Object.assign(new Error("detalhe privado"), { code: "VOICE_DURATION_OUT_OF_RANGE", field: "durationMilliseconds" });
+  const fixture = scenario({ failAt: "voice", failure: durationError });
+  let caught;
+  try { await fixture.service.execute(request()); } catch (error) { caught = error; }
+  assert.equal(caught instanceof RealPreviewError, true);
+  assert.equal(caught.code, "VOICE_DURATION_OUT_OF_RANGE");
+  assert.equal(caught.field, "durationMilliseconds");
+  assert.equal(caught.message.includes("privado"), false);
+  assert.equal(fixture.calls.some(({ stage }) => stage === "fail"), true);
+});
+
 function scenario({ cancelAfterVoice = null, failAt = null, failure = null } = {}) {
   const calls = []; const effects = { script: 0, voice: 0, media: 0, compose: 0, burn: 0 }; const seenTimestamps = [];
   const cache = new Map();
