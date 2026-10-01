@@ -33,6 +33,21 @@ test("novo request cria revisão auditável e invalida somente descendente com h
   });
 });
 
+test("mudança de hash da Composition invalida somente Preview e QC dependentes", async () => {
+  await withRuntime(async ({ stages }) => {
+    await stages.execute(stageRequest("VOICE", HASH_A), async () => produced("voice:1", HASH_A));
+    await stages.execute(stageRequest("MEDIA", HASH_A), async () => produced("media:set:1", HASH_B));
+    const inputs = [{ stage: "VOICE", artifactId: "voice:1", contentHash: HASH_A }, { stage: "MEDIA", artifactId: "media:set:1", contentHash: HASH_B }];
+    await stages.execute(stageRequest("COMPOSITION", HASH_A, inputs), async () => produced("render:1", HASH_A));
+    await stages.execute(stageRequest("PREVIEW", HASH_A, [{ stage: "COMPOSITION", artifactId: "render:1", contentHash: HASH_A }]), async () => produced("preview:1", HASH_B));
+    await stages.execute(stageRequest("QC", HASH_A, [{ stage: "PREVIEW", artifactId: "preview:1", contentHash: HASH_B }]), async () => produced("qc:1", HASH_C));
+    await stages.execute(stageRequest("COMPOSITION", HASH_C, inputs), async () => produced("render:2", HASH_C));
+    const status = Object.fromEntries(stages.getStatuses("run_stage_001").map((item) => [item.stage, item.state]));
+    assert.equal(status.VOICE, "SUCCEEDED"); assert.equal(status.MEDIA, "SUCCEEDED"); assert.equal(status.COMPOSITION, "SUCCEEDED");
+    assert.equal(status.PREVIEW, "PENDING"); assert.equal(status.QC, "PENDING");
+  });
+});
+
 test("retry automático usa backoff limitado somente para falha transitória", async () => {
   await withRuntime(async ({ stages, repository, sleeps }) => {
     let calls = 0;

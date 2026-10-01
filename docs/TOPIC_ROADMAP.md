@@ -57,7 +57,8 @@
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
 | E08-U02 | CONCLUÍDO | Operator Run & Idea Bootstrap | PRs #68–#75 mergeados; bootstrap, estabilização do preview, margem Script→Voice e tratamento seguro de respostas grandes foram concluídos. |
 | FND04 | CONCLUÍDO | Stage Recovery Foundation | PR #76 mergeado em 30/09/2026 (`ba32ef9`); contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
-| E06-M04 | PR ABERTO | Video Asset Acquisition V2 | PR #77; perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
+| E06-M04 | CONCLUÍDO | Video Asset Acquisition V2 | PR #77 mergeado em 30/09/2026 (`f38f026`); perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
+| E07-C05 | PR ABERTO | Mixed Media VideoComposer V2 | PR #78; `composition-plan/2.0.0`, política mista determinística, migration 028 append-only, FFmpeg `VIDEO + IMAGE + Voice` e integração com FND04; 547 de 554 testes passaram, com 7 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1499,6 +1500,46 @@ SQLite depois da promoção pode deixar MP4 content-addressed órfão, nunca
 `VideoRender` falso; roots locais privados ainda dependem das permissões do
 host. `data/` e `templates/` foram preservados. O PR #56 foi mergeado em
 29/09/2026 (`2e2b1d2`).
+
+### E07-C05 — Mixed Media VideoComposer V2
+
+`composition-plan/2.0.0` é aditivo e mantém `composition-plan/1.0.0` fechado e
+inalterado. O plano V2 fixa `MIXED_MEDIA_V2`, a política
+`mixed-media-composition-policy/2.0.0` e, por segmento, tipo e hash do ativo,
+intervalo da timeline, início físico, `TRIM | LOOP`, áudio original silenciado,
+`COVER_CROP_9_16` e transição `CUT` versionada com duração zero. O hash inclui
+todas essas decisões e não existe seleção ou consulta a `latest` no composer.
+
+A migration 028 acrescenta detalhes e segmentos V2 em tabelas de extensão
+append-only, preservando as tabelas V1 e as FKs existentes. O adapter revalida
+bytes, SHA-256, MIME/container, dimensões, duração, streams e direitos; `TRIM`
+falha se exceder o clipe, enquanto `LOOP` só ocorre quando persistido no plano.
+As entradas visuais são concatenadas sem lacunas, recebem scale/crop vertical
+sem distorção e somente `[aout]`, derivado da `VoiceTrack`, é mapeado. Staging é
+sempre limpo e a promoção content-addressed continua posterior a decode
+integral, FFprobe e SHA-256.
+
+O preview estático continua criando e consumindo `composition-plan/1.0.0` pela
+aquisição de imagem anterior. No perfil misto, o runtime usa a seleção
+persistida do E06-M04 e recupera as mesmas identidades após restart. Composition
+registra plano, política, Voice e conjunto de Media no FND04; uma alteração do
+hash projeta somente Preview e QC dependentes como `PENDING`, sem invalidar
+Voice ou Media.
+
+Evidência: 54 testes focados passaram; a suíte completa registrou 547 testes
+aprovados e 7 integrações externas/físicas ignoradas por padrão. A integração
+física opt-in `VIDEO + IMAGE + Voice → Composition → Subtitles → Preview → QC`
+passou separadamente e confirmou MP4 `1080x1920`, duração de 2 segundos, um
+stream de vídeo, somente o áudio da narração, decode integral, ausência de
+frames pretos, SHA-256 content-addressed e Preview/QC ligados ao render exato.
+`git diff --check` passou.
+
+Riscos residuais: cortes continuam quantizados a 30 fps; reprodutibilidade de
+bytes depende da mesma versão/toolchain FFmpeg, embora a semântica seja fechada
+pelo plano; `-stream_loop` segue a semântica versionada do FFmpeg; uma falha
+SQLite após promoção pode deixar objeto órfão sem criar `VideoRender` falso; e
+disponibilidade, licença e adequação editorial do Pexels continuam dependentes
+de QC e aprovação humana. O PR #78 foi aberto em 01/10/2026.
 
 ## Primeiro épico — E01 Project Configuration
 

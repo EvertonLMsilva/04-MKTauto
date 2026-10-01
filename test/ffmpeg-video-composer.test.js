@@ -71,6 +71,32 @@ test("adapter valida cadeia, cópias consumidas, timeline e argumentos allowlist
   assert.doesNotMatch(encode.args.join(" "), /object:voice|media:sha256|PRIVATE/);
 }));
 
+test("V2 compõe VIDEO seguido de IMAGE com trim ou loop, crop, cortes e somente voz mapeada", async () => withRoots(async (roots) => {
+  for (const mode of ["TRIM", "LOOP"]) {
+    const fixture = mixedPhysicalFixture(roots, mode); const calls = []; let graph;
+    const runner = async (command, args, options) => {
+      calls.push({ command, args, options });
+      if (command === "ffprobe-bin" && String(args.at(-1)).endsWith(".mp4") && String(args.at(-1)).includes("media-001")) return { stdout: inputVideoProbeJson(1000, mode === "TRIM") };
+      if (command === "ffmpeg-bin" && args.includes("-filter_complex_script")) { graph = readFileSync(args[args.indexOf("-filter_complex_script") + 1], "utf8"); writeFileSync(args.at(-1), Buffer.from(`mixed-${mode}`)); }
+      if (command === "ffprobe-bin") return { stdout: probeJson(1000) };
+      return { stdout: "", stderr: "" };
+    };
+    const output = await makeComposer(roots, fixture.catalog, runner).compose(mixedInput(fixture, mode));
+    assert.equal(output.durationMilliseconds, 1000);
+    const encode = calls.find(({ args }) => args.includes("-filter_complex_script"));
+    assert.ok(encode.args.includes("-ss")); assert.ok(encode.args.includes("0.200"));
+    assert.equal(encode.args.includes("-stream_loop"), mode === "LOOP");
+    assert.deepEqual(encode.args.flatMap((value, index) => value === "-map" ? [encode.args[index + 1]] : []), ["[vout]", "[aout]"]);
+    assert.match(graph, /concat=n=2:v=1:a=0/); assert.match(graph, /force_original_aspect_ratio=increase/); assert.match(graph, /crop=1080:1920/);
+  }
+}));
+
+test("V2 rejeita vídeo curto sem loop antes do FFmpeg", async () => withRoots(async (roots) => {
+  const fixture = mixedPhysicalFixture(roots, "TRIM", 700); let calls = 0;
+  await assert.rejects(makeComposer(roots, fixture.catalog, async () => { calls += 1; }).compose(mixedInput(fixture, "TRIM")), adapterError("COMPOSER_VIDEO_TOO_SHORT"));
+  assert.equal(calls, 0);
+}));
+
 test("falha antes do processo para cadeia divergente, direitos, formato, limites e cancelamento", async () => withRoots(async (roots) => {
   const fixture = physicalFixture(roots); let calls = 0;
   const runner = async () => { calls += 1; return {}; };
@@ -164,6 +190,26 @@ function physicalFixture(roots) {
   const catalog = { getVoiceTrack: (id) => id === voice.voiceTrackId ? voice : null, getMediaAsset: (id) => id === image.mediaAssetId ? image : id === image2.mediaAssetId ? image2 : null };
   return { voice, image, image2, voiceHash, imageHash, image2Hash, catalog };
 }
+function mixedPhysicalFixture(roots, mode, videoDuration = 1000) {
+  const base = physicalFixture(roots); const videoBytes = Buffer.from(`physical-video-${videoDuration}`); const videoHash = store(roots.mediaRoot, videoBytes, "mp4");
+  const video = { schemaVersion: "media-asset/2.0.0", mediaAssetId: "media_asset_video", pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1,
+    scriptId: "script_001", scriptContentHash: "b".repeat(64), visualDirectionPosition: 1, assetType: "VIDEO",
+    technicalProperties: { format: "mp4", mimeType: "video/mp4", widthPixels: 720, heightPixels: 1280, durationMilliseconds: videoDuration, hasAudio: mode === "TRIM" },
+    contentHash: videoHash, mediaReference: `media:sha256_${videoHash}`, origin: "PROVIDER_LICENSED", provider: "pexels", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true },
+    source: { externalAssetId: "123", licenseName: "Pexels License", licenseUrl: "https://www.pexels.com/license/", photographerName: "Creator", photographerUrl: "https://www.pexels.com/@creator", sourceUrl: "https://www.pexels.com/video/123" },
+    createdAt: "2026-09-29T00:00:00.000Z", revision: 1, supersedesMediaAssetId: null };
+  const image = { ...base.image2, visualDirectionPosition: 2 };
+  return { ...base, video, image, videoHash, catalog: { getVoiceTrack: () => base.voice, getMediaAsset: (id) => id === video.mediaAssetId ? video : id === image.mediaAssetId ? image : null } };
+}
+function mixedInput(fixture, playbackMode) { const plan = {
+  schemaVersion: "composition-plan/2.0.0", compositionPlanId: "composition_plan_mixed", pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1,
+  scriptId: "script_001", scriptContentHash: "b".repeat(64), voiceTrackId: fixture.voice.voiceTrackId, voiceTrackContentHash: fixture.voiceHash,
+  outputAspectRatio: "9:16", timelineUnit: "MILLISECOND", continuityMode: "CONTIGUOUS", durationMilliseconds: 1000, productionProfile: "MIXED_MEDIA_V2", compositionPolicyVersion: "mixed-media-composition-policy/2.0.0",
+  segments: [mixedSegment(1, 1, fixture.video, 0, 600, 200, playbackMode), mixedSegment(2, 2, fixture.image, 600, 1000, 0, "TRIM")],
+  createdAt: "2026-09-29T00:00:00.000Z", revision: 1, supersedesCompositionPlanId: null, contentHash: "0".repeat(64),
+}; plan.contentHash = compositionPlanContentHash(plan); return { logicalCallId: "video_composition_mixed", compositionPlan: plan, output: { containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920 } }; }
+function mixedSegment(position, direction, asset, start, end, sourceStart, playbackMode) { return { position, visualDirectionPosition: direction, mediaAssetId: asset.mediaAssetId, mediaAssetContentHash: asset.contentHash, startMilliseconds: start, endMilliseconds: end, mediaType: asset.assetType, sourceStartMilliseconds: sourceStart, playbackMode, originalAudioMuted: true, framingStrategy: "COVER_CROP_9_16", transition: { policyVersion: "composition-transition/1.0.0", type: "CUT", durationMilliseconds: 0 } }; }
+function inputVideoProbeJson(duration, hasAudio = false) { return JSON.stringify({ streams: [{ codec_type: "video", width: 720, height: 1280, duration: (duration / 1000).toFixed(6) }, ...(hasAudio ? [{ codec_type: "audio", duration: (duration / 1000).toFixed(6) }] : [])], format: { format_name: "mov,mp4,m4a,3gp,3g2,mj2", duration: (duration / 1000).toFixed(6) } }); }
 function input(fixture) { const plan = {
   schemaVersion: "composition-plan/1.0.0", compositionPlanId: "composition_plan_001", pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1,
   scriptId: "script_001", scriptContentHash: "b".repeat(64), voiceTrackId: fixture.voice.voiceTrackId, voiceTrackContentHash: fixture.voiceHash,

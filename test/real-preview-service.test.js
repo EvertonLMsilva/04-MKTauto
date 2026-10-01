@@ -101,14 +101,25 @@ test("integra etapas existentes com identidades explícitas na fundação de rec
   assert.deepEqual(fixture.stageRequests.find(({ stage }) => stage === "PREVIEW").inputs.map(({ stage }) => stage), ["COMPOSITION", "SUBTITLES"]);
 });
 
-function scenario({ cancelAfterVoice = null, failAt = null, failure = null, trackStages = false } = {}) {
+test("MIXED_MEDIA_V2 persiste seleção e plano explícito sem alterar o caminho estático", async () => {
+  const fixture = scenario({ mixed: true, trackStages: true });
+  await fixture.service.execute(request());
+  const plan = fixture.calls.find(({ stage }) => stage === "plan").value;
+  assert.equal(plan.schemaVersion, "composition-plan/2.0.0");
+  assert.equal(plan.productionProfile, "MIXED_MEDIA_V2");
+  assert.deepEqual(plan.segments.map(({ mediaType, playbackMode, originalAudioMuted }) => [mediaType, playbackMode, originalAudioMuted]), [["VIDEO", "TRIM", true], ["IMAGE", "TRIM", true]]);
+  assert.equal(fixture.calls.filter(({ stage }) => stage.startsWith("media:")).every(({ value }) => value.schemaVersion === "media-selection-request/1.0.0"), true);
+  assert.equal(fixture.stageRequests.find(({ stage }) => stage === "COMPOSITION").policyVersions.compositionPolicy, "mixed-media-composition-policy/2.0.0");
+});
+
+function scenario({ cancelAfterVoice = null, failAt = null, failure = null, trackStages = false, mixed = false } = {}) {
   const calls = []; const effects = { script: 0, voice: 0, media: 0, compose: 0, burn: 0 }; const seenTimestamps = [];
   const trackedStages = []; const stageRequests = [];
   const cache = new Map();
-  const run = { pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: "project_e07", version: 1 } } };
+  const run = { pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: "project_e07", version: 1 }, channel: { productionProfile: mixed ? "MIXED_MEDIA_V2" : "STATIC_IMAGE_V1" } } };
   const script = { scriptId: "script:preview_e07_001:script", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, ideaSelectionId: "selection_e07_001", ideaSelectionContentHash: "9".repeat(64), contentHash: "a".repeat(64), createdAt: "2026-09-30T10:00:00.000Z", visualDirections: [{ position: 1 }, { position: 2 }] };
   const voice = { voiceTrackId: "voice_track:preview_e07_001:voice", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, contentHash: "b".repeat(64), durationMilliseconds: 10000, createdAt: script.createdAt };
-  const assets = [asset(1, script), asset(2, script)];
+  const assets = [asset(1, script, mixed ? "VIDEO" : "IMAGE"), asset(2, script, "IMAGE")];
   const final = { videoRenderId: "video_render:subtitle:final", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, compositionPlanId: "composition_plan:preview_e07_001", compositionPlanContentHash: "d".repeat(64), outputAspectRatio: "9:16", durationMilliseconds: 10000, containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920, contentHash: "f".repeat(64), logicalReference: `render:sha256_${"f".repeat(64)}`, revision: 2, supersedesVideoRenderId: "video_render:preview_e07_001:video" };
   const stage = (name, make, effect) => async (value) => {
     calls.push({ stage: name, value }); if (failAt === name) throw failure ?? new Error("private payload"); seenTimestamps.push(value.requestedAt ?? value.createdAt);
@@ -120,7 +131,7 @@ function scenario({ cancelAfterVoice = null, failAt = null, failure = null, trac
     pipelineRuns: { get: () => run, succeed: () => { calls.push({ stage: "succeed" }); run.state = "SUCCEEDED"; }, fail: () => { calls.push({ stage: "fail" }); run.state = "FAILED"; } },
     scripts: { generate: stage("script", () => script, "script") },
     voices: { generate: stage("voice", () => { cancelAfterVoice?.abort(); return voice; }, "voice") },
-    media: { acquire: async (value) => { const name = `media:${value.visualDirectionPosition}`; calls.push({ stage: name, value }); if (failAt === name) throw new Error("private payload"); seenTimestamps.push(value.requestedAt); const key = name; if (!cache.has(key)) { effects.media += 1; cache.set(key, assets[value.visualDirectionPosition - 1]); } return cache.get(key); } },
+    media: { acquire: mediaEffect, select: mediaEffect },
     plans: { register: (value) => { calls.push({ stage: "plan", value }); seenTimestamps.push(value.createdAt); return { ...value, contentHash: "d".repeat(64) }; } },
     videos: { compose: stage("compose", () => ({ ...final, videoRenderId: final.supersedesVideoRenderId, contentHash: "e".repeat(64), revision: 1, supersedesVideoRenderId: null }), "compose") },
     subtitles: { generate: (value) => { calls.push({ stage: "subtitles", value }); if (failAt === "subtitles") throw new Error("private payload"); seenTimestamps.push(value.requestedAt); return { subtitleTrack: { subtitleTrackId: "subtitle_001", pipelineRunId: run.pipelineRunId, projectId: run.projectId, projectVersion: 1, contentHash: "c".repeat(64), scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, durationMilliseconds: 10000, stylePolicyVersion: "subtitle-style-policy/1.0.0" } }; } },
@@ -132,13 +143,14 @@ function scenario({ cancelAfterVoice = null, failAt = null, failure = null, trac
     ...(trackStages ? { stages: { execute: async (value, operation) => { trackedStages.push(value.stage); stageRequests.push(value); return { ...(await operation()), reused: false, attempt: 1 }; } } } : {}),
     now: () => "2026-09-30T10:01:00.000Z",
   };
+  async function mediaEffect(value) { const name = `media:${value.visualDirectionPosition}`; calls.push({ stage: name, value }); if (failAt === name) throw new Error("private payload"); seenTimestamps.push(value.requestedAt); const key = name; if (!cache.has(key)) { effects.media += 1; cache.set(key, assets[value.visualDirectionPosition - 1]); } return cache.get(key); }
   const originalGenerate = dependencies.scripts.generate;
   dependencies.scripts.generate = async (value, options) => { const result = await originalGenerate(value, options); cache.set("script:canonical", result); return result; };
   return { service: new RealPreviewService(dependencies), calls, effects, seenTimestamps, final, trackedStages, stageRequests };
 }
 
 function request(overrides = {}) { const value = { schemaVersion: REAL_PREVIEW_REQUEST_VERSION, previewRequestId: "preview_e07_001", pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1, ideaSelectionId: "selection_e07_001", requestedAt: "2026-09-30T10:00:00.000Z", contentHash: "0".repeat(64), ...overrides }; value.contentHash = realPreviewRequestHash(value); return value; }
-function asset(position, script = { scriptId: "script_001", contentHash: "a".repeat(64), pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1 }) { return { mediaAssetId: `media_asset_${position}`, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: script.projectVersion, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: position, contentHash: String(position).repeat(64), rights: { usageBasis: "OWNED", commercialUseAllowed: true }, mediaReference: `media:asset_${position}` }; }
+function asset(position, script = { scriptId: "script_001", contentHash: "a".repeat(64), pipelineRunId: "run_e07_001", projectId: "project_e07", projectVersion: 1 }, assetType = "IMAGE") { return { mediaAssetId: `media_asset_${position}`, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: script.projectVersion, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: position, assetType, technicalProperties: { durationMilliseconds: assetType === "VIDEO" ? 6000 : null }, contentHash: String(position).repeat(64), rights: { usageBasis: "OWNED", commercialUseAllowed: true }, mediaReference: `media:asset_${position}` }; }
 function segment(position, media, startMilliseconds, endMilliseconds) { return { position, visualDirectionPosition: media.visualDirectionPosition, mediaAssetId: media.mediaAssetId, mediaAssetContentHash: media.contentHash, startMilliseconds, endMilliseconds }; }
 function previewError(code) { return (caught) => caught instanceof RealPreviewError && caught.code === code; }
 function lineageFor(id, { run, script, voice, assets, final }) {

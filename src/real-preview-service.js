@@ -1,5 +1,6 @@
-import { COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanContentHash } from "./domain/composition-plan-contracts.js";
+import { COMPOSITION_PLAN_CONTRACT_VERSION, COMPOSITION_PLAN_V2_CONTRACT_VERSION, MIXED_MEDIA_COMPOSITION_POLICY_VERSION, compositionPlanContentHash } from "./domain/composition-plan-contracts.js";
 import { MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestHash } from "./domain/media-acquisition-contracts.js";
+import { MEDIA_SELECTION_REQUEST_VERSION, mediaSelectionRequestHash } from "./domain/media-selection-contracts.js";
 import { REAL_PREVIEW_RESULT_VERSION, validateRealPreviewRequest, validateRealPreviewResult } from "./domain/real-preview-contracts.js";
 import { SCRIPT_GENERATION_REQUEST_VERSION, scriptGenerationRequestHash } from "./domain/script-generation-contracts.js";
 import { SUBTITLE_RENDER_POLICY_VERSION, SUBTITLE_RENDER_REQUEST_VERSION, subtitleRenderIdentityHash, subtitleRenderRequestHash } from "./domain/subtitle-render-contracts.js";
@@ -40,16 +41,21 @@ export class RealPreviewService {
       const voiceRequest = withHash({ schemaVersion: VOICE_GENERATION_REQUEST_VERSION, generationRequestId: `${request.previewRequestId}:voice`, scriptId: script.scriptId, scriptContentHash: script.contentHash, requestedAt: script.createdAt, contentHash: "" }, voiceGenerationRequestHash);
       const voice = await this.#stage(stageRequest(request, "VOICE", voiceRequest.contentHash, [stageInput("SCRIPT", script.scriptId, script.contentHash)], { voice: "voice-generation-request/1.0.0" }, this.stageConfigurations.voice),
         () => this.voices.generate(voiceRequest, { signal }), (value) => artifact(value.voiceTrackId, value.contentHash, value)); verifyAncestry(voice, request, script); abort(signal);
-      const mediaRequests = script.visualDirections.map((direction) => withHash({ schemaVersion: MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestId: `${request.previewRequestId}:media:${direction.position}`, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: direction.position, assetType: "IMAGE", requestedAt: script.createdAt, contentHash: "" }, mediaAcquisitionRequestHash));
-      const assets = await this.#stage(stageRequest(request, "MEDIA", digest(mediaRequests.map(({ contentHash }) => contentHash)), [stageInput("SCRIPT", script.scriptId, script.contentHash)], { media: "media-acquisition-request/1.0.0" }, this.stageConfigurations.media), async () => {
+      const productionProfile = run.projectSnapshot.channel?.productionProfile ?? "STATIC_IMAGE_V1";
+      const mediaRequests = script.visualDirections.map((direction) => productionProfile === "MIXED_MEDIA_V2"
+        ? withHash({ schemaVersion: MEDIA_SELECTION_REQUEST_VERSION, mediaSelectionRequestId: `${request.previewRequestId}:media:${direction.position}`, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: direction.position, productionProfile, requestedAt: script.createdAt, contentHash: "" }, mediaSelectionRequestHash)
+        : withHash({ schemaVersion: MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestId: `${request.previewRequestId}:media:${direction.position}`, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: direction.position, assetType: "IMAGE", requestedAt: script.createdAt, contentHash: "" }, mediaAcquisitionRequestHash));
+      const assets = await this.#stage(stageRequest(request, "MEDIA", digest(mediaRequests.map(({ contentHash }) => contentHash)), [stageInput("SCRIPT", script.scriptId, script.contentHash)], { media: productionProfile === "MIXED_MEDIA_V2" ? "media-selection-request/1.0.0" : "media-acquisition-request/1.0.0" }, this.stageConfigurations.media), async () => {
         const values = [];
-        for (const mediaRequest of mediaRequests) { const asset = await this.media.acquire(mediaRequest, { signal }); verifyMedia(asset, request, script, mediaRequest.visualDirectionPosition); values.push(asset); abort(signal); }
+        for (const mediaRequest of mediaRequests) { const asset = productionProfile === "MIXED_MEDIA_V2" ? await selectMedia(this.media, mediaRequest, signal) : await this.media.acquire(mediaRequest, { signal }); verifyMedia(asset, request, script, mediaRequest.visualDirectionPosition); values.push(asset); abort(signal); }
         return values;
       }, (values) => aggregateArtifact("media", values, (value) => value.mediaAssetId));
-      const planDraft = buildPlan(request, script, voice, assets);
+      const planDraft = buildPlan(request, script, voice, assets, productionProfile);
       const mediaSet = aggregateArtifact("media", assets, (value) => value.mediaAssetId);
       const compositionInputs = [stageInput("VOICE", voice.voiceTrackId, voice.contentHash), stageInput("MEDIA", mediaSet.artifactId, mediaSet.contentHash)];
-      const composition = await this.#stage(stageRequest(request, "COMPOSITION", planDraft.contentHash, compositionInputs, { composition: "composition-plan/1.0.0" }, this.stageConfigurations.composition), async () => {
+      const compositionPolicies = { composition: planDraft.schemaVersion };
+      if (planDraft.compositionPolicyVersion) compositionPolicies.compositionPolicy = planDraft.compositionPolicyVersion;
+      const composition = await this.#stage(stageRequest(request, "COMPOSITION", planDraft.contentHash, compositionInputs, compositionPolicies, this.stageConfigurations.composition), async () => {
         const plan = this.plans.register(planDraft); abort(signal);
         const videoRequest = withHash({ schemaVersion: VIDEO_COMPOSITION_REQUEST_VERSION, videoCompositionRequestId: `${request.previewRequestId}:video`, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, containerFormat: "mp4", widthPixels: 1080, heightPixels: 1920, requestedAt: script.createdAt, contentHash: "" }, videoCompositionRequestHash);
         const source = await this.videos.compose(videoRequest, { signal }); verifyVideo(source, request, plan, 1); abort(signal); return { plan, source };
@@ -89,8 +95,18 @@ export function buildDeterministicSegments(assets, durationMilliseconds) {
   return assets.map((asset, index) => Object.freeze({ position: index + 1, visualDirectionPosition: asset.visualDirectionPosition, mediaAssetId: asset.mediaAssetId, mediaAssetContentHash: asset.contentHash, startMilliseconds: Math.floor(index * durationMilliseconds / assets.length), endMilliseconds: Math.floor((index + 1) * durationMilliseconds / assets.length) }));
 }
 
-function buildPlan(request, script, voice, assets) {
+function buildPlan(request, script, voice, assets, productionProfile) {
   const value = { schemaVersion: COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanId: `composition_plan:${request.previewRequestId}`, pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: request.projectVersion, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, outputAspectRatio: "9:16", timelineUnit: "MILLISECOND", continuityMode: "CONTIGUOUS", durationMilliseconds: voice.durationMilliseconds, segments: buildDeterministicSegments(assets, voice.durationMilliseconds), createdAt: script.createdAt, revision: 1, supersedesCompositionPlanId: null, contentHash: "" };
+  if (productionProfile === "MIXED_MEDIA_V2") {
+    value.schemaVersion = COMPOSITION_PLAN_V2_CONTRACT_VERSION; value.productionProfile = productionProfile; value.compositionPolicyVersion = MIXED_MEDIA_COMPOSITION_POLICY_VERSION;
+    value.segments = value.segments.map((segment, index) => {
+      const asset = assets[index]; const segmentDuration = segment.endMilliseconds - segment.startMilliseconds;
+      return { ...segment, mediaType: asset.assetType, sourceStartMilliseconds: 0,
+        playbackMode: asset.assetType === "VIDEO" && asset.technicalProperties.durationMilliseconds < segmentDuration ? "LOOP" : "TRIM",
+        originalAudioMuted: true, framingStrategy: "COVER_CROP_9_16",
+        transition: { policyVersion: "composition-transition/1.0.0", type: "CUT", durationMilliseconds: 0 } };
+    });
+  }
   value.contentHash = compositionPlanContentHash(value); return value;
 }
 function subtitleRequest(request, script, voice, plan, source, track) { const value = { schemaVersion: SUBTITLE_RENDER_REQUEST_VERSION, subtitleRenderRequestId: "pending", pipelineRunId: request.pipelineRunId, projectId: request.projectId, projectVersion: request.projectVersion, videoRenderId: source.videoRenderId, videoRenderContentHash: source.contentHash, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, subtitleTrackId: track.subtitleTrackId, subtitleTrackContentHash: track.contentHash, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, stylePolicyVersion: track.stylePolicyVersion, renderPolicyVersion: SUBTITLE_RENDER_POLICY_VERSION, requestedAt: script.createdAt, contentHash: "" }; value.subtitleRenderRequestId = `subtitle_render:${subtitleRenderIdentityHash(value)}`; value.contentHash = subtitleRenderRequestHash(value); return value; }
@@ -126,6 +142,7 @@ function artifact(artifactId, contentHash, value) { return { artifactId, content
 function aggregateArtifact(stage, values, idOf) { const contentHash = digest(values.map((value) => ({ artifactId: idOf(value), contentHash: value.contentHash }))); return artifact(`${stage}:set:${contentHash.slice(0, 24)}`, contentHash, values); }
 function digest(value) { return createHash("sha256").update(JSON.stringify(value)).digest("hex"); }
 function abort(signal) { if (signal?.aborted) throw failure("PREVIEW_CANCELLED", "signal", "operação cancelada"); }
+function selectMedia(media, request, signal) { if (typeof media?.select !== "function") throw failure("PREVIEW_MEDIA_SELECTION_UNAVAILABLE", "media", "seleção de mídia indisponível"); return media.select(request, { signal }); }
 function requireMethods(value, methods, name) { if (!value || methods.some((method) => typeof value[method] !== "function")) throw new TypeError(`${name} obrigatório`); }
 function mapError(caught) { if (caught instanceof RealPreviewError) return caught; if (caught?.name === "AbortError" || /CANCELLED$/.test(caught?.code ?? "")) return failure("PREVIEW_CANCELLED", "signal", "operação cancelada", { cause: caught }); if ((/^PROVIDER_[A-Z0-9_]+$/.test(caught?.code ?? "") || caught?.code === "VOICE_DURATION_OUT_OF_RANGE") && typeof caught?.field === "string") return failure(caught.code, caught.field, "etapa externa não concluída", { cause: caught }); if (caught?.code && caught?.field) return failure("PREVIEW_FAILED", caught.field, "preview não concluído", { cause: caught }); return failure("PREVIEW_FAILED", "preview", "preview não concluído", { cause: caught }); }
 function failure(code, field, message, options) { return new RealPreviewError(code, field, message, options); }

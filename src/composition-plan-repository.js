@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
 import {
+  COMPOSITION_PLAN_CONTRACT_VERSION,
+  COMPOSITION_PLAN_V2_CONTRACT_VERSION,
   compositionPlanIdentityHash,
   validateCompositionPlan,
 } from "./domain/composition-plan-contracts.js";
@@ -31,13 +33,15 @@ export class CompositionPlanRepository extends MediaAssetRepository {
     const row = this.db.prepare("SELECT * FROM composition_plans WHERE composition_plan_id = ?").get(compositionPlanId);
     if (!row) return null;
     try {
-      const plan = validateCompositionPlan(JSON.parse(row.payload_json));
-      verifyPersistedColumns(plan, row);
-      if (compositionPlanIdentityHash(plan) !== row.identity_hash) throw new Error("identidade divergente");
-      const storedSegments = this.db.prepare(`SELECT position, visual_direction_position,
-        media_asset_id, media_asset_content_hash, start_milliseconds, end_milliseconds
-        FROM composition_plan_segments WHERE composition_plan_id = ? ORDER BY position`).all(compositionPlanId);
-      if (JSON.stringify(storedSegments.map(segmentFromRow)) !== JSON.stringify(plan.segments)) throw new Error("segmentos divergentes");
+      const detail = this.db.prepare("SELECT * FROM composition_plan_v2_details WHERE composition_plan_id = ?").get(compositionPlanId);
+      const plan = validateCompositionPlan(JSON.parse(detail?.payload_json ?? row.payload_json));
+      verifyPersistedColumns(plan, row, Boolean(detail));
+      if (compositionPlanIdentityHash(plan) !== (detail?.identity_hash ?? row.identity_hash)) throw new Error("identidade divergente");
+      const storedSegments = detail
+        ? this.db.prepare("SELECT * FROM composition_plan_v2_segments WHERE composition_plan_id = ? ORDER BY position").all(compositionPlanId).map(v2SegmentFromRow)
+        : this.db.prepare(`SELECT position, visual_direction_position, media_asset_id, media_asset_content_hash,
+          start_milliseconds, end_milliseconds FROM composition_plan_segments WHERE composition_plan_id = ? ORDER BY position`).all(compositionPlanId).map(segmentFromRow);
+      if (JSON.stringify(storedSegments) !== JSON.stringify(plan.segments)) throw new Error("segmentos divergentes");
       const related = this.#relatedArtifacts(plan);
       this.#verifyRelated(plan, related);
       const lineage = this.getArtifact(plan.compositionPlanId);
@@ -86,13 +90,28 @@ export class CompositionPlanRepository extends MediaAssetRepository {
        duration_milliseconds, content_hash, created_at, revision,
        supersedes_composition_plan_id, payload_json)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
-      plan.compositionPlanId, plan.schemaVersion, identityHash, plan.pipelineRunId,
+      plan.compositionPlanId, plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION ? COMPOSITION_PLAN_CONTRACT_VERSION : plan.schemaVersion, identityHash, plan.pipelineRunId,
       plan.projectId, plan.projectVersion, plan.scriptId, plan.scriptContentHash,
       plan.voiceTrackId, plan.voiceTrackContentHash, plan.outputAspectRatio,
       plan.timelineUnit, plan.continuityMode, plan.durationMilliseconds,
       plan.contentHash, plan.createdAt, plan.revision, plan.supersedesCompositionPlanId,
-      JSON.stringify(plan),
+      JSON.stringify(plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION ? v1StorageProjection(plan) : plan),
     );
+    if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
+      this.db.prepare(`INSERT INTO composition_plan_v2_details
+        (composition_plan_id, schema_version, production_profile, composition_policy_version, identity_hash, payload_json)
+        VALUES (?, ?, ?, ?, ?, ?)`).run(plan.compositionPlanId, plan.schemaVersion, plan.productionProfile, plan.compositionPolicyVersion, identityHash, JSON.stringify(plan));
+      const insertV2 = this.db.prepare(`INSERT INTO composition_plan_v2_segments
+        (composition_plan_id, position, visual_direction_position, media_asset_id, media_asset_content_hash,
+         media_type, start_milliseconds, end_milliseconds, source_start_milliseconds, playback_mode,
+         original_audio_muted, framing_strategy, transition_policy_version, transition_type, transition_duration_milliseconds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      for (const segment of plan.segments) insertV2.run(plan.compositionPlanId, segment.position, segment.visualDirectionPosition,
+        segment.mediaAssetId, segment.mediaAssetContentHash, segment.mediaType, segment.startMilliseconds, segment.endMilliseconds,
+        segment.sourceStartMilliseconds, segment.playbackMode, 1, segment.framingStrategy, segment.transition.policyVersion,
+        segment.transition.type, segment.transition.durationMilliseconds);
+      return this.getCompositionPlan(plan.compositionPlanId);
+    }
     const insert = this.db.prepare(`INSERT INTO composition_plan_segments
       (composition_plan_id, position, visual_direction_position, media_asset_id,
        media_asset_content_hash, start_milliseconds, end_milliseconds)
@@ -126,6 +145,7 @@ export class CompositionPlanRepository extends MediaAssetRepository {
     verifyScope(script, plan, "COMPOSITION_PLAN_SCRIPT_SCOPE_MISMATCH");
     if (script.contentHash !== plan.scriptContentHash) throw failure("SCRIPT_CONTENT_HASH_MISMATCH", "scriptContentHash", "hash do roteiro divergente");
     if (run.projectSnapshot.channel.aspectRatio !== plan.outputAspectRatio) throw failure("OUTPUT_ASPECT_RATIO_MISMATCH", "outputAspectRatio", "proporção diverge do snapshot");
+    if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION && run.projectSnapshot.channel.productionProfile !== "MIXED_MEDIA_V2") throw failure("PRODUCTION_PROFILE_MISMATCH", "productionProfile", "perfil diverge do snapshot");
     verifyScope(voice, plan, "VOICE_TRACK_SCOPE_MISMATCH");
     if (voice.scriptId !== plan.scriptId || voice.scriptContentHash !== plan.scriptContentHash) throw failure("VOICE_TRACK_SCRIPT_MISMATCH", "voiceTrackId", "faixa diverge do roteiro");
     if (voice.contentHash !== plan.voiceTrackContentHash) throw failure("VOICE_TRACK_CONTENT_HASH_MISMATCH", "voiceTrackContentHash", "hash da faixa divergente");
@@ -141,10 +161,15 @@ export class CompositionPlanRepository extends MediaAssetRepository {
       if (asset.scriptId !== plan.scriptId || asset.scriptContentHash !== plan.scriptContentHash) throw failure("MEDIA_ASSET_SCRIPT_MISMATCH", `segments.${index}.mediaAssetId`, "ativo diverge do roteiro");
       if (asset.visualDirectionPosition !== segment.visualDirectionPosition) throw failure("MEDIA_ASSET_DIRECTION_MISMATCH", `segments.${index}.visualDirectionPosition`, "ativo diverge da direção");
       if (asset.contentHash !== segment.mediaAssetContentHash) throw failure("MEDIA_ASSET_CONTENT_HASH_MISMATCH", `segments.${index}.mediaAssetContentHash`, "hash do ativo divergente");
+      if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION && asset.assetType !== segment.mediaType) throw failure("MEDIA_ASSET_TYPE_MISMATCH", `segments.${index}.mediaType`, "tipo de mídia divergente");
       if (asset.rights.commercialUseAllowed !== true) throw failure("COMMERCIAL_USE_REQUIRED", "rights.commercialUseAllowed", "uso comercial do ativo não autorizado");
       const segmentDuration = segment.endMilliseconds - segment.startMilliseconds;
-      if (asset.assetType === "VIDEO" && asset.technicalProperties.durationMilliseconds < segmentDuration) {
-        throw failure("MEDIA_DURATION_INSUFFICIENT", `segments.${index}`, "vídeo menor que o trecho solicitado");
+      if (asset.assetType === "VIDEO") {
+        const duration = asset.technicalProperties.durationMilliseconds;
+        if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
+          if (segment.sourceStartMilliseconds >= duration) throw failure("MEDIA_TRIM_START_OUT_OF_RANGE", `segments.${index}.sourceStartMilliseconds`, "início fora do clipe");
+          if (segment.playbackMode === "TRIM" && segment.sourceStartMilliseconds + segmentDuration > duration) throw failure("MEDIA_DURATION_INSUFFICIENT", `segments.${index}`, "vídeo menor que o trim solicitado");
+        } else if (duration < segmentDuration) throw failure("MEDIA_DURATION_INSUFFICIENT", `segments.${index}`, "vídeo menor que o trecho solicitado");
       }
     });
   }
@@ -238,15 +263,25 @@ function segmentFromRow(row) { return {
   startMilliseconds: row.start_milliseconds, endMilliseconds: row.end_milliseconds,
 }; }
 
+function v2SegmentFromRow(row) { return {
+  position: row.position, visualDirectionPosition: row.visual_direction_position,
+  mediaAssetId: row.media_asset_id, mediaAssetContentHash: row.media_asset_content_hash,
+  startMilliseconds: row.start_milliseconds, endMilliseconds: row.end_milliseconds,
+  mediaType: row.media_type, sourceStartMilliseconds: row.source_start_milliseconds,
+  playbackMode: row.playback_mode, originalAudioMuted: Boolean(row.original_audio_muted),
+  framingStrategy: row.framing_strategy,
+  transition: { policyVersion: row.transition_policy_version, type: row.transition_type, durationMilliseconds: row.transition_duration_milliseconds },
+}; }
+
 function verifyScope(stored, expected, code) {
   for (const field of ["pipelineRunId", "projectId", "projectVersion"]) {
     if (stored[field] !== expected[field]) throw failure(code, field, "escopo divergente");
   }
 }
 
-function verifyPersistedColumns(plan, row) {
+function verifyPersistedColumns(plan, row, isV2 = false) {
   const expected = {
-    composition_plan_id: plan.compositionPlanId, schema_version: plan.schemaVersion,
+    composition_plan_id: plan.compositionPlanId, schema_version: isV2 ? COMPOSITION_PLAN_CONTRACT_VERSION : plan.schemaVersion,
     pipeline_run_id: plan.pipelineRunId, project_id: plan.projectId,
     project_version: plan.projectVersion, script_id: plan.scriptId,
     script_content_hash: plan.scriptContentHash, voice_track_id: plan.voiceTrackId,
@@ -257,6 +292,11 @@ function verifyPersistedColumns(plan, row) {
     supersedes_composition_plan_id: plan.supersedesCompositionPlanId,
   };
   for (const [field, value] of Object.entries(expected)) if (row[field] !== value) throw new Error(`coluna divergente: ${field}`);
+}
+
+function v1StorageProjection(plan) {
+  const { productionProfile: _profile, compositionPolicyVersion: _policy, ...base } = plan;
+  return { ...base, schemaVersion: COMPOSITION_PLAN_CONTRACT_VERSION, segments: plan.segments.map(({ mediaType: _type, sourceStartMilliseconds: _source, playbackMode: _mode, originalAudioMuted: _muted, framingStrategy: _framing, transition: _transition, ...segment }) => segment) };
 }
 
 function requireIdentifier(value, field, max = 80) { if (typeof value !== "string" || value.length > max || !/^[a-z0-9][a-z0-9_:-]{2,}$/.test(value)) throw failure("INVALID_IDENTIFIER", field, "identificador inválido"); }

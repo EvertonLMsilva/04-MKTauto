@@ -2,8 +2,8 @@ import { createHash } from "node:crypto";
 import { spawn } from "node:child_process";
 import { readFile, stat, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { validateCompositionPlan } from "../domain/composition-plan-contracts.js";
-import { validateMediaAsset } from "../domain/media-asset-contracts.js";
+import { COMPOSITION_PLAN_V2_CONTRACT_VERSION, validateCompositionPlan } from "../domain/composition-plan-contracts.js";
+import { MEDIA_ASSET_V2_CONTRACT_VERSION, validateMediaAsset } from "../domain/media-asset-contracts.js";
 import { validateVoiceTrack } from "../domain/voice-track-contracts.js";
 import { VideoComposer } from "../video-composer.js";
 import { inspectMvpPng } from "./png-image.js";
@@ -30,7 +30,7 @@ export class FfmpegVideoComposer extends VideoComposer {
     let staging;
     try {
       staging = await this.storage.createStaging();
-      const staged = await this.#stageInputs(staging, voice, media, signal);
+      const staged = await this.#stageInputs(staging, plan, voice, media, signal);
       const filterPath = join(staging, "filtergraph.txt"); const outputPath = join(staging, "render.mp4");
       await writeFile(filterPath, filterGraph(plan, this.config), { flag: "wx", mode: 0o600 });
       await this.#execute(this.config.ffmpegPath, encodeArgs(staged, filterPath, outputPath, plan, this.config), staging, signal, "encode");
@@ -62,28 +62,38 @@ export class FfmpegVideoComposer extends VideoComposer {
       try { asset = validateMediaAsset(this.catalog.getMediaAsset(segment.mediaAssetId)); } catch (caught) { failureNow("COMPOSER_INPUT_INVALID", `segments.${index}.mediaAssetId`, "mídia persistida inválida", { cause: caught }); }
       if (asset.mediaAssetId !== segment.mediaAssetId || asset.contentHash !== segment.mediaAssetContentHash) failureNow("COMPOSER_MEDIA_HASH_MISMATCH", `segments.${index}.mediaAssetContentHash`, "mídia divergente do plano");
       verifyScope(plan, asset, `segments.${index}`);
-      if (asset.assetType !== "IMAGE" || asset.technicalProperties.format !== "png") failureNow("COMPOSER_MEDIA_UNSUPPORTED", `segments.${index}`, "mídia fora da allowlist");
+      if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
+        if (asset.assetType !== segment.mediaType) failureNow("COMPOSER_MEDIA_TYPE_MISMATCH", `segments.${index}.mediaType`, "tipo divergente do plano");
+        if (asset.assetType === "VIDEO" && (asset.schemaVersion !== MEDIA_ASSET_V2_CONTRACT_VERSION || asset.technicalProperties.format !== "mp4" || asset.technicalProperties.mimeType !== "video/mp4")) failureNow("COMPOSER_MEDIA_UNSUPPORTED", `segments.${index}`, "vídeo fora da allowlist");
+        if (asset.assetType === "IMAGE" && (asset.technicalProperties.format !== "png" || (asset.schemaVersion === MEDIA_ASSET_V2_CONTRACT_VERSION && asset.technicalProperties.mimeType !== "image/png"))) failureNow("COMPOSER_MEDIA_UNSUPPORTED", `segments.${index}`, "imagem fora da allowlist");
+        const duration = segment.endMilliseconds - segment.startMilliseconds;
+        if (asset.assetType === "VIDEO" && segment.sourceStartMilliseconds >= asset.technicalProperties.durationMilliseconds) failureNow("COMPOSER_TRIM_OUT_OF_RANGE", `segments.${index}.sourceStartMilliseconds`, "início fora do clipe");
+        if (asset.assetType === "VIDEO" && segment.playbackMode === "TRIM" && segment.sourceStartMilliseconds + duration > asset.technicalProperties.durationMilliseconds) failureNow("COMPOSER_VIDEO_TOO_SHORT", `segments.${index}`, "clipe curto sem loop");
+      } else if (asset.assetType !== "IMAGE" || asset.technicalProperties.format !== "png") failureNow("COMPOSER_MEDIA_UNSUPPORTED", `segments.${index}`, "mídia fora da allowlist");
       return asset;
     });
     return { plan, voice, media };
   }
 
-  async #stageInputs(staging, voice, media, signal) {
+  async #stageInputs(staging, plan, voice, media, signal) {
     const items = [];
     const voiceSource = await this.resolver.resolveVoice(voice.storageReference);
     items.push(await copyAndValidate(voiceSource, join(staging, "voice.wav"), this.config.maxVoiceBytes, voice.contentHash, (bytes) => {
       const measured = inspectMvpWav(bytes); if (measured.durationMilliseconds !== voice.durationMilliseconds || measured.audioFormat !== voice.audioFormat) failureNow("COMPOSER_VOICE_PROPERTIES_MISMATCH", "voiceTrack", "propriedades físicas da voz divergentes");
     }, signal));
     for (let index = 0; index < media.length; index += 1) {
-      const asset = media[index]; const source = await this.resolver.resolveMedia(asset.mediaReference);
-      items.push(await copyAndValidate(source, join(staging, `media-${String(index + 1).padStart(3, "0")}.png`), this.config.maxImageBytes, asset.contentHash, (bytes) => {
-        const measured = inspectMvpPng(bytes); const expected = asset.technicalProperties;
-        if (measured.format !== expected.format || measured.widthPixels !== expected.widthPixels || measured.heightPixels !== expected.heightPixels) failureNow("COMPOSER_MEDIA_PROPERTIES_MISMATCH", `segments.${index}`, "propriedades físicas da mídia divergentes");
-      }, signal));
+      const asset = media[index]; const video = asset.assetType === "VIDEO"; const extension = video ? "mp4" : "png";
+      const source = await this.resolver.resolveMedia(asset.mediaReference, extension);
+      const item = await copyAndValidate(source, join(staging, `media-${String(index + 1).padStart(3, "0")}.${extension}`), video ? (this.config.maxVideoBytes ?? this.config.maxTotalInputBytes) : this.config.maxImageBytes, asset.contentHash, (bytes) => {
+        if (!video) { const measured = inspectMvpPng(bytes); const expected = asset.technicalProperties;
+          if (measured.format !== expected.format || measured.widthPixels !== expected.widthPixels || measured.heightPixels !== expected.heightPixels) failureNow("COMPOSER_MEDIA_PROPERTIES_MISMATCH", `segments.${index}`, "propriedades físicas da mídia divergentes"); }
+      }, signal);
+      if (video) { await this.#decodeInputVideo(item.path, staging, signal); await this.#probeInputVideo(item.path, staging, signal, asset, index); }
+      items.push({ ...item, assetType: asset.assetType, segment: plan.segments[index] });
     }
     const total = items.reduce((sum, item) => sum + item.size, 0);
     if (total > this.config.maxTotalInputBytes) failureNow("COMPOSER_LIMIT_EXCEEDED", "inputs", "entradas excedem limite total");
-    return { voicePath: items[0].path, mediaPaths: items.slice(1).map(({ path }) => path) };
+    return { voicePath: items[0].path, media: items.slice(1), mediaPaths: items.slice(1).map(({ path }) => path) };
   }
 
   async #execute(command, args, cwd, signal, phase) {
@@ -91,6 +101,11 @@ export class FfmpegVideoComposer extends VideoComposer {
     catch (caught) { if (caught instanceof FfmpegVideoAdapterError) throw caught; if (caught?.code === "COMPOSER_TIMEOUT") throw caught; if (caught?.code === "ENOENT") throw failure("COMPOSER_UNAVAILABLE", phase, "binário indisponível", { cause: caught }); throw failure("COMPOSER_PROCESS_FAILED", phase, "processo de mídia falhou", { cause: caught }); }
   }
   async #decode(path, cwd, signal) { await this.#execute(this.config.ffmpegPath, ["-hide_banner", "-v", "error", "-xerror", "-i", path, "-map", "0:v:0", "-map", "0:a:0", "-f", "null", "-"], cwd, signal, "decode"); }
+  async #decodeInputVideo(path, cwd, signal) { await this.#execute(this.config.ffmpegPath, ["-hide_banner", "-v", "error", "-xerror", "-i", path, "-map", "0:v:0", "-an", "-f", "null", "-"], cwd, signal, "inputDecode"); }
+  async #probeInputVideo(path, cwd, signal, asset, index) {
+    const result = await this.#execute(this.config.ffprobePath, ["-v", "error", "-of", "json", "-show_entries", "format=format_name,duration:stream=codec_type,width,height,duration", "-show_streams", "-show_format", path], cwd, signal, "inputProbe");
+    parseInputVideoProbe(result?.stdout, asset, index, this.config);
+  }
   async #probe(path, cwd, signal, durationMilliseconds) {
     const result = await this.#execute(this.config.ffprobePath, ["-v", "error", "-of", "json", "-show_entries", "format=format_name,duration,size:stream=index,codec_type,codec_name,profile,level,width,height,pix_fmt,r_frame_rate,avg_frame_rate,duration,sample_rate,channels", "-show_streams", "-show_format", path], cwd, signal, "probe");
     return parseProbe(result?.stdout, durationMilliseconds, this.config);
@@ -98,6 +113,7 @@ export class FfmpegVideoComposer extends VideoComposer {
 }
 
 function filterGraph(plan, config) {
+  if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) return mixedFilterGraph(plan, config);
   const duration = seconds(plan.durationMilliseconds); const filters = plan.segments.map((_, index) => `[${index}:v]scale=${config.widthPixels}:${config.heightPixels}:force_original_aspect_ratio=increase:flags=lanczos,crop=${config.widthPixels}:${config.heightPixels},setsar=1,fps=${config.frameRate},format=${config.pixelFormat},trim=duration=${duration},setpts=PTS-STARTPTS[i${index}]`);
   let current = "i0";
   for (let index = 1; index < plan.segments.length; index += 1) { const next = `v${index}`; filters.push(`[${current}][i${index}]overlay=enable='gte(t\\,${seconds(plan.segments[index].startMilliseconds)})':shortest=1:eof_action=repeat[${next}]`); current = next; }
@@ -107,15 +123,43 @@ function filterGraph(plan, config) {
   return `${filters.join(";\n")}\n`;
 }
 
+function mixedFilterGraph(plan, config) {
+  const filters = plan.segments.map((segment, index) => {
+    const duration = seconds(segment.endMilliseconds - segment.startMilliseconds);
+    return `[${index}:v]scale=${config.widthPixels}:${config.heightPixels}:force_original_aspect_ratio=increase:flags=lanczos,crop=${config.widthPixels}:${config.heightPixels},setsar=1,fps=${config.frameRate},format=${config.pixelFormat},trim=duration=${duration},setpts=PTS-STARTPTS[i${index}]`;
+  });
+  filters.push(`${plan.segments.map((_, index) => `[i${index}]`).join("")}concat=n=${plan.segments.length}:v=1:a=0[vout]`);
+  filters.push(`[${plan.segments.length}:a:0]aresample=${config.audioSampleRate},atrim=duration=${seconds(plan.durationMilliseconds)},asetpts=PTS-STARTPTS[aout]`);
+  return `${filters.join(";\n")}\n`;
+}
+
 function encodeArgs(staged, filterPath, outputPath, plan, config) {
   const duration = seconds(plan.durationMilliseconds); const args = ["-hide_banner", "-loglevel", "error", "-nostdin", "-n"];
-  for (const path of staged.mediaPaths) args.push("-loop", "1", "-framerate", String(config.frameRate), "-t", duration, "-i", path);
+  if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
+    for (const item of staged.media) {
+      const segmentDuration = seconds(item.segment.endMilliseconds - item.segment.startMilliseconds);
+      if (item.assetType === "IMAGE") args.push("-loop", "1", "-framerate", String(config.frameRate), "-t", segmentDuration, "-i", item.path);
+      else {
+        if (item.segment.playbackMode === "LOOP") args.push("-stream_loop", "-1");
+        if (item.segment.sourceStartMilliseconds > 0) args.push("-ss", seconds(item.segment.sourceStartMilliseconds));
+        args.push("-t", segmentDuration, "-i", item.path);
+      }
+    }
+  } else for (const path of staged.mediaPaths) args.push("-loop", "1", "-framerate", String(config.frameRate), "-t", duration, "-i", path);
   args.push("-i", staged.voicePath, "-filter_complex_script", filterPath, "-map", "[vout]", "-map", "[aout]", "-t", duration, "-fps_mode", "cfr",
     "-c:v", config.videoCodec, "-profile:v", config.videoProfile, "-level:v", config.videoLevel, "-crf", String(config.crf), "-preset", config.preset,
     "-pix_fmt", config.pixelFormat, "-r", String(config.frameRate), "-g", String(config.gopSize), "-keyint_min", String(config.gopSize), "-sc_threshold", "0", "-threads:v", "1",
     "-c:a", config.audioCodec, "-profile:a", config.audioProfile, "-b:a", config.audioBitrate, "-ar", String(config.audioSampleRate), "-ac", String(config.audioChannels),
     "-map_metadata", "-1", "-map_chapters", "-1", "-metadata", "creation_time=1970-01-01T00:00:00Z", "-fflags", "+bitexact", "-flags:v", "+bitexact", "-flags:a", "+bitexact", "-movflags", "+faststart", "-f", "mp4", outputPath);
   return args;
+}
+
+function parseInputVideoProbe(text, asset, index, config) {
+  if (typeof text !== "string" || Buffer.byteLength(text) > config.maxLogBytes) failureNow("COMPOSER_MEDIA_PROBE_INVALID", `segments.${index}`, "probe inválido");
+  let value; try { value = JSON.parse(text); } catch (caught) { failureNow("COMPOSER_MEDIA_PROBE_INVALID", `segments.${index}`, "probe malformado", { cause: caught }); }
+  const streams = Array.isArray(value?.streams) ? value.streams : []; const video = streams.filter(({ codec_type: type }) => type === "video"); const audio = streams.filter(({ codec_type: type }) => type === "audio");
+  const measuredDuration = milliseconds(value?.format?.duration); const expected = asset.technicalProperties;
+  if (video.length !== 1 || !String(value?.format?.format_name ?? "").split(",").includes("mp4") || video[0].width !== expected.widthPixels || video[0].height !== expected.heightPixels || measuredDuration !== expected.durationMilliseconds || (audio.length > 0) !== expected.hasAudio) failureNow("COMPOSER_MEDIA_PROPERTIES_MISMATCH", `segments.${index}`, "propriedades físicas do vídeo divergentes");
 }
 
 async function copyAndValidate(source, destination, maxBytes, expectedHash, inspect, signal) {

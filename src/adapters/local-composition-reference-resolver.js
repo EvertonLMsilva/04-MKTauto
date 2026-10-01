@@ -14,7 +14,10 @@ export class LocalCompositionReferenceResolver {
   }
 
   async resolveVoice(reference) { return this.#resolve(reference, VOICE_REFERENCE, this.voiceRoot, "wav"); }
-  async resolveMedia(reference) { return this.#resolve(reference, MEDIA_REFERENCE, this.mediaRoot, "png"); }
+  async resolveMedia(reference, extension = "png") {
+    if (!["png", "mp4"].includes(extension)) throw ffmpegFailure("COMPOSER_REFERENCE_INVALID", "reference", "extensão não autorizada");
+    return this.#resolve(reference, MEDIA_REFERENCE, this.mediaRoot, extension);
+  }
   async resolveVideo(reference) {
     if (!this.renderRoot) throw ffmpegFailure("FFMPEG_CONFIGURATION_MISSING", "renderRoot", "root obrigatório");
     return this.#resolve(reference, VIDEO_REFERENCE, this.renderRoot, "mp4");
