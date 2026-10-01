@@ -56,7 +56,8 @@
 | E08-U01 | CONCLUÍDO | Operator Preview Console | PR #64 mergeado em 30/09/2026 (`de7de83`); interface web mínima inicia ou retoma o pipeline, reconstrói etapas persistidas, reproduz o render final exato e apresenta seu QC sem antecipar a decisão humana. |
 | E08-A01 | CONCLUÍDO | Human Approval | PR #66 mergeado em 30/09/2026 (`ffd0d69`); decisão humana append-only vincula projeto/versão, `PipelineRun`, `VideoRender` ID/revisão/SHA-256 e QC ID/SHA-256 exatos. |
 | E08-U02 | CONCLUÍDO | Operator Run & Idea Bootstrap | PRs #68–#75 mergeados; bootstrap, estabilização do preview, margem Script→Voice e tratamento seguro de respostas grandes foram concluídos. |
-| FND04 | PR ABERTO | Stage Recovery Foundation | PR #76; contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
+| FND04 | CONCLUÍDO | Stage Recovery Foundation | PR #76 mergeado em 30/09/2026 (`ba32ef9`); contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
+| E06-M04 | EM EXECUÇÃO | Video Asset Acquisition V2 | Perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1416,6 +1417,50 @@ real da imagem e integração física de Composition, Subtitles, Preview e QC
 passaram. Risco residual: disponibilidade, latência, rate limit e cobrança
 continuam dependentes do provider; o código público permanece confiável apenas
 quanto ao formato e nunca expõe a mensagem externa.
+
+### E06-M04 — Video Asset Acquisition V2
+
+O `ProjectSnapshot` passa a registrar explicitamente `productionProfile` como
+`STATIC_IMAGE_V1` ou `MIXED_MEDIA_V2`. A ausência em projetos históricos é
+normalizada para `STATIC_IMAGE_V1`; o comportamento não é inferido do número da
+versão nem de uma consulta a `latest`. O pipeline de composição existente
+continua usando imagens até o tópico posterior de composição mista.
+
+`media-asset/2.0.0` preserva o contrato V1 e acrescenta MIME medido, presença de
+áudio e proveniência licenciada. Ativos Pexels registram ID externo, nome e URL
+do fotógrafo, URL pública do vídeo, nome e URL da licença. A migration 027 é
+aditiva: `media_asset_sources` e `media_selection_requests` são append-only e
+mantêm a decisão exata entre vídeo e imagem após restart.
+
+O `PexelsVideoAdapter` usa exclusivamente
+`https://api.pexels.com/v1/videos/search`, autenticação por variável de
+ambiente, busca vertical e seleção determinística por ordem de relevância,
+duração, resolução, orientação e IDs ainda não usados na run. Downloads aceitam
+somente HTTPS em hosts Pexels, MIME `video/mp4`, limites explícitos e nenhum
+redirect. FFprobe exige um stream visual e nenhum stream de áudio; FFmpeg faz
+decode integral antes do armazenamento content-addressed. Nenhum segredo, URL
+de download ou caminho físico entra no domínio ou no SQLite.
+
+`MediaSelectionService` tenta vídeo somente em `MIXED_MEDIA_V2`. Apenas
+`PROVIDER_NO_ELIGIBLE_VIDEO` permite fallback explícito para a aquisição de
+imagem V1. Falhas de autenticação, direitos, contrato, integridade, download ou
+decode permanecem falhas e não são ocultadas pelo fallback. Retry recupera a
+seleção persistida e não repete provider; uma queda entre aquisição e seleção
+reutiliza a aquisição idempotente antes de concluir o vínculo.
+
+Evidência: 539 de 546 testes passaram em 30/09/2026; sete integrações externas
+ou físicas opt-in foram ignoradas, incluindo o novo smoke Pexels. A cobertura
+inclui compatibilidade V1, perfil explícito, contrato V2, migration 027,
+proveniência e atribuição imutáveis, endpoint oficial, chave fora dos contratos,
+seleção estável, não repetição, limites, MIME, propriedades FFprobe, ausência de
+áudio, decode, storage por hash, fallback restrito, idempotência e recuperação
+após restart. `git diff --check` passou.
+
+Riscos residuais: disponibilidade, rate limit, termos e banda dependem do
+Pexels; pessoas identificáveis, marcas e eventual falsa associação ainda
+dependem de QC e aprovação humana; uma falha local pode ocorrer após download;
+o smoke real exige credencial e binários locais; composição, trim, crop, loop e
+transições de clipes pertencem ao próximo tópico.
 
 ### E07-C04 — Real VideoComposer / FFmpeg Adapter
 

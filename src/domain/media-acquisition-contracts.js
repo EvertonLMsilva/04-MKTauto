@@ -10,10 +10,11 @@ const REQUEST_FIELDS = Object.freeze([
 ]);
 const OUTPUT_FIELDS = Object.freeze([
   "assetType", "technicalProperties", "contentHash", "mediaReference", "origin",
-  "provider", "rights", "telemetry",
+  "provider", "rights", "source", "telemetry",
 ]);
-const REQUIRED_OUTPUT_FIELDS = Object.freeze(OUTPUT_FIELDS.filter((field) => field !== "telemetry"));
+const REQUIRED_OUTPUT_FIELDS = Object.freeze(OUTPUT_FIELDS.filter((field) => !["telemetry", "source"].includes(field)));
 const TECHNICAL_FIELDS = Object.freeze(["format", "widthPixels", "heightPixels", "durationMilliseconds"]);
+const V2_TECHNICAL_FIELDS = Object.freeze([...TECHNICAL_FIELDS, "mimeType", "hasAudio"]);
 const RIGHTS_FIELDS = Object.freeze(["usageBasis", "commercialUseAllowed"]);
 const ASSET_TYPES = Object.freeze(["IMAGE", "VIDEO"]);
 const FORMATS = Object.freeze({ IMAGE: ["jpeg", "png", "webp"], VIDEO: ["mp4", "webm", "mov"] });
@@ -47,7 +48,7 @@ export function validateMediaProviderOutput(value) {
   record(value, "output");
   exactAllowedRequired(value, OUTPUT_FIELDS, REQUIRED_OUTPUT_FIELDS, "output");
   if (!ASSET_TYPES.includes(value.assetType)) fail("INVALID_ASSET_TYPE", "assetType");
-  technicalProperties(value.technicalProperties, value.assetType);
+  technicalProperties(value.technicalProperties, value.assetType, value.source !== undefined);
   hash(value.contentHash, "contentHash");
   mediaReference(value.mediaReference);
   if (!ORIGINS.includes(value.origin)) fail("INVALID_MEDIA_ORIGIN", "origin");
@@ -56,19 +57,26 @@ export function validateMediaProviderOutput(value) {
   if (!PROVIDER_ORIGINS.has(value.origin) && value.provider !== null) fail("PROVIDER_NOT_APPLICABLE", "provider");
   rights(value.rights);
   validateRightsOrigin(value.origin, value.rights.usageBasis);
+  if (value.origin === "PROVIDER_LICENSED" && value.source === undefined) fail("SOURCE_REQUIRED", "source");
   const normalized = structuredClone(value);
   if (value.telemetry !== undefined) normalized.telemetry = validateAiCallObservation(value.telemetry);
   return deepFreeze(normalized);
 }
 
-function technicalProperties(value, assetType) {
+function technicalProperties(value, assetType, isV2) {
   record(value, "technicalProperties");
-  exact(value, TECHNICAL_FIELDS, "technicalProperties");
+  exact(value, isV2 ? V2_TECHNICAL_FIELDS : TECHNICAL_FIELDS, "technicalProperties");
   if (!FORMATS[assetType].includes(value.format)) fail("INVALID_MEDIA_FORMAT", "technicalProperties.format");
   boundedPositiveInteger(value.widthPixels, "technicalProperties.widthPixels", "INVALID_MEDIA_DIMENSION", 100000);
   boundedPositiveInteger(value.heightPixels, "technicalProperties.heightPixels", "INVALID_MEDIA_DIMENSION", 100000);
   if (assetType === "IMAGE" && value.durationMilliseconds !== null) fail("DURATION_NOT_APPLICABLE", "technicalProperties.durationMilliseconds");
   if (assetType === "VIDEO") boundedPositiveInteger(value.durationMilliseconds, "technicalProperties.durationMilliseconds", "INVALID_DURATION", 86400000);
+  if (isV2) {
+    const expectedMime = value.format === "mp4" ? "video/mp4" : value.format === "mov" ? "video/quicktime" : value.format === "webm" ? "video/webm" : `image/${value.format}`;
+    if (value.mimeType !== expectedMime) fail("INVALID_MEDIA_MIME_TYPE", "technicalProperties.mimeType");
+    if (assetType === "VIDEO" && typeof value.hasAudio !== "boolean") fail("INVALID_AUDIO_FLAG", "technicalProperties.hasAudio");
+    if (assetType === "IMAGE" && value.hasAudio !== null) fail("AUDIO_NOT_APPLICABLE", "technicalProperties.hasAudio");
+  }
 }
 
 function rights(value) {

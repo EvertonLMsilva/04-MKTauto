@@ -5,7 +5,7 @@ import {
   validateMediaAcquisitionRequest,
   validateMediaProviderOutput,
 } from "./domain/media-acquisition-contracts.js";
-import { MEDIA_ASSET_CONTRACT_VERSION, validateMediaAsset } from "./domain/media-asset-contracts.js";
+import { MEDIA_ASSET_CONTRACT_VERSION, MEDIA_ASSET_V2_CONTRACT_VERSION, validateMediaAsset } from "./domain/media-asset-contracts.js";
 
 export class MediaAcquisitionError extends Error {
   constructor(code, field, message, options) {
@@ -47,7 +47,7 @@ export class MediaAcquisitionService {
     verifyScope(script, run);
     const direction = script.visualDirections.find(({ position }) => position === request.visualDirectionPosition);
     if (!direction) throw failure("VISUAL_DIRECTION_NOT_FOUND", "visualDirectionPosition", "direção visual não pertence ao roteiro");
-    const input = buildProviderInput(request, direction, run);
+    const input = buildProviderInput(request, direction, run, this.repository);
 
     let rawOutput;
     try { rawOutput = await this.provider.provide(input, { signal }); }
@@ -103,11 +103,15 @@ function buildCostEvent(asset, telemetry) {
   });
 }
 
-function buildProviderInput(request, direction, run) {
+function buildProviderInput(request, direction, run, repository) {
   const snapshot = run.projectSnapshot;
+  const used = typeof repository.listMediaAssetsByPipelineRun === "function"
+    ? repository.listMediaAssetsByPipelineRun(run.pipelineRunId).map((asset) => asset.source?.externalAssetId).filter(Boolean)
+    : [];
   return deepFreeze({
     logicalCallId: request.mediaAcquisitionRequestId,
     assetType: request.assetType,
+    ...(request.assetType === "VIDEO" ? { excludedExternalAssetIds: [...new Set(used)].sort() } : {}),
     visualDirection: {
       position: direction.position,
       blockPosition: direction.blockPosition,
@@ -122,13 +126,18 @@ function buildProviderInput(request, direction, run) {
       contentFormat: snapshot.channel.format,
       aspectRatio: snapshot.channel.aspectRatio,
       visualStyle: snapshot.channel.visualStyle,
+      ...(request.assetType === "VIDEO" ? {
+        productionProfile: snapshot.channel.productionProfile ?? "STATIC_IMAGE_V1",
+        minDurationSeconds: snapshot.channel.minDurationSeconds ?? 25,
+        maxDurationSeconds: snapshot.channel.maxDurationSeconds ?? 45,
+      } : {}),
     },
   });
 }
 
 function buildMediaAsset(request, script, run, output) {
   return validateMediaAsset({
-    schemaVersion: MEDIA_ASSET_CONTRACT_VERSION,
+    schemaVersion: output.source === undefined ? MEDIA_ASSET_CONTRACT_VERSION : MEDIA_ASSET_V2_CONTRACT_VERSION,
     mediaAssetId: `media_asset:${request.mediaAcquisitionRequestId}`,
     pipelineRunId: run.pipelineRunId,
     projectId: run.projectId,
@@ -143,6 +152,7 @@ function buildMediaAsset(request, script, run, output) {
     origin: output.origin,
     provider: output.provider,
     rights: output.rights,
+    ...(output.source === undefined ? {} : { source: output.source }),
     createdAt: request.requestedAt,
     revision: 1,
     supersedesMediaAssetId: null,
