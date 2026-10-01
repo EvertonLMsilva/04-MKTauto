@@ -28,7 +28,7 @@ export class FfmpegQualityInspector {
     const media = [];
     for (const asset of mediaAssets) {
       abort(signal);
-      const file = await inspectFile(() => this.resolver.resolveMedia(asset.mediaReference), this.config.maxMediaBytes, signal);
+      const file = await inspectFile(() => this.resolver.resolveMedia(asset.mediaReference, asset.assetType === "VIDEO" ? "mp4" : "png"), this.config.maxMediaBytes, signal);
       media.push(Object.freeze({ mediaAssetId: asset.mediaAssetId, exists: file.exists, accessible: file.accessible, regularFile: file.regularFile, sizeBytes: file.sizeBytes, readable: file.readable, sha256: file.sha256, errorKind: file.errorKind }));
     }
     return deepFreeze({

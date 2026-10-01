@@ -8,6 +8,8 @@ import { loadOpenAIConfig } from "./openai-config.js";
 import { loadOpenAIImageConfig } from "./openai-image-config.js";
 import { loadOpenAIVoiceConfig } from "./openai-voice-config.js";
 import { MediaAcquisitionService } from "./media-acquisition-service.js";
+import { MediaSelectionService } from "./media-selection-service.js";
+import { loadPexelsVideoConfig } from "./pexels-video-config.js";
 import { PipelineRunService } from "./pipeline-run-service.js";
 import { QualityControlService } from "./quality-control-service.js";
 import { HumanApprovalRepository } from "./human-approval-repository.js";
@@ -29,6 +31,7 @@ import { LocalPreviewVerifier } from "./adapters/local-preview-verifier.js";
 import { OpenAIAdapter } from "./adapters/openai.js";
 import { OpenAIImageAdapter } from "./adapters/openai-image.js";
 import { OpenAIVoiceAdapter } from "./adapters/openai-voice.js";
+import { PexelsVideoAdapter } from "./adapters/pexels-video.js";
 import { OpenAIIdeaAdapter } from "./adapters/openai-idea.js";
 import { IdeaSelectionRepository } from "./idea-selection-repository.js";
 import { IdeaService } from "./idea-service.js";
@@ -67,12 +70,20 @@ export function createPreviewRuntime({ database, env = process.env }) {
 
     const pipelineRuns = new PipelineRunService(videoRepository);
     const stages = new StageRecoveryService(stageRepository);
+    const imageAcquisition = new MediaAcquisitionService(videoRepository, new OpenAIImageAdapter(imageConfig));
+    let videoAcquisition = null;
+    const lazyVideoAcquisition = Object.freeze({ acquire: (value, options) => {
+      videoAcquisition ??= new MediaAcquisitionService(videoRepository, new PexelsVideoAdapter(loadPexelsVideoConfig(env)));
+      return videoAcquisition.acquire(value, options);
+    } });
+    const selection = new MediaSelectionService(videoRepository, { video: lazyVideoAcquisition, image: imageAcquisition });
+    const media = Object.freeze({ acquire: (value, options) => imageAcquisition.acquire(value, options), select: (value, options) => selection.select(value, options) });
     const lookup = Object.freeze({ getScript: (scriptId) => videoRepository.getScript(scriptId), getSelection: (selectionId) => videoRepository.getSelection(selectionId) });
     const previews = new RealPreviewService({
       pipelineRuns,
       scripts: new ScriptGenerationService(videoRepository, new OpenAIAdapter(scriptConfig)),
       voices: new VoiceGenerationService(voiceRepository, new OpenAIVoiceAdapter(voiceConfig)),
-      media: new MediaAcquisitionService(videoRepository, new OpenAIImageAdapter(imageConfig)),
+      media,
       plans: new CompositionPlanService(videoRepository),
       videos: new VideoCompositionService(videoRepository, composer),
       subtitles: new SubtitleGenerationService(subtitleRepository),

@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
-import { COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanContentHash } from "../src/domain/composition-plan-contracts.js";
+import { COMPOSITION_PLAN_CONTRACT_VERSION, COMPOSITION_PLAN_V2_CONTRACT_VERSION, MIXED_MEDIA_COMPOSITION_POLICY_VERSION, compositionPlanContentHash } from "../src/domain/composition-plan-contracts.js";
 import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { VOICE_TRACK_CONTRACT_VERSION } from "../src/domain/voice-track-contracts.js";
@@ -28,6 +28,28 @@ test("persiste plano e linhagem ordenada com retry idempotente", () => {
     ]);
     assert.equal(count(path, "composition_plans"), 1);
     assert.equal(count(path, "composition_plan_segments"), 2);
+  });
+});
+
+test("migration 028 persiste plano misto append-only e recupera após restart", () => {
+  withService(({ service, repository, script, voice, assets, path }) => {
+    const value = mixedPlan(script, voice, assets);
+    assert.deepEqual(service.register(value), value);
+    assert.equal(count(path, "composition_plan_v2_details"), 1);
+    assert.equal(count(path, "composition_plan_v2_segments"), 2);
+    assert.equal(count(path, "composition_plan_segments"), 0);
+    repository.close();
+    const restarted = new CompositionPlanRepository(path);
+    restarted.getScript = (id) => id === script.scriptId ? script : null;
+    try { assert.deepEqual(restarted.getCompositionPlan(value.compositionPlanId), value); }
+    finally { restarted.close(); }
+  });
+});
+
+test("plano misto rejeita trim curto e aceita loop declarado", () => {
+  withService(({ service, script, voice, assets }) => {
+    assert.throws(() => service.register(mixedPlan(script, voice, assets, { video: { sourceStartMilliseconds: 3000, playbackMode: "TRIM" } })), repositoryError("MEDIA_DURATION_INSUFFICIENT", "segments.1"));
+    assert.equal(service.register(mixedPlan(script, voice, assets, { video: { sourceStartMilliseconds: 3000, playbackMode: "LOOP" } })).segments[1].playbackMode, "LOOP");
   });
 });
 
@@ -130,8 +152,8 @@ test("migração 020 é aditiva, não cria planos retroativos e preserva ativos"
     assert.deepEqual(migrated.listCompositionPlansByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 27);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 27);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM media_assets").get().total, 2);
     raw.close();
@@ -244,11 +266,23 @@ function plan(script, voice, assets, overrides = {}) {
   return value;
 }
 
+function mixedPlan(script, voice, assets, { video = {}, ...overrides } = {}) {
+  const value = {
+    ...plan(script, voice, assets), schemaVersion: COMPOSITION_PLAN_V2_CONTRACT_VERSION,
+    productionProfile: "MIXED_MEDIA_V2", compositionPolicyVersion: MIXED_MEDIA_COMPOSITION_POLICY_VERSION,
+    segments: segments(assets).map((segment, index) => ({ ...segment, mediaType: index === 0 ? "IMAGE" : "VIDEO", sourceStartMilliseconds: 0,
+      playbackMode: "TRIM", originalAudioMuted: true, framingStrategy: "COVER_CROP_9_16",
+      transition: { policyVersion: "composition-transition/1.0.0", type: "CUT", durationMilliseconds: 0 }, ...(index === 1 ? video : {}) })),
+    contentHash: "0".repeat(64), ...overrides,
+  };
+  value.contentHash = compositionPlanContentHash(value); return value;
+}
+
 function project() { return {
   id: "project_curiosidades_ia", name: "Curiosidades IA", version: 1,
   niche: "inteligência artificial", subniches: ["ferramentas"],
   audience: { profile: "Pessoas interessadas em tecnologia", language: "pt-BR" }, references: [],
-  channel: { voiceStyle: "informative", publishing: { contentsPerDay: 1, networks: ["instagram"], timezone: "America/Sao_Paulo", times: ["10:00"] } },
+  channel: { voiceStyle: "informative", productionProfile: "MIXED_MEDIA_V2", publishing: { contentsPerDay: 1, networks: ["instagram"], timezone: "America/Sao_Paulo", times: ["10:00"] } },
 }; }
 
 function input(position, inputId, contentHash) { return { position, kind: "INTERNAL_ARTIFACT", inputId, contentHash }; }

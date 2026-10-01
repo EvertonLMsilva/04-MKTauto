@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { FfmpegVideoComposer } from "../src/adapters/ffmpeg-video-composer.js";
@@ -15,29 +16,35 @@ import { RealPreviewService } from "../src/real-preview-service.js";
 import { evaluateQualityControl } from "../src/quality-control-service.js";
 import { png, sha256, wav } from "../test-support/physical-fixtures.js";
 
-test("uma chamada produz preview físico real com áudio, mídia, vídeo e legendas", {
-  skip: process.env.REAL_PREVIEW_INTEGRATION_TEST !== "1", timeout: 310000,
+test("VIDEO + IMAGE + Voice produz Composition, Subtitles, Preview e QC físicos", {
+  skip: process.env.MIXED_MEDIA_INTEGRATION_TEST !== "1", timeout: 310000,
 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "mktauto-real-preview-"));
   const roots = { voiceRoot: join(root, "voice"), mediaRoot: join(root, "media"), renderRoot: join(root, "render") };
   Object.values(roots).forEach((path) => mkdirSync(path, { recursive: true }));
   try {
-    const voiceHash = store(roots.voiceRoot, wav({ durationMilliseconds: 1234 }), "wav");
-    const mediaHash = store(roots.mediaRoot, png({ color: 72 }), "png");
-    const script = { scriptId: "script:preview_e07_physical:script", pipelineRunId: "run_e07_physical", projectId: "project_e07", projectVersion: 1, ideaSelectionId: "selection_e07_physical", ideaSelectionContentHash: "9".repeat(64), contentHash: "a".repeat(64), createdAt: "2026-09-30T10:00:00.000Z", fullNarration: "Legenda física no preview final.", language: "pt-BR", visualDirections: [{ position: 1, blockPosition: 1, description: "Imagem autorizada." }] };
-    const voice = { schemaVersion: "voice-track/1.0.0", voiceTrackId: "voice_track:preview_e07_physical:voice", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, language: "pt-BR", voiceStyle: "informative", durationMilliseconds: 1234, audioFormat: "wav", contentHash: voiceHash, storageReference: `object:voice/sha256/${voiceHash}`, origin: "SYNTHETIC_TTS", provider: "authorized_local", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true }, createdAt: script.createdAt, revision: 1, supersedesVoiceTrackId: null };
-    const media = { schemaVersion: "media-asset/1.0.0", mediaAssetId: "media_asset:preview_e07_physical:media:1", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: 1, assetType: "IMAGE", technicalProperties: { format: "png", widthPixels: 90, heightPixels: 160, durationMilliseconds: null }, contentHash: mediaHash, mediaReference: `media:sha256_${mediaHash}`, origin: "OPERATOR_OWNED", provider: null, rights: { usageBasis: "OWNED", commercialUseAllowed: true }, createdAt: script.createdAt, revision: 1, supersedesMediaAssetId: null };
+    const ffmpegPath = process.env.FFMPEG_PATH ?? "ffmpeg"; const ffprobePath = process.env.FFPROBE_PATH ?? "ffprobe";
+    const voiceHash = store(roots.voiceRoot, wav({ durationMilliseconds: 2000 }), "wav");
+    const imageHash = store(roots.mediaRoot, png({ color: 72 }), "png");
+    const generatedVideo = join(root, "fixture.mp4");
+    execFileSync(ffmpegPath, ["-hide_banner", "-loglevel", "error", "-f", "lavfi", "-i", "color=c=red:s=720x1280:r=30", "-t", "1.000", "-an", "-c:v", "libx264", "-pix_fmt", "yuv420p", "-movflags", "+faststart", generatedVideo], { windowsHide: true });
+    const videoHash = store(roots.mediaRoot, readFileSync(generatedVideo), "mp4");
+    const script = { scriptId: "script:preview_e07_physical:script", pipelineRunId: "run_e07_physical", projectId: "project_e07", projectVersion: 1, ideaSelectionId: "selection_e07_physical", ideaSelectionContentHash: "9".repeat(64), contentHash: "a".repeat(64), createdAt: "2026-09-30T10:00:00.000Z", fullNarration: "Legenda física no preview final.", language: "pt-BR", visualDirections: [{ position: 1, blockPosition: 1, description: "Vídeo autorizado." }, { position: 2, blockPosition: 1, description: "Imagem autorizada." }] };
+    const voice = { schemaVersion: "voice-track/1.0.0", voiceTrackId: "voice_track:preview_e07_physical:voice", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, language: "pt-BR", voiceStyle: "informative", durationMilliseconds: 2000, audioFormat: "wav", contentHash: voiceHash, storageReference: `object:voice/sha256/${voiceHash}`, origin: "SYNTHETIC_TTS", provider: "authorized_local", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true }, createdAt: script.createdAt, revision: 1, supersedesVoiceTrackId: null };
+    const video = { schemaVersion: "media-asset/2.0.0", mediaAssetId: "media_asset:preview_e07_physical:media:1", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: 1, assetType: "VIDEO", technicalProperties: { format: "mp4", mimeType: "video/mp4", widthPixels: 720, heightPixels: 1280, durationMilliseconds: 1000, hasAudio: false }, contentHash: videoHash, mediaReference: `media:sha256_${videoHash}`, origin: "PROVIDER_LICENSED", provider: "pexels", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true }, source: { externalAssetId: "fixture", licenseName: "Authorized fixture", licenseUrl: "https://example.com/license", photographerName: "Test", photographerUrl: "https://example.com/creator", sourceUrl: "https://example.com/video" }, createdAt: script.createdAt, revision: 1, supersedesMediaAssetId: null };
+    const image = { schemaVersion: "media-asset/1.0.0", mediaAssetId: "media_asset:preview_e07_physical:media:2", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: 2, assetType: "IMAGE", technicalProperties: { format: "png", widthPixels: 90, heightPixels: 160, durationMilliseconds: null }, contentHash: imageHash, mediaReference: `media:sha256_${imageHash}`, origin: "OPERATOR_OWNED", provider: null, rights: { usageBasis: "OWNED", commercialUseAllowed: true }, createdAt: script.createdAt, revision: 1, supersedesMediaAssetId: null };
+    const media = [video, image];
     const resolver = new LocalCompositionReferenceResolver(roots);
     const videoConfig = composerConfig(roots); const subtitleConfig = burnConfig(roots.renderRoot);
-    const composer = new FfmpegVideoComposer(videoConfig, { artifactCatalog: { getVoiceTrack: () => voice, getMediaAsset: () => media }, referenceResolver: resolver });
+    const composer = new FfmpegVideoComposer(videoConfig, { artifactCatalog: { getVoiceTrack: () => voice, getMediaAsset: (id) => media.find((asset) => asset.mediaAssetId === id) }, referenceResolver: resolver });
     const renderer = new FfmpegSubtitleRenderer(subtitleConfig, { referenceResolver: resolver });
-    let plan; let source; let track; let preview; const run = { pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: script.projectId, version: 1 }, channel: { aspectRatio: "9:16" } } };
+    let plan; let source; let track; let preview; const run = { pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, state: "RUNNING", projectSnapshot: { project: { id: script.projectId, version: 1 }, channel: { aspectRatio: "9:16", productionProfile: "MIXED_MEDIA_V2" } } };
     const service = new RealPreviewService({
       pipelineRuns: { get: () => run, succeed: () => { run.state = "SUCCEEDED"; }, fail: () => { run.state = "FAILED"; } },
-      scripts: { generate: async () => script }, lookup: { getScript: () => null }, voices: { generate: async () => voice }, media: { acquire: async () => media },
+      scripts: { generate: async () => script }, lookup: { getScript: () => null }, voices: { generate: async () => voice }, media: { acquire: async () => image, select: async (request) => media[request.visualDirectionPosition - 1] },
       plans: { register: (value) => { plan = validateCompositionPlan({ ...value, contentHash: compositionPlanContentHash(value) }); return plan; } },
       videos: { compose: async (value, options) => { const output = await composer.compose({ logicalCallId: value.videoCompositionRequestId, compositionPlan: plan, output: { containerFormat: value.containerFormat, widthPixels: value.widthPixels, heightPixels: value.heightPixels } }, options); source = { schemaVersion: "video-render/1.0.0", videoRenderId: `video_render:${value.videoCompositionRequestId}`, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, outputAspectRatio: plan.outputAspectRatio, durationMilliseconds: output.durationMilliseconds, containerFormat: output.containerFormat, widthPixels: output.widthPixels, heightPixels: output.heightPixels, contentHash: output.contentHash, logicalReference: output.logicalReference, createdAt: script.createdAt, revision: 1, supersedesVideoRenderId: null }; return source; } },
-      subtitles: { generate: (value) => { track = { schemaVersion: "subtitle-track/1.0.0", subtitleTrackId: "subtitle_track_physical", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, language: "pt-BR", timeUnit: "MILLISECONDS", durationMilliseconds: 1234, stylePolicyVersion: value.stylePolicyVersion, cues: [{ position: 1, text: "Legenda física no preview final.", startMilliseconds: 0, endMilliseconds: 1100 }], createdAt: script.createdAt, revision: 1, supersedesSubtitleTrackId: null, contentHash: "" }; track.contentHash = subtitleTrackContentHash(track); return { subtitleTrack: track }; } },
+      subtitles: { generate: (value) => { track = { schemaVersion: "subtitle-track/1.0.0", subtitleTrackId: "subtitle_track_physical", pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, scriptId: script.scriptId, scriptContentHash: script.contentHash, voiceTrackId: voice.voiceTrackId, voiceTrackContentHash: voice.contentHash, language: "pt-BR", timeUnit: "MILLISECONDS", durationMilliseconds: 2000, stylePolicyVersion: value.stylePolicyVersion, cues: [{ position: 1, text: "Legenda física no preview final.", startMilliseconds: 0, endMilliseconds: 1900 }], createdAt: script.createdAt, revision: 1, supersedesSubtitleTrackId: null, contentHash: "" }; track.contentHash = subtitleTrackContentHash(track); return { subtitleTrack: track }; } },
       subtitleRendering: { render: async (value, options) => { const output = await renderer.render({ request: value, videoRender: source, subtitleTrack: track }, options); preview = { schemaVersion: "video-render/1.0.0", videoRenderId: `video_render:subtitle:${value.subtitleRenderRequestId.slice("subtitle_render:".length)}`, pipelineRunId: script.pipelineRunId, projectId: script.projectId, projectVersion: 1, compositionPlanId: plan.compositionPlanId, compositionPlanContentHash: plan.contentHash, outputAspectRatio: output.outputAspectRatio, durationMilliseconds: source.durationMilliseconds, containerFormat: output.containerFormat, widthPixels: output.widthPixels, heightPixels: output.heightPixels, contentHash: output.contentHash, logicalReference: output.logicalReference, createdAt: script.createdAt, revision: 2, supersedesVideoRenderId: source.videoRenderId }; return preview; } },
       lineage: { get: (id) => physicalLineage(id, { script, voice, media, plan, source, track, preview }) },
       previewVerifier: new LocalPreviewVerifier(resolver), costs: { getLedgerByPipelineRun: () => ({ events: [] }) }, now: () => "2026-09-30T10:01:00.000Z",
@@ -46,11 +53,17 @@ test("uma chamada produz preview físico real com áudio, mídia, vídeo e legen
     const finalPath = join(roots.renderRoot, "sha256", result.previewVideoRender.contentHash.slice(0, 2), `${result.previewVideoRender.contentHash}.mp4`);
     assert.equal(result.previewVideoRender.revision, 2); assert.equal(result.previewVideoRender.contentHash, sha256(readFileSync(finalPath)));
     assert.equal(result.sourceVideoRender.id, source.videoRenderId); assert.equal(run.state, "SUCCEEDED");
-    const inspector = new FfmpegQualityInspector({ ffmpegPath: videoConfig.ffmpegPath, ffprobePath: videoConfig.ffprobePath, maxOutputBytes: videoConfig.maxOutputBytes, maxMediaBytes: videoConfig.maxImageBytes, timeoutMs: videoConfig.timeoutMs, maxLogBytes: videoConfig.maxLogBytes }, { referenceResolver: resolver });
-    const facts = await inspector.inspect({ videoRender: preview, mediaAssets: [media] });
-    const artifacts = [script, voice, media, plan, source, track, preview];
+    const measured = JSON.parse(execFileSync(ffprobePath, ["-v", "error", "-of", "json", "-show_entries", "format=duration:stream=codec_type,width,height", "-show_streams", "-show_format", finalPath], { encoding: "utf8", windowsHide: true }));
+    assert.equal(measured.streams.filter(({ codec_type: type }) => type === "video").length, 1); assert.equal(measured.streams.filter(({ codec_type: type }) => type === "audio").length, 1);
+    assert.equal(measured.streams.find(({ codec_type: type }) => type === "video").width, 1080); assert.equal(measured.streams.find(({ codec_type: type }) => type === "video").height, 1920); assert.equal(Math.round(Number(measured.format.duration) * 1000), 2000);
+    execFileSync(ffmpegPath, ["-v", "error", "-xerror", "-i", finalPath, "-f", "null", "-"], { windowsHide: true });
+    const black = spawnSync(ffmpegPath, ["-hide_banner", "-i", finalPath, "-vf", "blackdetect=d=0.02:pix_th=0.10", "-an", "-f", "null", "-"], { encoding: "utf8", windowsHide: true });
+    assert.equal(black.status, 0); assert.doesNotMatch(black.stderr, /black_start:/);
+    const inspector = new FfmpegQualityInspector({ ffmpegPath: videoConfig.ffmpegPath, ffprobePath: videoConfig.ffprobePath, maxOutputBytes: videoConfig.maxOutputBytes, maxMediaBytes: videoConfig.maxTotalInputBytes, timeoutMs: videoConfig.timeoutMs, maxLogBytes: videoConfig.maxLogBytes }, { referenceResolver: resolver });
+    const facts = await inspector.inspect({ videoRender: preview, mediaAssets: media });
+    const artifacts = [script, voice, ...media, plan, source, track, preview];
     const lineages = new Map(artifacts.map((artifact) => { const id = artifact.videoRenderId ?? artifact.subtitleTrackId ?? artifact.compositionPlanId ?? artifact.mediaAssetId ?? artifact.voiceTrackId ?? artifact.scriptId; return [id, physicalLineage(id, { script, voice, media, plan, source, track, preview })]; }));
-    const findings = evaluateQualityControl({ run, script, voiceTrack: voice, mediaAssets: [media], compositionPlan: plan, sourceVideoRender: source, subtitleTrack: track, videoRender: preview, lineages, facts, maxOutputBytes: videoConfig.maxOutputBytes });
+    const findings = evaluateQualityControl({ run, script, voiceTrack: voice, mediaAssets: media, compositionPlan: plan, sourceVideoRender: source, subtitleTrack: track, videoRender: preview, lineages, facts, maxOutputBytes: videoConfig.maxOutputBytes });
     assert.equal(findings.some(({ status }) => status === "FAIL"), false);
   } finally { rmSync(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 20 }); }
 });
@@ -64,8 +77,8 @@ function physicalLineage(id, { script, voice, media, plan, source, track, previe
   const entries = [
     [script.scriptId, script.contentHash, [internal(1, script.ideaSelectionId, script.ideaSelectionContentHash)]],
     [voice.voiceTrackId, voice.contentHash, [internal(1, script.scriptId, script.contentHash)]],
-    [media.mediaAssetId, media.contentHash, [internal(1, script.scriptId, script.contentHash)]],
-    ...(plan ? [[plan.compositionPlanId, plan.contentHash, [internal(1, script.scriptId, script.contentHash), internal(2, voice.voiceTrackId, voice.contentHash), internal(3, media.mediaAssetId, media.contentHash)]]] : []),
+    ...media.map((asset) => [asset.mediaAssetId, asset.contentHash, [internal(1, script.scriptId, script.contentHash)]]),
+    ...(plan ? [[plan.compositionPlanId, plan.contentHash, [internal(1, script.scriptId, script.contentHash), internal(2, voice.voiceTrackId, voice.contentHash), ...media.map((asset, index) => internal(index + 3, asset.mediaAssetId, asset.contentHash))]]] : []),
     ...(source && plan ? [[source.videoRenderId, source.contentHash, [internal(1, plan.compositionPlanId, plan.contentHash)]]] : []),
     ...(track ? [[track.subtitleTrackId, track.contentHash, [internal(1, script.scriptId, script.contentHash), internal(2, voice.voiceTrackId, voice.contentHash)]]] : []),
     ...(preview && plan && source && track ? [[preview.videoRenderId, preview.contentHash, [internal(1, plan.compositionPlanId, plan.contentHash), internal(2, source.videoRenderId, source.contentHash), internal(3, track.subtitleTrackId, track.contentHash)]]] : []),

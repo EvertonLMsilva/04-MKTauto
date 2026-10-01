@@ -2,10 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   COMPOSITION_PLAN_CONTRACT_VERSION,
+  COMPOSITION_PLAN_V2_CONTRACT_VERSION,
+  MIXED_MEDIA_COMPOSITION_POLICY_VERSION,
   compositionPlanContentHash,
   compositionPlanIdentityHash,
   validateCompositionPlan,
 } from "../src/domain/composition-plan-contracts.js";
+
+test("plano V2 misto é fechado, imutável e possui hash reproduzível", () => {
+  const value = mixedPlan();
+  const first = validateCompositionPlan(value);
+  const second = validateCompositionPlan(structuredClone(value));
+  assert.equal(first.schemaVersion, COMPOSITION_PLAN_V2_CONTRACT_VERSION);
+  assert.equal(first.contentHash, second.contentHash);
+  assert.ok(Object.isFrozen(first.segments[0].transition));
+  assert.throws(() => validateCompositionPlan({ ...value, compositionPolicyVersion: "latest", contentHash: value.contentHash }), error("UNSUPPORTED_COMPOSITION_POLICY", "compositionPolicyVersion"));
+  assert.throws(() => validateCompositionPlan(rehash(value, { segments: [{ ...value.segments[0], originalAudioMuted: false }, value.segments[1]] })), error("ORIGINAL_AUDIO_MUST_BE_MUTED", "segments.0.originalAudioMuted"));
+});
+
+test("plano V2 fecha trim, loop, crop e transição mínima", () => {
+  const value = mixedPlan();
+  assert.equal(validateCompositionPlan(value).segments[0].playbackMode, "TRIM");
+  assert.equal(validateCompositionPlan(rehash(value, { segments: [{ ...value.segments[0], playbackMode: "LOOP" }, value.segments[1]] })).segments[0].playbackMode, "LOOP");
+  for (const [change, code, path] of [
+    [{ sourceStartMilliseconds: -1 }, "INVALID_TIME", "segments.0.sourceStartMilliseconds"],
+    [{ framingStrategy: "STRETCH" }, "UNSUPPORTED_FRAMING_STRATEGY", "segments.0.framingStrategy"],
+    [{ transition: { policyVersion: "composition-transition/1.0.0", type: "FADE", durationMilliseconds: 10 } }, "UNSUPPORTED_TRANSITION", "segments.0.transition"],
+  ]) assert.throws(() => validateCompositionPlan(rehash(value, { segments: [{ ...value.segments[0], ...change }, value.segments[1]] })), error(code, path));
+});
 
 test("valida plano contínuo em milissegundos com hashes reproduzíveis", () => {
   const value = validateCompositionPlan(plan());
@@ -76,6 +100,19 @@ function plan(overrides = {}) {
   value.contentHash = compositionPlanContentHash(value);
   return value;
 }
+
+function mixedPlan() {
+  const value = {
+    ...plan(), schemaVersion: COMPOSITION_PLAN_V2_CONTRACT_VERSION,
+    productionProfile: "MIXED_MEDIA_V2", compositionPolicyVersion: MIXED_MEDIA_COMPOSITION_POLICY_VERSION,
+    segments: [
+      { position: 1, visualDirectionPosition: 1, mediaAssetId: "media_asset_001", mediaAssetContentHash: "d".repeat(64), startMilliseconds: 0, endMilliseconds: 4000, mediaType: "VIDEO", sourceStartMilliseconds: 500, playbackMode: "TRIM", originalAudioMuted: true, framingStrategy: "COVER_CROP_9_16", transition: { policyVersion: "composition-transition/1.0.0", type: "CUT", durationMilliseconds: 0 } },
+      { position: 2, visualDirectionPosition: 2, mediaAssetId: "media_asset_002", mediaAssetContentHash: "e".repeat(64), startMilliseconds: 4000, endMilliseconds: 10000, mediaType: "IMAGE", sourceStartMilliseconds: 0, playbackMode: "TRIM", originalAudioMuted: true, framingStrategy: "COVER_CROP_9_16", transition: { policyVersion: "composition-transition/1.0.0", type: "CUT", durationMilliseconds: 0 } },
+    ], contentHash: "0".repeat(64),
+  };
+  value.contentHash = compositionPlanContentHash(value); return value;
+}
+function rehash(value, changes) { const copy = { ...value, ...changes, contentHash: "0".repeat(64) }; copy.contentHash = compositionPlanContentHash(copy); return copy; }
 
 function error(code, path) {
   return (caught) => caught?.name === "ContractValidationError" && caught.code === code && caught.path === path;

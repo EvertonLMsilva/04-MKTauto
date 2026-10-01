@@ -49,7 +49,8 @@ export class StageRecoveryService {
       if (state === "SUCCEEDED") {
         for (const input of attempt.inputs) {
           const dependency = latest.get(input.stage);
-          if (!dependency || dependency.state !== "SUCCEEDED" || dependency.artifactId !== input.artifactId || dependency.artifactContentHash !== input.contentHash) { state = "PENDING"; break; }
+          const projected = statuses.get(input.stage);
+          if (!dependency || projected?.state !== "SUCCEEDED" || dependency.artifactId !== input.artifactId || dependency.artifactContentHash !== input.contentHash) { state = "PENDING"; break; }
         }
       }
       statuses.set(stage, status(stage, state, attempt));

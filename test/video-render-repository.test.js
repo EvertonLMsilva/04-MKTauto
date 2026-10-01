@@ -69,7 +69,7 @@ test("persiste burn-in como revisão 2 imutável, request normalizada e lineage 
       { position: 2, kind: "INTERNAL_ARTIFACT", inputId: source.videoRenderId, contentHash: source.contentHash },
       { position: 3, kind: "INTERNAL_ARTIFACT", inputId: track.subtitleTrackId, contentHash: track.contentHash },
     ]);
-    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 27"), 0);
+    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 28"), 0);
     assert.throws(() => repository.db.prepare("UPDATE video_renders SET content_hash = ? WHERE video_render_id = ?").run("0".repeat(64), burned.videoRenderId), /IMMUTABLE_VIDEO_RENDER/);
   });
 });
@@ -194,8 +194,8 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 27);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 27);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
@@ -227,8 +227,8 @@ test("migração 021 continua recuperável junto da 022", () => {
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 27);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 27);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
