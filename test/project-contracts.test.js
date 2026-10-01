@@ -103,6 +103,7 @@ test("aplica defaults determinísticos documentados", () => {
     editorialStyle: "informative",
     visualStyle: "dynamic",
     voiceStyle: "informative",
+    productionProfile: "STATIC_IMAGE_V1",
     publishing: {
       contentsPerDay: 1,
       networks: ["instagram"],
@@ -110,6 +111,16 @@ test("aplica defaults determinísticos documentados", () => {
       times: ["10:00"],
     },
   });
+});
+
+test("mantém imagens estáticas por padrão e aceita mídia mista explicitamente", () => {
+  assert.equal(createProjectSnapshot(validProject()).channel.productionProfile, "STATIC_IMAGE_V1");
+  assert.equal(createProjectSnapshot(validProject({
+    channel: { ...validProject().channel, productionProfile: "mixed_media_v2" },
+  })).channel.productionProfile, "MIXED_MEDIA_V2");
+  assert.throws(() => createProjectSnapshot(validProject({
+    channel: { ...validProject().channel, productionProfile: "LATEST" },
+  })), (error) => error.code === "INVALID_PRODUCTION_PROFILE" && error.path === "channel.productionProfile");
 });
 
 test("define schemas separados para Project, ChannelProfile, ReferenceProfile e ProjectSnapshot", () => {

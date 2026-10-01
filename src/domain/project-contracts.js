@@ -15,6 +15,7 @@ export const PROJECT_DEFAULTS = deepFreeze({
     editorialStyle: "informative",
     visualStyle: "dynamic",
     voiceStyle: "informative",
+    productionProfile: "STATIC_IMAGE_V1",
     publishing: {
       contentsPerDay: 1,
       timezone: "America/Sao_Paulo",
@@ -26,6 +27,7 @@ export const PROJECT_DEFAULTS = deepFreeze({
 const NETWORKS = Object.freeze(["facebook", "instagram", "threads", "tiktok", "youtube"]);
 const FORMATS = Object.freeze(["short_video", "long_video"]);
 const ASPECT_RATIOS = Object.freeze(["9:16", "4:5", "1:1", "16:9"]);
+const PRODUCTION_PROFILES = Object.freeze(["STATIC_IMAGE_V1", "MIXED_MEDIA_V2"]);
 const SENSITIVE_KEYS = new Set([
   "accesstoken",
   "apikey",
@@ -54,6 +56,7 @@ export const PROJECT_SCHEMAS = deepFreeze({
     "editorialStyle",
     "visualStyle",
     "voiceStyle",
+    "productionProfile",
     "publishing",
   ]),
   ReferenceProfile: schema("ReferenceProfile", [
@@ -162,6 +165,7 @@ export function validateChannelProfile(value = {}) {
     "editorialStyle",
     "visualStyle",
     "voiceStyle",
+    "productionProfile",
     "publishing",
   ], "channel");
 
@@ -189,6 +193,12 @@ export function validateChannelProfile(value = {}) {
     ),
     visualStyle: normalizeRequiredText(value.visualStyle ?? PROJECT_DEFAULTS.channel.visualStyle, "channel.visualStyle"),
     voiceStyle: normalizeRequiredText(value.voiceStyle ?? PROJECT_DEFAULTS.channel.voiceStyle, "channel.voiceStyle"),
+    productionProfile: normalizeUpperEnum(
+      value.productionProfile ?? PROJECT_DEFAULTS.channel.productionProfile,
+      PRODUCTION_PROFILES,
+      "channel.productionProfile",
+      "INVALID_PRODUCTION_PROFILE",
+    ),
     publishing: validatePublishing(value.publishing ?? {}),
   };
 }
@@ -286,6 +296,12 @@ function normalizeLanguage(value, path) {
 
 function normalizeEnum(value, allowed, path, code) {
   const normalized = typeof value === "string" ? value.trim().toLocaleLowerCase("en-US") : value;
+  if (!allowed.includes(normalized)) fail(code, path, "valor não suportado");
+  return normalized;
+}
+
+function normalizeUpperEnum(value, allowed, path, code) {
+  const normalized = typeof value === "string" ? value.trim().toUpperCase() : value;
   if (!allowed.includes(normalized)) fail(code, path, "valor não suportado");
   return normalized;
 }

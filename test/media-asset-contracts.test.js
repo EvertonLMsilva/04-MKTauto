@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   MEDIA_ASSET_CONTRACT_VERSION,
+  MEDIA_ASSET_V2_CONTRACT_VERSION,
   mediaAssetIdentityHash,
   validateMediaAsset,
 } from "../src/domain/media-asset-contracts.js";
@@ -62,6 +63,24 @@ test("exige posição visual, hashes e revisão coerentes", () => {
   assert.throws(() => validateMediaAsset(mediaAsset({ contentHash: "x".repeat(64) })), contractError("INVALID_HASH", "contentHash"));
   assert.throws(() => validateMediaAsset(mediaAsset({ revision: 2 })), contractError("SUPERSEDED_MEDIA_ASSET_REQUIRED", "supersedesMediaAssetId"));
   assert.throws(() => validateMediaAsset(mediaAsset({ technicalProperties: technical({ widthPixels: null }) })), contractError("INVALID_MEDIA_DIMENSION", "technicalProperties.widthPixels"));
+});
+
+test("V2 exige MIME, áudio medido e proveniência completa para mídia licenciada", () => {
+  const value = mediaAsset({
+    schemaVersion: MEDIA_ASSET_V2_CONTRACT_VERSION,
+    assetType: "VIDEO",
+    technicalProperties: { format: "mp4", mimeType: "video/mp4", widthPixels: 1080, heightPixels: 1920, durationMilliseconds: 4120, hasAudio: false },
+    origin: "PROVIDER_LICENSED", provider: "pexels",
+    rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true },
+    source: {
+      externalAssetId: "2499611", licenseName: "Pexels License",
+      licenseUrl: "https://www.pexels.com/license/", photographerName: "Joey Farina",
+      photographerUrl: "https://www.pexels.com/@joey", sourceUrl: "https://www.pexels.com/video/2499611/",
+    },
+  });
+  assert.equal(validateMediaAsset(value).source.externalAssetId, "2499611");
+  assert.throws(() => validateMediaAsset({ ...value, source: { ...value.source, photographerName: "" } }), contractError("INVALID_SOURCE_METADATA", "source.photographerName"));
+  assert.throws(() => validateMediaAsset({ ...value, technicalProperties: { ...value.technicalProperties, mimeType: "image/png" } }), contractError("INVALID_MEDIA_MIME_TYPE", "technicalProperties.mimeType"));
 });
 
 function technical(overrides = {}) {

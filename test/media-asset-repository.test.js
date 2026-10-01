@@ -7,8 +7,9 @@ import { DatabaseSync } from "node:sqlite";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
 import { AI_CALL_TELEMETRY_CONTRACT_VERSION } from "../src/domain/ai-call-telemetry-contracts.js";
 import { COST_EVENT_CONTRACT_VERSION } from "../src/domain/cost-event-contracts.js";
-import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
+import { MEDIA_ASSET_CONTRACT_VERSION, MEDIA_ASSET_V2_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
 import { MEDIA_ACQUISITION_REQUEST_VERSION, mediaAcquisitionRequestHash } from "../src/domain/media-acquisition-contracts.js";
+import { MEDIA_SELECTION_REQUEST_VERSION, mediaSelectionRequestHash } from "../src/domain/media-selection-contracts.js";
 import { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } from "../src/domain/script-contracts.js";
 import { MediaAssetRepository, MediaAssetRepositoryError } from "../src/media-asset-repository.js";
 import { MediaAssetService } from "../src/media-asset-service.js";
@@ -100,6 +101,20 @@ test("falha na escrita reverte ativo e linhagem integralmente", () => {
   });
 });
 
+test("persiste e revalida proveniência V2 append-only", () => {
+  withService(({ service, repository, script, path }) => {
+    const source = { externalAssetId: "2499611", licenseName: "Pexels License", licenseUrl: "https://www.pexels.com/license/", photographerName: "Joey Farina", photographerUrl: "https://www.pexels.com/@joey", sourceUrl: "https://www.pexels.com/video/2499611/" };
+    const asset = mediaAsset(script, {
+      schemaVersion: MEDIA_ASSET_V2_CONTRACT_VERSION, assetType: "VIDEO",
+      technicalProperties: { format: "mp4", mimeType: "video/mp4", widthPixels: 1080, heightPixels: 1920, durationMilliseconds: 30000, hasAudio: false },
+      origin: "PROVIDER_LICENSED", provider: "pexels", rights: { usageBasis: "PROVIDER_TERMS", commercialUseAllowed: true }, source,
+    });
+    assert.deepEqual(service.register(asset), asset);
+    assert.equal(count(path, "media_asset_sources"), 1);
+    assert.throws(() => repository.db.prepare("UPDATE media_asset_sources SET photographer_name = 'other' WHERE media_asset_id = ?").run(asset.mediaAssetId), /IMMUTABLE_MEDIA_ASSET_SOURCE/);
+  });
+});
+
 test("persiste solicitação, ativo e linhagem na mesma transação", () => {
   withService(({ repository, script, path }) => {
     const request = acquisitionRequest(script);
@@ -115,6 +130,21 @@ test("persiste solicitação, ativo e linhagem na mesma transação", () => {
     assert.equal(count(path, "media_acquisition_requests"), 1);
     assert.equal(count(path, "media_assets"), 1);
     assert.equal(countWhere(path, "artifact_lineage", "artifact_type = 'media_asset'"), 1);
+  });
+});
+
+test("persiste seleção e fallback por identidade exata após a aquisição", () => {
+  withService(({ repository, script, path }) => {
+    const acquisition = acquisitionRequest(script);
+    const asset = mediaAsset(script, { mediaAssetId: `media_asset:${acquisition.mediaAcquisitionRequestId}`, createdAt: acquisition.requestedAt });
+    repository.registerAcquiredMediaAsset({ request: acquisition, mediaAsset: asset });
+    const base = { schemaVersion: MEDIA_SELECTION_REQUEST_VERSION, mediaSelectionRequestId: "media_selection_001", scriptId: script.scriptId, scriptContentHash: script.contentHash, visualDirectionPosition: 1, productionProfile: "STATIC_IMAGE_V1", requestedAt: acquisition.requestedAt, contentHash: "" };
+    const request = { ...base, contentHash: mediaSelectionRequestHash(base) };
+    assert.deepEqual(repository.registerMediaSelection({ request, mediaAsset: asset }), asset);
+    assert.deepEqual(repository.registerMediaSelection({ request, mediaAsset: asset }), asset);
+    assert.equal(repository.getMediaSelection(request.mediaSelectionRequestId).selectedAssetType, "IMAGE");
+    assert.equal(count(path, "media_selection_requests"), 1);
+    assert.throws(() => repository.db.prepare("DELETE FROM media_selection_requests WHERE media_selection_request_id = ?").run(request.mediaSelectionRequestId), /IMMUTABLE_MEDIA_SELECTION/);
   });
 });
 
@@ -186,8 +216,8 @@ test("migração 019 é aditiva e preserva ativos existentes", () => {
     migrated.close();
     const raw = new DatabaseSync(path);
     assert.equal(raw.prepare("SELECT media_asset_id FROM media_assets").get().media_asset_id, "media_asset_001");
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 27);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 27);
     raw.close();
   });
 });
@@ -224,8 +254,8 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
     assert.deepEqual(migrated.listMediaAssetsByPipelineRun("run_e06_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 26);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 26);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 27);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 27);
     raw.close();
   });
 });

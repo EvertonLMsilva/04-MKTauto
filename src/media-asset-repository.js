@@ -9,6 +9,7 @@ import {
   validateMediaAcquisitionRequest,
 } from "./domain/media-acquisition-contracts.js";
 import { mediaAssetIdentityHash, validateMediaAsset } from "./domain/media-asset-contracts.js";
+import { validateMediaSelectionRequest } from "./domain/media-selection-contracts.js";
 import { ScriptRepository } from "./script-repository.js";
 
 export class MediaAssetRepositoryError extends Error {
@@ -21,6 +22,39 @@ export class MediaAssetRepositoryError extends Error {
 }
 
 export class MediaAssetRepository extends ScriptRepository {
+  getMediaSelection(mediaSelectionRequestId) {
+    requireIdentifier(mediaSelectionRequestId, "mediaSelectionRequestId", 160);
+    const row = this.db.prepare("SELECT * FROM media_selection_requests WHERE media_selection_request_id = ?").get(mediaSelectionRequestId);
+    if (!row) return null;
+    const mediaAsset = this.getMediaAsset(row.media_asset_id);
+    if (!mediaAsset || row.schema_version !== "media-selection-request/1.0.0"
+      || row.script_id !== mediaAsset.scriptId || row.script_content_hash !== mediaAsset.scriptContentHash
+      || row.visual_direction_position !== mediaAsset.visualDirectionPosition
+      || row.production_profile === "STATIC_IMAGE_V1" && mediaAsset.assetType !== "IMAGE"
+      || row.selected_asset_type !== mediaAsset.assetType) throw failure("INVALID_PERSISTED_MEDIA_SELECTION", "mediaSelectionRequestId", "seleção persistida inválida");
+    return deepFreeze({ requestHash: row.request_hash, productionProfile: row.production_profile, requestedAssetType: row.requested_asset_type, selectedAssetType: row.selected_asset_type, fallbackCode: row.fallback_code, mediaAsset });
+  }
+
+  registerMediaSelection({ request: requestValue, mediaAsset: assetValue, fallbackCode = null }) {
+    let request; let asset;
+    try { request = validateMediaSelectionRequest(requestValue); asset = validateMediaAsset(assetValue); } catch (caught) { throw mapError(caught); }
+    return this.#transaction(() => {
+      const prior = this.getMediaSelection(request.mediaSelectionRequestId);
+      if (prior) { if (prior.requestHash !== request.contentHash) throw failure("MEDIA_SELECTION_REQUEST_ID_REUSED", "mediaSelectionRequestId", "identidade divergente"); return prior.mediaAsset; }
+      const requestedType = request.productionProfile === "MIXED_MEDIA_V2" ? "VIDEO" : "IMAGE";
+      if (asset.scriptId !== request.scriptId || asset.scriptContentHash !== request.scriptContentHash || asset.visualDirectionPosition !== request.visualDirectionPosition) throw failure("MEDIA_SELECTION_SCOPE_MISMATCH", "mediaAsset", "ativo fora do escopo");
+      if (asset.assetType !== requestedType && !(requestedType === "VIDEO" && asset.assetType === "IMAGE" && fallbackCode === "PROVIDER_NO_ELIGIBLE_VIDEO")) throw failure("MEDIA_SELECTION_FALLBACK_INVALID", "fallbackCode", "fallback inválido");
+      this.db.prepare(`INSERT INTO media_selection_requests
+        (media_selection_request_id, schema_version, request_hash, script_id, script_content_hash,
+         visual_direction_position, production_profile, requested_asset_type,
+         selected_asset_type, media_asset_id, fallback_code, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(request.mediaSelectionRequestId,
+        request.schemaVersion, request.contentHash, request.scriptId, request.scriptContentHash,
+        request.visualDirectionPosition, request.productionProfile, requestedType,
+        asset.assetType, asset.mediaAssetId, fallbackCode, request.requestedAt);
+      return this.getMediaSelection(request.mediaSelectionRequestId).mediaAsset;
+    });
+  }
   registerMediaAsset(value) {
     let asset;
     try { asset = validateMediaAsset(value); }
@@ -103,6 +137,7 @@ export class MediaAssetRepository extends ScriptRepository {
     try {
       const asset = validateMediaAsset(JSON.parse(row.payload_json));
       verifyPersistedColumns(asset, row);
+      verifyPersistedSource(asset, this.db.prepare("SELECT * FROM media_asset_sources WHERE media_asset_id = ?").get(asset.mediaAssetId));
       if (mediaAssetIdentityHash(asset) !== row.identity_hash) throw new Error("identidade divergente");
       const run = this.getRun(asset.pipelineRunId);
       const script = this.getScript(asset.scriptId);
@@ -177,6 +212,16 @@ export class MediaAssetRepository extends ScriptRepository {
       asset.rights.usageBasis, asset.createdAt, asset.revision,
       asset.supersedesMediaAssetId, JSON.stringify(asset),
     );
+    if (asset.source !== undefined && asset.source !== null) {
+      this.db.prepare(`INSERT INTO media_asset_sources
+        (media_asset_id, provider, external_asset_id, license_name, license_url,
+         photographer_name, photographer_url, source_url)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        asset.mediaAssetId, asset.provider, asset.source.externalAssetId,
+        asset.source.licenseName, asset.source.licenseUrl, asset.source.photographerName,
+        asset.source.photographerUrl, asset.source.sourceUrl,
+      );
+    }
     return this.getMediaAsset(asset.mediaAssetId);
   }
 
@@ -269,6 +314,24 @@ export class MediaAssetRepository extends ScriptRepository {
       throw mapError(caught);
     }
   }
+}
+
+function verifyPersistedSource(asset, row) {
+  if (asset.source === undefined || asset.source === null) {
+    if (row) throw new Error("proveniência inesperada");
+    return;
+  }
+  if (!row) throw new Error("proveniência ausente");
+  const expected = {
+    provider: asset.provider,
+    external_asset_id: asset.source.externalAssetId,
+    license_name: asset.source.licenseName,
+    license_url: asset.source.licenseUrl,
+    photographer_name: asset.source.photographerName,
+    photographer_url: asset.source.photographerUrl,
+    source_url: asset.source.sourceUrl,
+  };
+  for (const [field, value] of Object.entries(expected)) if (row[field] !== value) throw new Error("proveniência divergente");
 }
 
 function verifyScript(asset, script) {
