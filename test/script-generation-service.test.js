@@ -4,8 +4,64 @@ import { ScriptGenerator } from "../src/script-generator.js";
 import { ScriptGenerationError, ScriptGenerationService } from "../src/script-generation-service.js";
 import { SCRIPT_GENERATION_REQUEST_VERSION, scriptGenerationRequestHash } from "../src/domain/script-generation-contracts.js";
 
+import { materializeAffiliateBriefing } from "../src/domain/affiliate-contracts.js";
+import { product as affiliateProduct, campaign as affiliateCampaign } from "./affiliate-fixtures.js";
+
 const SELECTION_HASH = "a".repeat(64);
 const IDEA_HASH = "b".repeat(64);
+
+test("P1 entrega briefing validado, CTA, disclosure e evidências ao provider fake", async () => {
+  const briefing = materializeAffiliateBriefing('brief_001', affiliateCampaign(), affiliateProduct());
+  const affiliateRepository = {
+    resolveRunBriefing() { return briefing; },
+    prepareScriptGeneration() { return briefing; },
+    verifyScriptGenerationContext() {},
+  };
+  const repository = fakeRepository();
+  const output = providerOutput();
+  output.cta = briefing.cta;
+  output.narrativeBlocks[0].narration = `${briefing.productName}: Bluetooth. ${briefing.disclosure}`;
+  const generator = fakeGenerator({ output });
+  const service = new ScriptGenerationService(repository, generator, { affiliateRepository });
+  const script = await service.generate(request(), { briefingId: briefing.briefingId });
+  assert.deepEqual(generator.calls[0].affiliateBriefing, briefing);
+  assert.deepEqual(generator.calls[0].affiliateBriefing.attributes, affiliateProduct().attributes);
+  assert.deepEqual(generator.calls[0].affiliateBriefing.evidence, affiliateProduct().evidence);
+  assert.ok(Object.isFrozen(generator.calls[0].affiliateBriefing.attributes[0]));
+  assert.equal(script.cta, briefing.cta);
+  assert.ok(script.fullNarration.includes(briefing.disclosure));
+});
+
+test("P1 briefing ausente, inválido ou adulterado impede provider e retry", async () => {
+  const briefing = materializeAffiliateBriefing('brief_001', affiliateCampaign(), affiliateProduct());
+  for (const resolved of [null, { ...briefing, cta: 'Adulterado' }, { ...briefing, evidence: [] }]) {
+    const generator = fakeGenerator();
+    const affiliateRepository = {
+      resolveRunBriefing() { return resolved; }, prepareScriptGeneration() { return resolved; },
+      verifyScriptGenerationContext() {},
+    };
+    const service = new ScriptGenerationService(fakeRepository(), generator, { affiliateRepository });
+    await assert.rejects(service.generate(request(), { briefingId: 'brief_001' }));
+    assert.equal(generator.calls.length, 0);
+  }
+  await assert.rejects(new ScriptGenerationService(fakeRepository(), fakeGenerator()).generate(request(), { briefingId: 'brief_001' }));
+});
+
+test("P1 rejeita CTA divergente, disclosure ausente e preço sem validade sem persistir roteiro", async () => {
+  const briefing = materializeAffiliateBriefing('brief_001', affiliateCampaign(), affiliateProduct());
+  const affiliateRepository = {
+    resolveRunBriefing() { return briefing; }, prepareScriptGeneration() { return briefing; },
+    verifyScriptGenerationContext() {},
+  };
+  const priced = { ...providerOutput(), hook: 'Compre por R$ 99,00.', cta: briefing.cta,
+    narrativeBlocks: [{ position: 1, purpose: 'EXPLANATION', narration: briefing.disclosure }] };
+  for (const output of [providerOutput(), { ...providerOutput(), cta: briefing.cta }, priced]) {
+    const repository = fakeRepository();
+    await assert.rejects(new ScriptGenerationService(repository, fakeGenerator({ output }), { affiliateRepository }).generate(request()),
+      error => ['AFFILIATE_SCRIPT_CTA_MISMATCH', 'AFFILIATE_SCRIPT_DISCLOSURE_MISSING', 'AFFILIATE_DYNAMIC_PRICE_UNSUPPORTED'].includes(error.code));
+    assert.equal(repository.persisted.length, 0);
+  }
+});
 
 test("gera uma vez a partir da seleção explícita e persiste script/1.0.0 com escopo exato", async () => {
   const repository = fakeRepository();

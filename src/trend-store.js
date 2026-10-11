@@ -17,7 +17,7 @@ import { createResearchArtifact } from "./domain/research-artifact-contracts.js"
 import { createReferenceInsight } from "./domain/reference-insight-contracts.js";
 import { createResearchShortlist } from "./domain/research-shortlist-contracts.js";
 
-const CATALOG_SCHEMA_VERSION = 28;
+const CATALOG_SCHEMA_VERSION = 30;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", readFileSync(new URL("./db/migrations/001_trend_catalog.sql", import.meta.url), "utf8")]],
   [2, ["002_daily_catalog", readFileSync(new URL("./db/migrations/002_daily_catalog.sql", import.meta.url), "utf8")]],
@@ -47,6 +47,8 @@ const MIGRATIONS = new Map([
   [26, ["026_stage_recovery", readFileSync(new URL("./db/migrations/026_stage_recovery.sql", import.meta.url), "utf8")]],
   [27, ["027_video_asset_acquisition", readFileSync(new URL("./db/migrations/027_video_asset_acquisition.sql", import.meta.url), "utf8")]],
   [28, ["028_mixed_media_composition", readFileSync(new URL("./db/migrations/028_mixed_media_composition.sql", import.meta.url), "utf8")]],
+  [29, ["029_affiliate_catalog", readFileSync(new URL("./db/migrations/029_affiliate_catalog.sql", import.meta.url), "utf8")]],
+  [30, ["030_script_generation_claims", readFileSync(new URL("./db/migrations/030_script_generation_claims.sql", import.meta.url), "utf8")]],
 ]);
 
 export class TrendStoreError extends Error {

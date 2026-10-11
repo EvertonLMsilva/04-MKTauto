@@ -1,4 +1,19 @@
 import test from "node:test";
+import { materializeAffiliateBriefing } from '../src/domain/affiliate-contracts.js';
+import { product as affiliateProduct, campaign as affiliateCampaign } from './affiliate-fixtures.js';
+
+test('P1 adapter inclui briefing/evidências e regras comerciais com fetch fake', async () => {
+  const briefing = materializeAffiliateBriefing('brief_001', affiliateCampaign(), affiliateProduct());
+  let sent;
+  const adapter = new OpenAIAdapter(config(), { fetchImpl: async (_url, options) => {
+    sent = JSON.parse(options.body); return response(200, providerResponse(validOutput()));
+  } });
+  await adapter.generate({ ...input(), affiliateBriefing: briefing });
+  assert.deepEqual(JSON.parse(sent.input[1].content[0].text).affiliateBriefing, briefing);
+  assert.match(sent.input[0].content[0].text, /não invente/i);
+  assert.match(sent.input[0].content[0].text, /disclosure/);
+  await assert.rejects(adapter.generate({ ...input(), affiliateBriefing: { ...briefing, cta: 'adulterado' } }));
+});
 import assert from "node:assert/strict";
 import { OpenAIAdapter, OpenAIAdapterError } from "../src/adapters/openai.js";
 import { loadOpenAIConfig } from "../src/openai-config.js";

@@ -58,7 +58,8 @@
 | E08-U02 | CONCLUÍDO | Operator Run & Idea Bootstrap | PRs #68–#75 mergeados; bootstrap, estabilização do preview, margem Script→Voice e tratamento seguro de respostas grandes foram concluídos. |
 | FND04 | CONCLUÍDO | Stage Recovery Foundation | PR #76 mergeado em 30/09/2026 (`ba32ef9`); contrato `stage-recovery/1.0.0`, migration 026, tentativas append-only, dependências explícitas e integração sem UI; 525 de 531 testes passaram, com 6 integrações opt-in ignoradas. |
 | E06-M04 | CONCLUÍDO | Video Asset Acquisition V2 | PR #77 mergeado em 30/09/2026 (`f38f026`); perfil explícito `STATIC_IMAGE_V1 | MIXED_MEDIA_V2`, `media-asset/2.0.0`, Pexels Video API oficial, migration 027, seleção/fallback persistidos e validação física; 539 de 546 testes passaram, com 7 integrações opt-in ignoradas. |
-| E07-C05 | PR ABERTO | Mixed Media VideoComposer V2 | PR #78; `composition-plan/2.0.0`, política mista determinística, migration 028 append-only, FFmpeg `VIDEO + IMAGE + Voice` e integração com FND04; 547 de 554 testes passaram, com 7 integrações opt-in ignoradas. |
+| E07-C05 | CONCLUÍDO | Mixed Media VideoComposer V2 | PR #78 mergeado em 01/10/2026 (`653ef78`); `composition-plan/2.0.0`, política mista determinística, migration 028 append-only, FFmpeg `VIDEO + IMAGE + Voice` e integração com FND04; 547 de 554 testes passaram, com 7 integrações opt-in ignoradas. |
+| E08-U03 | PR ABERTO | Recuperação de candidatos de ideia | PR #79; clustering Ollama em streaming e lotes determinísticos, falha terminal do bootstrap e erro operacional explícito; 552 de 559 testes passaram, com 7 integrações opt-in ignoradas. |
 | E09 | BLOQUEADO | Social Publishing | Análise de entrada em 30/09/2026: plataforma oficial, conta de teste elegível, scopes de publicação, acesso publicador à API e fallback manual operacional não foram comprovados; o banco operacional possui zero decisões `APPROVED`, portanto G3 e G4 não estão satisfeitos. |
 
 Os antigos R03–R09 foram planejados para um fluxo centrado em mídia-fonte. V06
@@ -1539,7 +1540,33 @@ bytes depende da mesma versão/toolchain FFmpeg, embora a semântica seja fechad
 pelo plano; `-stream_loop` segue a semântica versionada do FFmpeg; uma falha
 SQLite após promoção pode deixar objeto órfão sem criar `VideoRender` falso; e
 disponibilidade, licença e adequação editorial do Pexels continuam dependentes
-de QC e aprovação humana. O PR #78 foi aberto em 01/10/2026.
+de QC e aprovação humana. O PR #78 foi mergeado em 01/10/2026 (`653ef78`).
+
+### E08-U03 — Recuperação de candidatos de ideia
+
+O clustering local passa a enviar no máximo oito evidências por chamada, em
+ordem determinística, e mantém a validação global de cobertura única e exata.
+As respostas estruturadas do Ollama são consumidas por streaming NDJSON com
+limite de 4 MiB, evitando o timeout de headers causado por gerações locais
+longas sem aceitar JSON, aliases ou evidências inválidas. Correções de aliases
+ausentes continuam explícitas e limitadas ao lote correspondente.
+
+Falhas do bootstrap agora terminalizam a `PipelineRun` como `FAILED` com apenas
+código e campo públicos. O catálogo expõe essa falha sanitizada, a interface
+mostra o motivo e uma nova tentativa recebe identidade nova, sem reutilizar o
+Research terminal vazio. Contratos e schema persistido permanecem inalterados;
+não houve migration.
+
+Evidência: 68 testes focados e a suíte completa passaram, totalizando 552 testes
+aprovados e 7 integrações opt-in ignoradas. Uma prova local somente leitura com
+as 72 evidências da execução problemática produziu 26 clusters, atribuiu 72/72
+candidatos e concluiu 13 chamadas, incluindo reparos dirigidos, em 53,5 segundos.
+
+Riscos residuais: tempo e qualidade semântica continuam dependentes do modelo e
+hardware locais; lotes reduzem contexto semântico cruzado, embora cobertura,
+identidades e ranking permaneçam validados deterministicamente. Execuções antigas
+que ficaram `RUNNING` não são reescritas; o operador deve iniciar uma nova run.
+O PR #79 foi aberto em 01/10/2026.
 
 ## Primeiro épico — E01 Project Configuration
 

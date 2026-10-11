@@ -3,6 +3,10 @@ let refreshTimer = null;
 let currentView = null;
 let currentCandidates = [];
 let currentRuns = [];
+const RUN_ERROR_MESSAGES = Object.freeze({
+  IDEA_RESEARCH_EMPTY: "Falha IDEA_RESEARCH_EMPTY: a pesquisa não produziu evidência elegível.",
+  OLLAMA_RETRY_EXHAUSTED: "Falha OLLAMA_RETRY_EXHAUSTED: o modelo local não concluiu a análise válida.",
+});
 
 elements.project.addEventListener("change", async () => { resetAfter("project"); await loadCatalog(); });
 elements.version.addEventListener("change", async () => { resetAfter("version"); await loadCatalog(); });
@@ -30,15 +34,15 @@ async function loadCatalog() {
     if (elements.run.value) fill(elements.selection, catalog.selections, ({ selectionId, revision }) => [selectionId, `${selectionId} · r${revision}`]);
     currentCandidates = catalog.candidates ?? []; renderIdeas(currentCandidates);
     elements["new-run"].disabled = !(elements.project.value && elements.version.value);
-    elements.status.textContent = catalog.projects.length ? "Selecione o escopo operacional." : "Nenhum projeto persistido encontrado.";
+    const selectedRun = currentRuns.find(({ pipelineRunId }) => pipelineRunId === elements.run.value);
+    elements.status.textContent = selectedRun?.error ? (RUN_ERROR_MESSAGES[selectedRun.error.code] ?? `Falha ${selectedRun.error.code} em ${selectedRun.error.field}.`) : catalog.projects.length ? "Selecione o escopo operacional." : "Nenhum projeto persistido encontrado.";
   } catch (error) { elements.status.textContent = error.message; }
 }
 
 async function createRun() {
   elements["new-run"].disabled = true; elements.status.textContent = "Executando Research e preparando ideias válidas…";
-  const resumable = currentCandidates.length === 0 ? currentRuns.find(({ pipelineRunId }) => pipelineRunId === elements.run.value) : null;
-  const pipelineRunId = resumable?.pipelineRunId ?? `run_operator_${crypto.randomUUID().replaceAll("-", "")}`;
-  const body = { schemaVersion: "pipeline-handoff/1.0.0", pipelineRunId, projectId: elements.project.value, projectVersion: Number(elements.version.value), startedAt: resumable?.startedAt ?? new Date().toISOString() };
+  const pipelineRunId = `run_operator_${crypto.randomUUID().replaceAll("-", "")}`;
+  const body = { schemaVersion: "pipeline-handoff/1.0.0", pipelineRunId, projectId: elements.project.value, projectVersion: Number(elements.version.value), startedAt: new Date().toISOString() };
   try { await request("/api/operator-preview/runs", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }); await loadCatalog(); elements.run.value = pipelineRunId; await loadCatalog(); }
   catch (error) { elements.status.textContent = error.message; }
   finally { elements["new-run"].disabled = !(elements.project.value && elements.version.value); }
@@ -52,7 +56,7 @@ function renderIdeas(candidates) {
   ])) : [node("tr", "", node("td", "empty", elements.run.value ? "Nenhum candidato persistido para esta execução." : "Crie ou selecione uma execução.", { colSpan: 5 }))]));
   elements["idea-candidates"].querySelectorAll("input").forEach((input) => input.addEventListener("change", () => { elements["select-idea"].disabled = false; }));
   elements["select-idea"].disabled = true;
-  elements["new-run"].textContent = elements.run.value && candidates.length === 0 ? "Retomar execução" : "Nova execução";
+  elements["new-run"].textContent = "Nova execução";
 }
 
 async function selectIdea() {

@@ -47,6 +47,17 @@ test("run persistida não simula etapa ativa antes de Gerar Preview", () => {
   assert.equal(executing.active, true);
 });
 
+test("catálogo expõe somente código e campo públicos da falha de bootstrap", async () => {
+  const runtimeFactory = () => {
+    const runtime = fakeRuntime({ videoPath: null, calls: { resolved: [] } });
+    runtime.catalog.listRunsByProjectVersion = () => [{ ...run("FAILED"), error: { code: "IDEA_RESEARCH_EMPTY", field: "researchShortlist" } }];
+    return runtime;
+  };
+  const console = new OperatorPreviewConsole({ database: "fixture.sqlite", env: {}, readRuntimeFactory: runtimeFactory });
+  const catalog = await console.catalog({ projectId: scope.projectId, projectVersion: 1, pipelineRunId: scope.pipelineRunId });
+  assert.deepEqual(catalog.runs[0].error, { code: "IDEA_RESEARCH_EMPTY", field: "researchShortlist" });
+});
+
 test("status vincula MP4 e QC ao mesmo VideoRender final por ID e SHA-256", () => {
   const artifacts = completedArtifacts("WARN");
   const status = reconstructPreviewStatus({ scope, run: run("SUCCEEDED"), selection: selection(), artifacts, active: false });

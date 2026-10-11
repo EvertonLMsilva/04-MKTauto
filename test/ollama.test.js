@@ -86,6 +86,21 @@ test("propõe clusters somente com rótulos e referências de evidência conheci
   assert.equal(request.messages[0].content.includes("Agrupe em pt-BR"), false);
   assert.equal(request.messages[0].content.includes("snapshot-1"), false);
   assert.equal(request.messages[0].content.includes("candidate-1"), false);
+  assert.equal(request.stream, true);
+});
+
+test("consome resposta estruturada em streaming sem depender do término para receber headers", async () => {
+  const evidence = [{ candidateId: "candidate-1", snapshots: [{ id: "snapshot-1" }] }];
+  const proposal = { label: "Assunto", niche: "educação", subtheme: "subtema", likelyAudience: "público", narrativePattern: "padrão", localization: "Brasil", candidateRefs: ["C001"], explanation: "Evidência." };
+  const serialized = JSON.stringify({ clusters: [proposal] });
+  const body = {
+    async *[Symbol.asyncIterator]() {
+      yield new TextEncoder().encode(`${JSON.stringify({ message: { content: serialized.slice(0, 20) }, done: false })}\n`);
+      yield new TextEncoder().encode(`${JSON.stringify({ message: { content: serialized.slice(20) }, done: true })}\n`);
+    },
+  };
+  const result = await proposeTopicClusters({ model: "teste", evidence, fetchImpl: async () => ({ ok: true, body }) });
+  assert.deepEqual(result[0].candidateIds, ["candidate-1"]);
 });
 
 test("rejeita tentativa da IA de fornecer snapshot e deriva evidência pelo candidato", async () => {
@@ -142,4 +157,26 @@ test("completa aliases ausentes em uma correção dirigida", async () => {
   assert.match(requests[1].messages[0].content, /Aliases obrigatórios: C002/);
   assert.equal(requests[1].messages[0].content.includes("C001"), false);
   assert.equal(requests[1].messages[0].content.includes("youtube:other"), false);
+});
+
+test("divide volume real em lotes determinísticos e preserva cobertura exata", async () => {
+  const evidence = Array.from({ length: 72 }, (_, index) => ({
+    candidateId: `youtube:video-${String(index + 1).padStart(3, "0")}`,
+    title: `Vídeo ${index + 1}`,
+    snapshots: [{ id: `snapshot-${index + 1}` }],
+  }));
+  const requests = [];
+  const fetchImpl = async (_url, options) => {
+    const request = JSON.parse(options.body);
+    const aliases = /Aliases obrigatórios: ([^.]+)\./.exec(request.messages[0].content)[1].split(", ");
+    requests.push({ request, aliases });
+    return { ok: true, json: async () => ({ message: { content: JSON.stringify({ clusters: [{
+      label: `Lote ${requests.length}`, niche: "jogos", subtheme: "lançamentos", likelyAudience: "jogadores",
+      narrativePattern: "análise", localization: "Brasil", candidateRefs: aliases, explanation: "Evidências do lote.",
+    }] }) } }) };
+  };
+  const result = await proposeTopicClusters({ model: "qwen3:4b", evidence, fetchImpl });
+  assert.equal(requests.length, 9);
+  assert.deepEqual(requests.map(({ aliases }) => aliases.length), Array(9).fill(8));
+  assert.deepEqual(result.flatMap(({ candidateIds }) => candidateIds), evidence.map(({ candidateId }) => candidateId));
 });

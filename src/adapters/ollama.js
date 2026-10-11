@@ -5,6 +5,8 @@ import {
 } from "../domain/contracts.js";
 
 const DEFAULT_BASE_URL = "http://127.0.0.1:11434";
+const CLUSTERING_BATCH_SIZE = 8;
+const MAX_STREAM_BYTES = 4 * 1024 * 1024;
 const ollamaResponseSchema = structuredClone(candidateResponseSchema);
 ollamaResponseSchema.properties.candidates.items.properties.evidenceIds.minItems = 2;
 ollamaResponseSchema.properties.candidates.items.properties.evidenceIds.uniqueItems = true;
@@ -70,7 +72,7 @@ export async function proposeTopicClusters({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         model,
-        stream: false,
+        stream: true,
         think: false,
         format: topicProposalSchema,
         options: { temperature: 0, num_ctx: numCtx },
@@ -93,8 +95,7 @@ export async function proposeTopicClusters({
       }),
     });
     if (!response.ok) throw new Error(`Ollama respondeu ${response.status}`);
-    const body = await response.json();
-    const content = body.message?.content;
+    const content = await readChatContent(response);
     if (typeof content !== "string" || content.trim() === "") throw new Error("A resposta do Ollama não contém message.content");
     const parsed = JSON.parse(content);
     if (!parsed || !Array.isArray(parsed.clusters)) throw new Error("A resposta do Ollama não contém clusters[]");
@@ -102,25 +103,26 @@ export async function proposeTopicClusters({
   };
 
   const knownReferences = [...candidateIdByRef.keys()];
-  let clusters = await requestClusters({
-    items: clusteringEvidence,
-    requiredReferences: knownReferences,
-    feedback: validationFeedback,
-  });
-  const initialProblems = candidateRefProblems(clusters, knownReferences);
-  if (initialProblems.unknown.length > 0 || initialProblems.duplicated.length > 0) {
-    throwCandidateRefProblems(initialProblems);
-  }
-  if (initialProblems.missing.length > 0) {
-    const missing = initialProblems.missing;
-    const missingSet = new Set(missing);
-    const repair = await requestClusters({
-      items: clusteringEvidence.filter(({ candidateRef }) => missingSet.has(candidateRef)),
-      requiredReferences: missing,
-      feedback: `Complete somente os aliases ausentes: ${missing.join(", ")}.`,
-    });
-    validateCompleteCandidateRefs(repair, missing);
-    clusters = [...clusters, ...repair];
+  const clusters = [];
+  for (let offset = 0; offset < clusteringEvidence.length; offset += CLUSTERING_BATCH_SIZE) {
+    const items = clusteringEvidence.slice(offset, offset + CLUSTERING_BATCH_SIZE);
+    const requiredReferences = items.map(({ candidateRef }) => candidateRef);
+    let batchClusters = await requestClusters({ items, requiredReferences, feedback: validationFeedback });
+    const initialProblems = candidateRefProblems(batchClusters, requiredReferences);
+    if (initialProblems.unknown.length > 0 || initialProblems.duplicated.length > 0) throwCandidateRefProblems(initialProblems);
+    if (initialProblems.missing.length > 0) {
+      const missing = initialProblems.missing;
+      const missingSet = new Set(missing);
+      const repair = await requestClusters({
+        items: items.filter(({ candidateRef }) => missingSet.has(candidateRef)),
+        requiredReferences: missing,
+        feedback: `Complete somente os aliases ausentes: ${missing.join(", ")}.`,
+      });
+      validateCompleteCandidateRefs(repair, missing);
+      batchClusters = [...batchClusters, ...repair];
+    }
+    validateCompleteCandidateRefs(batchClusters, requiredReferences);
+    clusters.push(...batchClusters);
   }
   validateCompleteCandidateRefs(clusters, knownReferences);
   return clusters.map((proposal) => {
@@ -141,6 +143,29 @@ export async function proposeTopicClusters({
     const { candidateRefs: _candidateRefs, ...semanticProposal } = proposal ?? {};
     return validateAiTopicProposal({ ...semanticProposal, candidateIds: clusterCandidateIds, evidenceSnapshotIds }, candidateIds, snapshotIds);
   });
+}
+
+async function readChatContent(response) {
+  if (!response.body || typeof response.body[Symbol.asyncIterator] !== "function") {
+    const body = await response.json();
+    return body.message?.content;
+  }
+  const decoder = new TextDecoder();
+  let buffered = ""; let content = ""; let total = 0;
+  const consume = (line) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (typeof event.message?.content === "string") content += event.message.content;
+  };
+  for await (const chunk of response.body) {
+    total += chunk.byteLength;
+    if (total > MAX_STREAM_BYTES) throw new Error("A resposta do Ollama excede o limite permitido");
+    buffered += decoder.decode(chunk, { stream: true });
+    const lines = buffered.split("\n"); buffered = lines.pop() ?? "";
+    lines.forEach(consume);
+  }
+  buffered += decoder.decode(); consume(buffered);
+  return content;
 }
 
 function validateCompleteCandidateRefs(clusters, knownReferences) {
