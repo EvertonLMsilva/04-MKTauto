@@ -223,8 +223,8 @@ test("migração de comandos é aditiva, reproduzível e registros são imutáve
     assert.equal(Object.isFrozen(retry), true);
     reopened.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     assert.throws(
       () => raw.prepare("UPDATE project_commands SET actor = 'outro' WHERE idempotency_key = ?")
         .run("project:create:1"),

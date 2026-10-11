@@ -136,7 +136,7 @@ test("migração 016 é aditiva e preserva os dados existentes", () => {
       DROP TRIGGER voice_tracks_validate_revision;
       DROP TRIGGER voice_tracks_validate_scope;
       DROP TABLE voice_tracks;
-      DROP TABLE script_generation_claims;
+      DROP TABLE fal_financial_settlements; DELETE FROM schema_migrations WHERE version = 32; DROP TABLE fal_generation_requests; DROP TABLE fal_generations; DELETE FROM schema_migrations WHERE version = 31; DROP TABLE script_generation_claims;
       DROP TABLE affiliate_commands;
       DROP TABLE affiliate_script_contexts;
       DROP TABLE affiliate_run_bindings;
@@ -152,8 +152,8 @@ test("migração 016 é aditiva e preserva os dados existentes", () => {
     assert.deepEqual(migrated.listVoiceTracksByPipelineRun("run_e05_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     raw.close();
   });
 });
@@ -188,8 +188,8 @@ test("migração 017 é aditiva e preserva os dados existentes", () => {
     assert.equal(migrated.getVoiceGeneration("voice_generation_001"), null);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     raw.close();
   });
 });

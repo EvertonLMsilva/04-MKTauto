@@ -115,13 +115,14 @@ export class CostLedgerRepository extends ArtifactLineageRepository {
   }
 
   #transaction(operation) {
+    const nested = this.db.isTransaction;
     try {
-      this.db.exec("BEGIN IMMEDIATE");
+      this.db.exec(nested ? "SAVEPOINT cost_event_write" : "BEGIN IMMEDIATE");
       const result = operation();
-      this.db.exec("COMMIT");
+      this.db.exec(nested ? "RELEASE cost_event_write" : "COMMIT");
       return result;
     } catch (caught) {
-      if (this.db.isTransaction) this.db.exec("ROLLBACK");
+      if (this.db.isTransaction) this.db.exec(nested ? "ROLLBACK TO cost_event_write; RELEASE cost_event_write" : "ROLLBACK");
       throw mapSqliteError(caught);
     }
   }

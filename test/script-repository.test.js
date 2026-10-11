@@ -183,7 +183,7 @@ test('FIX01 migração 030 não reenvia contexto legado sem resultado conhecido'
   try {
     const prepared = setup(path); repository = prepared.repository;
     repository.prepareScriptGeneration(generationRequest(), 'run_e04_001');
-    repository.db.exec('DROP TABLE script_generation_claims; DELETE FROM schema_migrations WHERE version = 30; PRAGMA user_version = 29;');
+    repository.db.exec('DROP TABLE fal_financial_settlements; DELETE FROM schema_migrations WHERE version = 32; DROP TABLE fal_generation_requests; DROP TABLE fal_generations; DELETE FROM schema_migrations WHERE version = 31; DROP TABLE script_generation_claims; DELETE FROM schema_migrations WHERE version = 30; PRAGMA user_version = 29;');
     repository.close(); repository = new ScriptRepository(path);
     const provider = affiliateFakeProvider(prepared.selected);
     await assert.rejects(new ScriptGenerationService(repository, provider).generate(generationRequest()), error => error.code === 'GENERATION_RECONCILIATION_PENDING');
@@ -424,8 +424,8 @@ test("migrações 013 a 024 são aditivas e preservam seleção existente", () =
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     raw.close();
   });
 });
