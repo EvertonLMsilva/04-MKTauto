@@ -35,6 +35,7 @@ export class MediaAcquisitionService {
     const prior = this.repository.getMediaAcquisition(request.mediaAcquisitionRequestId);
     if (prior) {
       if (prior.requestHash !== request.contentHash) throw failure("MEDIA_ACQUISITION_REQUEST_ID_REUSED", "mediaAcquisitionRequestId", "identidade já usada com conteúdo divergente");
+      if (typeof this.provider.validateReuse === 'function') await this.provider.validateReuse(prior.mediaAsset, request, { signal });
       return prior.mediaAsset;
     }
     if (signal?.aborted) throw failure("PROVIDER_CANCELLED", "signal", "operação cancelada");
@@ -50,7 +51,7 @@ export class MediaAcquisitionService {
     const input = buildProviderInput(request, direction, run, this.repository);
 
     let rawOutput;
-    try { rawOutput = await this.provider.provide(input, { signal }); }
+    try { rawOutput = await this.provider.provide(input, { signal, acquisitionRequest: request }); }
     catch (caught) { throw mapProviderError(caught); }
 
     try {
@@ -58,6 +59,10 @@ export class MediaAcquisitionService {
       if (output.assetType !== request.assetType) throw failure("MEDIA_ASSET_TYPE_MISMATCH", "assetType", "tipo retornado diverge do solicitado");
       if (output.telemetry !== undefined && output.telemetry.provider !== output.provider) throw failure("PROVIDER_TELEMETRY_MISMATCH", "provider", "telemetria diverge do provider");
       if (output.telemetry !== undefined && output.telemetry.outputHash !== output.contentHash) throw failure("PROVIDER_TELEMETRY_MISMATCH", "outputHash", "telemetria diverge do conteúdo físico");
+      if (typeof this.provider.findReusableAsset === 'function') {
+        const reusable = this.provider.findReusableAsset(request, output);
+        if (reusable) return validateMediaAsset(reusable);
+      }
       const mediaAsset = buildMediaAsset(request, script, run, output);
       const telemetry = buildTelemetry(request, mediaAsset, output.telemetry, this.now());
       const costEvent = buildCostEvent(mediaAsset, telemetry);
