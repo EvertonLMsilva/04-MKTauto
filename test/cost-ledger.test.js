@@ -176,8 +176,8 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM pipeline_runs").get().total, 1);
     raw.close();
   });

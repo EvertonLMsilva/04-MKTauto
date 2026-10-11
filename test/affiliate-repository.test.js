@@ -136,7 +136,7 @@ test('migração 029 preserva projeto/run do schema 028 e rollback não deixa sc
     const run = startRun(base);
     const snapshot = base.get('project_001', 1);
     // Reconstruct the pre-P1 schema using only the additive P1 tables.
-    base.db.exec(`DROP TABLE script_generation_claims; DROP TABLE affiliate_commands; DROP TABLE affiliate_script_contexts;
+    base.db.exec(`DROP TABLE fal_financial_settlements; DELETE FROM schema_migrations WHERE version = 32; DROP TABLE fal_generation_requests; DROP TABLE fal_generations; DELETE FROM schema_migrations WHERE version = 31; DROP TABLE script_generation_claims; DROP TABLE affiliate_commands; DROP TABLE affiliate_script_contexts;
       DROP TABLE affiliate_run_bindings; DROP TABLE affiliate_briefings;
       DROP TABLE affiliate_campaign_revisions; DROP TABLE affiliate_product_revisions;
       DELETE FROM schema_migrations WHERE version >= 29; PRAGMA user_version = 28;
@@ -148,7 +148,7 @@ test('migração 029 preserva projeto/run do schema 028 e rollback não deixa sc
     base.db.exec('DROP TABLE affiliate_commands');
     const migrated = new PipelineRunRepository(path);
     try {
-      assert.equal(migrated.db.prepare('PRAGMA user_version').get().user_version, 30);
+      assert.equal(migrated.db.prepare('PRAGMA user_version').get().user_version, 32);
       assert.deepEqual(migrated.get('project_001', 1), snapshot);
       assert.deepEqual(migrated.getRun('run_001'), run);
       assert.equal(new AffiliateRepository(migrated).getRunBinding('run_001'), null);

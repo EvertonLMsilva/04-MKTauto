@@ -216,8 +216,8 @@ test("migração 019 é aditiva e preserva ativos existentes", () => {
     migrated.close();
     const raw = new DatabaseSync(path);
     assert.equal(raw.prepare("SELECT media_asset_id FROM media_assets").get().media_asset_id, "media_asset_001");
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     raw.close();
   });
 });
@@ -254,8 +254,8 @@ test("migração 018 é aditiva e preserva dados existentes", () => {
     assert.deepEqual(migrated.listMediaAssetsByPipelineRun("run_e06_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 32);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 32);
     raw.close();
   });
 });

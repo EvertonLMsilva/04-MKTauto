@@ -8,8 +8,9 @@ import { PexelsVideoAdapterError } from "./pexels-video-error.js";
 const execute = promisify(execFile);
 
 export class LocalPexelsVideoStorage {
-  constructor({ root, maxBytes, ffmpegPath, ffprobePath }, { executeImpl = execute } = {}) {
+  constructor({ root, maxBytes, ffmpegPath, ffprobePath, allowAudio = false }, { executeImpl = execute } = {}) {
     this.root = resolve(root); this.maxBytes = maxBytes; this.ffmpegPath = ffmpegPath; this.ffprobePath = ffprobePath; this.execute = executeImpl;
+    this.allowAudio = allowAudio;
   }
 
   async store(value, { signal } = {}) {
@@ -21,7 +22,7 @@ export class LocalPexelsVideoStorage {
     let handle;
     try {
       handle = await open(temporaryPath, "wx", 0o600); await handle.writeFile(bytes); await handle.sync(); await handle.close(); handle = null;
-      const properties = await inspectVideo(temporaryPath, this.ffprobePath, this.ffmpegPath, signal, this.execute);
+      const properties = await inspectVideo(temporaryPath, this.ffprobePath, this.ffmpegPath, signal, this.execute, this.allowAudio);
       const contentHash = createHash("sha256").update(bytes).digest("hex");
       const directory = inside(this.root, join(this.root, "sha256", contentHash.slice(0, 2))); await mkdir(directory, { recursive: true });
       const physicalPath = inside(this.root, join(directory, `${contentHash}.mp4`));
@@ -31,7 +32,7 @@ export class LocalPexelsVideoStorage {
         if (caught?.code !== "EEXIST") throw caught;
         const existing = await readFile(physicalPath);
         if (createHash("sha256").update(existing).digest("hex") !== contentHash) fail("PROVIDER_STORAGE_HASH_CONFLICT", "storage", "objeto existente divergente");
-        await inspectVideo(physicalPath, this.ffprobePath, this.ffmpegPath, signal, this.execute); reused = true;
+        await inspectVideo(physicalPath, this.ffprobePath, this.ffmpegPath, signal, this.execute, this.allowAudio); reused = true;
       }
       return Object.freeze({ contentHash, mediaReference: `media:sha256_${contentHash}`, physicalPath, reused, ...properties });
     } catch (caught) {
@@ -39,9 +40,20 @@ export class LocalPexelsVideoStorage {
       fail("PROVIDER_STORAGE_FAILED", "storage", "não foi possível armazenar o vídeo", { cause: caught });
     } finally { if (handle) await handle.close().catch(() => {}); await unlink(temporaryPath).catch(() => {}); }
   }
+
+  async verify(output, { signal } = {}) {
+    if (!/^[a-f0-9]{64}$/.test(output?.contentHash)) return false;
+    const path = inside(this.root, join(this.root, 'sha256', output.contentHash.slice(0, 2), `${output.contentHash}.mp4`));
+    try {
+      const bytes = await readFile(path);
+      if (createHash('sha256').update(bytes).digest('hex') !== output.contentHash) return false;
+      const actual = await inspectVideo(path, this.ffprobePath, this.ffmpegPath, signal, this.execute, this.allowAudio);
+      return Object.entries(actual).every(([key, value]) => output.technicalProperties[key] === value);
+    } catch { return false; }
+  }
 }
 
-async function inspectVideo(path, ffprobePath, ffmpegPath, signal, executeImpl) {
+async function inspectVideo(path, ffprobePath, ffmpegPath, signal, executeImpl, allowAudio = false) {
   let body;
   try {
     const result = await executeImpl(ffprobePath, ["-v", "error", "-of", "json", "-show_entries", "format=format_name,duration,size:stream=codec_type,width,height,duration", "-show_streams", "-show_format", path], { signal, windowsHide: true, maxBuffer: 1048576 });
@@ -49,14 +61,15 @@ async function inspectVideo(path, ffprobePath, ffmpegPath, signal, executeImpl) 
   } catch (caught) { fail("PROVIDER_INVALID_VIDEO", "video", "FFprobe rejeitou o vídeo", { cause: caught }); }
   const streams = Array.isArray(body?.streams) ? body.streams : [];
   const videos = streams.filter(({ codec_type: type }) => type === "video");
-  if (videos.length !== 1 || streams.some(({ codec_type: type }) => type === "audio")) fail("PROVIDER_VIDEO_STREAMS_INVALID", "video", "vídeo deve conter uma faixa visual e nenhum áudio");
+  const hasAudio = streams.some(({ codec_type: type }) => type === 'audio');
+  if (videos.length !== 1 || (!allowAudio && hasAudio)) fail("PROVIDER_VIDEO_STREAMS_INVALID", "video", "streams incompatíveis com a política de armazenamento");
   const formatNames = String(body?.format?.format_name ?? "").split(",");
   const durationMilliseconds = Math.round(Number(body?.format?.duration) * 1000);
   const widthPixels = videos[0].width; const heightPixels = videos[0].height;
   if (!formatNames.includes("mp4") || !Number.isSafeInteger(durationMilliseconds) || durationMilliseconds < 1 || !Number.isSafeInteger(widthPixels) || !Number.isSafeInteger(heightPixels)) fail("PROVIDER_INVALID_VIDEO", "video", "propriedades físicas inválidas");
-  try { await executeImpl(ffmpegPath, ["-v", "error", "-nostdin", "-i", path, "-map", "0:v:0", "-f", "null", "-"], { signal, windowsHide: true, maxBuffer: 1048576 }); }
+  try { await executeImpl(ffmpegPath, ["-v", "error", "-nostdin", "-i", path, "-map", "0:v:0", ...(allowAudio ? ['-map', '0:a?'] : []), "-f", "null", "-"], { signal, windowsHide: true, maxBuffer: 1048576 }); }
   catch (caught) { fail("PROVIDER_VIDEO_DECODE_FAILED", "video", "decode integral falhou", { cause: caught }); }
-  return Object.freeze({ format: "mp4", mimeType: "video/mp4", widthPixels, heightPixels, durationMilliseconds, hasAudio: false });
+  return Object.freeze({ format: "mp4", mimeType: "video/mp4", widthPixels, heightPixels, durationMilliseconds, hasAudio });
 }
 function inside(root, candidate) { const normalizedRoot = resolve(root); const normalized = resolve(candidate); if (normalized !== normalizedRoot && !normalized.startsWith(`${normalizedRoot}${sep}`)) fail("PROVIDER_STORAGE_FAILED", "storage", "localização inválida"); return normalized; }
 function fail(code, field, message, options) { throw new PexelsVideoAdapterError(code, field, message, options); }
