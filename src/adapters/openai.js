@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { validateScriptGenerationOutput } from "../domain/script-generation-contracts.js";
+import { validateAffiliateBriefing } from "../domain/affiliate-contracts.js";
 import { SCRIPT_GENERATION_POLICY } from "../script-generation-policy.js";
 import { OpenAIAdapterError } from "./openai-error.js";
 
@@ -131,6 +132,7 @@ function emptyUsage() {
 function requestBody(input, config) {
   const targetDuration = targetDurationRange(input.projectSnapshot.channel);
   const context = {
+    ...(input.affiliateBriefing !== undefined ? { affiliateBriefing: validateAffiliateBriefing(input.affiliateBriefing) } : {}),
     idea: { title: input.idea.title, editorialAngle: input.idea.editorialAngle },
     project: {
       niche: input.projectSnapshot.project.niche,

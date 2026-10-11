@@ -1,6 +1,7 @@
 import { AI_CALL_TELEMETRY_CONTRACT_VERSION, validateAiCallObservation, validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
 import { validateGenerationMetadata } from "./domain/artifact-lineage-contracts.js";
 import { ContractValidationError } from "./domain/contracts.js";
+import { rejectAffiliateDynamicPrice, validateAffiliateBriefing } from "./domain/affiliate-contracts.js";
 import { COST_EVENT_CONTRACT_VERSION, validateCostEvent } from "./domain/cost-event-contracts.js";
 import {
   validateScriptGenerationOutput,
@@ -18,20 +19,34 @@ export class ScriptGenerationError extends Error {
 }
 
 export class ScriptGenerationService {
-  constructor(repository, generator, { now = () => new Date().toISOString() } = {}) {
+  constructor(repository, generator, { now = () => new Date().toISOString(), affiliateRepository = typeof repository?.resolveRunBriefing === "function" ? repository : null } = {}) {
     const methods = ["getScriptGeneration", "getAiCallTelemetryByLogicalCall", "getSelection", "getIdea", "getRun", "registerGeneratedScript", "registerFailedAiCall"];
     if (!repository || methods.some((method) => typeof repository[method] !== "function")) throw new TypeError("repositório de geração de roteiro obrigatório");
     if (!generator || typeof generator.generate !== "function") throw new TypeError("ScriptGenerator obrigatório");
     if (typeof now !== "function") throw new TypeError("relógio obrigatório");
+    if (affiliateRepository && ["resolveRunBriefing", "prepareScriptGeneration", "verifyScriptGenerationContext"].some(method => typeof affiliateRepository[method] !== "function")) throw new TypeError("repositório de briefing afiliado obrigatório");
     this.repository = repository;
     this.generator = generator;
     this.now = now;
+    this.affiliateRepository = affiliateRepository;
   }
 
-  async generate(value, { signal } = {}) {
+  async generate(value, { signal, briefingId } = {}) {
     let request;
     try { request = validateScriptGenerationRequest(value); }
     catch (caught) { throw mapError(caught); }
+
+    let affiliateBriefing = null;
+    try {
+      if (!this.affiliateRepository && briefingId !== undefined) throw failure("AFFILIATE_BRIEFING_NOT_BOUND", "briefingId", "briefing afiliado não vinculado");
+      if (this.affiliateRepository) {
+        const scopedSelection = this.repository.getSelection(request.ideaSelectionId);
+        if (scopedSelection) {
+          affiliateBriefing = validatedBriefing(this.affiliateRepository.resolveRunBriefing(scopedSelection.pipelineRunId, briefingId), briefingId);
+          this.affiliateRepository.verifyScriptGenerationContext(request, scopedSelection.pipelineRunId, affiliateBriefing);
+        } else if (briefingId !== undefined) throw failure("IDEA_SELECTION_NOT_FOUND", "ideaSelectionId", "seleção não encontrada");
+      }
+    } catch (caught) { throw mapError(caught); }
 
     const priorTelemetry = this.repository.getAiCallTelemetryByLogicalCall(request.generationRequestId);
     if (priorTelemetry) {
@@ -58,18 +73,52 @@ export class ScriptGenerationService {
     if (!idea) throw failure("IDEA_CANDIDATE_NOT_FOUND", "ideaCandidateId", "ideia não encontrada");
     verifyIdea(selection, idea);
 
+    if (this.affiliateRepository) {
+      try { affiliateBriefing = validatedBriefing(this.affiliateRepository.prepareScriptGeneration(request, run.pipelineRunId, briefingId), briefingId); }
+      catch (caught) { throw mapError(caught); }
+    }
+
+    const providerInput = deepFreeze({ selection, idea, projectSnapshot: run.projectSnapshot,
+      ...(affiliateBriefing ? { affiliateBriefing } : {}),
+    });
+    let claim;
+    if (typeof this.repository.claimScriptGeneration === 'function') {
+      try { claim = this.repository.claimScriptGeneration(request); }
+      catch (caught) { throw mapError(caught); }
+      if (!claim.acquired) {
+        if (claim.state === 'RECONCILIATION_PENDING') throw failure('GENERATION_RECONCILIATION_PENDING', 'generationRequestId', 'resultado externo desconhecido; reconciliar sem reenviar');
+        // Observe durable terminal evidence; never dispatch a second external call.
+        for (let attempt = 0; attempt < 50; attempt += 1) {
+          const saved = this.repository.getAiCallTelemetryByLogicalCall(request.generationRequestId);
+          if (saved) return this.generate(value, { signal, briefingId });
+          if (signal?.aborted) throw failure('PROVIDER_CANCELLED', 'signal', 'operação cancelada');
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        throw failure('GENERATION_RECONCILIATION_PENDING', 'generationRequestId', 'execução em andamento ou resultado externo desconhecido; reconciliar sem reenviar');
+      }
+      try {
+        if (signal?.aborted) throw failure('PROVIDER_CANCELLED', 'signal', 'operação cancelada');
+        this.repository.transitionScriptGeneration(request, claim.ownerToken, 'RESERVED', 'DISPATCHING');
+      } catch (caught) {
+        this.repository.transitionScriptGeneration(request, claim.ownerToken, 'RESERVED', 'RETRYABLE');
+        throw mapError(caught);
+      }
+    }
+
     let generated;
     try {
-      generated = await this.generator.generate(deepFreeze({ selection, idea, projectSnapshot: run.projectSnapshot }), { signal });
+      generated = await this.generator.generate(providerInput, { signal });
     } catch (caught) {
       const mapped = mapProviderError(caught);
-      this.#persistFailure(request, selection, caught?.telemetry, mapped.code);
+      try { this.#persistFailure(request, selection, caught?.telemetry, mapped.code); }
+      finally { if (claim) this.repository.transitionScriptGeneration(request, claim.ownerToken, 'DISPATCHING', this.repository.getAiCallTelemetryByLogicalCall(request.generationRequestId) ? 'TERMINAL' : 'RECONCILIATION_PENDING'); }
       throw mapped;
     }
 
     try {
       if (!generated || typeof generated !== "object" || Array.isArray(generated)) throw failure("PROVIDER_INVALID_RESPONSE", "response", "resposta inválida");
       const output = validateScriptGenerationOutput(generated.output);
+      if (affiliateBriefing) verifyAffiliateOutput(output, affiliateBriefing);
       const generationMetadata = validateGenerationMetadata(generated.generationMetadata);
       const observation = validateAiCallObservation(generated.telemetry);
       verifyObservationMetadata(observation, generationMetadata);
@@ -80,11 +129,14 @@ export class ScriptGenerationService {
         recordedAt: this.now(),
       });
       const costEvent = buildCostEvent(telemetry, selection.ideaSelectionId);
-      return this.repository.registerGeneratedScript({ request, script, generationMetadata, telemetry, costEvent });
+      const persisted = this.repository.registerGeneratedScript({ request, script, generationMetadata, telemetry, costEvent });
+      return persisted;
     } catch (caught) {
       const mapped = mapError(caught);
       this.#persistFailure(request, selection, generated?.telemetry, mapped.code);
       throw mapped;
+    } finally {
+      if (claim) this.repository.transitionScriptGeneration(request, claim.ownerToken, 'DISPATCHING', this.repository.getAiCallTelemetryByLogicalCall(request.generationRequestId) ? 'TERMINAL' : 'RECONCILIATION_PENDING');
     }
   }
 
@@ -99,6 +151,23 @@ export class ScriptGenerationService {
     const costEvent = buildCostEvent(telemetry, selection.ideaSelectionId);
     this.repository.registerFailedAiCall({ request, telemetry, costEvent });
   }
+}
+
+function validatedBriefing(value, expectedId) {
+  if (value === null || value === undefined) {
+    if (expectedId !== undefined) throw failure("AFFILIATE_BRIEFING_NOT_BOUND", "briefingId", "briefing afiliado não vinculado");
+    return null;
+  }
+  const briefing = validateAffiliateBriefing(value);
+  if (expectedId !== undefined && briefing.briefingId !== expectedId) throw failure("AFFILIATE_RUN_BINDING_CONFLICT", "briefingId", "briefing divergente");
+  return briefing;
+}
+
+function verifyAffiliateOutput(output, briefing) {
+  rejectAffiliateDynamicPrice(JSON.stringify(output), "output");
+  if (output.cta !== briefing.cta) throw failure("AFFILIATE_SCRIPT_CTA_MISMATCH", "cta", "CTA diverge do briefing");
+  const narration = [output.hook, ...output.narrativeBlocks.map(block => block.narration), output.cta].join("\n\n");
+  if (!narration.includes(briefing.disclosure)) throw failure("AFFILIATE_SCRIPT_DISCLOSURE_MISSING", "disclosure", "identificação publicitária obrigatória");
 }
 
 function buildTelemetry(request, selection, observation, terminal) {

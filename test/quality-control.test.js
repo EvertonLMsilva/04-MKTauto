@@ -61,7 +61,7 @@ test("repository preserva QC após migration 25, persiste findings imutáveis e 
   class FixtureRepository extends QualityControlRepository { getVideoRender() { return scenario().videoRender; } }
   const repository = new FixtureRepository(path);
   try {
-    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 28);
+    assert.equal(repository.db.prepare("PRAGMA user_version").get().user_version, 30);
     repository.db.exec("PRAGMA foreign_keys = OFF; DROP TRIGGER quality_control_reports_validate_binding;");
     const context = scenario(); const report = reportFor(context, evaluateQualityControl(context));
     const first = repository.registerQualityControlReport(report); const retry = repository.registerQualityControlReport(report);

@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { ContractValidationError } from "./domain/contracts.js";
 import { AI_CALL_TELEMETRY_CONTRACT_VERSION, validateAiCallTelemetry } from "./domain/ai-call-telemetry-contracts.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION, validateArtifactLineage } from "./domain/artifact-lineage-contracts.js";
@@ -10,6 +10,7 @@ import {
   validateScriptGenerationRequest,
 } from "./domain/script-generation-contracts.js";
 import { IdeaSelectionRepository } from "./idea-selection-repository.js";
+import { AffiliateRepository } from "./affiliate-repository.js";
 
 export class ScriptRepositoryError extends Error {
   constructor(code, field, message, options) {
@@ -21,6 +22,38 @@ export class ScriptRepositoryError extends Error {
 }
 
 export class ScriptRepository extends IdeaSelectionRepository {
+  claimScriptGeneration(request) {
+    return this.#transaction(() => {
+      const prior = this.db.prepare('SELECT * FROM script_generation_claims WHERE generation_request_id = ?').get(request.generationRequestId);
+      if (prior && prior.request_hash !== request.contentHash) throw new ScriptRepositoryError('GENERATION_REQUEST_ID_REUSED', 'generationRequestId', 'conteúdo divergente');
+      const currentTime = Date.now();
+      if (prior && !(prior.state === 'RETRYABLE' || (prior.state === 'RESERVED' && prior.reserved_until <= currentTime))) return { acquired: false, state: prior.state };
+      const ownerToken = randomUUID();
+      if (prior) this.db.prepare("UPDATE script_generation_claims SET state = 'RESERVED', owner_token = ?, reserved_until = ? WHERE generation_request_id = ?").run(ownerToken, currentTime + 30000, request.generationRequestId);
+      else this.db.prepare("INSERT INTO script_generation_claims VALUES (?, ?, 'RESERVED', ?, ?)").run(request.generationRequestId, request.contentHash, ownerToken, currentTime + 30000);
+      return { acquired: true, ownerToken };
+    });
+  }
+
+  transitionScriptGeneration(request, ownerToken, fromState, toState) {
+    const allowed = { RESERVED: ['DISPATCHING', 'RETRYABLE'], DISPATCHING: ['TERMINAL', 'RECONCILIATION_PENDING'] };
+    if (!allowed[fromState]?.includes(toState)) throw new ScriptRepositoryError('GENERATION_STATE_TRANSITION_INVALID', 'state', 'transição não permitida');
+    const result = this.db.prepare('UPDATE script_generation_claims SET state = ? WHERE generation_request_id = ? AND request_hash = ? AND owner_token = ? AND state = ?').run(toState, request.generationRequestId, request.contentHash, ownerToken, fromState);
+    if (result.changes !== 1) throw new ScriptRepositoryError('GENERATION_CLAIM_LOST', 'generationRequestId', 'reserva não pertence ao executor');
+  }
+
+  resolveRunBriefing(pipelineRunId, expectedBriefingId) {
+    return new AffiliateRepository(this).resolveRunBriefing(pipelineRunId, expectedBriefingId);
+  }
+
+  prepareScriptGeneration(request, pipelineRunId, expectedBriefingId) {
+    return new AffiliateRepository(this).prepareScriptGeneration(request, pipelineRunId, expectedBriefingId);
+  }
+
+  verifyScriptGenerationContext(request, pipelineRunId, briefing) {
+    return new AffiliateRepository(this).verifyScriptGenerationContext(request, pipelineRunId, briefing);
+  }
+
   registerScript(value) {
     let script;
     try { script = validateScript(value); }
