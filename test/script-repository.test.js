@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { ScriptRepository, ScriptRepositoryError } from "../src/script-repository.js";
+import { AffiliateRepository } from '../src/affiliate-repository.js';
+import { ScriptGenerationService } from '../src/script-generation-service.js';
+import { product as affiliateProduct, campaign as affiliateCampaign } from './affiliate-fixtures.js';
 import { AI_CALL_TELEMETRY_CONTRACT_VERSION } from "../src/domain/ai-call-telemetry-contracts.js";
 import { COST_EVENT_CONTRACT_VERSION } from "../src/domain/cost-event-contracts.js";
 import { ScriptService } from "../src/script-service.js";
@@ -19,6 +22,191 @@ import { SCRIPT_GENERATION_REQUEST_VERSION, scriptGenerationRequestHash } from "
 import { DEFAULT_RESEARCH_SHORTLIST_POLICY, RESEARCH_SHORTLIST_CONTRACT_VERSION } from "../src/domain/research-shortlist-contracts.js";
 
 const STARTED_AT = "2026-09-28T11:00:00.000Z";
+
+for (const separateConnections of [false, true]) test(`FIX01 concorrência com conexões separadas=${separateConnections}`, async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-concurrent-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository, second;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    second = separateConnections ? new ScriptRepository(path) : repository;
+    const catalog = new AffiliateRepository(repository);
+    catalog.registerProduct(affiliateProduct(), 'prod');
+    catalog.registerCampaign(affiliateCampaign({ projectId: 'project_curiosidades_ia' }), 'camp');
+    catalog.createBriefing({ briefingId: 'brief_001', campaignId: 'camp_001', campaignRevision: 1 }, 'brief');
+    catalog.bindRun({ pipelineRunId: 'run_e04_001', briefingId: 'brief_001' }, 'bind');
+    const provider = affiliateFakeProvider(prepared.selected);
+    const generate = provider.generate.bind(provider);
+    let release;
+    const barrier = new Promise(resolve => { release = resolve; });
+    provider.generate = async input => { const result = await generate(input); await barrier; return result; };
+    const firstService = new ScriptGenerationService(repository, provider);
+    const secondService = new ScriptGenerationService(second, provider);
+    const first = firstService.generate(generationRequest());
+    const next = secondService.generate(generationRequest());
+    await assert.rejects(secondService.generate(generationRequest({ requestedAt: '2026-09-28T14:01:00.000Z' })), error => ['AFFILIATE_SCRIPT_CONTEXT_CONFLICT', 'GENERATION_REQUEST_ID_REUSED'].includes(error.code));
+    release();
+    const results = await Promise.allSettled([first, next]);
+    assert.equal(provider.calls.length, 1);
+    assert.equal(results[0].status, 'fulfilled');
+    assert.equal(results[1].status, 'fulfilled');
+    assert.equal(repository.db.prepare('SELECT COUNT(*) AS n FROM script_generation_claims').get().n, 1);
+    assert.deepEqual(results[0].value, results[1].value);
+    assert.deepEqual(await secondService.generate(generationRequest()), results[0].value);
+    await assert.rejects(secondService.generate(generationRequest({ requestedAt: '2026-09-28T14:01:00.000Z' })));
+    assert.equal(provider.calls.length, 1);
+  } finally {
+    if (second !== repository && second?.db.isOpen) second.close();
+    if (repository?.db.isOpen) repository.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('P1 geração real no SQLite preserva briefing original, linhagem e retry após reabertura', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-affiliate-generation-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    const catalog = new AffiliateRepository(repository);
+    catalog.registerProduct(affiliateProduct(), 'prod');
+    catalog.registerCampaign(affiliateCampaign({ projectId: 'project_curiosidades_ia' }), 'camp');
+    const briefing = catalog.createBriefing({ briefingId: 'brief_001', campaignId: 'camp_001', campaignRevision: 1 }, 'brief');
+    const binding = catalog.bindRun({ pipelineRunId: 'run_e04_001', briefingId: 'brief_001' }, 'bind');
+    const provider = affiliateFakeProvider(prepared.selected);
+    const created = await new ScriptGenerationService(repository, provider).generate(generationRequest());
+    assert.deepEqual(provider.calls[0].affiliateBriefing, briefing);
+    assert.equal(created.cta, briefing.cta); assert.ok(created.fullNarration.includes(briefing.disclosure));
+    assert.equal(repository.getArtifact(created.scriptId).pipelineRunId, binding.pipelineRunId);
+    assert.equal(repository.db.prepare('SELECT briefing_hash FROM affiliate_script_contexts').get().briefing_hash, binding.briefingHash);
+    catalog.registerProduct(affiliateProduct({ revision: 2, name: 'Produto novo' }), 'prod_next');
+    catalog.registerCampaign(affiliateCampaign({ projectId: 'project_curiosidades_ia', revision: 2, productRevision: 2, cta: 'CTA novo' }), 'camp_next');
+    repository.close(); repository = new ScriptRepository(path);
+    const resumedProvider = affiliateFakeProvider(prepared.selected);
+    const resumedService = new ScriptGenerationService(repository, resumedProvider);
+    assert.deepEqual(await resumedService.generate(generationRequest()), created);
+    assert.equal(resumedProvider.calls.length, 0);
+    assert.equal(repository.db.prepare('SELECT COUNT(*) AS n FROM scripts').get().n, 1);
+    assert.equal(repository.db.prepare('SELECT COUNT(*) AS n FROM ai_call_telemetry').get().n, 1);
+    assert.deepEqual(new AffiliateRepository(repository).resolveRunBriefing('run_e04_001'), briefing);
+    const divergent = generationRequest({ requestedAt: '2026-09-28T14:01:00.000Z' });
+    await assert.rejects(resumedService.generate(divergent));
+    assert.equal(resumedProvider.calls.length, 0);
+    repository.db.exec('DROP TRIGGER affiliate_briefings_no_update');
+    repository.db.prepare('UPDATE affiliate_briefings SET content_json = ?').run(JSON.stringify({ ...briefing, productName: 'Adulterado' }));
+    await assert.rejects(resumedService.generate(generationRequest()), error => error.code === 'INVALID_PERSISTED_AFFILIATE_DATA');
+    assert.equal(resumedProvider.calls.length, 0);
+  } finally { if (repository?.db.isOpen) repository.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('P1 fluxo genérico usa repositório real e impede vinculação durante chamada em andamento', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-affiliate-generic-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    const catalog = new AffiliateRepository(repository);
+    catalog.registerProduct(affiliateProduct(), 'prod');
+    catalog.registerCampaign(affiliateCampaign({ projectId: 'project_curiosidades_ia' }), 'camp');
+    catalog.createBriefing({ briefingId: 'brief_001', campaignId: 'camp_001', campaignRevision: 1 }, 'brief');
+    const provider = affiliateFakeProvider(prepared.selected);
+    const original = provider.generate.bind(provider);
+    provider.generate = async input => {
+      assert.equal('affiliateBriefing' in input, false);
+      assert.throws(() => catalog.bindRun({ pipelineRunId: 'run_e04_001', briefingId: 'brief_001' }, 'late_bind'), error => error.code === 'AFFILIATE_RUN_BINDING_TOO_LATE');
+      return original(input);
+    };
+    const service = new ScriptGenerationService(repository, provider);
+    const generic = await service.generate(generationRequest());
+    assert.equal(generic.cta, 'Salve para testar depois.');
+    assert.deepEqual(await service.generate(generationRequest()), generic);
+    assert.equal(provider.calls.length, 1);
+    assert.equal(catalog.getRunBinding('run_e04_001'), null);
+    assert.equal(repository.db.prepare('SELECT briefing_hash FROM affiliate_script_contexts').get().briefing_hash, null);
+    await assert.rejects(service.generate(generationRequest(), { briefingId: 'brief_001' }), error => error.code === 'AFFILIATE_BRIEFING_NOT_BOUND');
+    assert.equal(provider.calls.length, 1);
+  } finally { if (repository?.db.isOpen) repository.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('FIX01 falha antes do dispatch libera reserva; resultado incerto permanece bloqueado após reabrir', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-recovery-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    const provider = affiliateFakeProvider(prepared.selected);
+    const transition = repository.transitionScriptGeneration.bind(repository);
+    repository.transitionScriptGeneration = (...args) => {
+      if (args[3] === 'DISPATCHING') throw new Error('fake failure before dispatch');
+      return transition(...args);
+    };
+    await assert.rejects(new ScriptGenerationService(repository, provider).generate(generationRequest()));
+    assert.equal(provider.calls.length, 0);
+    assert.equal(repository.db.prepare('SELECT state FROM script_generation_claims').get().state, 'RETRYABLE');
+    repository.transitionScriptGeneration = transition;
+    provider.generate = async () => { provider.calls.push('unknown'); throw new Error('fake connection lost'); };
+    await assert.rejects(new ScriptGenerationService(repository, provider).generate(generationRequest()));
+    assert.equal(provider.calls.length, 1);
+    assert.equal(repository.db.prepare('SELECT state FROM script_generation_claims').get().state, 'RECONCILIATION_PENDING');
+    repository.close(); repository = new ScriptRepository(path);
+    await assert.rejects(new ScriptGenerationService(repository, provider).generate(generationRequest()), error => error.code === 'GENERATION_RECONCILIATION_PENDING');
+    assert.equal(provider.calls.length, 1);
+    assert.throws(() => repository.transitionScriptGeneration(generationRequest(), 'unknown', 'RECONCILIATION_PENDING', 'RETRYABLE'), error => error.code === 'GENERATION_STATE_TRANSITION_INVALID');
+    assert.throws(() => repository.db.exec("UPDATE script_generation_claims SET state = 'RETRYABLE'"));
+  } finally { if (repository?.db.isOpen) repository.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('FIX01 reserva expirada antes do provider admite recuperação e impede executor antigo', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-expired-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    const request = generationRequest();
+    repository.prepareScriptGeneration(request, 'run_e04_001');
+    const realNow = Date.now;
+    let abandoned;
+    try { Date.now = () => realNow() - 60000; abandoned = repository.claimScriptGeneration(request); }
+    finally { Date.now = realNow; }
+    const provider = affiliateFakeProvider(prepared.selected);
+    await new ScriptGenerationService(repository, provider).generate(request);
+    assert.equal(provider.calls.length, 1);
+    assert.throws(() => repository.transitionScriptGeneration(request, abandoned.ownerToken, 'RESERVED', 'DISPATCHING'), error => error.code === 'GENERATION_CLAIM_LOST');
+    assert.equal(repository.db.prepare('SELECT state FROM script_generation_claims').get().state, 'TERMINAL');
+  } finally { if (repository?.db.isOpen) repository.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+test('FIX01 migração 030 não reenvia contexto legado sem resultado conhecido', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'mktauto-legacy-'));
+  const path = join(directory, 'catalog.sqlite');
+  let repository;
+  try {
+    const prepared = setup(path); repository = prepared.repository;
+    repository.prepareScriptGeneration(generationRequest(), 'run_e04_001');
+    repository.db.exec('DROP TABLE script_generation_claims; DELETE FROM schema_migrations WHERE version = 30; PRAGMA user_version = 29;');
+    repository.close(); repository = new ScriptRepository(path);
+    const provider = affiliateFakeProvider(prepared.selected);
+    await assert.rejects(new ScriptGenerationService(repository, provider).generate(generationRequest()), error => error.code === 'GENERATION_RECONCILIATION_PENDING');
+    assert.equal(provider.calls.length, 0);
+    assert.equal(repository.db.prepare('SELECT state FROM script_generation_claims').get().state, 'RECONCILIATION_PENDING');
+  } finally { if (repository?.db.isOpen) repository.close(); rmSync(directory, { recursive: true, force: true }); }
+});
+
+function affiliateFakeProvider(selection) {
+  return { calls: [], async generate(input) {
+    this.calls.push(input);
+    const source = script(selection);
+    const output = Object.fromEntries(['hook', 'narrativeBlocks', 'visualDirections', 'cta', 'estimatedDurationSeconds', 'sensitiveClaims', 'reviewFlags'].map(key => [key, source[key]]));
+    if (input.affiliateBriefing) {
+      const brief = input.affiliateBriefing;
+      output.hook = `Conheça ${brief.productName}.`;
+      output.narrativeBlocks = [{ position: 1, purpose: 'EXPLANATION', narration: `${brief.attributes.map(attribute => `${attribute.name}: ${attribute.value}`).join('. ')}. ${brief.disclosure}` }];
+      output.cta = brief.cta;
+    }
+    const observation = Object.fromEntries(['provider', 'model', 'taskType', 'promptVersion', 'inputTokens', 'outputTokens', 'cachedInputTokens', 'usageOrigin', 'costAmount', 'currency', 'costOrigin', 'latencyMs', 'occurredAt', 'fallback', 'inputHash', 'outputHash'].map(key => [key, telemetry()[key]]));
+    return { output, generationMetadata: metadata(), telemetry: observation };
+  } };
+}
 
 test("registra, recupera e lista roteiro explícito sem duplicar retry", () => {
   withService(({ service, selected, path }) => {
@@ -236,8 +424,8 @@ test("migrações 013 a 024 são aditivas e preservam seleção existente", () =
     assert.deepEqual(migrated.listScriptsByPipelineRun("run_e04_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
     raw.close();
   });
 });

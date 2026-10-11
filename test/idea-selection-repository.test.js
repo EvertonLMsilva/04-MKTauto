@@ -140,8 +140,8 @@ test("migração 012 é aditiva e preserva ideias existentes", () => {
     assert.deepEqual(migrated.listSelectionsByPipelineRun("run_e03_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
     raw.close();
   });
 });
