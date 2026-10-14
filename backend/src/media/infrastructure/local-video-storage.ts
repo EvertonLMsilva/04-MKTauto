@@ -29,7 +29,13 @@ export async function hashFile(
   if (!info.isFile() || info.size < 1 || info.size > maxBytes)
     throw failure('COMPOSER_OUTPUT_INVALID', 'output');
   const hash = createHash('sha256');
-  for await (const chunk of createReadStream(path)) hash.update(chunk);
+  let size = 0;
+  for await (const chunk of createReadStream(path)) {
+    size += Buffer.byteLength(chunk);
+    if (size > maxBytes) throw failure('COMPOSER_OUTPUT_INVALID', 'output');
+    hash.update(chunk);
+  }
+  if (size !== info.size) throw failure('COMPOSER_OUTPUT_INVALID', 'output');
   return hash.digest('hex');
 }
 export class LocalVideoStorage implements RenderStorage {

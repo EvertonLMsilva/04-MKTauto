@@ -350,7 +350,7 @@ export class CompositionPlanRepository extends MediaAssetRepository {
     const script: any = this.getScript(plan.scriptId);
     if (!script)
       throw failure('SCRIPT_NOT_FOUND', 'scriptId', 'roteiro não encontrado');
-    const voice: any = this.#getVoiceTrack(plan.voiceTrackId);
+    const voice: any = this.getVoiceTrack(plan.voiceTrackId);
     if (!voice)
       throw failure(
         'VOICE_TRACK_NOT_FOUND',
@@ -505,7 +505,7 @@ export class CompositionPlanRepository extends MediaAssetRepository {
       }
     });
   }
-  #getVoiceTrack(voiceTrackId: any): any {
+  getVoiceTrack(voiceTrackId: any): any {
     requireIdentifier(voiceTrackId, 'voiceTrackId', 200);
     const row: any = this.db
       .prepare('SELECT * FROM voice_tracks WHERE voice_track_id = ?')

@@ -10,6 +10,12 @@ import {
 } from './infrastructure/media.persistence.js';
 import { MediaService } from './application/media.service.js';
 import { MediaController } from './media.controller.js';
+import { createVideoComposer } from './infrastructure/ffmpeg-composer.provider.js';
+import {
+  FFMPEG_PROCESS_RUNNER,
+  runProcess,
+  type ProcessRunner,
+} from './infrastructure/ffmpeg-process.js';
 import {
   VIDEO_COMPOSER,
   type VideoComposer,
@@ -20,14 +26,12 @@ import {
   controllers: [MediaController],
   exports: [MediaService],
   providers: [
+    { provide: FFMPEG_PROCESS_RUNNER, useValue: runProcess },
     {
       provide: VIDEO_COMPOSER,
-      useValue: {
-        async compose() {
-          const error = new Error('composer não configurado');
-          throw Object.assign(error, { code: 'COMPOSER_UNAVAILABLE' });
-        },
-      },
+      useFactory: (store: MediaPersistence, runner: ProcessRunner) =>
+        createVideoComposer(store, process.env, runner),
+      inject: [MediaPersistence, FFMPEG_PROCESS_RUNNER],
     },
     {
       provide: MEDIA_DATABASE,
