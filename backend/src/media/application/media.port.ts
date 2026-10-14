@@ -5,6 +5,7 @@ import type {
   QualityControlReport,
 } from '../domain/media.types.js';
 import type { VideoRender } from '../domain/render.types.js';
+import type { InitialRenderRepository } from './video-composition.port.js';
 export interface MediaRepository {
   close(): void;
   registerMediaAsset(value: unknown): MediaAsset;
@@ -27,6 +28,7 @@ export interface QualityRepository {
   ): QualityControlReport | null;
 }
 export interface MediaStore {
+  openInitialRender?(readOnly?: boolean): InitialRenderRepository;
   openComposition(readOnly?: boolean): CompositionRepository;
   open(readOnly?: boolean): MediaRepository;
   openQuality(): QualityRepository;

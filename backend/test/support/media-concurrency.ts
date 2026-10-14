@@ -11,7 +11,7 @@ export async function raceMedia(
   method: string,
   values: unknown[],
   scriptValue: EditorialScript,
-  composition?: { run: unknown },
+  composition?: { run: unknown; render?: boolean },
 ) {
   // Keep WAL initialized while read-only Operations sessions open, as in the
   // existing integration fixtures that retain their provisioning connection.
@@ -37,12 +37,16 @@ export async function raceMedia(
     for (const match of output.matchAll(/from ['"](\.[^'"]+)\.js['"]/g))
       compile(posix.normalize(posix.join(posix.dirname(name), match[1])));
   }
-  const repositoryModule = composition
-    ? 'composition-plan.reader'
-    : 'media-asset.repository';
-  const repositoryClass = composition
-    ? 'CompositionPlanRepository'
-    : 'MediaAssetRepository';
+  const repositoryModule = composition?.render
+    ? 'video-render.reader'
+    : composition
+      ? 'composition-plan.reader'
+      : 'media-asset.repository';
+  const repositoryClass = composition?.render
+    ? 'VideoRenderRepository'
+    : composition
+      ? 'CompositionPlanRepository'
+      : 'MediaAssetRepository';
   compile(`media/infrastructure/${repositoryModule}`);
 
   writeFileSync(join(directory, 'package.json'), '{"type":"module"}');

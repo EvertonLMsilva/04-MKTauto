@@ -10,12 +10,25 @@ import {
 } from './infrastructure/media.persistence.js';
 import { MediaService } from './application/media.service.js';
 import { MediaController } from './media.controller.js';
+import {
+  VIDEO_COMPOSER,
+  type VideoComposer,
+} from './application/video-composition.port.js';
 
 @Module({
   imports: [ContentModule, ContentOperationsModule],
   controllers: [MediaController],
   exports: [MediaService],
   providers: [
+    {
+      provide: VIDEO_COMPOSER,
+      useValue: {
+        async compose() {
+          const error = new Error('composer não configurado');
+          throw Object.assign(error, { code: 'COMPOSER_UNAVAILABLE' });
+        },
+      },
+    },
     {
       provide: MEDIA_DATABASE,
       useFactory: () => process.env.PROJECT_API_DATABASE ?? null,
@@ -31,8 +44,9 @@ import { MediaController } from './media.controller.js';
     },
     {
       provide: MediaService,
-      useFactory: (store: MediaPersistence) => new MediaService(store),
-      inject: [MediaPersistence],
+      useFactory: (store: MediaPersistence, composer: VideoComposer) =>
+        new MediaService(store, composer),
+      inject: [MediaPersistence, VIDEO_COMPOSER],
     },
   ],
 })

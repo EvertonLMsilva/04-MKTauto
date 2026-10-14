@@ -10,12 +10,28 @@ import {
   ConflictException,
   NotFoundException,
   InternalServerErrorException,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { MediaService } from './application/media.service.js';
 import { ContractValidationError } from '../project/domain/project.errors.js';
 @Controller('media')
 export class MediaController {
   constructor(@Inject(MediaService) private readonly media: MediaService) {}
+  @Post('compositions') async compose(@Body() value: unknown) {
+    try {
+      return await this.media.compose(value);
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
+  }
+  @Get('compositions/:id') compositionReceipt(@Param('id') id: string) {
+    return this.respond(() => this.media.compositionReceipt(id));
+  }
+  @Get('renders/:id') render(@Param('id') id: string) {
+    return this.respond(() => this.media.getVideoRender(id));
+  }
   @Post('composition-plans') registerPlan(@Body() value: unknown) {
     return this.respond(() => this.media.registerCompositionPlan(value));
   }
@@ -82,6 +98,8 @@ export class MediaController {
         throw new BadRequestException({ code: error.code, field: error.path });
       if (error instanceof Error && 'code' in error && 'field' in error) {
         const body = { code: String(error.code), field: String(error.field) };
+        if (body.code === 'COMPOSER_UNAVAILABLE')
+          throw new ServiceUnavailableException(body);
         if (/PERSISTENCE_FAILED|INVALID_PERSISTED/.test(body.code))
           throw new InternalServerErrorException(body);
         if (body.code.endsWith('NOT_FOUND')) throw new NotFoundException(body);

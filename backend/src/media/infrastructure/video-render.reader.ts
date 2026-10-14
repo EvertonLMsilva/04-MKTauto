@@ -1,3 +1,14 @@
+import { createHash } from 'node:crypto';
+import {
+  ARTIFACT_LINEAGE_CONTRACT_VERSION,
+  validateArtifactLineage,
+} from '../../content/domain/artifact-lineage-contracts.js';
+import { ContractValidationError } from '../../project/domain/project.errors.js';
+import {
+  VIDEO_COMPOSITION_REQUEST_VERSION,
+  validateVideoCompositionRequest,
+  videoCompositionRequestHash,
+} from '../domain/video-composition-contracts.js';
 import {
   validateVideoRender,
   videoRenderIdentityHash,
@@ -105,6 +116,279 @@ export class VideoRenderRepository extends CompositionPlanRepository {
         'medida do render diverge do plano',
       );
   }
+
+  registerVideoComposition({
+    request: requestValue,
+    videoRender: renderValue,
+  }: any) {
+    let request: any;
+    let render: any;
+    try {
+      request = validateVideoCompositionRequest(requestValue);
+      render = validateVideoRender(renderValue);
+    } catch (caught: any) {
+      throw mapError(caught);
+    }
+    return this.#transaction(() => {
+      const prior: any = this.db
+        .prepare(
+          `SELECT request_hash, video_render_id
+        FROM video_composition_requests WHERE video_composition_request_id = ?`,
+        )
+        .get(request.videoCompositionRequestId);
+      if (prior) {
+        if (prior.request_hash !== request.contentHash)
+          throw failure(
+            'VIDEO_COMPOSITION_REQUEST_ID_REUSED',
+            'videoCompositionRequestId',
+            'identidade já usada com conteúdo divergente',
+          );
+        return this.getVideoRender(prior.video_render_id);
+      }
+      verifyCompositionBinding(request, render);
+      const created: any = this.#registerValidated(render);
+      this.db
+        .prepare(
+          `INSERT INTO video_composition_requests
+        (video_composition_request_id, schema_version, request_hash,
+         composition_plan_id, composition_plan_content_hash, container_format,
+         width_pixels, height_pixels, video_render_id, created_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          request.videoCompositionRequestId,
+          request.schemaVersion,
+          request.contentHash,
+          request.compositionPlanId,
+          request.compositionPlanContentHash,
+          request.containerFormat,
+          request.widthPixels,
+          request.heightPixels,
+          created.videoRenderId,
+          request.requestedAt,
+        );
+      return created;
+    });
+  }
+  getVideoComposition(videoCompositionRequestId: any) {
+    requireIdentifier(
+      videoCompositionRequestId,
+      'videoCompositionRequestId',
+      180,
+    );
+    const row: any = this.db
+      .prepare(
+        `SELECT * FROM video_composition_requests
+      WHERE video_composition_request_id = ?`,
+      )
+      .get(videoCompositionRequestId);
+    if (!row) return null;
+    try {
+      const request: any = validateVideoCompositionRequest({
+        schemaVersion: row.schema_version,
+        videoCompositionRequestId: row.video_composition_request_id,
+        compositionPlanId: row.composition_plan_id,
+        compositionPlanContentHash: row.composition_plan_content_hash,
+        containerFormat: row.container_format,
+        widthPixels: row.width_pixels,
+        heightPixels: row.height_pixels,
+        requestedAt: row.created_at,
+        contentHash: row.request_hash,
+      });
+      if (
+        row.schema_version !== VIDEO_COMPOSITION_REQUEST_VERSION ||
+        videoCompositionRequestHash(request) !== row.request_hash
+      )
+        throw new Error('solicitação inválida');
+      const videoRender: any = this.getVideoRender(row.video_render_id);
+      if (!videoRender) throw new Error('composição incompleta');
+      verifyCompositionBinding(request, videoRender);
+      return deepFreeze({ requestHash: row.request_hash, videoRender });
+    } catch (caught: any) {
+      if (caught instanceof VideoRenderRepositoryError) throw caught;
+      throw failure(
+        'INVALID_PERSISTED_VIDEO_COMPOSITION',
+        'videoCompositionRequestId',
+        'composição persistida inválida',
+        { cause: caught },
+      );
+    }
+  }
+  listVideoRendersByCompositionPlan(compositionPlanId: any) {
+    requireIdentifier(compositionPlanId, 'compositionPlanId', 200);
+    return this.db
+      .prepare(
+        `SELECT video_render_id FROM video_renders
+      WHERE composition_plan_id = ? ORDER BY revision, video_render_id`,
+      )
+      .all(compositionPlanId)
+      .map(({ video_render_id: id }: any) => this.getVideoRender(id));
+  }
+  #registerValidated(
+    render: any,
+    { inputs = lineageInputs(render), generationMetadata = null }: any = {},
+  ) {
+    const identityHash: any = videoRenderIdentityHash(render);
+    const prior: any = this.db
+      .prepare(
+        'SELECT identity_hash FROM video_renders WHERE video_render_id = ?',
+      )
+      .get(render.videoRenderId);
+    if (prior) {
+      if (prior.identity_hash !== identityHash)
+        throw failure(
+          'VIDEO_RENDER_ID_REUSED',
+          'videoRenderId',
+          'ID já usado com render incompatível',
+        );
+      return this.getVideoRender(render.videoRenderId);
+    }
+    const logicalPrior: any = this.db
+      .prepare(
+        'SELECT video_render_id FROM video_renders WHERE composition_plan_id = ? AND revision = ?',
+      )
+      .get(render.compositionPlanId, render.revision);
+    if (logicalPrior)
+      throw failure(
+        'VIDEO_RENDER_REVISION_CONFLICT',
+        'revision',
+        'revisão já registrada para o plano',
+      );
+    const related: any = this.#relatedArtifacts(render);
+    this.#verifyRelated(render, related);
+    this.#validateRevision(render);
+    this.#insertLineage(render, inputs, generationMetadata);
+    this.db
+      .prepare(
+        `INSERT INTO video_renders
+      (video_render_id, schema_version, identity_hash, pipeline_run_id, project_id,
+       project_version, composition_plan_id, composition_plan_content_hash,
+       output_aspect_ratio, duration_milliseconds, container_format, width_pixels,
+       height_pixels, content_hash, logical_reference, created_at, revision,
+       supersedes_video_render_id, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        render.videoRenderId,
+        render.schemaVersion,
+        identityHash,
+        render.pipelineRunId,
+        render.projectId,
+        render.projectVersion,
+        render.compositionPlanId,
+        render.compositionPlanContentHash,
+        render.outputAspectRatio,
+        render.durationMilliseconds,
+        render.containerFormat,
+        render.widthPixels,
+        render.heightPixels,
+        render.contentHash,
+        render.logicalReference,
+        render.createdAt,
+        render.revision,
+        render.supersedesVideoRenderId,
+        JSON.stringify(render),
+      );
+    return this.getVideoRender(render.videoRenderId);
+  }
+  #validateRevision(render: any) {
+    if (render.revision === 1) return null;
+    const previous: any = this.getVideoRender(render.supersedesVideoRenderId);
+    if (!previous)
+      throw failure(
+        'SUPERSEDED_VIDEO_RENDER_NOT_FOUND',
+        'supersedesVideoRenderId',
+        'render anterior não encontrado',
+      );
+    for (const field of [
+      'pipelineRunId',
+      'projectId',
+      'projectVersion',
+      'compositionPlanId',
+      'outputAspectRatio',
+    ]) {
+      if (previous[field] !== render[field])
+        throw failure(
+          'VIDEO_RENDER_SUPERSESSION_SCOPE_MISMATCH',
+          field,
+          'render anterior fora do escopo',
+        );
+    }
+    if (previous.revision + 1 !== render.revision)
+      throw failure(
+        'VIDEO_RENDER_REVISION_MISMATCH',
+        'revision',
+        'revisão não é sucessora imediata',
+      );
+    return previous;
+  }
+  #insertLineage(
+    render: any,
+    inputs: any = lineageInputs(render),
+    generationMetadata: any = null,
+  ) {
+    const artifact: any = validateArtifactLineage({
+      schemaVersion: ARTIFACT_LINEAGE_CONTRACT_VERSION,
+      artifactId: render.videoRenderId,
+      artifactType: 'video_render',
+      artifactVersion: render.revision,
+      pipelineRunId: render.pipelineRunId,
+      projectId: render.projectId,
+      projectVersion: render.projectVersion,
+      contentIdentity: `video-render:${render.compositionPlanId}`,
+      hashAlgorithm: 'sha256',
+      contentHash: render.contentHash,
+      inputs,
+      generationMetadata,
+      createdAt: render.createdAt,
+    });
+    this.db
+      .prepare(
+        `INSERT INTO artifact_lineage
+      (artifact_id, schema_version, artifact_type, artifact_version, identity_hash,
+       pipeline_run_id, project_id, project_version, content_identity, hash_algorithm,
+       content_hash, generation_metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        artifact.artifactId,
+        artifact.schemaVersion,
+        artifact.artifactType,
+        artifact.artifactVersion,
+        sha256(JSON.stringify(artifact)),
+        artifact.pipelineRunId,
+        artifact.projectId,
+        artifact.projectVersion,
+        artifact.contentIdentity,
+        artifact.hashAlgorithm,
+        artifact.contentHash,
+        artifact.generationMetadata === null
+          ? null
+          : JSON.stringify(artifact.generationMetadata),
+        artifact.createdAt,
+      );
+    const insert: any = this.db.prepare(`INSERT INTO artifact_lineage_inputs
+      (artifact_id, position, kind, input_id, content_hash) VALUES (?, ?, ?, ?, ?)`);
+    for (const input of artifact.inputs)
+      insert.run(
+        artifact.artifactId,
+        input.position,
+        input.kind,
+        input.inputId,
+        input.contentHash,
+      );
+  }
+  #transaction(operation: any) {
+    try {
+      this.db.exec('BEGIN IMMEDIATE');
+      const result: any = operation();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (caught: any) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw mapError(caught);
+    }
+  }
 }
 function lineageInputs(render: any): any {
   return [
@@ -170,4 +454,130 @@ function requireIdentifier(value: any, field: any, max: any = 80): any {
 }
 function failure(code: any, field: any, message: any, options?: any): any {
   return new VideoRenderRepositoryError(code, field, message, options);
+}
+
+function verifyCompositionBinding(request: any, render: any): any {
+  if (
+    render.videoRenderId !==
+      `video_render:${request.videoCompositionRequestId}` ||
+    render.compositionPlanId !== request.compositionPlanId ||
+    render.compositionPlanContentHash !== request.compositionPlanContentHash ||
+    render.containerFormat !== request.containerFormat ||
+    render.widthPixels !== request.widthPixels ||
+    render.heightPixels !== request.heightPixels ||
+    render.createdAt !== request.requestedAt ||
+    render.revision !== 1 ||
+    render.supersedesVideoRenderId !== null
+  ) {
+    throw failure(
+      'VIDEO_COMPOSITION_SCOPE_MISMATCH',
+      'videoCompositionRequestId',
+      'solicitação e render divergentes',
+    );
+  }
+}
+function mapError(caught: any): any {
+  if (caught instanceof VideoRenderRepositoryError) return caught;
+  if (caught instanceof ContractValidationError)
+    return failure(caught.code, caught.path, 'contrato de render inválido', {
+      cause: caught,
+    });
+  if (caught?.name?.endsWith('RepositoryError') && caught.code)
+    return failure(caught.code, caught.field, 'artefato relacionado inválido', {
+      cause: caught,
+    });
+  const message: any = String(caught?.message);
+  if (
+    message.includes(
+      'video_renders.composition_plan_id, video_renders.revision',
+    )
+  )
+    return failure(
+      'VIDEO_RENDER_REVISION_CONFLICT',
+      'revision',
+      'revisão já registrada',
+      { cause: caught },
+    );
+  if (message.includes('video_renders.supersedes_video_render_id'))
+    return failure(
+      'VIDEO_RENDER_ALREADY_SUPERSEDED',
+      'supersedesVideoRenderId',
+      'render já substituído',
+      { cause: caught },
+    );
+  if (
+    message.includes(
+      'artifact_lineage.artifact_type, artifact_lineage.content_identity, artifact_lineage.artifact_version',
+    )
+  )
+    return failure(
+      'VIDEO_RENDER_REVISION_CONFLICT',
+      'revision',
+      'revisão já registrada',
+      { cause: caught },
+    );
+  if (message.includes('artifact_lineage.artifact_id'))
+    return failure(
+      'VIDEO_RENDER_ID_REUSED',
+      'videoRenderId',
+      'ID já registrado',
+      { cause: caught },
+    );
+  if (message.includes('IMMUTABLE_VIDEO_RENDER'))
+    return failure(
+      'IMMUTABLE_VIDEO_RENDER',
+      'videoRenderId',
+      'render imutável',
+      { cause: caught },
+    );
+  if (message.includes('IMMUTABLE_VIDEO_COMPOSITION_REQUEST'))
+    return failure(
+      'IMMUTABLE_VIDEO_COMPOSITION_REQUEST',
+      'videoCompositionRequestId',
+      'solicitação imutável',
+      { cause: caught },
+    );
+  if (message.includes('VIDEO_COMPOSITION_SCOPE_MISMATCH'))
+    return failure(
+      'VIDEO_COMPOSITION_SCOPE_MISMATCH',
+      'videoCompositionRequestId',
+      'solicitação fora do escopo',
+      { cause: caught },
+    );
+  if (message.includes('VIDEO_RENDER_SCOPE_MISMATCH'))
+    return failure(
+      'VIDEO_RENDER_SCOPE_MISMATCH',
+      'videoRender',
+      'artefatos fora do escopo',
+      { cause: caught },
+    );
+  if (message.includes('VIDEO_RENDER_REVISION_MISMATCH'))
+    return failure(
+      'VIDEO_RENDER_REVISION_MISMATCH',
+      'revision',
+      'revisão inválida',
+      { cause: caught },
+    );
+  if (typeof caught?.code === 'string' && caught.code.startsWith('ERR_SQLITE'))
+    return failure(
+      'VIDEO_RENDER_PERSISTENCE_FAILED',
+      'videoRender',
+      'não foi possível persistir o render',
+      { cause: caught },
+    );
+  return caught;
+}
+function sha256(value: any): any {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function deepFreeze(value: any): any {
+  const clone = structuredClone(value);
+  function freeze(item: any) {
+    if (!item || typeof item !== 'object' || Object.isFrozen(item)) return;
+    Object.values(item).forEach(freeze);
+    Object.freeze(item);
+  }
+  freeze(clone);
+  return clone;
 }

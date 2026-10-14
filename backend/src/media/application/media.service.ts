@@ -4,8 +4,47 @@ import type {
   QualityRepository,
   CompositionRepository,
 } from './media.port.js';
+import type { VideoComposer } from './video-composition.port.js';
+import {
+  VideoCompositionService,
+  VideoCompositionError,
+} from './video-composition.service.js';
 export class MediaService {
-  constructor(private readonly store: MediaStore) {}
+  constructor(
+    private readonly store: MediaStore,
+    private readonly composer?: VideoComposer,
+  ) {}
+  async compose(value: unknown, options: { signal?: AbortSignal } = {}) {
+    if (!this.store.openInitialRender || !this.composer)
+      throw new VideoCompositionError(
+        'COMPOSER_UNAVAILABLE',
+        'composer',
+        'composer não configurado',
+      );
+    const repository = this.store.openInitialRender();
+    try {
+      return await new VideoCompositionService(
+        repository,
+        this.composer,
+      ).compose(value, options);
+    } finally {
+      repository.close();
+    }
+  }
+  compositionReceipt(id: string) {
+    if (!this.store.openInitialRender)
+      throw new VideoCompositionError(
+        'COMPOSER_UNAVAILABLE',
+        'composer',
+        'persistência não configurada',
+      );
+    const repository = this.store.openInitialRender(true);
+    try {
+      return repository.getVideoComposition(id);
+    } finally {
+      repository.close();
+    }
+  }
   private composition<T>(
     readOnly: boolean,
     action: (repository: CompositionRepository) => T,

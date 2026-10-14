@@ -23,6 +23,14 @@ export class MediaPersistence implements MediaStore {
       { readOnly: true },
     );
   }
+  openInitialRender(readOnly = false) {
+    return new VideoRenderRepository(
+      this.database(),
+      this.operations,
+      this.content,
+      { readOnly },
+    );
+  }
   openComposition(readOnly = false) {
     return new CompositionPlanRepository(
       this.database(),
