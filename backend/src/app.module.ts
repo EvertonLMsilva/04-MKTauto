@@ -7,6 +7,7 @@ import { ContentOperationsModule } from './content-operations/content-operations
 import { ContentModule } from './content/content.module.js';
 import { MediaModule } from './media/media.module.js';
 import { FinanceModule } from './finance/finance.module.js';
+import { PublishingModule } from './publishing/publishing.module.js';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { FinanceModule } from './finance/finance.module.js';
     ContentModule,
     MediaModule,
     FinanceModule,
+    PublishingModule,
   ],
   controllers: [AppController],
   providers: [AppService],

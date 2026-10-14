@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { PROJECT_SCHEMA_VERSION } from "../src/project-repository.js";
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
 import { COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanContentHash } from "../src/domain/composition-plan-contracts.js";
 import { MEDIA_ASSET_CONTRACT_VERSION } from "../src/domain/media-asset-contracts.js";
@@ -55,6 +56,7 @@ test("persiste solicitação, render e linhagem atomicamente com retry terminal"
 
 test("persiste burn-in como revisão 2 imutável, request normalizada e lineage exata sem migration", () => {
   withService(({ repository, compositionPlan, path }) => {
+    const migrationsBefore = repository.db.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
     const source = repository.registerVideoRender(render(compositionPlan));
     const subtitles = new SubtitleTrackRepository(path); subtitles.getScript = repository.getScript; const track = subtitleTrack(compositionPlan);
     try { subtitles.registerSubtitleTrack(track); } finally { subtitles.close(); }
@@ -69,7 +71,8 @@ test("persiste burn-in como revisão 2 imutável, request normalizada e lineage 
       { position: 2, kind: "INTERNAL_ARTIFACT", inputId: source.videoRenderId, contentHash: source.contentHash },
       { position: 3, kind: "INTERNAL_ARTIFACT", inputId: track.subtitleTrackId, contentHash: track.contentHash },
     ]);
-    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2); assert.equal(countWhere(path, "schema_migrations", "version > 30"), 0);
+    assert.deepEqual(repository.getVideoRender(source.videoRenderId), source); assert.equal(count(path, "video_renders"), 2);
+    assert.deepEqual(repository.db.prepare("SELECT * FROM schema_migrations ORDER BY version").all(), migrationsBefore);
     assert.throws(() => repository.db.prepare("UPDATE video_renders SET content_hash = ? WHERE video_render_id = ?").run("0".repeat(64), burned.videoRenderId), /IMMUTABLE_VIDEO_RENDER/);
   });
 });
@@ -194,8 +197,8 @@ test("migração 022 é aditiva, não cria solicitações ou renders retroativos
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);
@@ -227,8 +230,8 @@ test("migração 021 continua recuperável junto da 022", () => {
     assert.deepEqual(migrated.listVideoRendersByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_composition_requests").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM video_renders").get().total, 0);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 1);

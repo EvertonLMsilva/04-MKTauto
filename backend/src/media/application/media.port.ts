@@ -4,6 +4,7 @@ import type {
   SelectionReceipt,
   QualityControlReport,
 } from '../domain/media.types.js';
+import type { VideoRender } from '../domain/render.types.js';
 export interface MediaRepository {
   close(): void;
   registerMediaAsset(value: unknown): MediaAsset;
@@ -28,4 +29,9 @@ export interface QualityRepository {
 export interface MediaStore {
   open(readOnly?: boolean): MediaRepository;
   openQuality(): QualityRepository;
+  openRender(): {
+    getVideoRender(id: string): VideoRender | null;
+    close(): void;
+  };
+  verifyMedia(reference: string): string;
 }

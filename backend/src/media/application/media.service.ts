@@ -5,6 +5,17 @@ import type {
 } from './media.port.js';
 export class MediaService {
   constructor(private readonly store: MediaStore) {}
+  getVideoRender(id: string) {
+    const reader = this.store.openRender();
+    try {
+      return reader.getVideoRender(id);
+    } finally {
+      reader.close();
+    }
+  }
+  verifyMedia(reference: string): string {
+    return this.store.verifyMedia(reference);
+  }
   private session<T>(
     readOnly: boolean,
     action: (repository: MediaRepository) => T,
