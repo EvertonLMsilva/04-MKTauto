@@ -10,6 +10,7 @@ import { COST_EVENT_CONTRACT_VERSION, COST_LEDGER_CONTRACT_VERSION } from "../sr
 import { ARTIFACT_LINEAGE_CONTRACT_VERSION } from "../src/domain/artifact-lineage-contracts.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
+import { PROJECT_SCHEMA_VERSION } from "../src/project-repository.js";
 
 const STARTED_AT = "2026-09-28T11:00:00.000Z";
 
@@ -176,8 +177,8 @@ test("migração 010 é aditiva e preserva registros existentes", () => {
     migrated.close();
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
     assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM pipeline_runs").get().total, 1);
     raw.close();
   });

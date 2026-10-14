@@ -6,6 +6,7 @@ import { AffiliateModule } from './affiliate/affiliate.module.js';
 import { ContentOperationsModule } from './content-operations/content-operations.module.js';
 import { ContentModule } from './content/content.module.js';
 import { MediaModule } from './media/media.module.js';
+import { FinanceModule } from './finance/finance.module.js';
 
 @Module({
   imports: [
@@ -14,6 +15,7 @@ import { MediaModule } from './media/media.module.js';
     ContentOperationsModule,
     ContentModule,
     MediaModule,
+    FinanceModule,
   ],
   controllers: [AppController],
   providers: [AppService],
