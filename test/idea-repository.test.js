@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { IdeaRepository, IdeaRepositoryError } from "../src/idea-repository.js";
+import { PROJECT_SCHEMA_VERSION, PROJECT_MIGRATIONS } from "../src/project-repository.js";
 import { IdeaService } from "../src/idea-service.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
@@ -109,23 +110,53 @@ test("leitura revalida contrato e hash persistidos", () => {
 
 test("migração 011 é aditiva e preserva registros existentes", () => {
   withDatabase((path) => {
-    const repository = new IdeaRepository(path);
-    repository.create(project(), { createdAt: STARTED_AT });
-    new PipelineRunService(repository).start(request());
-    repository.close();
+    const repository = new IdeaRepository(`${path}.seed`);
+    const existing = {};
+    try {
+      repository.create(project(), { createdAt: STARTED_AT });
+      new PipelineRunService(repository).start(request());
+      for (const table of ["projects", "project_snapshots", "pipeline_runs", "pipeline_run_transitions"]) {
+        existing[table] = repository.db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all();
+      }
+    } finally { repository.close(); }
+
+    // Build the actual pre-011 schema; do not downgrade a newer database while
+    // retaining later tables and migration receipts.
     const before = new DatabaseSync(path);
-    before.exec("DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24;");
-    before.exec(`DROP TABLE video_composition_requests; DROP TABLE video_renders; DROP TABLE composition_plan_segments; DROP TABLE composition_plans; DROP TABLE media_acquisition_requests; DROP TABLE media_assets; DROP TABLE voice_generation_requests; DROP TABLE voice_tracks; DROP TABLE ai_call_telemetry; DROP TABLE script_generation_requests; DROP TABLE scripts; DROP TABLE idea_selections; DROP TABLE idea_candidate_evidence; DROP TABLE idea_scores; DROP TABLE idea_candidates; DROP TABLE idea_batches;
-      DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22; DELETE FROM schema_migrations WHERE version = 21; DELETE FROM schema_migrations WHERE version = 20; DELETE FROM schema_migrations WHERE version = 19; DELETE FROM schema_migrations WHERE version = 18; DELETE FROM schema_migrations WHERE version = 17; DELETE FROM schema_migrations WHERE version = 16; DELETE FROM schema_migrations WHERE version = 15; DELETE FROM schema_migrations WHERE version = 14; DELETE FROM schema_migrations WHERE version = 13; DELETE FROM schema_migrations WHERE version = 12; DELETE FROM schema_migrations WHERE version = 11; PRAGMA user_version = 10;`);
-    before.close();
+    let history;
+    try {
+      for (const [version, [name, sql]] of PROJECT_MIGRATIONS) {
+        if (version > 10) break;
+        before.exec(sql);
+        before.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(version, name, STARTED_AT);
+      }
+      before.exec("PRAGMA user_version = 10;");
+      for (const [table, rows] of Object.entries(existing)) {
+        for (const row of rows) {
+          const columns = Object.keys(row);
+          before.prepare(`INSERT INTO ${table} (${columns.join(",")}) VALUES (${columns.map(() => "?").join(",")})`).run(...Object.values(row));
+        }
+      }
+      history = before.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+      assert.equal(history.length, 10);
+      assert.equal(before.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'table' AND name = 'idea_batches'").get().total, 0);
+    } finally { before.close(); }
+
     const migrated = new IdeaRepository(path);
-    assert.equal(migrated.getRun("run_e03_001").projectId, "project_curiosidades_ia");
-    assert.deepEqual(migrated.listIdeasByPipelineRun("run_e03_001"), []);
-    migrated.close();
+    try {
+      assert.equal(migrated.getRun("run_e03_001").projectId, "project_curiosidades_ia");
+      assert.deepEqual(migrated.listIdeasByPipelineRun("run_e03_001"), []);
+    } finally { migrated.close(); }
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
-    raw.close();
+    try {
+      assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
+      assert.deepEqual(raw.prepare("SELECT * FROM schema_migrations WHERE version <= 10 ORDER BY version").all(), history);
+      assert.equal(raw.prepare("SELECT name FROM schema_migrations WHERE version = 11").get().name, PROJECT_MIGRATIONS.get(11)[0]);
+      for (const [table, rows] of Object.entries(existing)) {
+        assert.deepEqual(raw.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(), rows);
+      }
+    } finally { raw.close(); }
   });
 });
 
