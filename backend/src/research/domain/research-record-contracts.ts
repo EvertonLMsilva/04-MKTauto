@@ -557,3 +557,279 @@ function normalizeCanonicalUrl(value: any, platform: any): any {
 function fail(code: any, path: any, message: any): never {
   throw new ContractValidationError(code, path, message);
 }
+
+export const TREND_RUN_STATES: any = Object.freeze([
+  'CREATED',
+  'COLLECTING',
+  'NORMALIZING',
+  'CLUSTERING',
+  'RANKING',
+  'COMPLETED',
+  'COMPLETED_WITH_GAPS',
+  'FAILED',
+]);
+export function validateTrendSnapshot(value: any): any {
+  requireRecord(value, 'snapshot');
+  requireExactKeys(
+    value,
+    ['schemaVersion', 'id', 'candidateId', 'capturedAt', 'metrics'],
+    'snapshot',
+  );
+  requireSchemaVersion(value.schemaVersion, 'snapshot.schemaVersion');
+  requireIdentifier(value.id, 'snapshot.id');
+  requireIdentifier(value.candidateId, 'snapshot.candidateId');
+  requireDateTime(value.capturedAt, 'snapshot.capturedAt');
+  requireRecord(value.metrics, 'snapshot.metrics');
+  requireExactKeys(
+    value.metrics,
+    ['views', 'likes', 'comments', 'shares'],
+    'snapshot.metrics',
+    true,
+  );
+  for (const metric of ['views', 'likes', 'comments', 'shares']) {
+    validateAvailability(value.metrics[metric], `snapshot.metrics.${metric}`, {
+      max: Number.MAX_SAFE_INTEGER,
+      code: 'INVALID_METRIC',
+    });
+  }
+  return value;
+}
+export function validateTrendRun(value: any, sourceRuns: any = []): any {
+  requireRecord(value, 'run');
+  requireExactKeys(
+    value,
+    [
+      'schemaVersion',
+      'id',
+      'state',
+      'createdAt',
+      'updatedAt',
+      'sourceRunIds',
+      'candidateIds',
+      'rankingConfigVersion',
+    ],
+    'run',
+  );
+  requireSchemaVersion(value.schemaVersion, 'run.schemaVersion');
+  requireIdentifier(value.id, 'run.id');
+  requireEnum(value.state, TREND_RUN_STATES, 'run.state');
+  requireDateTime(value.createdAt, 'run.createdAt');
+  requireDateTime(value.updatedAt, 'run.updatedAt');
+  requireIdentifierArray(value.sourceRunIds, 'run.sourceRunIds');
+  requireIdentifierArray(value.candidateIds, 'run.candidateIds');
+  requireTextContract(value.rankingConfigVersion, 'run.rankingConfigVersion');
+  const validatedSources: any = sourceRuns.map(validateSourceRun);
+  const knownIds: any = new Set(
+    validatedSources.map((item: any): any => item.id),
+  );
+  for (const id of value.sourceRunIds)
+    if (validatedSources.length > 0 && !knownIds.has(id))
+      fail('UNKNOWN_EVIDENCE', 'run.sourceRunIds', `fonte desconhecida: ${id}`);
+  const hasGap: any = validatedSources.some(
+    (item: any): any => item.status !== 'SUCCESS',
+  );
+  if (value.state === 'COMPLETED' && hasGap)
+    fail(
+      'INVALID_RUN_COVERAGE',
+      'run.state',
+      'fontes incompletas exigem COMPLETED_WITH_GAPS',
+    );
+  if (
+    value.state === 'COMPLETED_WITH_GAPS' &&
+    validatedSources.length > 0 &&
+    !hasGap
+  )
+    fail('INVALID_RUN_COVERAGE', 'run.state', 'nenhuma lacuna declarada');
+  return value;
+}
+export function validateAiTopicProposal(
+  value: any,
+  knownCandidateIds: any,
+  knownSnapshotIds: any,
+): any {
+  requireRecord(value, 'aiProposal');
+  const allowed: any = [
+    'label',
+    'niche',
+    'subtheme',
+    'likelyAudience',
+    'narrativePattern',
+    'localization',
+    'candidateIds',
+    'evidenceSnapshotIds',
+    'explanation',
+  ];
+  const unknown: any = Object.keys(value).filter(
+    (key: any): any => !allowed.includes(key),
+  );
+  if (unknown.length > 0)
+    fail(
+      'AI_EVIDENCE_MUTATION',
+      'aiProposal',
+      `campos não permitidos: ${unknown.join(', ')}`,
+    );
+  requireExactKeys(value, allowed, 'aiProposal', true);
+  requireTextContract(value.label, 'aiProposal.label');
+  requireTextContract(value.niche, 'aiProposal.niche');
+  requireTextContract(value.subtheme, 'aiProposal.subtheme');
+  requireTextContract(value.likelyAudience, 'aiProposal.likelyAudience');
+  requireTextContract(value.narrativePattern, 'aiProposal.narrativePattern');
+  requireTextContract(value.localization, 'aiProposal.localization');
+  requireIdentifierArray(value.candidateIds, 'aiProposal.candidateIds', true);
+  requireIdentifierArray(
+    value.evidenceSnapshotIds,
+    'aiProposal.evidenceSnapshotIds',
+    true,
+  );
+  requireKnownIds(
+    value.candidateIds,
+    knownCandidateIds,
+    'aiProposal.candidateIds',
+  );
+  requireKnownIds(
+    value.evidenceSnapshotIds,
+    knownSnapshotIds,
+    'aiProposal.evidenceSnapshotIds',
+  );
+  requireTextContract(value.explanation, 'aiProposal.explanation');
+  return value;
+}
+export function serializePublicTrendCatalog(value: any): any {
+  requireRecord(value, 'catalog');
+  const sourceRuns: any = (value.sourceRuns ?? []).map((item: any): any =>
+    validateSourceRun(
+      pick(item, [
+        'schemaVersion',
+        'id',
+        'trendRunId',
+        'platform',
+        'status',
+        'startedAt',
+        'completedAt',
+        'capabilities',
+        'coverage',
+        'gaps',
+        'errorCode',
+      ]),
+    ),
+  );
+  const run: any = validateTrendRun(
+    pick(value.run, [
+      'schemaVersion',
+      'id',
+      'state',
+      'createdAt',
+      'updatedAt',
+      'sourceRunIds',
+      'candidateIds',
+      'rankingConfigVersion',
+    ]),
+    sourceRuns,
+  );
+  const candidates: any = (value.candidates ?? []).map((item: any): any =>
+    validateTrendCandidate(
+      pick(item, [
+        'schemaVersion',
+        'id',
+        'identityKey',
+        'platform',
+        'platformVideoId',
+        'canonicalUrl',
+        'state',
+        'firstSeenAt',
+        'lastSeenAt',
+        'reappearanceCount',
+        'durationSeconds',
+        'publishedAt',
+        'region',
+        'language',
+        'usageCondition',
+        'snapshotIds',
+        'topicClusterIds',
+        'author',
+        'title',
+        'category',
+        'rankingExclusionReason',
+      ]),
+    ),
+  );
+  const snapshots: any = (value.snapshots ?? []).map((item: any): any =>
+    validateTrendSnapshot(
+      pick(item, [
+        'schemaVersion',
+        'id',
+        'candidateId',
+        'capturedAt',
+        'metrics',
+      ]),
+    ),
+  );
+  const candidateIds: any = candidates.map((item: any): any => item.id);
+  const snapshotIds: any = snapshots.map((item: any): any => item.id);
+  const topicClusters: any = (value.topicClusters ?? []).map((item: any): any =>
+    validateTopicCluster(
+      pick(item, [
+        'schemaVersion',
+        'id',
+        'label',
+        'niche',
+        'subtheme',
+        'likelyAudience',
+        'narrativePattern',
+        'ptBrLocalization',
+        'localization',
+        'candidateIds',
+        'evidenceSnapshotIds',
+        'createdBy',
+        'explanation',
+      ]),
+      candidateIds,
+      snapshotIds,
+    ),
+  );
+  const scores: any = (value.scores ?? []).map((item: any): any =>
+    validateTrendScore(
+      pick(item, [
+        'schemaVersion',
+        'id',
+        'candidateId',
+        'formulaVersion',
+        'calculatedAt',
+        'value',
+        'confidence',
+        'components',
+        'explanation',
+      ]),
+    ),
+  );
+  return {
+    schemaVersion: RADAR_CONTRACT_VERSION,
+    layout: TREND_CATALOG_LAYOUT,
+    run,
+    sourceRuns,
+    candidates,
+    snapshots,
+    topicClusters,
+    scores,
+  };
+}
+function pick(value: any, keys: any): any {
+  requireRecord(value, 'value');
+  return Object.fromEntries(
+    keys
+      .filter((key: any): any => Object.hasOwn(value, key))
+      .map((key: any): any => [key, value[key]]),
+  );
+}
+
+export const TREND_CATALOG_LAYOUT = Object.freeze({
+  root: 'data/trends/<project-id>/v<project-version>/<YYYY-MM-DD>/<pipeline-run-id>',
+  legacyRoot: 'data/trends/<YYYY-MM-DD>',
+  files: Object.freeze(['catalog.json', 'ranking.csv', 'report.html']),
+  candidateDirectory: 'candidates/<candidate-id>',
+  candidateFiles: Object.freeze([
+    'candidate.json',
+    'thumbnail.<ext> (somente quando permitido)',
+  ]),
+  mediaFilesAllowed: false,
+});

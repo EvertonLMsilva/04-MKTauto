@@ -8,6 +8,7 @@ import { ContentModule } from './content/content.module.js';
 import { MediaModule } from './media/media.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { PublishingModule } from './publishing/publishing.module.js';
+import { ResearchModule } from './research/research.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { PublishingModule } from './publishing/publishing.module.js';
     MediaModule,
     FinanceModule,
     PublishingModule,
+    ResearchModule,
   ],
   controllers: [AppController],
   providers: [AppService],
