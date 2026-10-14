@@ -36,9 +36,14 @@ const { VideoRenderRepository } = await import(
   new URL('../../../src/video-render-repository.js', import.meta.url).href
 );
 const STARTED_AT = '2026-09-28T12:00:00.000Z';
-export function setup(path: any): any {
+export function setup(
+  path: any,
+  { registerPlan = true, mixed = false } = {},
+): any {
   const repository = new VideoRenderRepository(path);
-  repository.create(project(), { createdAt: STARTED_AT });
+  const projectValue = project();
+  if (mixed) projectValue.channel.productionProfile = 'MIXED_MEDIA_V2';
+  repository.create(projectValue, { createdAt: STARTED_AT });
   new PipelineRunService(repository).start({
     schemaVersion: PIPELINE_HANDOFF_CONTRACT_VERSION,
     pipelineRunId: 'run_e07_001',
@@ -120,8 +125,8 @@ export function setup(path: any): any {
   ];
   assets.forEach((asset: any) => repository.registerMediaAsset(asset));
   const compositionPlan = plan(script, voice, assets);
-  repository.registerCompositionPlan(compositionPlan);
-  return { repository, compositionPlan };
+  if (registerPlan) repository.registerCompositionPlan(compositionPlan);
+  return { repository, compositionPlan, script, voice, assets };
 }
 export function persistedScript(): any {
   const value = {

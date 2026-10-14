@@ -16,6 +16,26 @@ import { ContractValidationError } from '../project/domain/project.errors.js';
 @Controller('media')
 export class MediaController {
   constructor(@Inject(MediaService) private readonly media: MediaService) {}
+  @Post('composition-plans') registerPlan(@Body() value: unknown) {
+    return this.respond(() => this.media.registerCompositionPlan(value));
+  }
+  @Get('composition-plans/:id') plan(@Param('id') id: string) {
+    return this.respond(() => this.media.getCompositionPlan(id));
+  }
+  @Get('composition-plans') plans(
+    @Query('pipelineRunId') run?: string,
+    @Query('scriptId') script?: string,
+  ) {
+    if ((run === undefined) === (script === undefined))
+      throw new BadRequestException({
+        code: 'COMPOSITION_PLAN_QUERY_REQUIRED',
+      });
+    return this.respond(() =>
+      script !== undefined
+        ? this.media.listCompositionPlansByScript(script)
+        : this.media.listCompositionPlansByPipelineRun(run!),
+    );
+  }
   @Post('assets') register(@Body() value: unknown) {
     return this.respond(() => this.media.register(value));
   }

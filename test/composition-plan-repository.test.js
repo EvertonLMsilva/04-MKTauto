@@ -13,6 +13,7 @@ import { CompositionPlanRepository, CompositionPlanRepositoryError } from "../sr
 import { CompositionPlanService } from "../src/composition-plan-service.js";
 import { PIPELINE_HANDOFF_CONTRACT_VERSION } from "../src/project-pipeline-handoff.js";
 import { PipelineRunService } from "../src/pipeline-run-service.js";
+import { PROJECT_SCHEMA_VERSION } from "../src/project-repository.js";
 import { VoiceTrackRepository } from "../src/voice-track-repository.js";
 
 const STARTED_AT = "2026-09-28T12:00:00.000Z";
@@ -152,11 +153,12 @@ test("migração 020 é aditiva, não cria planos retroativos e preserva ativos"
     assert.deepEqual(migrated.listCompositionPlansByPipelineRun("run_e07_001"), []);
     migrated.close();
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 28);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 0);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM media_assets").get().total, 2);
-    raw.close();
+    try {
+      assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM composition_plans").get().total, 0);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM media_assets").get().total, 2);
+    } finally { raw.close(); }
   });
 });
 

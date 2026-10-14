@@ -5,6 +5,7 @@ import { MediaAssetRepository } from './media-asset.repository.js';
 import { QualityControlRepository } from './quality-control.repository.js';
 import { VideoRenderRepository } from './video-render.reader.js';
 import { LocalRenderIntegrity } from './local-render-integrity.js';
+import { CompositionPlanRepository } from './composition-plan.reader.js';
 export const MEDIA_DATABASE = Symbol('MEDIA_DATABASE');
 export class MediaPersistence implements MediaStore {
   constructor(
@@ -20,6 +21,14 @@ export class MediaPersistence implements MediaStore {
       this.operations,
       this.content,
       { readOnly: true },
+    );
+  }
+  openComposition(readOnly = false) {
+    return new CompositionPlanRepository(
+      this.database(),
+      this.operations,
+      this.content,
+      { readOnly },
     );
   }
   verifyMedia(reference: string): string {

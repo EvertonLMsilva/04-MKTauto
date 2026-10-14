@@ -27,6 +27,7 @@ export interface QualityRepository {
   ): QualityControlReport | null;
 }
 export interface MediaStore {
+  openComposition(readOnly?: boolean): CompositionRepository;
   open(readOnly?: boolean): MediaRepository;
   openQuality(): QualityRepository;
   openRender(): {
@@ -34,4 +35,11 @@ export interface MediaStore {
     close(): void;
   };
   verifyMedia(reference: string): string;
+}
+export interface CompositionRepository {
+  close(): void;
+  registerCompositionPlan(value: unknown): unknown;
+  getCompositionPlan(id: string): unknown;
+  listCompositionPlansByPipelineRun(id: string): unknown[];
+  listCompositionPlansByScript(id: string): unknown[];
 }

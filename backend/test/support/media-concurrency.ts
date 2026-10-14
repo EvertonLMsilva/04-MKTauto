@@ -11,6 +11,7 @@ export async function raceMedia(
   method: string,
   values: unknown[],
   scriptValue: EditorialScript,
+  composition?: { run: unknown },
 ) {
   // Keep WAL initialized while read-only Operations sessions open, as in the
   // existing integration fixtures that retain their provisioning connection.
@@ -36,7 +37,13 @@ export async function raceMedia(
     for (const match of output.matchAll(/from ['"](\.[^'"]+)\.js['"]/g))
       compile(posix.normalize(posix.join(posix.dirname(name), match[1])));
   }
-  compile('media/infrastructure/media-asset.repository');
+  const repositoryModule = composition
+    ? 'composition-plan.reader'
+    : 'media-asset.repository';
+  const repositoryClass = composition
+    ? 'CompositionPlanRepository'
+    : 'MediaAssetRepository';
+  compile(`media/infrastructure/${repositoryModule}`);
 
   writeFileSync(join(directory, 'package.json'), '{"type":"module"}');
   const worker = join(directory, 'media-race.mjs');
@@ -44,11 +51,11 @@ export async function raceMedia(
     worker,
     `
 import {parentPort,workerData} from 'node:worker_threads';
-import {MediaAssetRepository} from './media/infrastructure/media-asset.repository.js';
+import {${repositoryClass}} from './media/infrastructure/${repositoryModule}.js';
 
 
-const script=workerData.scriptValue;const run={pipelineRunId:script.pipelineRunId,projectId:script.projectId,projectVersion:script.projectVersion};
-const repo=new MediaAssetRepository(workerData.database,{get:id=>id===run.pipelineRunId?run:null},{getScript:id=>id===script.scriptId?script:null});
+const script=workerData.scriptValue;const run=workerData.run ?? {pipelineRunId:script.pipelineRunId,projectId:script.projectId,projectVersion:script.projectVersion};
+const repo=new ${repositoryClass}(workerData.database,{get:id=>id===run.pipelineRunId?run:null},{getScript:id=>id===script.scriptId?script:null});
 const barrier=new Int32Array(workerData.barrier);
 parentPort.postMessage('ready');Atomics.wait(barrier,0,0);
 try{repo[workerData.method](workerData.value);parentPort.postMessage({ok:true});}
@@ -65,7 +72,14 @@ finally{repo.close();}
         (value) =>
           new Promise<{ ok: boolean; code?: string }>((resolve, reject) => {
             const w = new Worker(pathToFileURL(worker), {
-              workerData: { database, method, value, barrier, scriptValue },
+              workerData: {
+                database,
+                method,
+                value,
+                barrier,
+                scriptValue,
+                run: composition?.run,
+              },
             });
             workers.push(w);
             w.on('message', (message) => {

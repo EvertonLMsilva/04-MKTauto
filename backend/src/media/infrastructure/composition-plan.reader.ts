@@ -1,3 +1,8 @@
+import { createHash } from 'node:crypto';
+import {
+  ARTIFACT_LINEAGE_CONTRACT_VERSION,
+  validateArtifactLineage,
+} from '../../content/domain/artifact-lineage-contracts.js';
 import {
   COMPOSITION_PLAN_CONTRACT_VERSION,
   COMPOSITION_PLAN_V2_CONTRACT_VERSION,
@@ -23,6 +28,259 @@ export class CompositionPlanRepositoryError extends Error {
 export class CompositionPlanRepository extends MediaAssetRepository {
   [key: string]: any;
   declare db: any;
+  registerCompositionPlan(value: unknown): any {
+    let plan;
+    try {
+      plan = validateCompositionPlan(value);
+    } catch (caught) {
+      throw mapError(caught);
+    }
+    return this.#transaction(() => this.#registerValidated(plan));
+  }
+
+  listCompositionPlansByPipelineRun(pipelineRunId: string): any[] {
+    requireIdentifier(pipelineRunId, 'pipelineRunId');
+    return this.db
+      .prepare(
+        `SELECT composition_plan_id FROM composition_plans
+      WHERE pipeline_run_id = ? ORDER BY created_at, script_id, revision, composition_plan_id`,
+      )
+      .all(pipelineRunId)
+      .map(({ composition_plan_id: id }: any) => this.getCompositionPlan(id));
+  }
+
+  listCompositionPlansByScript(scriptId: string): any[] {
+    requireIdentifier(scriptId, 'scriptId', 200);
+    return this.db
+      .prepare(
+        `SELECT composition_plan_id FROM composition_plans
+      WHERE script_id = ? ORDER BY revision, composition_plan_id`,
+      )
+      .all(scriptId)
+      .map(({ composition_plan_id: id }: any) => this.getCompositionPlan(id));
+  }
+
+  #registerValidated(plan: any): any {
+    const identityHash = compositionPlanIdentityHash(plan);
+    const prior = this.db
+      .prepare(
+        'SELECT identity_hash FROM composition_plans WHERE composition_plan_id = ?',
+      )
+      .get(plan.compositionPlanId);
+    if (prior) {
+      if (prior.identity_hash !== identityHash)
+        throw failure(
+          'COMPOSITION_PLAN_ID_REUSED',
+          'compositionPlanId',
+          'ID já usado com plano incompatível',
+        );
+      return this.getCompositionPlan(plan.compositionPlanId);
+    }
+    const logicalPrior = this.db
+      .prepare(
+        'SELECT composition_plan_id FROM composition_plans WHERE script_id = ? AND revision = ?',
+      )
+      .get(plan.scriptId, plan.revision);
+    if (logicalPrior)
+      throw failure(
+        'COMPOSITION_PLAN_REVISION_CONFLICT',
+        'revision',
+        'revisão já registrada para o roteiro',
+      );
+
+    const related = this.#relatedArtifacts(plan);
+    this.#verifyRelated(plan, related);
+    this.#validateRevision(plan);
+    this.#insertLineage(plan);
+    this.db
+      .prepare(
+        `INSERT INTO composition_plans
+      (composition_plan_id, schema_version, identity_hash, pipeline_run_id, project_id,
+       project_version, script_id, script_content_hash, voice_track_id,
+       voice_track_content_hash, output_aspect_ratio, timeline_unit, continuity_mode,
+       duration_milliseconds, content_hash, created_at, revision,
+       supersedes_composition_plan_id, payload_json)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        plan.compositionPlanId,
+        plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION
+          ? COMPOSITION_PLAN_CONTRACT_VERSION
+          : plan.schemaVersion,
+        identityHash,
+        plan.pipelineRunId,
+        plan.projectId,
+        plan.projectVersion,
+        plan.scriptId,
+        plan.scriptContentHash,
+        plan.voiceTrackId,
+        plan.voiceTrackContentHash,
+        plan.outputAspectRatio,
+        plan.timelineUnit,
+        plan.continuityMode,
+        plan.durationMilliseconds,
+        plan.contentHash,
+        plan.createdAt,
+        plan.revision,
+        plan.supersedesCompositionPlanId,
+        JSON.stringify(
+          plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION
+            ? v1StorageProjection(plan)
+            : plan,
+        ),
+      );
+    if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
+      this.db
+        .prepare(
+          `INSERT INTO composition_plan_v2_details
+        (composition_plan_id, schema_version, production_profile, composition_policy_version, identity_hash, payload_json)
+        VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+        .run(
+          plan.compositionPlanId,
+          plan.schemaVersion,
+          plan.productionProfile,
+          plan.compositionPolicyVersion,
+          identityHash,
+          JSON.stringify(plan),
+        );
+      const insertV2 = this.db.prepare(`INSERT INTO composition_plan_v2_segments
+        (composition_plan_id, position, visual_direction_position, media_asset_id, media_asset_content_hash,
+         media_type, start_milliseconds, end_milliseconds, source_start_milliseconds, playback_mode,
+         original_audio_muted, framing_strategy, transition_policy_version, transition_type, transition_duration_milliseconds)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`);
+      for (const segment of plan.segments)
+        insertV2.run(
+          plan.compositionPlanId,
+          segment.position,
+          segment.visualDirectionPosition,
+          segment.mediaAssetId,
+          segment.mediaAssetContentHash,
+          segment.mediaType,
+          segment.startMilliseconds,
+          segment.endMilliseconds,
+          segment.sourceStartMilliseconds,
+          segment.playbackMode,
+          1,
+          segment.framingStrategy,
+          segment.transition.policyVersion,
+          segment.transition.type,
+          segment.transition.durationMilliseconds,
+        );
+      return this.getCompositionPlan(plan.compositionPlanId);
+    }
+    const insert = this.db.prepare(`INSERT INTO composition_plan_segments
+      (composition_plan_id, position, visual_direction_position, media_asset_id,
+       media_asset_content_hash, start_milliseconds, end_milliseconds)
+      VALUES (?, ?, ?, ?, ?, ?, ?)`);
+    for (const segment of plan.segments)
+      insert.run(
+        plan.compositionPlanId,
+        segment.position,
+        segment.visualDirectionPosition,
+        segment.mediaAssetId,
+        segment.mediaAssetContentHash,
+        segment.startMilliseconds,
+        segment.endMilliseconds,
+      );
+    return this.getCompositionPlan(plan.compositionPlanId);
+  }
+
+  #validateRevision(plan: any): any {
+    if (plan.revision === 1) return null;
+    const previous = this.getCompositionPlan(plan.supersedesCompositionPlanId);
+    if (!previous)
+      throw failure(
+        'SUPERSEDED_COMPOSITION_PLAN_NOT_FOUND',
+        'supersedesCompositionPlanId',
+        'plano anterior não encontrado',
+      );
+    for (const field of [
+      'pipelineRunId',
+      'projectId',
+      'projectVersion',
+      'scriptId',
+      'outputAspectRatio',
+      'timelineUnit',
+      'continuityMode',
+    ]) {
+      if (previous[field] !== plan[field])
+        throw failure(
+          'COMPOSITION_PLAN_SUPERSESSION_SCOPE_MISMATCH',
+          field,
+          'plano anterior fora do escopo',
+        );
+    }
+    if (previous.revision + 1 !== plan.revision)
+      throw failure(
+        'COMPOSITION_PLAN_REVISION_MISMATCH',
+        'revision',
+        'revisão não é sucessora imediata',
+      );
+    return previous;
+  }
+
+  #insertLineage(plan: any): void {
+    const artifact = validateArtifactLineage({
+      schemaVersion: ARTIFACT_LINEAGE_CONTRACT_VERSION,
+      artifactId: plan.compositionPlanId,
+      artifactType: 'composition_plan',
+      artifactVersion: plan.revision,
+      pipelineRunId: plan.pipelineRunId,
+      projectId: plan.projectId,
+      projectVersion: plan.projectVersion,
+      contentIdentity: `composition-plan:${plan.scriptId}`,
+      hashAlgorithm: 'sha256',
+      contentHash: plan.contentHash,
+      inputs: lineageInputs(plan),
+      generationMetadata: null,
+      createdAt: plan.createdAt,
+    });
+    this.db
+      .prepare(
+        `INSERT INTO artifact_lineage
+      (artifact_id, schema_version, artifact_type, artifact_version, identity_hash,
+       pipeline_run_id, project_id, project_version, content_identity, hash_algorithm,
+       content_hash, generation_metadata_json, created_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?)`,
+      )
+      .run(
+        artifact.artifactId,
+        artifact.schemaVersion,
+        artifact.artifactType,
+        artifact.artifactVersion,
+        sha256(JSON.stringify(artifact)),
+        artifact.pipelineRunId,
+        artifact.projectId,
+        artifact.projectVersion,
+        artifact.contentIdentity,
+        artifact.hashAlgorithm,
+        artifact.contentHash,
+        artifact.createdAt,
+      );
+    const insert = this.db.prepare(`INSERT INTO artifact_lineage_inputs
+      (artifact_id, position, kind, input_id, content_hash) VALUES (?, ?, ?, ?, ?)`);
+    for (const input of artifact.inputs)
+      insert.run(
+        artifact.artifactId,
+        input.position,
+        input.kind,
+        input.inputId,
+        input.contentHash,
+      );
+  }
+
+  #transaction<T>(operation: () => T): T {
+    try {
+      this.db.exec('BEGIN IMMEDIATE');
+      const result = operation();
+      this.db.exec('COMMIT');
+      return result;
+    } catch (caught) {
+      if (this.db.isTransaction) this.db.exec('ROLLBACK');
+      throw mapError(caught);
+    }
+  }
   getCompositionPlan(compositionPlanId: any): any {
     requireIdentifier(compositionPlanId, 'compositionPlanId', 200);
     const row: any = this.db
@@ -461,4 +719,31 @@ function mapError(caught: any): any {
 }
 function failure(code: any, field: any, message: any, options?: any): any {
   return new CompositionPlanRepositoryError(code, field, message, options);
+}
+
+function v1StorageProjection(plan: any): any {
+  const {
+    productionProfile: _profile,
+    compositionPolicyVersion: _policy,
+    ...base
+  } = plan;
+  return {
+    ...base,
+    schemaVersion: COMPOSITION_PLAN_CONTRACT_VERSION,
+    segments: plan.segments.map(
+      ({
+        mediaType: _type,
+        sourceStartMilliseconds: _source,
+        playbackMode: _mode,
+        originalAudioMuted: _muted,
+        framingStrategy: _framing,
+        transition: _transition,
+        ...segment
+      }: any) => segment,
+    ),
+  };
+}
+
+function sha256(value: string): string {
+  return createHash('sha256').update(value).digest('hex');
 }

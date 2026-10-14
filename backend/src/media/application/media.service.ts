@@ -2,9 +2,35 @@ import type {
   MediaStore,
   MediaRepository,
   QualityRepository,
+  CompositionRepository,
 } from './media.port.js';
 export class MediaService {
   constructor(private readonly store: MediaStore) {}
+  private composition<T>(
+    readOnly: boolean,
+    action: (repository: CompositionRepository) => T,
+  ): T {
+    const repository = this.store.openComposition(readOnly);
+    try {
+      return action(repository);
+    } finally {
+      repository.close();
+    }
+  }
+  registerCompositionPlan(value: unknown) {
+    return this.composition(false, (r) => r.registerCompositionPlan(value));
+  }
+  getCompositionPlan(id: string) {
+    return this.composition(true, (r) => r.getCompositionPlan(id));
+  }
+  listCompositionPlansByPipelineRun(id: string) {
+    return this.composition(true, (r) =>
+      r.listCompositionPlansByPipelineRun(id),
+    );
+  }
+  listCompositionPlansByScript(id: string) {
+    return this.composition(true, (r) => r.listCompositionPlansByScript(id));
+  }
   getVideoRender(id: string) {
     const reader = this.store.openRender();
     try {
