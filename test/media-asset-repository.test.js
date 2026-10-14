@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -191,74 +191,72 @@ test("falha da identidade reverte solicitação, ativo e linhagem", () => {
 
 test("migração 019 é aditiva e preserva ativos existentes", () => {
   withDatabase((path) => {
-    const { repository, script } = setup(path);
-    repository.registerMediaAsset(mediaAsset(script));
-    repository.close();
-    const before = new DatabaseSync(path);
-    before.exec(`
-      DROP TABLE video_composition_requests;
-      DROP TABLE video_renders;
-      DROP TABLE composition_plan_segments;
-      DROP TABLE composition_plans;
-      DROP TRIGGER media_acquisition_requests_no_delete;
-      DROP TRIGGER media_acquisition_requests_no_update;
-      DROP TRIGGER media_acquisition_requests_validate_scope;
-      DROP TABLE media_acquisition_requests;
-      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
-      DELETE FROM schema_migrations WHERE version = 21;
-      DELETE FROM schema_migrations WHERE version = 20;
-      DELETE FROM schema_migrations WHERE version = 19;
-      PRAGMA user_version = 18;
-    `);
-    before.close();
-    const migrated = new MediaAssetRepository(path);
-    assert.equal(migrated.getMediaAcquisition("media_acquisition_001"), null);
-    migrated.close();
-    const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("SELECT media_asset_id FROM media_assets").get().media_asset_id, "media_asset_001");
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
-    raw.close();
+    const { repository, script } = historicalSetup(path, 18);
+    const db = repository.db;
+    try {
+      const before = db.prepare("SELECT * FROM media_assets").all();
+      assert.equal(before[0].media_asset_id, mediaAsset(script).mediaAssetId);
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 18);
+      applyHistoricalMigration(db, "019_media_acquisition.sql");
+      assert.deepEqual(db.prepare("SELECT * FROM media_assets").all(), before);
+      assert.deepEqual(db.prepare("SELECT * FROM media_acquisition_requests").all(), []);
+      assert.equal(db.prepare("SELECT name FROM schema_migrations WHERE version = 19").get().name, "019_media_acquisition");
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 19);
+      assert.equal(db.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 19);
+    } finally { repository.close(); }
   });
 });
 
 test("migração 018 é aditiva e preserva dados existentes", () => {
   withDatabase((path) => {
-    const { repository } = setup(path);
-    repository.close();
-    const before = new DatabaseSync(path);
-    before.exec(`
-      DROP TABLE video_composition_requests;
-      DROP TABLE video_renders;
-      DROP TABLE composition_plan_segments;
-      DROP TABLE composition_plans;
-      DROP TRIGGER media_acquisition_requests_no_delete;
-      DROP TRIGGER media_acquisition_requests_no_update;
-      DROP TRIGGER media_acquisition_requests_validate_scope;
-      DROP TABLE media_acquisition_requests;
-      DROP TRIGGER media_assets_no_delete;
-      DROP TRIGGER media_assets_no_update;
-      DROP TRIGGER media_assets_validate_revision;
-      DROP TRIGGER media_assets_validate_scope;
-      DROP TABLE media_assets;
-      DROP TABLE human_approval_decisions; DELETE FROM schema_migrations WHERE version = 25; DROP TABLE quality_control_findings; DROP TABLE quality_control_reports; DELETE FROM schema_migrations WHERE version = 24; DROP TABLE subtitle_cues; DROP TABLE subtitle_tracks; DELETE FROM schema_migrations WHERE version = 23; DELETE FROM schema_migrations WHERE version = 22;
-      DELETE FROM schema_migrations WHERE version = 21;
-      DELETE FROM schema_migrations WHERE version = 20;
-      DELETE FROM schema_migrations WHERE version = 19;
-      DELETE FROM schema_migrations WHERE version = 18;
-      PRAGMA user_version = 17;
-    `);
-    before.close();
-    const migrated = new MediaAssetRepository(path);
-    assert.equal(migrated.getRun("run_e06_001").pipelineRunId, "run_e06_001");
-    assert.deepEqual(migrated.listMediaAssetsByPipelineRun("run_e06_001"), []);
-    migrated.close();
-    const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
-    raw.close();
+    const { repository } = historicalSetup(path, 17);
+    const db = repository.db;
+    try {
+      const runs = db.prepare("SELECT * FROM pipeline_runs").all();
+      const scripts = db.prepare("SELECT * FROM scripts").all();
+      assert.equal(runs[0].pipeline_run_id, "run_e06_001");
+      assert.equal(scripts[0].script_id, "script_001");
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 17);
+      applyHistoricalMigration(db, "018_media_assets.sql");
+      assert.deepEqual(db.prepare("SELECT * FROM pipeline_runs").all(), runs);
+      assert.deepEqual(db.prepare("SELECT * FROM scripts").all(), scripts);
+      assert.deepEqual(db.prepare("SELECT * FROM media_assets").all(), []);
+      assert.equal(db.prepare("SELECT name FROM schema_migrations WHERE version = 18").get().name, "018_media_assets");
+      assert.equal(db.prepare("PRAGMA user_version").get().user_version, 18);
+      assert.equal(db.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 18);
+    } finally { repository.close(); }
   });
 });
+
+function applyHistoricalMigration(db, file) {
+  const version = Number(file.slice(0, 3));
+  db.exec(readFileSync(new URL(`../src/db/migrations/${file}`, import.meta.url), "utf8"));
+  db.prepare("INSERT INTO schema_migrations (version, name, applied_at) VALUES (?, ?, ?)").run(version, file.slice(0, -4), STARTED_AT);
+  db.exec(`PRAGMA user_version = ${version}`);
+}
+
+function historicalSetup(path, version) {
+  const seeded = setup(path);
+  if (version === 18) seeded.repository.registerMediaAsset(mediaAsset(seeded.script));
+  seeded.repository.close();
+  const historicalPath = `${path}.historical`;
+  const db = new DatabaseSync(historicalPath);
+  try {
+    const directory = new URL("../src/db/migrations/", import.meta.url);
+    for (const file of readdirSync(directory).filter((name) => /^\d{3}_/.test(name) && Number(name.slice(0, 3)) <= version).sort()) {
+      applyHistoricalMigration(db, file);
+    }
+    // Copy only historical columns; setup deliberately omits idea-selection records.
+    db.exec("PRAGMA foreign_keys = OFF; DROP TRIGGER scripts_validate_scope;");
+    db.prepare("ATTACH DATABASE ? AS seed").run(path);
+    for (const table of ["projects", "project_snapshots", "pipeline_runs", "pipeline_run_transitions", "artifact_lineage", "scripts", "artifact_lineage_inputs", ...(version === 18 ? ["media_assets"] : [])]) {
+      const columns = db.prepare(`PRAGMA table_info(${table})`).all().map(({ name }) => name).join(", ");
+      db.exec(`INSERT INTO ${table} (${columns}) SELECT ${columns} FROM seed.${table}`);
+    }
+    db.exec("DETACH DATABASE seed; PRAGMA foreign_keys = ON;");
+    return { repository: { db, close: () => db.close() }, script: seeded.script };
+  } catch (error) { db.close(); throw error; }
+}
 
 function setup(path) {
   const repository = new MediaAssetRepository(path);

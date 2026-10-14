@@ -5,6 +5,7 @@ import { ProjectModule } from './project/project.module.js';
 import { AffiliateModule } from './affiliate/affiliate.module.js';
 import { ContentOperationsModule } from './content-operations/content-operations.module.js';
 import { ContentModule } from './content/content.module.js';
+import { MediaModule } from './media/media.module.js';
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ContentModule } from './content/content.module.js';
     AffiliateModule,
     ContentOperationsModule,
     ContentModule,
+    MediaModule,
   ],
   controllers: [AppController],
   providers: [AppService],
