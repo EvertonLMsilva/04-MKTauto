@@ -233,6 +233,21 @@ test("migrações 008 a 026 são aditivas e preservam dados existentes", () => {
 
     const before = new DatabaseSync(path);
     before.exec(`
+      DROP TABLE affiliate_discovery_events;
+      DROP TABLE affiliate_discovery_execution;
+      DROP TABLE affiliate_discovery_decisions;
+      DROP TABLE script_generation_transport_blocks;
+      DROP TABLE affiliate_editorial_selections;
+      DROP TABLE social_publication_events;
+      DROP TABLE social_publication_commands;
+      DROP TABLE social_publication_operations;
+      DROP TABLE manual_distribution_records;
+      DROP TABLE p4_artifacts;
+      DROP TABLE video_generation_estimate_approvals;
+      DROP TABLE video_generation_billing;
+      DROP TABLE video_generation_operations;
+      DROP TABLE video_generation_campaign_budgets;
+      DELETE FROM schema_migrations WHERE version >= 31;
       DROP TRIGGER pipeline_stage_attempts_no_delete;
       DROP TRIGGER pipeline_stage_attempts_identity_immutable;
       DROP TRIGGER pipeline_stage_attempts_terminal_immutable;
@@ -293,15 +308,17 @@ test("migrações 008 a 026 são aditivas e preservam dados existentes", () => {
     before.close();
 
     const migrated = new PipelineRunRepository(path);
-    assert.equal(migrated.get("project_curiosidades_ia", 1).project.name, "Curiosidades IA");
-    assert.equal(migrated.getRun("run_inexistente"), null);
-    migrated.close();
+    try {
+      assert.equal(migrated.get("project_curiosidades_ia", 1).project.name, "Curiosidades IA");
+      assert.equal(migrated.getRun("run_inexistente"), null);
+    } finally { migrated.close(); }
 
     const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
-    raw.close();
+    try {
+      assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 39);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 39);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
+    } finally { raw.close(); }
   });
 });
 

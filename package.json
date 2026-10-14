@@ -10,7 +10,8 @@
     "trend:daily": "node --env-file-if-exists=.env src/trend-cli.js daily",
     "trend:shortlist": "node --env-file-if-exists=.env src/trend-cli.js shortlist",
     "trend:export": "node --env-file-if-exists=.env src/trend-cli.js export",
-    "test": "node --test"
+    "test": "node --test",
+    "start:legacy": "node --env-file-if-exists=.env src/server.js"
   },
   "engines": {
     "node": ">=24"

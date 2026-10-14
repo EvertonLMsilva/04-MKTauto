@@ -1,0 +1,1 @@
+export const PROJECT_DATABASE = Symbol('PROJECT_DATABASE');
