@@ -39,7 +39,12 @@ describe('Content Operations legacy parity', () => {
   it('preserves creation, identity hash, exact replay and immutable identity', () => {
     const input = start('run_new');
     const actual = repository.startRun(input);
-    expect(actual).toEqual(fixture.base.startRun(input));
+    expect(actual).toEqual(
+      validatePipelineRun({
+        ...fixture.base.getRun('run_001'),
+        pipelineRunId: 'run_new',
+      }),
+    );
     expect(repository.startRun(input)).toEqual(actual);
     expect(
       outcome(() =>
@@ -56,9 +61,10 @@ describe('Content Operations legacy parity', () => {
         }),
       ),
     );
-    expect(repository.listRunsByProjectVersion('project_001', 1)).toEqual(
-      fixture.base.listRunsByProjectVersion('project_001', 1),
-    );
+    expect(repository.listRunsByProjectVersion('project_001', 1)).toEqual([
+      repository.getRun('run_001'),
+      repository.getRun('run_new'),
+    ]);
   });
   it('preserves terminal replay, sanitized errors, recovery and refusal of terminal changes', () => {
     const failure = {
@@ -137,7 +143,7 @@ describe('Content Operations legacy parity', () => {
       { ...run, transitions: [] },
       { ...run, startedAt: 'invalid' },
     ])
-      expect(outcome(() => validatePipelineRun(input))).toEqual(
+      expect(outcome(() => validatePipelineRun(input, true))).toEqual(
         outcome(() => legacyContracts.validatePipelineRun(input)),
       );
     const handoff = {

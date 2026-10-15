@@ -1,3 +1,9 @@
+import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
+import { InstagramPublicationService } from './application/instagram-publication.service.js';
+import {
+  INSTAGRAM_PUBLICATION_PORTS,
+  type InstagramPublicationPorts,
+} from './application/ports/instagram-publication.port.js';
 import { Module } from '@nestjs/common';
 import { MediaModule } from '../media/media.module.js';
 import { MediaService } from '../media/application/media.service.js';
@@ -17,8 +23,29 @@ import { PublishingController } from './publishing.controller.js';
 @Module({
   imports: [MediaModule, AffiliateModule],
   controllers: [PublishingController],
-  exports: [PublishingService],
+  exports: [PublishingService, InstagramPublicationService],
   providers: [
+    {
+      provide: INSTAGRAM_PUBLICATION_PORTS,
+      inject: [PublishingService, MediaService],
+      useFactory: (publishing: PublishingService, media: MediaService) =>
+        process.env.INSTAGRAM_PUBLICATION_MODE === 'fake'
+          ? deterministicInstagramPorts(
+              publishing,
+              media,
+              process.env.INSTAGRAM_ACCOUNT_ID ?? '',
+              process.env.INSTAGRAM_API_VERSION ?? '',
+            )
+          : null,
+    },
+    {
+      provide: InstagramPublicationService,
+      inject: [PublishingPersistence, INSTAGRAM_PUBLICATION_PORTS],
+      useFactory: (
+        store: PublishingPersistence,
+        ports: InstagramPublicationPorts | null,
+      ) => new InstagramPublicationService(store, ports),
+    },
     {
       provide: PUBLISHING_DATABASE,
       useFactory: () => process.env.PROJECT_API_DATABASE ?? null,

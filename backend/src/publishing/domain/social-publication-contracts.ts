@@ -3,7 +3,7 @@ import {
   publicText,
   hashValue,
 } from './manual-distribution-contracts.js';
-export function socialFail(code: any): any {
+export function socialFail(code: any): never {
   throw Object.assign(new Error(code), { code });
 }
 export function accountId(value: any): any {

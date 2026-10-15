@@ -23,6 +23,17 @@ export class CampaignOrchestrator {
   ) {}
   async tick() {
     this.repository.recover(this.now());
+    for (const e of this.repository.pendingPublicationPolls(this.now())) {
+      try {
+        this.repository.resume(e.execution_id, this.now(), e.version);
+      } catch (error) {
+        if (!(
+          error instanceof CampaignError &&
+          error.code === 'EXECUTION_VERSION_CONFLICT'
+        ))
+          throw error;
+      }
+    }
     for (const e of this.repository.due(this.now())) {
       const claimed = this.repository.claim(
         e.execution_id,

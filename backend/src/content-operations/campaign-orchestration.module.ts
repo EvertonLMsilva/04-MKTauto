@@ -1,3 +1,4 @@
+import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { Module } from '@nestjs/common';
 import { ContentOperationsModule } from './content-operations.module.js';
 import { ContentModule } from '../content/content.module.js';
@@ -62,6 +63,7 @@ import { CampaignController } from './campaign.controller.js';
         FinanceService,
         CONTENT_OPERATIONS,
         PublishingService,
+        InstagramPublicationService,
       ],
       useFactory: (
         a: AffiliateService,
@@ -75,7 +77,9 @@ import { CampaignController } from './campaign.controller.js';
         f: FinanceService,
         o: ContentOperationsService,
         h: PublishingService,
-      ) => new NativeCampaignWorkflow(a, b, r, e, p, c, l, m, f, o, h),
+        instagram: InstagramPublicationService,
+      ) =>
+        new NativeCampaignWorkflow(a, b, r, e, p, c, l, m, f, o, h, instagram),
     },
     {
       provide: CampaignAdministration,

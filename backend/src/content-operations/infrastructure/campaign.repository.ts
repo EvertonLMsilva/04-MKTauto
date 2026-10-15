@@ -126,6 +126,23 @@ export class CampaignRepository {
       )
       .all(instant(now)) as unknown as CampaignExecution[];
   }
+  pendingPublicationPolls(now: string) {
+    // Only resume the explicit, persisted read-only processing wait. Unknown effects,
+    // missing approvals, revocations and auth/rate-limit errors never enter this path.
+    return this.db
+      .prepare(
+        `SELECT e.* FROM campaign_executions e
+      JOIN campaign_execution_events h ON h.execution_id=e.execution_id
+      WHERE e.status='WAITING_INPUT' AND h.sequence=(SELECT MAX(sequence) FROM campaign_execution_events WHERE execution_id=e.execution_id)
+      AND h.event_type='PAUSED' AND json_extract(h.evidence_json,'$.code')='SOCIAL_PROCESSING_REQUIRED'
+      AND json_extract(h.evidence_json,'$.step')='PUBLICATION' AND h.occurred_at<=?
+      AND (SELECT COUNT(*) FROM campaign_execution_events a WHERE a.execution_id=e.execution_id AND a.event_type='STEP_STARTED' AND json_extract(a.evidence_json,'$.step')='PUBLICATION')<5
+      LIMIT 20`,
+      )
+      .all(
+        new Date(Date.parse(instant(now)) - 60_000).toISOString(),
+      ) as unknown as CampaignExecution[];
+  }
   claim(id: string, now: string, ttl: number) {
     now = instant(now);
     if (!Number.isSafeInteger(ttl) || ttl < 1000)

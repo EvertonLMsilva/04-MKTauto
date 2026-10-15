@@ -16,6 +16,7 @@ export class SocialPublicationService {
     media,
     transferVerifier,
     allowLivePosts = false,
+    authorize = (_op: any) => {},
     now = (): any => new Date().toISOString(),
   }: any) {
     requireSocialPublisherPort(publisher);
@@ -42,6 +43,7 @@ export class SocialPublicationService {
       publisher,
       media,
       transferVerifier,
+      authorize,
       now,
     });
   }
@@ -115,6 +117,9 @@ export class SocialPublicationService {
     extra: any = {},
   ): Promise<any> {
     this.#mutationAllowed();
+    this.manual.validateForPublication(op.packageHash);
+    this.authorize(op);
+    this.repository.authorizePublication(op, this.now());
     const claim: any = this.#transition(op, [op.state], {
       state: intent,
       errorCode: null,
@@ -126,15 +131,33 @@ export class SocialPublicationService {
       const receipt: any = await action();
       accountId(stage === 'CREATE' ? receipt?.containerId : receipt?.mediaId);
       patch = result(receipt);
-    } catch {
+    } catch (error: any) {
+      const code =
+        /^SOCIAL_(AUTH_REQUIRED|RATE_LIMIT|PERMISSION_REQUIRED|API_REJECTED|NETWORK_UNCERTAIN|RESPONSE_UNCERTAIN|REMOTE_UNCERTAIN|RECEIPT_INVALID)$/.test(
+          error?.code,
+        )
+          ? error.code
+          : 'SOCIAL_POST_UNCONFIRMED';
       return this.#transition(claim.value, [intent], {
         state: 'UNCERTAIN',
         uncertainStage: stage,
-        errorCode: 'SOCIAL_POST_UNCONFIRMED',
+        errorCode: code,
+        retryAfterSeconds:
+          Number.isSafeInteger(error?.retryAfterSeconds) &&
+          error.retryAfterSeconds >= 0 &&
+          error.retryAfterSeconds <= 86400
+            ? error.retryAfterSeconds
+            : null,
       }).value;
     }
     // Database failures propagate. The persisted intent remains recoverable;
     // never disguise a failed receipt commit as an HTTP failure or resend.
+    try {
+      this.manual.validateForPublication(op.packageHash);
+      this.authorize(op);
+    } catch {
+      patch.requiresReconciliation = true;
+    }
     return this.#transition(claim.value, [intent], patch).value;
   }
   async createContainer(id: any, transfer: any): Promise<any> {
@@ -200,6 +223,16 @@ export class SocialPublicationService {
       }),
     );
   }
+  async receipt(id: string): Promise<any> {
+    const op = this.#get(id);
+    if (op.state !== 'PUBLISHED' || !op.mediaId || !this.publisher.getMedia)
+      return op;
+    const receipt = await this.publisher.getMedia({ mediaId: op.mediaId });
+    return this.#transition(op, ['PUBLISHED'], {
+      remoteReceipt: receipt,
+      requiresReconciliation: false,
+    }).value;
+  }
   async reconcile(id: any): Promise<any> {
     let op: any = this.#get(id);
     if (['CREATING_CONTAINER', 'PUBLISHING'].includes(op.state))
@@ -208,6 +241,8 @@ export class SocialPublicationService {
         uncertainStage: op.state === 'PUBLISHING' ? 'PUBLISH' : 'CREATE',
         errorCode: 'SOCIAL_INTERRUPTED_POST',
       }).value;
+    if (op.requiresReconciliation && ['PROCESSING', 'READY'].includes(op.state))
+      return this.#status(op, true);
     if (op.state !== 'UNCERTAIN' || !op.containerId) return op;
     return this.#status(op, true);
   }
@@ -223,9 +258,14 @@ export class SocialPublicationService {
         )
       )
         socialFail('SOCIAL_STATUS_INVALID');
-    } catch {
+    } catch (error: any) {
       return this.#transition(op, [op.state], {
-        errorCode: 'SOCIAL_STATUS_UNAVAILABLE',
+        errorCode:
+          /^SOCIAL_(AUTH_REQUIRED|RATE_LIMIT|PERMISSION_REQUIRED)$/.test(
+            error?.code,
+          )
+            ? error.code
+            : 'SOCIAL_STATUS_UNAVAILABLE',
       }).value;
     }
     const state: any =
@@ -242,6 +282,7 @@ export class SocialPublicationService {
       state,
       errorCode: null,
       providerStatus: status,
+      ...(reconcile ? { requiresReconciliation: false } : {}),
       ...(state === 'PUBLISHED'
         ? { uncertainStage: null, confirmationSource: 'CONTAINER_STATUS' }
         : {}),

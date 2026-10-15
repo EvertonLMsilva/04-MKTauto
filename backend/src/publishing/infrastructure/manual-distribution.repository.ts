@@ -1,3 +1,4 @@
+import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import {
   affiliateHash,
   affiliateIdentifier,
@@ -21,6 +22,12 @@ export class ManualDistributionRepository {
   ) {
     this.db = base.db;
     this.catalog = catalog;
+  }
+  revokeApproval(value: unknown, at: string) {
+    return new InstagramPublicationRepository(this.db).revoke(value, at);
+  }
+  isApprovalRevoked(hash: string) {
+    return new InstagramPublicationRepository(this.db).revoked(hash);
   }
   command(
     kind: string,

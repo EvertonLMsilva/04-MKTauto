@@ -1,3 +1,4 @@
+import type { InstagramPublicationService } from '../../publishing/application/instagram-publication.service.js';
 import type { AffiliateService } from '../../affiliate/application/affiliate.service.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
 import type { ResearchReader } from '../../research/application/research-reader.port.js';
@@ -40,6 +41,7 @@ export function campaignRequest(raw: unknown) {
     'alignment',
     'composition',
     'mode',
+    'publication',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
@@ -61,6 +63,17 @@ export function campaignRequest(raw: unknown) {
     throw new CampaignError('CAMPAIGN_MODE_REQUIRED');
   for (const k of ['scriptId', 'voiceTrackId', 'referenceInsightId'])
     if (r[k] != null) identifier(r[k]);
+  if (r.publication !== undefined) {
+    const publication = document(r.publication);
+    if (
+      Object.keys(publication).sort().join(',') !== 'accountId,packageHash' ||
+      typeof publication.packageHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(publication.packageHash) ||
+      typeof publication.accountId !== 'string' ||
+      !/^[1-9]\d{4,63}$/.test(publication.accountId)
+    )
+      throw new CampaignError('INVALID_PUBLICATION_REQUEST');
+  }
   return JSON.parse(JSON.stringify(r)) as Record<string, unknown>;
 }
 export class NativeCampaignWorkflow implements CampaignWorkflow {
@@ -75,6 +88,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     'QC',
     'PREVIEW',
     'HANDOFF',
+    'PUBLICATION',
   ];
   constructor(
     private readonly affiliate: Pick<
@@ -103,6 +117,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       'start' | 'get'
     >,
     private readonly publishing: Pick<PublishingService, 'approvals'>,
+    private readonly instagram?: Pick<
+      InstagramPublicationService,
+      'execute' | 'reconcile'
+    >,
   ) {}
   async validate(r: Record<string, unknown>) {
     const campaign = await this.affiliate.getCampaign(
@@ -140,6 +158,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     r: Record<string, unknown>,
     done: Record<string, unknown>,
   ): Promise<unknown> {
+    if (step === 'PUBLICATION') {
+      if (!r.publication) return { publication: 'MANUAL_HANDOFF' };
+      if (!this.instagram)
+        throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+      return this.instagram.execute(e, r.publication, done.HANDOFF);
+    }
     // No paid transport is reachable from this workflow. Unknown charges stay unknown.
     this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
@@ -336,6 +360,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     };
   }
   async reconcile(e: CampaignExecution, history: CampaignEvent[]) {
+    const publication = history
+      .filter((h) => h.event_type === 'STEP_STARTED')
+      .at(-1);
+    if (publication?.evidence.step === 'PUBLICATION' && this.instagram)
+      return this.instagram.reconcile(e.execution_id);
     const lastFailure = history
       .filter((h) => h.event_type === 'STEP_FAILED')
       .at(-1);

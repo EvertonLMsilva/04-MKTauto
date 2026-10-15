@@ -1,6 +1,3 @@
-const { SocialPublicationRepository: awaitedLegacySocial } = await import(
-  new URL('../../../src/social-publication-repository.js', import.meta.url).href
-);
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
@@ -14,22 +11,14 @@ const { AffiliateRepository } = await import(
 );
 import { ManualDistributionRepository } from './infrastructure/manual-distribution.repository.js';
 import { ManualDistributionService } from './application/manual-distribution.service.js';
-import { SocialPublicationRepository } from './infrastructure/social-publication.repository.js';
+import {
+  provisionSocialContext,
+  SocialPublicationRepository,
+} from './infrastructure/social-publication.repository.js';
 import { SocialPublicationService } from './application/social-publication.service.js';
-const { InstagramPublisherAdapter } = await import(
-  new URL('../../../src/adapters/instagram-publisher.js', import.meta.url).href
-);
 import { createHash } from 'node:crypto';
-const { HostedInstagramMediaIntegrity } = await import(
-  new URL(
-    '../../../src/adapters/hosted-instagram-media-integrity.js',
-    import.meta.url,
-  ).href
-);
-const { InstagramHttpTransport } = await import(
-  new URL('../../../src/adapters/instagram-http-transport.js', import.meta.url)
-    .href
-);
+import { affiliateHash } from '../affiliate/domain/affiliate-contracts.js';
+import { socialFail } from './domain/social-publication-contracts.js';
 const { project, product, campaign, startRun } = await import(
   new URL('../../../test/affiliate-fixtures.js', import.meta.url).href
 );
@@ -95,17 +84,28 @@ async function fixture(fn: any): Promise<any> {
           ? { id: url.endsWith('media_publish') ? '987654321' : '234567890' }
           : { status_code: 'FINISHED' },
     });
-    const adapter: any = new InstagramPublisherAdapter({
-      http: {
-        offline: true,
-        request: async (request: any): Promise<any> => {
-          calls.push({ method: request.method, url: request.url });
-          return handler(request);
-        },
-      },
+    const adapter = new InstagramGraphAdapter({
+      mode: 'fake',
       accountId: account,
       apiVersion: 'v25.0',
-      getAccessToken: (): any => 'FAKE_PRIVATE_TOKEN',
+      getAccessToken: () => 'FAKE_PRIVATE_TOKEN',
+      fetch: async (url, init) => {
+        const request = {
+          method: init?.method,
+          url: (url instanceof Request ? url.url : url.toString()).split(
+            '?',
+          )[0],
+          headers: init?.headers,
+          body: Object.fromEntries(
+            new URLSearchParams(
+              typeof init?.body === 'string' ? init.body : '',
+            ),
+          ),
+        };
+        calls.push({ method: request.method, url: request.url });
+        const response = await handler(request);
+        return { ...response, headers: new Headers() } as Response;
+      },
     });
     const media: any = {
       inspect: async (): Promise<any> => ({
@@ -130,11 +130,41 @@ async function fixture(fn: any): Promise<any> {
       readPinned: async (): Promise<any> => pinned,
       readVersion: async (): Promise<any> => pinned,
     };
-    const transferVerifier: any = new HostedInstagramMediaIntegrity({
+    // Offline storage fixture: exercise the public verifier port with mutable pinned bytes.
+    const checkPinned = (value: any, expected: string) => {
+      if (
+        !value?.immutable ||
+        !value.urlBoundToVersion ||
+        !value.versionId ||
+        !Buffer.isBuffer(value.bytes) ||
+        createHash('sha256').update(value.bytes).digest('hex') !== expected
+      )
+        socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED');
+    };
+    const transferVerifier = {
       mode: 'fake',
-      storage,
-      now: (): any => at,
-    });
+      async verifyTransfer(transfer: any) {
+        const value = await storage.readPinned();
+        checkPinned(value, transfer.contentHash);
+        const proof = {
+          executionMode: 'fake',
+          contentHash: transfer.contentHash,
+          versionId: value.versionId,
+          objectReference: value.objectReference,
+        };
+        return { ...proof, evidenceHash: affiliateHash(proof) };
+      },
+      async verifyPublication(proof: any, expected: string) {
+        const { evidenceHash, ...body } = proof ?? {};
+        if (
+          affiliateHash(body) !== evidenceHash ||
+          body.contentHash !== expected ||
+          body.executionMode !== 'fake'
+        )
+          socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED');
+        checkPinned(await storage.readVersion(), expected);
+      },
+    };
     const make: any = (): any => {
       const manual: any = new ManualDistributionService({
         repository: new ManualDistributionRepository(
@@ -144,7 +174,7 @@ async function fixture(fn: any): Promise<any> {
         evidence,
         now: (): any => at,
       });
-      new awaitedLegacySocial(base);
+      provisionSocialContext(base.db);
       const repository: any = new SocialPublicationRepository(base);
       return {
         manual,
@@ -447,11 +477,12 @@ test('contratos fechados, legenda final, URL expirada, sem fetch global', (): an
   fixture(async (f: any): Promise<any> => {
     assert.throws(
       (): any =>
-        new InstagramPublisherAdapter({
-          http: { request: globalThis.fetch },
+        new InstagramGraphAdapter({
+          mode: 'fake',
+          fetch: globalThis.fetch,
           accountId: account,
           apiVersion: 'v25.0',
-          getAccessToken: (): any => '',
+          getAccessToken: () => '',
         }),
       { code: 'SOCIAL_OFFLINE_TRANSPORT_REQUIRED' },
     );
@@ -701,17 +732,15 @@ test('serviço rejeita transporte LIVE em banco fake; guarda atua antes da inten
   fixture(async (f: any): Promise<any> => {
     const op: any = await f.prepare();
     let calls: any = 0;
-    const livePublisher: any = new InstagramPublisherAdapter({
-      http: new InstagramHttpTransport({
-        mode: 'live',
-        fetchImpl: async (): Promise<any> => {
-          calls++;
-          throw new Error('unexpected');
-        },
-      }),
+    const livePublisher = new InstagramGraphAdapter({
+      mode: 'live',
       accountId: account,
       apiVersion: 'v26.0',
-      getAccessToken: (): any => 'private',
+      getAccessToken: () => 'private',
+      fetch: async () => {
+        calls++;
+        throw new Error('unexpected');
+      },
     });
     assert.throws(
       (): any =>
@@ -725,4 +754,889 @@ test('serviço rejeita transporte LIVE em banco fake; guarda atua antes da inten
     );
     assert.equal(f.repository.get(op.operationId).state, 'PREPARED');
     assert.equal(calls, 0);
+  }));
+import { provisionSchema } from '../administration/schema-provisioner.js';
+import { InstagramPublicationRepository } from './infrastructure/instagram-publication.repository.js';
+import { CampaignRepository } from '../content-operations/infrastructure/campaign.repository.js';
+
+test('P5 revoke exact review blocks manual gate; immutable evidence and replay', () =>
+  fixture(async (f: any) => {
+    provisionSchema(f.base.db, 42);
+    const op = await f.prepare(),
+      review = f.manual.getReview(op.packageHash);
+    const input = {
+      packageHash: op.packageHash,
+      reviewHash: review.contentHash,
+      actor: 'operator',
+      reason: 'Authorization withdrawn',
+    };
+    const before = f.manual.getReview(op.packageHash);
+    const r = f.manual.revokeApproval(input);
+    assert.deepEqual(f.manual.revokeApproval(input), r);
+    assert.throws(() => f.manual.validateForPublication(op.packageHash), {
+      code: 'DISTRIBUTION_APPROVAL_REVOKED',
+    });
+    await assert.rejects(
+      f.service.createContainer(op.operationId, f.transfer()),
+      { code: 'DISTRIBUTION_APPROVAL_REVOKED' },
+    );
+    assert.equal(f.calls.length, 0);
+    assert.deepEqual(f.manual.getReview(op.packageHash), before);
+    assert.throws(
+      () => f.base.db.exec('DELETE FROM instagram_approval_revocations'),
+      /IMMUTABLE/,
+    );
+    assert.throws(
+      () => f.manual.revokeApproval({ ...input, reason: 'other' }),
+      { code: 'SOCIAL_REVOCATION_CONFLICT' },
+    );
+  }));
+
+test('P5 reservation binds P4 and canonical identity across packages; concurrent claims', () =>
+  fixture(async (f: any) => {
+    provisionSchema(f.base.db, 42);
+    const p4 = new CampaignRepository(f.base.db);
+    const e = p4.schedule(
+      {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        runId: 'run_001',
+        scheduledAt: at,
+      },
+      {},
+      at,
+    );
+    const op = await f.prepare(),
+      p = f.manual.getPackage(op.packageHash),
+      review = f.manual.getReview(op.packageHash);
+    const r = new InstagramPublicationRepository(f.base.db);
+    r.reserve(e.execution_id, op, p, review.contentHash, at);
+    assert.throws(() => r.authorize(op, at), {
+      code: 'SOCIAL_CAMPAIGN_AUTHORIZATION_REQUIRED',
+    });
+    const claims = await Promise.all([
+      Promise.resolve().then(() => p4.claim(e.execution_id, at, 60000)),
+      Promise.resolve().then(() => p4.claim(e.execution_id, at, 60000)),
+    ]);
+    assert.equal(claims.filter(Boolean).length, 1);
+    r.authorize(op, at);
+    const p2 = f.package(
+      { caption: 'Another approved caption' },
+      'package_other',
+    );
+    f.approve(p2);
+    const op2 = await f.service.prepare(
+      { packageHash: p2.contentHash, accountId: op.accountId },
+      'prepare_other',
+    );
+    assert.throws(
+      () =>
+        r.reserve(
+          e.execution_id,
+          op2,
+          p2,
+          f.manual.getReview(p2.contentHash).contentHash,
+          at,
+        ),
+      { code: 'SOCIAL_PUBLICATION_IDENTITY_CONFLICT' },
+    );
+    assert.throws(
+      () =>
+        f.base.db.exec(
+          "UPDATE instagram_publication_reservations SET destination='instagram:999999'",
+        ),
+      /IMMUTABLE/,
+    );
+    p4.cancel(e.execution_id, at);
+    assert.throws(() => r.authorize(op, at), {
+      code: 'SOCIAL_CAMPAIGN_AUTHORIZATION_REQUIRED',
+    });
+  }));
+
+test('P5 rechecks authorization after asynchronous probes and keeps receipt on in-flight revocation', () =>
+  fixture(async (f: any) => {
+    let authorized = true;
+    const transferVerifier = {
+      mode: 'fake',
+      verifyTransfer: (t: any) => f.transferVerifier.verifyTransfer(t),
+      verifyPublication: (...args: any[]) =>
+        f.transferVerifier.verifyPublication(...args),
+    };
+    const service = new SocialPublicationService({
+      repository: f.repository,
+      manual: f.manual,
+      publisher: f.adapter,
+      media: f.media,
+      transferVerifier,
+      now: () => at,
+      authorize: () => {
+        if (!authorized)
+          throw Object.assign(new Error('revoked'), {
+            code: 'SOCIAL_APPROVAL_REVOKED',
+          });
+      },
+    });
+    const op = await f.prepare();
+    const verify = f.transferVerifier.verifyTransfer.bind(f.transferVerifier);
+    transferVerifier.verifyTransfer = async (t: any) => {
+      const proof = await verify(t);
+      authorized = false;
+      return proof;
+    };
+    await assert.rejects(
+      service.createContainer(op.operationId, f.transfer()),
+      { code: 'SOCIAL_APPROVAL_REVOKED' },
+    );
+    assert.equal(f.calls.length, 0);
+    authorized = true;
+    transferVerifier.verifyTransfer = verify;
+    await service.createContainer(op.operationId, f.transfer());
+    await service.process(op.operationId);
+    f.setHandler(() => {
+      authorized = false;
+      return { ok: true, status: 200, json: async () => ({ id: '987654321' }) };
+    });
+    const published = await service.publish(op.operationId);
+    assert.equal(published.mediaId, '987654321');
+    assert.equal(published.requiresReconciliation, true);
+    assert.equal((await service.publish(op.operationId)).mediaId, '987654321');
+    assert.equal(
+      f.calls.filter((c: any) => c.url.endsWith('media_publish')).length,
+      1,
+    );
+  }));
+import { InstagramPublicationService } from './application/instagram-publication.service.js';
+import { PublishingPersistence } from './infrastructure/publishing.persistence.js';
+import { InstagramGraphAdapter } from './infrastructure/instagram-graph.adapter.js';
+import { CampaignOrchestrator } from '../content-operations/application/campaign-orchestrator.js';
+
+function p5(
+  f: any,
+  behavior?: (url: string, init: any) => Response | Promise<Response>,
+) {
+  const adapter = new InstagramGraphAdapter({
+    mode: 'fake',
+    accountId: account,
+    apiVersion: 'v25.0',
+    getAccessToken: () => 'FAKE_SECRET',
+    fetch: async (url, init) => {
+      f.calls.push({
+        url: url instanceof Request ? url.url : url.toString(),
+        method: init?.method,
+      });
+      if (behavior)
+        return behavior(
+          url instanceof Request ? url.url : url.toString(),
+          init,
+        );
+      return new Response(
+        JSON.stringify(
+          init?.method === 'POST'
+            ? {
+                id: (url instanceof Request
+                  ? url.url
+                  : url.toString()
+                ).endsWith('media_publish')
+                  ? '987654321'
+                  : '234567890',
+              }
+            : (url instanceof Request ? url.url : url.toString()).includes(
+                  'status_code',
+                )
+              ? { status_code: 'FINISHED' }
+              : {
+                  id: '987654321',
+                  permalink: 'https://www.instagram.com/reel/example/',
+                  timestamp: at,
+                },
+        ),
+      );
+    },
+  });
+  const store = new PublishingPersistence(
+    f.path,
+    {
+      open: () => ({
+        getCampaign: (id: string, rev: number) =>
+          f.catalog.getCampaign(id, rev),
+        getProduct: (id: string, rev: number) => f.catalog.getProduct(id, rev),
+        close() {},
+      }),
+    } as any,
+    {
+      resolveRunBriefing: (...args: any[]) =>
+        f.catalog.resolveRunBriefing(...args),
+    } as any,
+    {
+      getVideoRender: f.evidence.getVideoRender,
+      verifyMedia: f.evidence.verifyMedia,
+      report: f.evidence.getQualityControlReport,
+    },
+  );
+  return new InstagramPublicationService(
+    store,
+    {
+      publisher: adapter,
+      media: f.media,
+      transfer: async () => f.transfer(),
+      verifier: f.transferVerifier,
+    },
+    () => at,
+  );
+}
+function scheduleP5(f: any, scheduledAt = at) {
+  provisionSchema(f.base.db, 42);
+  const r = new CampaignRepository(f.base.db),
+    p = f.package();
+  f.approve(p);
+  const input = { packageHash: p.contentHash, accountId: account };
+  const e = r.schedule(
+    {
+      campaignId: 'camp_001',
+      campaignRevision: 1,
+      runId: 'run_001',
+      scheduledAt,
+    },
+    input,
+    at,
+  );
+  const handoff = {
+    videoRenderId: f.render.videoRenderId,
+    contentHash: f.render.contentHash,
+  };
+  return { r, e, input, handoff };
+}
+test('P5 native runtime through P4: due schedule, concurrent ticks, durable receipts, restart and replay', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    const makeRunner = () =>
+      new CampaignOrchestrator(
+        r,
+        {
+          steps: ['PUBLICATION'],
+          execute: async () =>
+            p5(f).execute(r.get(e.execution_id), input, handoff),
+          reconcile: async () => p5(f).reconcile(e.execution_id),
+        },
+        () => at,
+      );
+    await Promise.all([makeRunner().tick(), makeRunner().tick()]);
+    assert.equal(r.get(e.execution_id).status, 'SUCCEEDED');
+    const reservation = f.base.db
+      .prepare('SELECT * FROM instagram_publication_reservations')
+      .get();
+    const op = f.repository.get(reservation.operation_id);
+    assert.equal(op.remoteReceipt.mediaId, '987654321');
+    assert.equal(op.requiresReconciliation, false);
+    await makeRunner().tick();
+    assert.equal(f.calls.filter((c: any) => c.method === 'POST').length, 2);
+    assert.equal(
+      JSON.stringify(f.repository.history(op.operationId)).includes(
+        'FAKE_SECRET',
+      ),
+      false,
+    );
+  }));
+test('P5 P4 future schedule and cancelled execution make no calls', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f, '2026-10-13T18:00:00Z');
+    const runner = new CampaignOrchestrator(
+      r,
+      {
+        steps: ['PUBLICATION'],
+        execute: async () =>
+          p5(f).execute(r.get(e.execution_id), input, handoff),
+        reconcile: async () => null,
+      },
+      () => at,
+    );
+    await runner.tick();
+    assert.equal(f.calls.length, 0);
+    r.cancel(e.execution_id, at);
+    await runner.tick();
+    assert.equal(f.calls.length, 0);
+    await assert.rejects(p5(f).execute(r.get(e.execution_id), input, handoff), {
+      code: 'SOCIAL_CAMPAIGN_AUTHORIZATION_REQUIRED',
+    });
+    assert.equal(f.calls.length, 0);
+  }));
+test.each(['CREATE', 'PUBLISH'])(
+  'P5 timeout at %s persists uncertainty and restart cannot replay POST',
+  (stage: string) =>
+    fixture(async (f: any) => {
+      const { r, e, input, handoff } = scheduleP5(f);
+      r.claim(e.execution_id, at, 60000);
+      const service = p5(f, async (url, init) => {
+        if (
+          init?.method === 'POST' &&
+          (stage === 'CREATE' || url.endsWith('media_publish'))
+        )
+          throw new Error('timeout after remote effect');
+        return new Response(
+          JSON.stringify(
+            init?.method === 'POST'
+              ? { id: '234567890' }
+              : { status_code: 'FINISHED' },
+          ),
+        );
+      });
+      await assert.rejects(
+        service.execute(r.get(e.execution_id), input, handoff),
+        { code: 'SOCIAL_RECONCILIATION_REQUIRED' },
+      );
+      const count = f.calls.filter((c: any) => c.method === 'POST').length;
+      assert.equal(await p5(f).reconcile(e.execution_id), null);
+      await assert.rejects(
+        p5(f).execute(r.get(e.execution_id), input, handoff),
+        { code: 'SOCIAL_RECONCILIATION_REQUIRED' },
+      );
+      assert.equal(
+        f.calls.filter((c: any) => c.method === 'POST').length,
+        count,
+      );
+    }),
+);
+import {
+  NativeCampaignWorkflow,
+  campaignRequest,
+} from '../content-operations/application/native-campaign-workflow.js';
+import { Test } from '@nestjs/testing';
+import request from 'supertest';
+import { PublishingController } from './publishing.controller.js';
+import { PublishingService } from './application/publishing.service.js';
+
+test('P5 HTTP revoke and receipt endpoints use native stores and sanitize errors', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    r.claim(e.execution_id, at, 60000);
+    const instagram = p5(f);
+    const result = await instagram.execute(
+      r.get(e.execution_id),
+      input,
+      handoff,
+    );
+    const publishing = new PublishingService(
+      {
+        open: () => ({ manual: f.manual, approvals: {}, close() {} }),
+        social: (action: any) => action(f.repository),
+      },
+      {} as any,
+    );
+    const module = await Test.createTestingModule({
+      controllers: [PublishingController],
+      providers: [
+        { provide: PublishingService, useValue: publishing },
+        { provide: InstagramPublicationService, useValue: instagram },
+      ],
+    }).compile();
+    const app = module.createNestApplication();
+    await app.init();
+    try {
+      const receipt = await request(app.getHttpServer())
+        .post(
+          `/publishing/social-operations/${encodeURIComponent(result.operationId)}/receipt`,
+        )
+        .expect(201);
+      assert.equal(receipt.body.remoteReceipt.mediaId, '987654321');
+      const review = f.manual.getReview(input.packageHash);
+      const revoke = {
+        packageHash: input.packageHash,
+        reviewHash: review.contentHash,
+        actor: 'operator',
+        reason: 'Stop publication',
+      };
+      await request(app.getHttpServer())
+        .post('/publishing/approval-revocations')
+        .send(revoke)
+        .expect(201);
+      await request(app.getHttpServer())
+        .post('/publishing/approval-revocations')
+        .send(revoke)
+        .expect(201);
+      const invalid = await request(app.getHttpServer())
+        .post('/publishing/approval-revocations')
+        .send({ ...revoke, reviewHash: 'f'.repeat(64) })
+        .expect(400);
+      assert.equal(invalid.body.code, 'SOCIAL_APPROVED_REVIEW_REQUIRED');
+      const history = await request(app.getHttpServer())
+        .get(
+          `/publishing/social-operations/${encodeURIComponent(result.operationId)}/history`,
+        )
+        .expect(200);
+      assert.equal(history.body.at(-1).mediaId, '987654321');
+      assert.equal(JSON.stringify(history.body).includes('FAKE_SECRET'), false);
+    } finally {
+      await app.close();
+    }
+  }));
+
+test('P5 NativeCampaignWorkflow delegates PUBLICATION and reconciliation through the public service', async () => {
+  const publication = {
+    execute: vi.fn(async () => ({ mediaId: '987654321' })),
+    reconcile: vi.fn(async () => ({ verified: true })),
+  };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    publication as any,
+  );
+  const e = { execution_id: 'execution_001' } as any,
+    raw = { publication: { packageHash: 'a'.repeat(64), accountId: account } },
+    done = { HANDOFF: { contentHash: 'a'.repeat(64) } };
+  await workflow.execute('PUBLICATION', e, raw, done);
+  expect(publication.execute).toHaveBeenCalledWith(
+    e,
+    raw.publication,
+    done.HANDOFF,
+  );
+  await workflow.reconcile(e, [
+    { event_type: 'STEP_STARTED', evidence: { step: 'PUBLICATION' } },
+  ] as any);
+  expect(publication.reconcile).toHaveBeenCalledWith(e.execution_id);
+  expect(() =>
+    campaignRequest({
+      publication: { accountId: '001', packageHash: 'a'.repeat(64) },
+    }),
+  ).toThrow();
+});
+
+test('P5 known processing continues via scheduler without human retry or duplicated create', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    let clock = at,
+      reads = 0;
+    const publisher = p5(
+      f,
+      (url, init) =>
+        new Response(
+          JSON.stringify(
+            init?.method === 'POST'
+              ? {
+                  id: url.endsWith('media_publish') ? '987654321' : '234567890',
+                }
+              : url.includes('status_code')
+                ? { status_code: ++reads === 1 ? 'IN_PROGRESS' : 'FINISHED' }
+                : {
+                    id: '987654321',
+                    permalink: 'https://www.instagram.com/reel/example/',
+                    timestamp: at,
+                  },
+          ),
+        ),
+    );
+    const runner = new CampaignOrchestrator(
+      r,
+      {
+        steps: ['PUBLICATION'],
+        execute: async () =>
+          publisher.execute(r.get(e.execution_id), input, handoff),
+        reconcile: async () => publisher.reconcile(e.execution_id),
+      },
+      () => clock,
+    );
+    await runner.tick();
+    assert.equal(r.get(e.execution_id).status, 'WAITING_INPUT');
+    await runner.tick();
+    assert.equal(reads, 1);
+    clock = '2026-10-12T18:01:01.000Z';
+    await runner.tick();
+    assert.equal(r.get(e.execution_id).status, 'SUCCEEDED');
+    assert.equal(
+      f.calls.filter(
+        (c: any) => c.method === 'POST' && !c.url.endsWith('media_publish'),
+      ).length,
+      1,
+    );
+  }));
+import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
+
+test('P5 explicit deterministic fake works after service restart; real mode cannot consume fake evidence', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    r.claim(e.execution_id, at, 60000);
+    const publishing = { package: (hash: string) => f.manual.getPackage(hash) };
+    const media = {
+      getVideoRender: f.evidence.getVideoRender,
+      report: f.evidence.getQualityControlReport,
+      verifyMedia: f.evidence.verifyMedia,
+    };
+    const ports = deterministicInstagramPorts(
+      publishing,
+      media,
+      account,
+      'v25.0',
+    );
+    const proof = await ports.verifier.verifyTransfer(
+      await ports.transfer(input.packageHash),
+    );
+    assert.equal(proof.executionMode, 'fake');
+    assert.equal(proof.contentHash, handoff.contentHash);
+    await assert.rejects(
+      ports.verifier.verifyPublication(
+        { ...proof, executionMode: 'live' },
+        handoff.contentHash,
+      ),
+      { code: 'SOCIAL_HOSTED_MEDIA_UNVERIFIED' },
+    );
+    const store = new PublishingPersistence(
+      f.path,
+      {
+        open: () => ({
+          getCampaign: (id: string, rev: number) =>
+            f.catalog.getCampaign(id, rev),
+          getProduct: (id: string, rev: number) =>
+            f.catalog.getProduct(id, rev),
+          close() {},
+        }),
+      } as any,
+      {
+        resolveRunBriefing: (...args: any[]) =>
+          f.catalog.resolveRunBriefing(...args),
+      } as any,
+      media,
+    );
+    const result = await new InstagramPublicationService(
+      store,
+      ports,
+      () => at,
+    ).execute(r.get(e.execution_id), input, handoff);
+    assert.match(result.receipt.permalink, /fake_/);
+    const replay = await new InstagramPublicationService(
+      store,
+      deterministicInstagramPorts(publishing, media, account, 'v25.0'),
+      () => at,
+    ).execute(r.get(e.execution_id), input, handoff);
+    assert.equal(replay.mediaId, result.mediaId);
+  }));
+
+test.each(['CREATE', 'PUBLISH'])(
+  'P5 actual revocation during %s preserves effect and requires reconciliation',
+  (stage: string) =>
+    fixture(async (f: any) => {
+      const { r, e, input, handoff } = scheduleP5(f);
+      r.claim(e.execution_id, at, 60000);
+      const service = p5(f, (url, init) => {
+        if (
+          init?.method === 'POST' &&
+          (stage === 'CREATE' || url.endsWith('media_publish'))
+        ) {
+          const review = f.manual.getReview(input.packageHash);
+          f.manual.revokeApproval({
+            packageHash: input.packageHash,
+            reviewHash: review.contentHash,
+            actor: 'operator',
+            reason: 'Revoke during HTTP',
+          });
+        }
+        return new Response(
+          JSON.stringify(
+            init?.method === 'POST'
+              ? {
+                  id: url.endsWith('media_publish') ? '987654321' : '234567890',
+                }
+              : { status_code: 'FINISHED' },
+          ),
+        );
+      });
+      await assert.rejects(
+        service.execute(r.get(e.execution_id), input, handoff),
+        { code: 'SOCIAL_RECONCILIATION_REQUIRED' },
+      );
+      const operation = f.base.db
+        .prepare('SELECT operation_id FROM instagram_publication_reservations')
+        .get().operation_id;
+      const op = f.repository.get(operation);
+      assert.equal(op.requiresReconciliation, true);
+      assert.ok(stage === 'CREATE' ? op.containerId : op.mediaId);
+      const posts = f.calls.filter((c: any) => c.method === 'POST').length;
+      const proof = await p5(f).reconcile(e.execution_id);
+      assert.equal(proof?.verified, true);
+      await assert.rejects(
+        p5(f).execute(r.get(e.execution_id), input, handoff),
+        { code: 'DISTRIBUTION_APPROVAL_REVOKED' },
+      );
+      assert.equal(
+        f.calls.filter((c: any) => c.method === 'POST').length,
+        posts,
+      );
+    }),
+);
+
+test.each([401, 429])(
+  'P5 records classified HTTP %s and retry-after without retrying',
+  (status: number) =>
+    fixture(async (f: any) => {
+      const { r, e, input, handoff } = scheduleP5(f);
+      r.claim(e.execution_id, at, 60000);
+      const service = p5(
+        f,
+        () =>
+          new Response(
+            JSON.stringify({
+              error: { code: status === 401 ? 190 : 4, message: 'FAKE_SECRET' },
+            }),
+            { status, headers: { 'retry-after': '60' } },
+          ),
+      );
+      await assert.rejects(
+        service.execute(r.get(e.execution_id), input, handoff),
+        { code: 'SOCIAL_RECONCILIATION_REQUIRED' },
+      );
+      const op = f.repository.get(
+        f.base.db
+          .prepare(
+            'SELECT operation_id FROM instagram_publication_reservations',
+          )
+          .get().operation_id,
+      );
+      assert.equal(
+        op.errorCode,
+        status === 401 ? 'SOCIAL_AUTH_REQUIRED' : 'SOCIAL_RATE_LIMIT',
+      );
+      assert.equal(op.retryAfterSeconds, 60);
+      assert.equal(f.calls.length, 1);
+      assert.equal(
+        JSON.stringify(f.repository.history(op.operationId)).includes(
+          'FAKE_SECRET',
+        ),
+        false,
+      );
+    }),
+);
+
+test('P5 upgrade preserves existing social history and failed revocation never appends evidence', () =>
+  fixture(async (f: any) => {
+    const op = await f.prepare();
+    await f.service.createContainer(op.operationId, f.transfer());
+    const before = f.repository.history(op.operationId),
+      original = f.repository.get(op.operationId);
+    provisionSchema(f.base.db, 42);
+    provisionSchema(f.base.db, 42);
+    assert.deepEqual(f.repository.history(op.operationId), before);
+    assert.deepEqual(f.repository.get(op.operationId), original);
+    const review = f.manual.getReview(op.packageHash);
+    assert.throws(
+      () =>
+        f.manual.revokeApproval({
+          packageHash: op.packageHash,
+          reviewHash: 'f'.repeat(64),
+          actor: 'operator',
+          reason: 'Invalid review',
+        }),
+      { code: 'SOCIAL_APPROVED_REVIEW_REQUIRED' },
+    );
+    assert.equal(
+      f.base.db
+        .prepare('SELECT COUNT(*) n FROM instagram_approval_revocations')
+        .get().n,
+      0,
+    );
+    assert.equal(
+      f.manual.getReview(op.packageHash).contentHash,
+      review.contentHash,
+    );
+  }));
+test('P5 P4 restart after lost receipt GET reconciles known media without another POST', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    const service = p5(f, (url, init) => {
+      if (init?.method !== 'POST' && !url.includes('status_code'))
+        throw new Error('receipt response lost');
+      return new Response(
+        JSON.stringify(
+          init?.method === 'POST'
+            ? { id: url.endsWith('media_publish') ? '987654321' : '234567890' }
+            : { status_code: 'FINISHED' },
+        ),
+      );
+    });
+    const makeRunner = (publication: InstagramPublicationService) =>
+      new CampaignOrchestrator(
+        r,
+        {
+          steps: ['PUBLICATION'],
+          execute: async () =>
+            publication.execute(r.get(e.execution_id), input, handoff),
+          reconcile: async () => publication.reconcile(e.execution_id),
+        },
+        () => at,
+      );
+    await makeRunner(service).tick();
+    assert.equal(r.get(e.execution_id).status, 'WAITING_RECONCILIATION');
+    const posts = f.calls.filter((c: any) => c.method === 'POST').length;
+    const restarted = makeRunner(p5(f));
+    await restarted.resume(e.execution_id);
+    await restarted.tick();
+    assert.equal(r.get(e.execution_id).status, 'SUCCEEDED');
+    assert.equal(f.calls.filter((c: any) => c.method === 'POST').length, posts);
+  }));
+
+test('P5 recovered expired claim cannot be reused to publish under a new owner', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    const old = r.claim(e.execution_id, at, 1000)!;
+    const prepared = await f.service.prepare(input, 'preexisting_operation');
+    const pkg = f.manual.getPackage(input.packageHash),
+      review = f.manual.getReview(input.packageHash);
+    new InstagramPublicationRepository(f.base.db).reserve(
+      e.execution_id,
+      prepared,
+      pkg,
+      review.contentHash,
+      at,
+    );
+    r.recover('2026-10-12T18:00:02.000Z');
+    const verified = await p5(f).reconcile(e.execution_id);
+    assert.equal(verified?.verified, true);
+    r.resume(e.execution_id, at, r.get(e.execution_id).version, verified);
+    r.claim(e.execution_id, at, 60000);
+    await assert.rejects(p5(f).execute(old, input, handoff), {
+      code: 'SOCIAL_CAMPAIGN_AUTHORIZATION_REQUIRED',
+    });
+    assert.equal(f.calls.filter((c: any) => c.method === 'POST').length, 0);
+  }));
+
+test('P5 changed caption or destination requires a new exact approval before remote effects', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    r.claim(e.execution_id, at, 60000);
+    for (const [change, key] of [
+      [{ caption: 'Changed after approval' }, 'changed_caption'],
+      [{ account: '999999999' }, 'changed_account'],
+    ] as any[]) {
+      const pkg = f.package(change, key);
+      await assert.rejects(
+        p5(f).execute(
+          r.get(e.execution_id),
+          { packageHash: pkg.contentHash, accountId: pkg.account },
+          handoff,
+        ),
+        { code: 'DISTRIBUTION_APPROVAL_REQUIRED' },
+      );
+    }
+    f.evidence.verifyMedia = () => 'f'.repeat(64);
+    await assert.rejects(p5(f).execute(r.get(e.execution_id), input, handoff), {
+      code: 'DISTRIBUTION_MEDIA_CHANGED',
+    });
+    assert.equal(f.calls.length, 0);
+  }));
+test('P5 does not republish historical artifact under another package after upgrade', () =>
+  fixture(async (f: any) => {
+    const historical = await f.prepare();
+    await f.service.createContainer(historical.operationId, f.transfer());
+    await f.service.process(historical.operationId);
+    await f.service.publish(historical.operationId);
+    provisionSchema(f.base.db, 42);
+    const p = f.package(
+      { caption: 'New caption for historical video' },
+      'historical_other',
+    );
+    f.approve(p);
+    const r = new CampaignRepository(f.base.db),
+      e = r.schedule(
+        {
+          campaignId: 'camp_001',
+          campaignRevision: 1,
+          runId: 'run_001',
+          scheduledAt: at,
+        },
+        {},
+        at,
+      );
+    r.claim(e.execution_id, at, 60000);
+    const posts = f.calls.filter((c: any) => c.method === 'POST').length;
+    await assert.rejects(
+      p5(f).execute(
+        r.get(e.execution_id),
+        { packageHash: p.contentHash, accountId: account },
+        {
+          contentHash: f.render.contentHash,
+          videoRenderId: f.render.videoRenderId,
+        },
+      ),
+      { code: 'SOCIAL_PUBLICATION_IDENTITY_CONFLICT' },
+    );
+    assert.equal(f.calls.filter((c: any) => c.method === 'POST').length, posts);
+  }));
+import { PublishingModule } from './publishing.module.js';
+import {
+  PUBLISHING_DATABASE,
+  SOCIAL_HISTORY_DATABASE,
+} from './infrastructure/publishing.persistence.js';
+import { MediaService } from '../media/application/media.service.js';
+import { AFFILIATE_REPOSITORY } from '../affiliate/application/ports/affiliate-repository.port.js';
+import { AFFILIATE_RUN_CONTEXT } from '../affiliate/application/ports/affiliate-run-context.port.js';
+
+test('P5 Nest module selects explicit fake configuration and exposes durable receipt over HTTP', () =>
+  fixture(async (f: any) => {
+    const { r, e, input, handoff } = scheduleP5(f);
+    r.claim(e.execution_id, new Date().toISOString(), 60000);
+    vi.stubEnv('INSTAGRAM_PUBLICATION_MODE', 'fake');
+    vi.stubEnv('INSTAGRAM_ACCOUNT_ID', account);
+    vi.stubEnv('INSTAGRAM_API_VERSION', 'v25.0');
+    const module = await Test.createTestingModule({
+      imports: [PublishingModule],
+    })
+      .overrideProvider(PUBLISHING_DATABASE)
+      .useValue(f.path)
+      .overrideProvider(SOCIAL_HISTORY_DATABASE)
+      .useValue(f.path)
+      .overrideProvider(MediaService)
+      .useValue({
+        getVideoRender: f.evidence.getVideoRender,
+        verifyMedia: f.evidence.verifyMedia,
+        report: f.evidence.getQualityControlReport,
+      })
+      .overrideProvider(AFFILIATE_REPOSITORY)
+      .useValue({
+        open: () => ({
+          getCampaign: (id: string, rev: number) =>
+            f.catalog.getCampaign(id, rev),
+          getProduct: (id: string, rev: number) =>
+            f.catalog.getProduct(id, rev),
+          close() {},
+        }),
+      })
+      .overrideProvider(AFFILIATE_RUN_CONTEXT)
+      .useValue({
+        resolveRunBriefing: (...args: any[]) =>
+          f.catalog.resolveRunBriefing(...args),
+      })
+      .compile();
+    const app = module.createNestApplication();
+    try {
+      await app.init();
+      const result = await app
+        .get(InstagramPublicationService)
+        .execute(r.get(e.execution_id), input, handoff);
+      const receipt = await request(app.getHttpServer())
+        .get(
+          `/publishing/social-operations/${encodeURIComponent(result.operationId)}`,
+        )
+        .expect(200);
+      assert.equal(receipt.body.executionMode, 'fake');
+      assert.match(receipt.body.remoteReceipt.permalink, /fake_/);
+      const review = f.manual.getReview(input.packageHash);
+      await request(app.getHttpServer())
+        .post('/publishing/approval-revocations')
+        .send({
+          packageHash: input.packageHash,
+          reviewHash: review.contentHash,
+          actor: 'operator',
+          reason: 'Withdraw approved package',
+        })
+        .expect(201);
+    } finally {
+      await app.close();
+      vi.unstubAllEnvs();
+    }
   }));

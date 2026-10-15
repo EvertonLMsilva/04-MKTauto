@@ -5,6 +5,12 @@ import { ContractValidationError } from '../../project/domain/project.errors.js'
 export const PIPELINE_RUN_CONTRACT_VERSION = 'pipeline-run/1.0.0';
 export const PIPELINE_HANDOFF_CONTRACT_VERSION = 'pipeline-handoff/1.0.0';
 export type RunState = 'RUNNING' | 'SUCCEEDED' | 'FAILED';
+type AssetDurationField =
+  'minVideoAssetDurationSeconds' | 'maxVideoAssetDurationSeconds';
+export type PersistedProjectSnapshot = Omit<ProjectSnapshot, 'channel'> & {
+  channel: Omit<ProjectSnapshot['channel'], AssetDurationField> &
+    Partial<Pick<ProjectSnapshot['channel'], AssetDurationField>>;
+};
 export interface PublicError {
   code: string;
   field: string;
@@ -20,7 +26,7 @@ export interface PipelineRun {
   pipelineRunId: string;
   projectId: string;
   projectVersion: number;
-  projectSnapshot: ProjectSnapshot;
+  projectSnapshot: PersistedProjectSnapshot;
   state: RunState;
   startedAt: string;
   completedAt: string | null;
@@ -123,7 +129,10 @@ function publicError(value: unknown, path: string): PublicError {
   if (!safeField(value.field)) fail('INVALID_ERROR_FIELD', `${path}.field`);
   return immutable({ code: value.code, field: value.field });
 }
-export function validatePipelineRun(value: unknown): PipelineRun {
+export function validatePipelineRun(
+  value: unknown,
+  persisted = false,
+): PipelineRun {
   record(value, 'pipelineRun');
   exact(
     value,
@@ -146,7 +155,9 @@ export function validatePipelineRun(value: unknown): PipelineRun {
   const pipelineRunId = identifier(value.pipelineRunId, 'pipelineRunId');
   const projectId = identifier(value.projectId, 'projectId');
   const projectVersion = version(value.projectVersion, 'projectVersion');
-  const projectSnapshot = validateProjectSnapshot(value.projectSnapshot);
+  const projectSnapshot = persisted
+    ? validatePersistedSnapshot(value.projectSnapshot)
+    : validateProjectSnapshot(value.projectSnapshot);
   if (projectSnapshot.project.id !== projectId)
     fail('PROJECT_REFERENCE_MISMATCH', 'projectSnapshot.project.id');
   if (projectSnapshot.project.version !== projectVersion)
@@ -231,6 +242,29 @@ export function validatePipelineRun(value: unknown): PipelineRun {
     error,
     transitions,
   });
+}
+// Only persisted records select a historical format. Requests always use the canonical contract.
+export function validatePersistedSnapshot(
+  value: unknown,
+): PersistedProjectSnapshot {
+  record(value, 'snapshot');
+  record(value.channel, 'channel');
+  const min = Object.hasOwn(value.channel, 'minVideoAssetDurationSeconds');
+  const max = Object.hasOwn(value.channel, 'maxVideoAssetDurationSeconds');
+  if (min !== max) fail('INVALID_PERSISTED_SNAPSHOT', 'channel');
+  const canonical = validateProjectSnapshot(value);
+  const {
+    minVideoAssetDurationSeconds: _min,
+    maxVideoAssetDurationSeconds: _max,
+    ...historicalChannel
+  } = canonical.channel;
+  const snapshot = min
+    ? canonical
+    : { ...canonical, channel: historicalChannel };
+  // Persisted values must already be normalized; never silently repair stored data.
+  if (JSON.stringify(snapshot) !== JSON.stringify(value))
+    fail('INVALID_PERSISTED_SNAPSHOT', 'snapshot');
+  return immutable(snapshot);
 }
 export function validateHandoff(value: unknown): Execution {
   const seen = new WeakSet<object>();

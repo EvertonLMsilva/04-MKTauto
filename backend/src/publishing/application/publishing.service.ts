@@ -49,6 +49,9 @@ export class PublishingService {
   review(value: unknown, key: string) {
     return this.session(false, (s) => s.manual.review(value, key));
   }
+  revokeApproval(value: unknown) {
+    return this.session(false, (s) => s.manual.revokeApproval(value));
+  }
   packageReview(hash: string) {
     return this.session(true, (s) => s.manual.getReview(hash));
   }

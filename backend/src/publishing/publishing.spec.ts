@@ -4,7 +4,10 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ManualDistributionService } from './application/manual-distribution.service.js';
 import { ManualDistributionRepository } from './infrastructure/manual-distribution.repository.js';
-import { SocialPublicationRepository } from './infrastructure/social-publication.repository.js';
+import {
+  provisionSocialContext,
+  SocialPublicationRepository,
+} from './infrastructure/social-publication.repository.js';
 import { LocalRenderIntegrity } from '../media/infrastructure/local-render-integrity.js';
 const legacy = await import(
   new URL('../../../src/human-approval-repository.js', import.meta.url).href
@@ -14,16 +17,6 @@ const affiliate = await import(
 );
 const fixtures = await import(
   new URL('../../../test/affiliate-fixtures.js', import.meta.url).href
-);
-const manual = await import(
-  new URL('../../../src/manual-distribution-service.js', import.meta.url).href
-);
-const manualRepo = await import(
-  new URL('../../../src/manual-distribution-repository.js', import.meta.url)
-    .href
-);
-const social = await import(
-  new URL('../../../src/social-publication-repository.js', import.meta.url).href
 );
 const at = '2026-10-12T18:00:00Z';
 function fixture() {
@@ -82,14 +75,15 @@ function fixture() {
     getQualityControlReport: () => qc,
     verifyMedia: (ref: string) => integrity.verifyMedia(ref),
   };
+  provisionSocialContext(base.db);
   const repository = new ManualDistributionRepository(base, catalog);
   const service = new ManualDistributionService({
     repository,
     evidence,
     now: () => at,
   });
-  const js = new manual.ManualDistributionService({
-    repository: new manualRepo.ManualDistributionRepository(base),
+  const observer = new ManualDistributionService({
+    repository: new ManualDistributionRepository(base, catalog),
     evidence,
     now: () => at,
   });
@@ -112,7 +106,7 @@ function fixture() {
     evidence,
     repository,
     service,
-    js,
+    observer,
     input,
     file,
     hash,
@@ -123,11 +117,11 @@ function fixture() {
   };
 }
 describe('Publishing persistence and exact-media gates', () => {
-  it('matches legacy package, approval, manual receipt, history and replay', () => {
+  it('preserves package, approval, receipt, history and replay across service instances', () => {
     const f = fixture();
     try {
       const p = f.service.prepare(f.input, 'package');
-      expect(p).toEqual(f.js.prepare(f.input, 'package'));
+      expect(p).toEqual(f.observer.prepare(f.input, 'package'));
       const review = {
         packageHash: p.contentHash,
         decision: 'APPROVED',
@@ -135,7 +129,7 @@ describe('Publishing persistence and exact-media gates', () => {
         justification: null,
       };
       expect(f.service.review(review, 'review')).toEqual(
-        f.js.review(review, 'review'),
+        f.observer.review(review, 'review'),
       );
       const receipt = {
         packageHash: p.contentHash,
@@ -147,7 +141,7 @@ describe('Publishing persistence and exact-media gates', () => {
         state: 'PUBLISHED',
       };
       const pub = f.service.recordPublication(receipt, 'publication');
-      expect(pub).toEqual(f.js.recordPublication(receipt, 'publication'));
+      expect(pub).toEqual(f.observer.recordPublication(receipt, 'publication'));
       expect(f.service.listPublications(p.contentHash)).toEqual([pub]);
       const results = {
         publicationId: pub.publicationId,
@@ -161,10 +155,10 @@ describe('Publishing persistence and exact-media gates', () => {
         commissions: { status: 'KNOWN', amount: '0', currency: 'BRL' },
       };
       expect(f.service.recordResults(results, 'results')).toEqual(
-        f.js.recordResults(results, 'results'),
+        f.observer.recordResults(results, 'results'),
       );
       expect(f.service.listResults(pub.publicationId)).toEqual(
-        f.js.listResults(pub.publicationId),
+        f.observer.listResults(pub.publicationId),
       );
       expect(() =>
         f.service.prepare({ ...f.input, caption: 'Changed' }, 'package'),
@@ -227,7 +221,7 @@ describe('Publishing persistence and exact-media gates', () => {
   it('preserves social versions, optimistic claims, receipts and atomic history', () => {
     const f = fixture();
     try {
-      const js = new social.SocialPublicationRepository(f.base);
+      const js = new SocialPublicationRepository(f.base);
       const r = new SocialPublicationRepository(f.base);
       const input = {
         packageHash: f.hash,

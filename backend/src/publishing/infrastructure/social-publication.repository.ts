@@ -1,7 +1,9 @@
+import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { publicText } from '../domain/manual-distribution-contracts.js';
 import { socialFail } from '../domain/social-publication-contracts.js';
 
+import { randomUUID } from 'node:crypto';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { existsSync, realpathSync, statSync } from 'node:fs';
@@ -9,10 +11,10 @@ const transitions: any = {
   PREPARED: ['CREATING_CONTAINER'],
   CREATING_CONTAINER: ['PROCESSING', 'UNCERTAIN'],
   PROCESSING: ['PROCESSING', 'READY', 'PUBLISHED', 'FAILED', 'EXPIRED'],
-  READY: ['PUBLISHING'],
+  READY: ['READY', 'PUBLISHING'],
   PUBLISHING: ['PUBLISHED', 'UNCERTAIN'],
   UNCERTAIN: ['UNCERTAIN', 'PUBLISHED', 'FAILED', 'EXPIRED'],
-  PUBLISHED: [],
+  PUBLISHED: ['PUBLISHED'],
   FAILED: [],
   EXPIRED: [],
 };
@@ -27,6 +29,9 @@ const patchFields: any = new Set([
   'transferEvidence',
   'uploadUri',
   'uploadStage',
+  'requiresReconciliation',
+  'remoteReceipt',
+  'retryAfterSeconds',
 ]);
 const contextSql: any = `CREATE TABLE IF NOT EXISTS social_publication_context (
  singleton INTEGER PRIMARY KEY CHECK(singleton=1), execution_mode TEXT NOT NULL CHECK(execution_mode IN ('fake','live')), database_id TEXT NOT NULL);
@@ -160,6 +165,12 @@ export class SocialPublicationRepository {
     )
       socialFail('SOCIAL_PERSISTED_INTEGRITY');
     return Object.freeze(value);
+  }
+  authorizePublication(operation: any, at: string) {
+    if (
+      Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
+    )
+      new InstagramPublicationRepository(this.db).authorize(operation, at);
   }
   history(id: string): any[] {
     const operation = this.get(id);
@@ -367,6 +378,32 @@ export class SocialPublicationRepository {
         )
           socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED');
       }
+      if (
+        patch.retryAfterSeconds !== undefined &&
+        patch.retryAfterSeconds !== null &&
+        (!Number.isSafeInteger(patch.retryAfterSeconds) ||
+          patch.retryAfterSeconds < 0 ||
+          patch.retryAfterSeconds > 86400)
+      )
+        socialFail('SOCIAL_TRANSITION_INVALID');
+      if (
+        patch.requiresReconciliation !== undefined &&
+        typeof patch.requiresReconciliation !== 'boolean'
+      )
+        socialFail('SOCIAL_TRANSITION_INVALID');
+      if (patch.remoteReceipt !== undefined) {
+        const r = patch.remoteReceipt;
+        if (
+          next !== 'PUBLISHED' ||
+          r?.mediaId !== previous.mediaId ||
+          Object.keys(r).sort().join(',') !== 'mediaId,permalink,publishedAt' ||
+          !/^https:\/\/(www\.)?instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+\/$/.test(
+            r.permalink,
+          ) ||
+          !Number.isFinite(Date.parse(r.publishedAt))
+        )
+          socialFail('SOCIAL_RECEIPT_INVALID');
+      }
       const value: any = this.#seal({
         ...previous,
         ...patch,
@@ -396,4 +433,22 @@ function sameFile(a: any, b: any): any {
   const first: any = statSync(realpathSync(a)),
     second: any = statSync(realpathSync(b));
   return first.dev === second.dev && first.ino === second.ino;
+}
+
+// Administrative provisioning only. Application constructors remain read-only with respect to schema.
+export function provisionSocialContext(db: any) {
+  db.exec(contextSql);
+  const row = db
+    .prepare('SELECT * FROM social_publication_context WHERE singleton=1')
+    .get();
+  if (!row) {
+    if (db.prepare('SELECT 1 FROM social_publication_operations LIMIT 1').get())
+      socialFail('SOCIAL_LIVE_PROVENANCE_REQUIRED');
+    db.prepare('INSERT INTO social_publication_context VALUES(1,?,?)').run(
+      'fake',
+      randomUUID(),
+    );
+  }
+  db.exec(provenanceSql);
+  verifySocialContextProtections(db);
 }

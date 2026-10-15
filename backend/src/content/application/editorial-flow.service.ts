@@ -1,4 +1,5 @@
 import type { ContentService } from './content.service.js';
+import { validateProjectSnapshot } from '../../project/domain/project-contracts.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
 import {
   affiliateHash,
@@ -118,7 +119,7 @@ export class EditorialFlowService {
           briefing,
           shortlist,
           references,
-          projectSnapshot: run.projectSnapshot,
+          projectSnapshot: validateProjectSnapshot(run.projectSnapshot),
         }),
       );
       const requestHash = affiliateHash({

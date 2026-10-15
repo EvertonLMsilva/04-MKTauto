@@ -33,7 +33,11 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       throw new CampaignError('CAMPAIGN_DATABASE_REQUIRED');
     const db = new DatabaseSync(this.path, { readOnly: true });
     try {
-      if (db.prepare('PRAGMA user_version').get()?.user_version !== 41)
+      if (
+        ![41, 42].includes(
+          Number(db.prepare('PRAGMA user_version').get()?.user_version),
+        )
+      )
         throw new CampaignError('CAMPAIGN_SCHEMA_41_REQUIRED');
     } finally {
       db.close();
@@ -108,6 +112,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         audio: 'AUDIO',
         alignment: 'ALIGNMENT',
         composition: 'COMPOSITION',
+        publication: 'PUBLICATION',
       };
       if (
         Object.keys(patch).some(

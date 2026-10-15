@@ -50,12 +50,11 @@ export class FinanceDatabase {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40, 41].includes(
+        ![39, 40, 41, 42].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
-        (Number(
-          preflight.prepare('PRAGMA user_version').get()?.user_version,
-        ) === 41 &&
+        (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=
+          41 &&
           preflight
             .prepare('SELECT name FROM schema_migrations WHERE version=41')
             .get()?.name !== '041_campaign_orchestration')

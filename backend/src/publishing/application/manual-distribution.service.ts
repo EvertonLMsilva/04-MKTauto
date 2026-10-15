@@ -234,10 +234,22 @@ export class ManualDistributionService {
   }
   // Shared read-only gates for official publishing; never creates approval or a
   // manual publication record. Revalidate on every external mutation.
+  revokeApproval(value: unknown) {
+    return this.repository.revokeApproval(value, this.now());
+  }
   validateForPublication(hash: any): any {
     const p: any = this.#package(hash);
     this.#gate(p);
-    if (this.getReview(hash)?.mediaDecision.decision !== 'APPROVED')
+    const review = this.getReview(hash);
+    if (
+      Number(
+        this.repository.db.prepare('PRAGMA user_version').get()?.user_version,
+      ) >= 42 &&
+      review &&
+      this.repository.isApprovalRevoked(review.contentHash)
+    )
+      fail('DISTRIBUTION_APPROVAL_REVOKED');
+    if (review?.mediaDecision.decision !== 'APPROVED')
       fail('DISTRIBUTION_APPROVAL_REQUIRED');
     return p;
   }

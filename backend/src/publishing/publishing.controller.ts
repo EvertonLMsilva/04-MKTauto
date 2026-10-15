@@ -1,3 +1,4 @@
+import { InstagramPublicationService } from './application/instagram-publication.service.js';
 import {
   Body,
   Controller,
@@ -16,6 +17,8 @@ import { exact } from './domain/manual-distribution-contracts.js';
 export class PublishingController {
   constructor(
     @Inject(PublishingService) private readonly publishing: PublishingService,
+    @Inject(InstagramPublicationService)
+    private readonly instagram: InstagramPublicationService,
   ) {}
   private respond(action: () => unknown) {
     try {
@@ -68,6 +71,9 @@ export class PublishingController {
       this.publishing.review(input, key),
     );
   }
+  @Post('approval-revocations') revokeApproval(@Body() value: unknown) {
+    return this.respond(() => this.publishing.revokeApproval(value));
+  }
   @Get('packages/:hash/review') packageReview(@Param('hash') hash: string) {
     return this.respond(() => this.publishing.packageReview(hash));
   }
@@ -89,6 +95,17 @@ export class PublishingController {
   }
   @Get('manual-publications/:id/results') results(@Param('id') id: string) {
     return this.respond(() => this.publishing.results(id));
+  }
+  @Post('social-operations/:id/receipt') async receipt(
+    @Param('id') id: string,
+  ) {
+    try {
+      return await this.instagram.receipt(id);
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
   }
   @Get('social-operations/:id') socialOperation(@Param('id') id: string) {
     return this.respond(() => this.publishing.socialOperation(id));

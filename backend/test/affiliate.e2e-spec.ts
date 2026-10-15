@@ -1,3 +1,4 @@
+import { SqliteAffiliateRepository } from '../src/affiliate/infrastructure/sqlite-affiliate.repository.js';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -97,7 +98,14 @@ describe('Affiliate HTTP catalog (e2e)', () => {
       (await request(http).get('/affiliate/briefings/brief_001').expect(200))
         .body,
     ).toEqual(saved);
-    expect(fixture.catalog.getBriefing('brief_001')).toEqual(saved);
+    const reader = new SqliteAffiliateRepository(fixture.database, {
+      readOnly: true,
+    });
+    try {
+      expect(reader.getBriefing('brief_001')).toEqual(saved);
+    } finally {
+      reader.close();
+    }
     await request(http)
       .post('/affiliate/campaigns')
       .send({

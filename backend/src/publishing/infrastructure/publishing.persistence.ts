@@ -1,3 +1,4 @@
+import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 import type { AffiliateRepositoryFactory } from '../../affiliate/application/ports/affiliate-repository.port.js';
@@ -27,10 +28,10 @@ export class PublishingPersistence implements PublishingStore {
     try {
       db.exec('PRAGMA busy_timeout=5000');
       if (
-        ![39, 40, 41].includes(
+        ![39, 40, 41, 42].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
-        (Number(db.prepare('PRAGMA user_version').get()?.user_version) === 41 &&
+        (Number(db.prepare('PRAGMA user_version').get()?.user_version) >= 41 &&
           db
             .prepare('SELECT name FROM schema_migrations WHERE version=41')
             .get()?.name !== '041_campaign_orchestration')
@@ -85,6 +86,44 @@ export class PublishingPersistence implements PublishingStore {
         }
       },
     };
+  }
+  openInstagram(mode: 'fake' | 'live') {
+    const db = this.database(this.path, false);
+    let session: ReturnType<PublishingPersistence['open']> | undefined;
+    try {
+      if (
+        db.prepare('PRAGMA user_version').get()?.user_version !== 42 ||
+        db.prepare('SELECT name FROM schema_migrations WHERE version=42').get()
+          ?.name !== '042_instagram_publication'
+      )
+        throw new Error('SOCIAL_SCHEMA_42_REQUIRED');
+      const social = new SocialPublicationRepository({ db }, { mode });
+      session = this.open();
+      // Reuse catalog/evidence ports, with manual rules on the same connection as intent/reservation.
+      const manual = new ManualDistributionService({
+        repository: new ManualDistributionRepository(
+          { db },
+          session.manual.repository.catalog,
+        ),
+        evidence: session.manual.evidence,
+      });
+      return {
+        social,
+        manual,
+        reservations: new InstagramPublicationRepository(db),
+        close() {
+          try {
+            session!.close();
+          } finally {
+            db.close();
+          }
+        },
+      };
+    } catch (error) {
+      session?.close();
+      db.close();
+      throw error;
+    }
   }
   social<T>(action: (repository: SocialPublicationRepository) => T): T {
     const db = this.database(this.socialPath, true);

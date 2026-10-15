@@ -10,7 +10,7 @@ mkdirSync(dirname(path), { recursive: true });
 const db = new DatabaseSync(path);
 try {
   provisionSchema(db);
-  console.log('SQLite schema 41 provisioned');
+  console.log('SQLite schema 42 provisioned');
 } finally {
   db.close();
 }

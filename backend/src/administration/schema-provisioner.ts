@@ -1,3 +1,4 @@
+import { provisionSocialContext } from '../publishing/infrastructure/social-publication.repository.js';
 import { readFileSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
@@ -6,7 +7,7 @@ import { DatabaseSync } from 'node:sqlite';
 const directory = fileURLToPath(
   new URL('../../../src/db/migrations/', import.meta.url),
 );
-const migrations = Array.from({ length: 41 }, (_, i) => {
+const migrations = Array.from({ length: 42 }, (_, i) => {
   const version = i + 1;
   const files = readdirSync(directory).filter(
     (name) =>
@@ -66,9 +67,9 @@ function financialExtensions(db: DatabaseSync) {
     throw new Error('SCHEMA_EXTENSION_INCOMPATIBLE');
 }
 
-export function provisionSchema(db: DatabaseSync, target = 41): void {
+export function provisionSchema(db: DatabaseSync, target = 42): void {
   if (db.isTransaction) throw new Error('SCHEMA_TRANSACTION_ACTIVE');
-  if (!Number.isInteger(target) || target < 1 || target > 41)
+  if (!Number.isInteger(target) || target < 1 || target > 42)
     throw new Error('SCHEMA_VERSION_UNSUPPORTED');
   db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
@@ -101,12 +102,21 @@ export function provisionSchema(db: DatabaseSync, target = 41): void {
         'SELECT operation_id FROM global_paid_operations LIMIT 0',
       ).all();
     }
-    if (target === 41) {
+    if (target >= 41) {
       db.prepare(
         'SELECT execution_id,claim_token,version FROM campaign_executions LIMIT 0',
       ).all();
       db.prepare(
         'SELECT execution_id,sequence,evidence_json FROM campaign_execution_events LIMIT 0',
+      ).all();
+    }
+    if (target >= 42) {
+      provisionSocialContext(db);
+      db.prepare(
+        'SELECT review_hash FROM instagram_approval_revocations LIMIT 0',
+      ).all();
+      db.prepare(
+        'SELECT operation_id FROM instagram_publication_reservations LIMIT 0',
       ).all();
     }
     if (db.prepare('PRAGMA foreign_key_check').all().length)

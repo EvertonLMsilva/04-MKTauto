@@ -14,7 +14,7 @@ describe('P4 schema 41', () => {
         ? db.prepare('SELECT * FROM schema_migrations').all()
         : [];
       const historical = v ? db.prepare('SELECT * FROM trend_runs').all() : [];
-      provisionSchema(db);
+      provisionSchema(db, 41);
       if (v)
         expect(db.prepare('SELECT * FROM trend_runs').all()).toEqual(
           historical,
@@ -25,7 +25,7 @@ describe('P4 schema 41', () => {
       ).toEqual(before);
       db.prepare('SELECT * FROM campaign_executions').all();
       db.prepare('SELECT * FROM campaign_execution_events').all();
-      provisionSchema(db);
+      provisionSchema(db, 41);
       expect(
         db.prepare('SELECT COUNT(*) n FROM schema_migrations').get()?.n,
       ).toBe(41);
@@ -39,7 +39,7 @@ describe('P4 schema 41', () => {
       provisionSchema(db, 40);
       const history = db.prepare('SELECT * FROM schema_migrations').all();
       db.exec('CREATE TABLE campaign_execution_events(incompatible TEXT)');
-      expect(() => provisionSchema(db)).toThrow();
+      expect(() => provisionSchema(db, 41)).toThrow();
       expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(40);
       expect(db.prepare('SELECT * FROM schema_migrations').all()).toEqual(
         history,

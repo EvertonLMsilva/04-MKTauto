@@ -1,3 +1,4 @@
+import { SqliteOperationsRepository } from '../src/content-operations/infrastructure/sqlite-operations.repository.js';
 import { Test } from '@nestjs/testing';
 import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
@@ -12,6 +13,7 @@ import { affiliateRunFixture } from './support/affiliate-run-fixture.js';
 describe('Content Operations HTTP without pipelines', () => {
   let fixture: ReturnType<typeof affiliateRunFixture>;
   let app: INestApplication<App>;
+  let reader: SqliteOperationsRepository;
   const command = {
     schemaVersion: 'pipeline-handoff/1.0.0',
     pipelineRunId: 'run_http',
@@ -21,6 +23,9 @@ describe('Content Operations HTTP without pipelines', () => {
   };
   beforeEach(async () => {
     fixture = affiliateRunFixture();
+    reader = new SqliteOperationsRepository(fixture.database, {
+      readOnly: true,
+    });
     const module = await Test.createTestingModule({ imports: [AppModule] })
       .overrideProvider(PROJECT_DATABASE)
       .useValue(fixture.database)
@@ -34,6 +39,7 @@ describe('Content Operations HTTP without pipelines', () => {
   });
   afterEach(async () => {
     await app?.close();
+    reader?.close();
     fixture?.cleanup();
   });
   it('starts and replays an exact snapshot, then binds via public Affiliate API', async () => {
@@ -72,7 +78,7 @@ describe('Content Operations HTTP without pipelines', () => {
       app
         .get<ContentOperationsService>(CONTENT_OPERATIONS)
         .resolveAffiliateBriefing('run_http', 'brief_001'),
-    ).toEqual(fixture.catalog.resolveRunBriefing('run_http'));
+    ).toEqual(fixture.catalog.getBriefing('brief_001'));
     expect(
       (
         await request(app.getHttpServer())
@@ -138,7 +144,7 @@ describe('Content Operations HTTP without pipelines', () => {
           .get('/content-operations/runs/run_http')
           .expect(200)
       ).body,
-    ).toEqual(fixture.base.getRun('run_http'));
+    ).toEqual(reader.getRun('run_http'));
   });
   it('rejects invalid commands, missing references and sanitizes database failures', async () => {
     await request(app.getHttpServer())
@@ -168,6 +174,6 @@ describe('Content Operations HTTP without pipelines', () => {
       .send({ nextState: 'SUCCEEDED', completedAt: '2026-10-14T12:01:00Z' })
       .expect(500);
     expect(failed.body).toEqual({ code: 'CONTENT_OPERATION_FAILED' });
-    expect(fixture.base.getRun('run_http').state).toBe('RUNNING');
+    expect(reader.getRun('run_http')?.state).toBe('RUNNING');
   });
 });

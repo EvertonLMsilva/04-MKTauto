@@ -6,6 +6,7 @@ import type {
   IdeaScoringPolicy,
 } from '../domain/content.types.js';
 import { createHash } from 'node:crypto';
+import { validateProjectSnapshot } from '../../project/domain/project-contracts.js';
 import { ContractValidationError } from '../../project/domain/project.errors.js';
 import {
   validateArtifactLineage,
@@ -64,14 +65,14 @@ export class IdeaRepository extends ContentDatabase {
         );
       const ideas = createIdeaCandidates({
         ...value,
-        projectSnapshot: run.projectSnapshot,
+        projectSnapshot: validateProjectSnapshot(run.projectSnapshot),
         shortlist,
       });
       const insights = this.#loadInsights(ideas, value);
       this.#validateReferenceEvidence(ideas, insights);
       const scores = scoreIdeaCandidates({
         ideas,
-        projectSnapshot: run.projectSnapshot,
+        projectSnapshot: validateProjectSnapshot(run.projectSnapshot),
         shortlist,
         policy,
       });

@@ -1,3 +1,7 @@
+import {
+  provisionSocialContext,
+  SocialPublicationRepository,
+} from '../src/publishing/infrastructure/social-publication.repository.js';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
@@ -25,9 +29,6 @@ import {
 } from '../src/media/domain/quality-control-contracts.js';
 const affiliate = await import(
   new URL('../../src/affiliate-repository.js', import.meta.url).href
-);
-const social = await import(
-  new URL('../../src/social-publication-repository.js', import.meta.url).href
 );
 const fixtures = await import(
   new URL('../../test/affiliate-fixtures.js', import.meta.url).href
@@ -87,9 +88,8 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
           root,
         ),
       );
-      const socialRepository = new social.SocialPublicationRepository(
-        f.repository,
-      );
+      provisionSocialContext(f.repository.db);
+      const socialRepository = new SocialPublicationRepository(f.repository);
       const operation = socialRepository.prepare(
         {
           packageHash: hash,

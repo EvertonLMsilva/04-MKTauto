@@ -70,17 +70,7 @@ export class SqliteOperationsRepository extends SqliteProjectRepository {
         },
       ],
     });
-    const identity = createHash('sha256')
-      .update(
-        JSON.stringify({
-          pipelineRunId: run.pipelineRunId,
-          projectId: run.projectId,
-          projectVersion: run.projectVersion,
-          startedAt: run.startedAt,
-          projectSnapshot: run.projectSnapshot,
-        }),
-      )
-      .digest('hex');
+    const identity = pipelineIdentity(run);
     return this.transaction(() => {
       const prior = this.db
         .prepare(
@@ -88,9 +78,11 @@ export class SqliteOperationsRepository extends SqliteProjectRepository {
         )
         .get(run.pipelineRunId);
       if (prior) {
-        if (prior.identity_hash !== identity)
+        const stored = this.getRun(run.pipelineRunId)!;
+        const canonical = validatePipelineRun(stored);
+        if (pipelineIdentity(canonical) !== identity)
           throw new OperationsError('PIPELINE_RUN_ID_REUSED', 'pipelineRunId');
-        return this.getRun(run.pipelineRunId)!;
+        return stored;
       }
       this.db
         .prepare(
@@ -130,27 +122,36 @@ export class SqliteOperationsRepository extends SqliteProjectRepository {
       )
       .all(id);
     try {
-      return validatePipelineRun({
-        schemaVersion: row.schema_version,
-        pipelineRunId: row.pipeline_run_id,
-        projectId: row.project_id,
-        projectVersion: row.project_version,
-        projectSnapshot: JSON.parse(String(row.project_snapshot_json)),
-        state: row.state,
-        startedAt: row.started_at,
-        completedAt: row.completed_at,
-        error: parse(row.error_json),
-        transitions: [...transitions, ...recoveries]
-          .sort((a, b) =>
-            String(a.changed_at).localeCompare(String(b.changed_at)),
-          )
-          .map((t) => ({
-            previousState: t.previous_state,
-            nextState: t.next_state,
-            changedAt: t.changed_at,
-            error: parse(t.error_json),
-          })),
-      });
+      const run = validatePipelineRun(
+        {
+          schemaVersion: row.schema_version,
+          pipelineRunId: row.pipeline_run_id,
+          projectId: row.project_id,
+          projectVersion: row.project_version,
+          projectSnapshot: JSON.parse(String(row.project_snapshot_json)),
+          state: row.state,
+          startedAt: row.started_at,
+          completedAt: row.completed_at,
+          error: parse(row.error_json),
+          transitions: [...transitions, ...recoveries]
+            .sort((a, b) =>
+              String(a.changed_at).localeCompare(String(b.changed_at)),
+            )
+            .map((t) => ({
+              previousState: t.previous_state,
+              nextState: t.next_state,
+              changedAt: t.changed_at,
+              error: parse(t.error_json),
+            })),
+        },
+        true,
+      );
+      if (pipelineIdentity(run) !== row.identity_hash)
+        throw new OperationsError(
+          'INVALID_PERSISTED_PIPELINE_RUN',
+          'identityHash',
+        );
+      return run;
     } catch (cause) {
       if (
         cause instanceof ContractValidationError ||
@@ -264,6 +265,19 @@ export class SqliteOperationsRepository extends SqliteProjectRepository {
       return this.getRun(pipelineRunId)!;
     });
   }
+}
+function pipelineIdentity(run: PipelineRun): string {
+  return createHash('sha256')
+    .update(
+      JSON.stringify({
+        pipelineRunId: run.pipelineRunId,
+        projectId: run.projectId,
+        projectVersion: run.projectVersion,
+        startedAt: run.startedAt,
+        projectSnapshot: run.projectSnapshot,
+      }),
+    )
+    .digest('hex');
 }
 function requireId(id: unknown) {
   if (
