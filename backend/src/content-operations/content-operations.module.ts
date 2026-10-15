@@ -18,7 +18,7 @@ import { ContentOperationsController } from './content-operations.controller.js'
 @Module({
   imports: [ProjectModule, AffiliateModule],
   controllers: [ContentOperationsController],
-  exports: [CONTENT_OPERATIONS],
+  exports: [CONTENT_OPERATIONS, CONTENT_OPERATIONS_STORE],
   providers: [
     OperationsPersistence,
     {
