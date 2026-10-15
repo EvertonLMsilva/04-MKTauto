@@ -18,12 +18,18 @@ export function validateConfiguration(env: NodeJS.ProcessEnv) {
   const db = new DatabaseSync(database, { readOnly: true });
   try {
     if (
-      db.prepare('PRAGMA user_version').get()?.user_version !== 40 ||
-      db.prepare('SELECT name FROM schema_migrations WHERE version=40').get()
-        ?.name !== '040_financial_adjustments'
+      db.prepare('PRAGMA user_version').get()?.user_version !== 41 ||
+      db.prepare('SELECT name FROM schema_migrations WHERE version=41').get()
+        ?.name !== '041_campaign_orchestration'
     )
-      throw new Error('SCHEMA_40_REQUIRED: run db:provision explicitly');
+      throw new Error('SCHEMA_41_REQUIRED: run db:provision explicitly');
     db.prepare('SELECT adjustment_id FROM cost_adjustments LIMIT 0').all();
+    db.prepare(
+      'SELECT execution_id,claim_token FROM campaign_executions LIMIT 0',
+    ).all();
+    db.prepare(
+      'SELECT sequence,evidence_json FROM campaign_execution_events LIMIT 0',
+    ).all();
   } finally {
     db.close();
   }

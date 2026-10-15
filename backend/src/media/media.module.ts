@@ -41,11 +41,11 @@ import {
         operations: ContentOperationsService,
         content: ContentService,
         runner: ProcessRunner,
+        path: string | null,
       ) =>
         new LocalFlowService(
           new LocalFlowRuntime(
             () => {
-              const path = process.env.PROJECT_API_DATABASE;
               if (!path)
                 throw new Error(
                   'PROJECT_API_DATABASE must be an explicit absolute path',
@@ -63,6 +63,7 @@ import {
         CONTENT_OPERATIONS,
         ContentService,
         FFMPEG_PROCESS_RUNNER,
+        MEDIA_DATABASE,
       ],
     },
     {

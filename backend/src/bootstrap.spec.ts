@@ -6,7 +6,7 @@ import { provisionSchema } from './administration/schema-provisioner.js';
 import { bootstrap, validateConfiguration } from './bootstrap.js';
 
 describe('official bootstrap', () => {
-  it('requires an absolute existing schema 40 database and a valid TCP port', () => {
+  it('requires an absolute existing schema 41 database and a valid TCP port', () => {
     expect(() => validateConfiguration({})).toThrow('PROJECT_API_DATABASE');
     expect(() =>
       validateConfiguration({ PROJECT_API_DATABASE: 'relative.sqlite' }),
@@ -27,7 +27,7 @@ describe('official bootstrap', () => {
       provisionSchema(db, 39);
       expect(() =>
         validateConfiguration({ PROJECT_API_DATABASE: path }),
-      ).toThrow('SCHEMA_40_REQUIRED');
+      ).toThrow('SCHEMA_41_REQUIRED');
       expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(39);
     } finally {
       db.close();

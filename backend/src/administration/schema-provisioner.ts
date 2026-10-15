@@ -6,7 +6,7 @@ import { DatabaseSync } from 'node:sqlite';
 const directory = fileURLToPath(
   new URL('../../../src/db/migrations/', import.meta.url),
 );
-const migrations = Array.from({ length: 40 }, (_, i) => {
+const migrations = Array.from({ length: 41 }, (_, i) => {
   const version = i + 1;
   const files = readdirSync(directory).filter(
     (name) =>
@@ -66,9 +66,9 @@ function financialExtensions(db: DatabaseSync) {
     throw new Error('SCHEMA_EXTENSION_INCOMPATIBLE');
 }
 
-export function provisionSchema(db: DatabaseSync, target = 40): void {
+export function provisionSchema(db: DatabaseSync, target = 41): void {
   if (db.isTransaction) throw new Error('SCHEMA_TRANSACTION_ACTIVE');
-  if (!Number.isInteger(target) || target < 1 || target > 40)
+  if (!Number.isInteger(target) || target < 1 || target > 41)
     throw new Error('SCHEMA_VERSION_UNSUPPORTED');
   db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
@@ -92,13 +92,21 @@ export function provisionSchema(db: DatabaseSync, target = 40): void {
       ).run(migration.version, migration.name, new Date().toISOString());
       db.exec(`PRAGMA user_version=${migration.version}`);
     }
-    if (target === 40) {
+    if (target >= 40) {
       financialExtensions(db);
       // Prepare these queries even on reexecution to reject incomplete schema 40.
       db.prepare('SELECT adjustment_id FROM cost_adjustments LIMIT 0').all();
       db.prepare('SELECT operation_id FROM tts_operations LIMIT 0').all();
       db.prepare(
         'SELECT operation_id FROM global_paid_operations LIMIT 0',
+      ).all();
+    }
+    if (target === 41) {
+      db.prepare(
+        'SELECT execution_id,claim_token,version FROM campaign_executions LIMIT 0',
+      ).all();
+      db.prepare(
+        'SELECT execution_id,sequence,evidence_json FROM campaign_execution_events LIMIT 0',
       ).all();
     }
     if (db.prepare('PRAGMA foreign_key_check').all().length)

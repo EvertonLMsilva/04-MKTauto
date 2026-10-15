@@ -9,6 +9,7 @@ import { MediaModule } from './media/media.module.js';
 import { FinanceModule } from './finance/finance.module.js';
 import { PublishingModule } from './publishing/publishing.module.js';
 import { ResearchModule } from './research/research.module.js';
+import { CampaignOrchestrationModule } from './content-operations/campaign-orchestration.module.js';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { ResearchModule } from './research/research.module.js';
     FinanceModule,
     PublishingModule,
     ResearchModule,
+    CampaignOrchestrationModule,
   ],
   controllers: [AppController],
   providers: [AppService],

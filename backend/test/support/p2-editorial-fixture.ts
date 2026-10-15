@@ -41,7 +41,7 @@ export function p2EditorialFixture({
   const database = join(directory, 'catalog.sqlite');
   const schema = new DatabaseSync(database);
   try {
-    provisionSchema(schema);
+    provisionSchema(schema, 40);
   } finally {
     schema.close();
   }

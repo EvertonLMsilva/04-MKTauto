@@ -17,8 +17,8 @@ export class CostAdjustmentsRepository {
     return this.ledger.db;
   }
   enabled(): boolean {
-    return (
-      Number(this.db.prepare('PRAGMA user_version').get()?.user_version) === 40
+    return [40, 41].includes(
+      Number(this.db.prepare('PRAGMA user_version').get()?.user_version),
     );
   }
   private schema() {

@@ -27,9 +27,13 @@ export class PublishingPersistence implements PublishingStore {
     try {
       db.exec('PRAGMA busy_timeout=5000');
       if (
-        ![39, 40].includes(
+        ![39, 40, 41].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
-        )
+        ) ||
+        (Number(db.prepare('PRAGMA user_version').get()?.user_version) === 41 &&
+          db
+            .prepare('SELECT name FROM schema_migrations WHERE version=41')
+            .get()?.name !== '041_campaign_orchestration')
       )
         throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
       if (!readOnly) {

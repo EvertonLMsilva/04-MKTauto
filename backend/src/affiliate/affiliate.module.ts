@@ -31,6 +31,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     DiscoveryController,
   ],
   exports: [
+    AffiliateService,
     AFFILIATE_RUN_CONTEXT,
     AFFILIATE_REPOSITORY,
     AffiliateDiscoveryService,

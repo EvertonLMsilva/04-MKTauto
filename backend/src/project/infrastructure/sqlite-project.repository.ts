@@ -21,9 +21,15 @@ export class SqliteProjectRepository implements ProjectRepository {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40].includes(
+        ![39, 40, 41].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
-        )
+        ) ||
+        (Number(
+          preflight.prepare('PRAGMA user_version').get()?.user_version,
+        ) === 41 &&
+          preflight
+            .prepare('SELECT name FROM schema_migrations WHERE version=41')
+            .get()?.name !== '041_campaign_orchestration')
       )
         throw failure(
           'PROJECT_SCHEMA_VERSION_UNSUPPORTED',
