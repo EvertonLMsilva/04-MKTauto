@@ -126,6 +126,36 @@ export class SqliteVideoFinancialCommitmentsReader implements VideoFinancialComm
     return result;
   }
 }
+export class SqliteTtsFinancialSourcesReader {
+  constructor(private readonly db: FinancialDatabase) {}
+  audioConfiguration(id: string): unknown {
+    const row = this.db
+      .prepare(
+        "SELECT identity_hash,payload_json FROM p4_artifacts WHERE kind='audio_config' AND artifact_id=?",
+      )
+      .get(id);
+    if (!row) return null;
+    const value = JSON.parse(row.payload_json);
+    if (adaptationHash(value) !== row.identity_hash)
+      ttsFail('P4_PERSISTED_INTEGRITY_INVALID');
+    return value;
+  }
+  videoSource(id: string) {
+    const row = this.db
+      .prepare(
+        'SELECT state,request_hash,request_json,result_json FROM video_generation_operations WHERE generation_request_id=?',
+      )
+      .get(id);
+    return row
+      ? {
+          state: row.state,
+          requestHash: row.request_hash,
+          request: JSON.parse(row.request_json),
+          result: row.result_json ? JSON.parse(row.result_json) : null,
+        }
+      : null;
+  }
+}
 export class SqliteTtsFinancialCommitmentsReader implements TtsFinancialCommitmentsReader {
   constructor(private readonly db: FinancialDatabase) {}
   exists() {

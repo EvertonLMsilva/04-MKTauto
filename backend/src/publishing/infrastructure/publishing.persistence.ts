@@ -26,7 +26,11 @@ export class PublishingPersistence implements PublishingStore {
     let db = new DatabaseSync(path, { readOnly: true });
     try {
       db.exec('PRAGMA busy_timeout=5000');
-      if (db.prepare('PRAGMA user_version').get()?.user_version !== 39)
+      if (
+        ![39, 40].includes(
+          Number(db.prepare('PRAGMA user_version').get()?.user_version),
+        )
+      )
         throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
       if (!readOnly) {
         db.close();

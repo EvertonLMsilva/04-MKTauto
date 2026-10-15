@@ -27,6 +27,7 @@ import type {
   FinancialAttributionReader,
 } from '../application/financial-readers.port.js';
 import type { CostLedgerRepository } from './cost-ledger.repository.js';
+import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
 const GLOBAL_DEFAULTS = Object.freeze({
   dailyUsd: '1',
   monthlyUsd: '20',
@@ -48,6 +49,11 @@ export class FinanceGate {
   }
   getTts(id: string): any {
     return this.tts.getTts(id);
+  }
+  // Called only by the TTS repository while its write transaction owns the session.
+  ttsCampaignUsage(id: string): CampaignUsage {
+    affiliateIdentifier(id, 'campaignId');
+    return this.#usage(id);
   }
   getUsage(id: string): CampaignUsage {
     affiliateIdentifier(id, 'campaignId');
@@ -191,26 +197,39 @@ export class FinanceGate {
     }
     if (this.tts.exists())
       for (const row of this.tts.list()) {
+        const adjustments = new CostAdjustmentsRepository(this.repository);
         const op = this.getTts(row.operation_id),
           actual = usdUnits(op.billing?.actualCostUsd ?? '0'),
           maximum = usdUnits(op.request.reservationUsd);
-        add(
-          op.createdAt,
-          actual > maximum ? actual : maximum,
-          ['SUBMITTING', 'UNKNOWN'].includes(op.state),
-        );
         const cost = this.repository.getCostEvent(
           `tts_cost:${row.operation_id}`,
+        );
+        const v2 = adjustments.enabled();
+        const unresolved =
+          ['SUBMITTING', 'UNKNOWN'].includes(op.state) ||
+          (v2 && (!op.billing || !op.reconciliationReference));
+        const net = v2 && cost ? adjustments.netUnits(cost) : actual;
+        const realized = net > actual ? net : actual;
+        add(
+          op.createdAt,
+          v2 && !unresolved
+            ? realized
+            : realized > maximum
+              ? realized
+              : maximum,
+          unresolved,
         );
         if (
           cost &&
           cost.pipelineRunId === op.request.operation.pipelineRunId &&
           cost.origin === 'openai' &&
           cost.currency === 'USD' &&
-          cost.amount === (op.billing?.actualCostUsd ?? op.request.estimatedUsd)
+          (v2 ||
+            cost.amount ===
+              (op.billing?.actualCostUsd ?? op.request.estimatedUsd))
         )
           accounted.add(cost.costEventId);
-        if (actual > maximum)
+        if (!v2 && actual > maximum)
           fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
       }
     for (const cost of this.db
@@ -355,6 +374,8 @@ export class FinanceGate {
         fail('GLOBAL_OPERATION_RECONCILIATION_REQUIRED', 'operationId');
       const at = now ?? op.created_at;
       const proof = JSON.parse(op.proof_json);
+      if (proof.kind === 'MANUAL_TTS_RESERVATION')
+        fail('TTS_FINANCIAL_GUARANTEE_REQUIRED', 'ceiling');
       if (proof.campaignId) {
         const usage = this.#usage(proof.campaignId);
         if (usage.hasUnknown || usage.hasCeilingBreach)
@@ -572,23 +593,35 @@ export class FinanceGate {
       }
     if (this.tts.exists()) {
       for (const row of this.tts.list(campaignId)) {
+        const adjustments = new CostAdjustmentsRepository(this.repository);
         const operation = this.getTts(row.operation_id);
         const reservation = usdUnits(operation.request.reservationUsd),
           actual = usdUnits(operation.billing?.actualCostUsd ?? '0');
-        total += actual > reservation ? actual : reservation;
-        if (['SUBMITTING', 'UNKNOWN'].includes(operation.state))
-          hasUnknown = true;
-        if (actual > reservation) hasCeilingBreach = true;
         const event = this.repository.getCostEvent(
           `tts_cost:${row.operation_id}`,
         );
+        const v2 = adjustments.enabled();
+        const unresolved =
+          ['SUBMITTING', 'UNKNOWN'].includes(operation.state) ||
+          (v2 && (!operation.billing || !operation.reconciliationReference));
+        const net = v2 && event ? adjustments.netUnits(event) : actual;
+        const realized = net > actual ? net : actual;
+        total +=
+          v2 && !unresolved
+            ? realized
+            : realized > reservation
+              ? realized
+              : reservation;
+        if (unresolved) hasUnknown = true;
+        if (!v2 && actual > reservation) hasCeilingBreach = true;
         if (
           event &&
           event.pipelineRunId === operation.request.operation.pipelineRunId &&
           event.origin === 'openai' &&
-          event.amount ===
-            (operation.billing?.actualCostUsd ??
-              operation.request.estimatedUsd) &&
+          (v2 ||
+            event.amount ===
+              (operation.billing?.actualCostUsd ??
+                operation.request.estimatedUsd)) &&
           event.currency === 'USD'
         )
           accountedCostIds.add(event.costEventId);

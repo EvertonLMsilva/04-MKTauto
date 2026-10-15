@@ -49,7 +49,11 @@ export class FinanceDatabase {
       throw new Error('PROJECT_API_DATABASE must be an explicit absolute path');
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
-      if (preflight.prepare('PRAGMA user_version').get()?.user_version !== 39)
+      if (
+        ![39, 40].includes(
+          Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
+        )
+      )
         throw new Error('FINANCE_SCHEMA_VERSION_UNSUPPORTED');
     } finally {
       preflight.close();

@@ -20,7 +20,11 @@ export class ContentDatabase {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       preflight.exec('PRAGMA busy_timeout=5000;');
-      if (preflight.prepare('PRAGMA user_version').get()?.user_version !== 39)
+      if (
+        ![39, 40].includes(
+          Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
+        )
+      )
         throw new Error('CONTENT_SCHEMA_VERSION_UNSUPPORTED');
     } finally {
       preflight.close();

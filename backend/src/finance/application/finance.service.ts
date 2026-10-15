@@ -1,6 +1,40 @@
 import type { FinanceStore, FinanceRepository } from './finance.port.js';
+import type { TtsResult } from '../domain/tts-financial-contracts.js';
 export class FinanceService {
   constructor(private readonly store: FinanceStore) {}
+  registerTtsAdjustment(value: unknown) {
+    return this.session((r) => r.registerTtsAdjustment(value));
+  }
+  getTtsStatementV2(id: string) {
+    return this.session((r) => r.getTtsStatementV2(id));
+  }
+  getLedgerV2ByPipelineRun(id: string) {
+    return this.session((r) => r.getLedgerV2ByPipelineRun(id));
+  }
+  approveTts(plan: unknown, approval: unknown) {
+    return this.session((r) => r.approveTts(plan, approval));
+  }
+  beginTts(plan: unknown, now?: string) {
+    return this.session((r) => r.beginTts(plan, now));
+  }
+  getTts(id: string) {
+    return this.session((r) => r.getTts(id));
+  }
+  dispatchTts(id: string, now?: string) {
+    return this.session((r) => r.dispatchTts(id, now));
+  }
+  markTtsUnknown(id: string, errorCode?: string | null) {
+    return this.session((r) => r.markTtsUnknown(id, errorCode));
+  }
+  recordTtsResult(id: string, result: TtsResult) {
+    return this.session((r) => r.recordTtsResult(id, result));
+  }
+  reconcileTts(id: string, evidenceReference: string) {
+    return this.session((r) => r.reconcileTts(id, evidenceReference));
+  }
+  accountTts(id: string) {
+    return this.session((r) => r.accountTts(id));
+  }
   private session<T>(action: (session: FinanceRepository) => T): T {
     const session = this.store.open();
     try {

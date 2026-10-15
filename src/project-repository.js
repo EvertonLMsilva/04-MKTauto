@@ -65,7 +65,7 @@ export class ProjectRepository {
     try {
       if (readOnly) {
         this.db.exec("PRAGMA query_only = ON;");
-        if (![39].includes(this.db.prepare('PRAGMA user_version').get().user_version))
+        if (![39, 40].includes(this.db.prepare('PRAGMA user_version').get().user_version))
           throw failure('PROJECT_SCHEMA_VERSION_UNSUPPORTED', 'schemaVersion', 'pré-verificação exige schema existente atualizado');
       } else {
         this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
@@ -239,6 +239,9 @@ export class ProjectRepository {
 
   #migrate() {
     const current = this.db.prepare("PRAGMA user_version").get().user_version;
+    // Schema 40 is an additive Finance extension, applied explicitly elsewhere.
+    // Keep automatic legacy provisioning at 39; never downgrade a known 40.
+    if (current === 40) return;
     if (current > PROJECT_SCHEMA_VERSION) {
       throw failure("PROJECT_SCHEMA_VERSION_UNSUPPORTED", "schemaVersion", `versão ${current}; máximo suportado ${PROJECT_SCHEMA_VERSION}`);
     }

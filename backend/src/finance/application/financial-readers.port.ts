@@ -28,6 +28,12 @@ export interface TtsFinancialCommitmentsReader {
   list(campaignId?: string): { operation_id: string }[];
   getTts(id: string): any;
 }
+export interface TtsFinancialSourceReader {
+  audioConfiguration(id: string): unknown;
+  videoSource(
+    id: string,
+  ): { state: string; requestHash: string; request: any; result: any } | null;
+}
 export interface FinancialAttributionReader {
   costEvents(
     provider: string,

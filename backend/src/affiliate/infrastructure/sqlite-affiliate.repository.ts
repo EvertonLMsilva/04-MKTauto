@@ -31,7 +31,11 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
     // Opening read-only first guarantees an absent file is never created.
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
-      if (preflight.prepare('PRAGMA user_version').get()?.user_version !== 39)
+      if (
+        ![39, 40].includes(
+          Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
+        )
+      )
         throw failure('AFFILIATE_SCHEMA_VERSION_UNSUPPORTED', 'schemaVersion');
     } finally {
       preflight.close();

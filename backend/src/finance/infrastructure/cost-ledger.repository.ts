@@ -197,6 +197,8 @@ export class CostLedgerRepository extends FinanceDatabase {
   }
 
   #transaction(operation: any): any {
+    // A Finance reconciliation owns commit/rollback when recording its cost.
+    if (this.db.isTransaction) return operation();
     try {
       this.db.exec('BEGIN IMMEDIATE');
       const result = operation();

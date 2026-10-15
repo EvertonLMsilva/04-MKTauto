@@ -39,6 +39,17 @@ export class FinanceController {
   @Get('operations/:id') operation(@Param('id') id: string) {
     return this.respond(() => this.finance.getGlobalOperation(id));
   }
+  @Get('tts/:id') tts(@Param('id') id: string) {
+    return this.respond(() => this.finance.getTts(id));
+  }
+  @Get('tts/:id/statement') ttsStatement(@Param('id') id: string) {
+    return this.respond(() => this.finance.getTtsStatementV2(id));
+  }
+  @Get('ledger-v2/:pipelineRunId') ledgerV2(
+    @Param('pipelineRunId') id: string,
+  ) {
+    return this.respond(() => this.finance.getLedgerV2ByPipelineRun(id));
+  }
   private respond<T>(action: () => T): T {
     let result: T;
     try {
