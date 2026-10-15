@@ -12,9 +12,8 @@ import {
   DAY_ONE,
   DAY_TWO,
 } from '../../test/support/research-catalog-fixture.js';
-const { ProjectRepository } = await import(
-  new URL('../../../src/project-repository.js', import.meta.url).href
-);
+import { DatabaseSync } from 'node:sqlite';
+import { provisionSchema } from '../administration/schema-provisioner.js';
 
 describe('Research local HTTP boundary', () => {
   let app: INestApplication;
@@ -22,7 +21,12 @@ describe('Research local HTTP boundary', () => {
   beforeEach(async () => {
     directory = mkdtempSync(join(tmpdir(), 'research-http-'));
     const database = join(directory, 'catalog.sqlite');
-    new ProjectRepository(database).close();
+    const db = new DatabaseSync(database);
+    try {
+      provisionSchema(db);
+    } finally {
+      db.close();
+    }
     const module = await Test.createTestingModule({ imports: [ResearchModule] })
       .overrideProvider(RESEARCH_DATABASE)
       .useValue(database)
