@@ -3,7 +3,7 @@ import { dirname, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { createProjectSnapshot, validateProjectSnapshot } from "./domain/project-contracts.js";
 
-const PROJECT_SCHEMA_VERSION = 30;
+const PROJECT_SCHEMA_VERSION = 39;
 const MIGRATIONS = new Map([
   [1, ["001_trend_catalog", migration("001_trend_catalog.sql")]],
   [2, ["002_daily_catalog", migration("002_daily_catalog.sql")]],
@@ -35,6 +35,18 @@ const MIGRATIONS = new Map([
   [28, ["028_mixed_media_composition", migration("028_mixed_media_composition.sql")]],
   [29, ["029_affiliate_catalog", migration("029_affiliate_catalog.sql")]],
   [30, ["030_script_generation_claims", migration("030_script_generation_claims.sql")]],
+  [31, ["031_video_generation_budget", migration("031_video_generation_budget.sql")]],
+  [32, ["032_video_generation_billing", migration("032_video_generation_billing.sql")]],
+  // Alternate deployed 31/32 used fal_* tables. Keep their names/data; add missing
+  // current tables without rewriting migration history or legacy operations.
+  [33, ["033_live_video_approval", compatibleVideoMigration("031_video_generation_budget.sql")
+    + compatibleVideoMigration("032_video_generation_billing.sql") + migration("033_live_video_approval.sql")]],
+  [34, ["034_p4_video", migration("034_p4_video.sql")]],
+  [35, ["035_manual_distribution", migration("035_manual_distribution.sql")]],
+  [36, ["036_social_publication", migration("036_social_publication.sql")]],
+  [37, ["037_affiliate_editorial", migration("037_affiliate_editorial.sql")]],
+  [38, ["038_commercial_automation", migration("038_commercial_automation.sql")]],
+  [39, ["039_affiliate_discovery", migration("039_affiliate_discovery.sql")]],
 ]);
 
 export class ProjectRepositoryError extends Error {
@@ -47,12 +59,18 @@ export class ProjectRepositoryError extends Error {
 }
 
 export class ProjectRepository {
-  constructor(path = resolve("data/mktauto.sqlite")) {
-    mkdirSync(dirname(path), { recursive: true });
-    this.db = new DatabaseSync(path);
-    this.db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA busy_timeout = 5000;");
+  constructor(path = resolve("data/mktauto.sqlite"), { readOnly = false } = {}) {
+    if (!readOnly) mkdirSync(dirname(path), { recursive: true });
+    this.db = new DatabaseSync(path, { readOnly });
     try {
-      this.#migrate();
+      if (readOnly) {
+        this.db.exec("PRAGMA query_only = ON;");
+        if (![39].includes(this.db.prepare('PRAGMA user_version').get().user_version))
+          throw failure('PROJECT_SCHEMA_VERSION_UNSUPPORTED', 'schemaVersion', 'pré-verificação exige schema existente atualizado');
+      } else {
+        this.db.exec("PRAGMA busy_timeout = 5000; PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+        this.#migrate();
+      }
     } catch (caught) {
       this.db.close();
       throw caught;
@@ -272,6 +290,11 @@ function normalizeSnapshot(value) {
 
 function migration(name) {
   return readFileSync(new URL(`./db/migrations/${name}`, import.meta.url), "utf8");
+}
+function compatibleVideoMigration(name) {
+  return migration(name).replace(/CREATE TABLE /g, 'CREATE TABLE IF NOT EXISTS ')
+    .replace(/CREATE UNIQUE INDEX /g, 'CREATE UNIQUE INDEX IF NOT EXISTS ')
+    .replace(/CREATE TRIGGER /g, 'CREATE TRIGGER IF NOT EXISTS ');
 }
 
 function requireProjectId(value) {
