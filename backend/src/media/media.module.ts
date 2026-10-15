@@ -14,6 +14,10 @@ import { FinanceModule } from '../finance/finance.module.js';
 import { FinanceService } from '../finance/application/finance.service.js';
 import { NarrationService } from './application/narration.service.js';
 import { NarrationController } from './narration.controller.js';
+import { LocalFlowController } from './local-flow.controller.js';
+import { LocalFlowService } from './application/local-flow.service.js';
+import { LocalFlowRuntime } from './infrastructure/local-flow.runtime.js';
+import { LocalFlowRepository } from './infrastructure/local-flow.repository.js';
 import { createVideoComposer } from './infrastructure/ffmpeg-composer.provider.js';
 import {
   FFMPEG_PROCESS_RUNNER,
@@ -27,9 +31,40 @@ import {
 
 @Module({
   imports: [ContentModule, ContentOperationsModule, FinanceModule],
-  controllers: [MediaController, NarrationController],
-  exports: [MediaService, NarrationService],
+  controllers: [MediaController, NarrationController, LocalFlowController],
+  exports: [MediaService, NarrationService, LocalFlowService],
   providers: [
+    {
+      provide: LocalFlowService,
+      useFactory: (
+        media: MediaService,
+        operations: ContentOperationsService,
+        content: ContentService,
+        runner: ProcessRunner,
+      ) =>
+        new LocalFlowService(
+          new LocalFlowRuntime(
+            () => {
+              const path = process.env.PROJECT_API_DATABASE;
+              if (!path)
+                throw new Error(
+                  'PROJECT_API_DATABASE must be an explicit absolute path',
+                );
+              return new LocalFlowRepository(path, operations, content);
+            },
+            media,
+            process.env,
+            undefined,
+            runner,
+          ),
+        ),
+      inject: [
+        MediaService,
+        CONTENT_OPERATIONS,
+        ContentService,
+        FFMPEG_PROCESS_RUNNER,
+      ],
+    },
     {
       provide: NarrationService,
       useFactory: (finance: FinanceService) => new NarrationService(finance),
