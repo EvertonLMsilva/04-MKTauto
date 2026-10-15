@@ -10,6 +10,10 @@ import {
 } from './infrastructure/media.persistence.js';
 import { MediaService } from './application/media.service.js';
 import { MediaController } from './media.controller.js';
+import { FinanceModule } from '../finance/finance.module.js';
+import { FinanceService } from '../finance/application/finance.service.js';
+import { NarrationService } from './application/narration.service.js';
+import { NarrationController } from './narration.controller.js';
 import { createVideoComposer } from './infrastructure/ffmpeg-composer.provider.js';
 import {
   FFMPEG_PROCESS_RUNNER,
@@ -22,10 +26,15 @@ import {
 } from './application/video-composition.port.js';
 
 @Module({
-  imports: [ContentModule, ContentOperationsModule],
-  controllers: [MediaController],
-  exports: [MediaService],
+  imports: [ContentModule, ContentOperationsModule, FinanceModule],
+  controllers: [MediaController, NarrationController],
+  exports: [MediaService, NarrationService],
   providers: [
+    {
+      provide: NarrationService,
+      useFactory: (finance: FinanceService) => new NarrationService(finance),
+      inject: [FinanceService],
+    },
     { provide: FFMPEG_PROCESS_RUNNER, useValue: runProcess },
     {
       provide: VIDEO_COMPOSER,
