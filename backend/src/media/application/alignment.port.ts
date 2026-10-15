@@ -3,7 +3,12 @@ import type {
   AlignmentInput,
 } from '../domain/alignment-contracts.js';
 export interface AudioAligner {
-  align(input: AlignmentInput, actualAudio: Buffer): Promise<AlignmentEvidence>;
+  readonly identity: string;
+  align(
+    input: AlignmentInput,
+    actualAudio: Buffer,
+    signal?: AbortSignal,
+  ): Promise<AlignmentEvidence>;
 }
 // Provenance verification is separate from the self-declared status and digest.
 export interface AlignmentProvenanceVerifier {

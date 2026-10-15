@@ -7,6 +7,9 @@ export class LocalFlowService {
   acceptAlignment(value: unknown) {
     return this.runtime.acceptAlignment(value);
   }
+  alignAudio(id: string) {
+    return this.runtime.alignAudio(id);
+  }
   subtitles(id: string) {
     return this.runtime.subtitles(id);
   }

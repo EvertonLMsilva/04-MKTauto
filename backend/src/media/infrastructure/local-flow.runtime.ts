@@ -1,10 +1,16 @@
 import { writeFileSync } from 'node:fs';
+import { mkdir, rmdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
 import type { MediaService } from '../application/media.service.js';
-import type { AlignmentProvenanceVerifier } from '../application/alignment.port.js';
+import type {
+  AudioAligner,
+  AlignmentProvenanceVerifier,
+} from '../application/alignment.port.js';
+import { LocalPythonAligner } from './local-python-aligner.js';
 import { PinnedAlignmentVerifier } from '../application/alignment.port.js';
 import {
   localFail,
+  alignmentHash,
   serializeSubtitles,
   validateAlignment,
   type AlignmentEvidence,
@@ -42,6 +48,7 @@ export class LocalFlowRuntime {
       ),
     ),
     private readonly runner: ProcessRunner = runProcess,
+    private readonly aligner: AudioAligner = new LocalPythonAligner(env),
   ) {}
   private files() {
     const root = this.env.LOCAL_MEDIA_EVIDENCE_ROOT;
@@ -170,7 +177,10 @@ export class LocalFlowRuntime {
   async acceptAlignment(raw: unknown) {
     const evidence = validateAlignment(raw);
     const chain = this.session((r) => this.bind(r, evidence));
-    if (!(await this.provenance.verify(evidence, chain.audio)))
+    if (
+      !(await this.provenance.verify(evidence, chain.audio)) &&
+      !(await new LocalPythonAligner(this.env).verify(evidence, chain.audio))
+    )
       localFail('ALIGNMENT_PROVENANCE_UNVERIFIED');
     return this.session((r) =>
       r.transaction(() => {
@@ -189,6 +199,93 @@ export class LocalFlowRuntime {
         return evidence;
       }),
     );
+  }
+  async alignAudio(id: string): Promise<AlignmentEvidence> {
+    if (!/^[a-z0-9][a-z0-9_:-]{2,199}$/.test(id))
+      localFail('ALIGNMENT_ID_INVALID');
+    const input = this.session((r) => {
+      const voice = r.getVoiceTrack(id);
+      if (!voice) localFail('LOCAL_AUDIO_NOT_FOUND');
+      const script = r.getScript(voice.scriptId);
+      if (!script) localFail('LOCAL_SCRIPT_NOT_FOUND');
+      // Only explicitly authorized, ingested local audio may be aligned.
+      if (
+        !['AUTHORIZED_RECORDING', 'OPERATOR_RECORDING'].includes(
+          voice.origin,
+        ) ||
+        !r.getArtifact(id)?.generationMetadata
+      )
+        localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      const authorization = r.document<{ authorization?: unknown }>(
+        id,
+        'voice_track',
+        this.files(),
+      );
+      if (!authorization.authorization)
+        localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      return {
+        audioAssetId: id,
+        audioSha256: voice.contentHash,
+        scriptId: script.scriptId,
+        scriptVersion: script.revision,
+        scriptTextSha256: alignmentHash(script.fullNarration),
+        durationMs: voice.durationMilliseconds,
+        canonicalText: script.fullNarration,
+      };
+    });
+    const alignmentId =
+      'align_' + alignmentHash({ input, configuration: this.aligner.identity });
+    const replay = () =>
+      this.session((r) =>
+        r.getArtifact(alignmentId) ? this.alignment(r, alignmentId) : null,
+      );
+    const previous = replay();
+    if (previous) return previous;
+    const running = this.inFlight.get(alignmentId);
+    if (running) return running;
+    const operation = (async () => {
+      const root = this.env.LOCAL_MEDIA_EVIDENCE_ROOT;
+      if (!root) localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
+      await mkdir(root, { recursive: true });
+      const lock = join(root, alignmentId + '.lock');
+      // Atomic filesystem lock also serializes distinct Nest workers. A stale lock fails closed.
+      const deadline = Date.now() + 185000;
+      for (;;) {
+        try {
+          await mkdir(lock);
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          const saved = replay();
+          if (saved) return saved;
+          if (Date.now() > deadline) localFail('ALIGNMENT_BUSY_CONFLICT');
+          await new Promise((resolveWait) => setTimeout(resolveWait, 100));
+        }
+      }
+      try {
+        const saved = replay();
+        if (saved) return saved;
+        const chain = this.session((r) =>
+          this.bind(r, { input } as AlignmentEvidence),
+        );
+        const evidence = validateAlignment(
+          await this.aligner.align(input, chain.audio),
+        );
+        if (alignmentHash(evidence.input) !== alignmentHash(input))
+          localFail('ALIGNMENT_BINDING_MISMATCH');
+        if (evidence.output.alignmentId !== alignmentId)
+          localFail('ALIGNMENT_BINDING_MISMATCH');
+        return await this.acceptAlignment(evidence);
+      } finally {
+        await rmdir(lock);
+      }
+    })();
+    this.inFlight.set(alignmentId, operation);
+    try {
+      return await operation;
+    } finally {
+      this.inFlight.delete(alignmentId);
+    }
   }
   private alignment(r: LocalFlowRepository, id: string) {
     const evidence = validateAlignment(

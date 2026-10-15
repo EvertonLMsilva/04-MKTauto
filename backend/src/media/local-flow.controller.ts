@@ -43,6 +43,9 @@ export class LocalFlowController {
   @Post('alignments') alignment(@Body() value: unknown) {
     return this.respond(() => this.flow.acceptAlignment(value));
   }
+  @Post('audio/:id/align') alignAudio(@Param('id') id: string) {
+    return this.respond(() => this.flow.alignAudio(id));
+  }
   @Post('alignments/:id/subtitles') subtitles(@Param('id') id: string) {
     return this.respond(() => this.flow.subtitles(id));
   }

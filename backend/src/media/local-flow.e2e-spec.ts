@@ -3,6 +3,8 @@ import request from 'supertest';
 import { LocalFlowController } from './local-flow.controller.js';
 import { LocalFlowService } from './application/local-flow.service.js';
 import { localFixture } from '../../test/support/local-flow-fixture.js';
+import { LocalFlowRuntime } from './infrastructure/local-flow.runtime.js';
+import { alignmentHash } from './domain/alignment-contracts.js';
 it('serves local audiovisual endpoints, blocked preview and verified MP4 bytes', async () => {
   const f = await localFixture();
   const module = await Test.createTestingModule({
@@ -37,6 +39,49 @@ it('serves local audiovisual endpoints, blocked preview and verified MP4 bytes',
         },
       })
       .expect(201);
+    await request(http)
+      .post(`${base}/audio/local_http_voice/align`)
+      .expect(503)
+      .expect((r) =>
+        expect(r.body.code).toBe('ALIGNMENT_CONFIGURATION_REQUIRED'),
+      );
+    await request(http).post(`${base}/audio/unknown_voice/align`).expect(404);
+    // HTTP generation uses an explicit test double, never claimed as real alignment.
+    const generated = new LocalFlowRuntime(
+      f.open,
+      f.media,
+      { ...f.env, LOCAL_MEDIA_EVIDENCE_ROOT: f.root + '/evidence' },
+      { verify: async () => true },
+      undefined,
+      {
+        identity: 'http-fixture',
+        async align(input) {
+          const evidence = structuredClone(f.evidence);
+          evidence.input = input;
+          evidence.output.alignmentId =
+            'align_' + alignmentHash({ input, configuration: 'http-fixture' });
+          evidence.output.evidenceHash = alignmentHash(evidence);
+          return evidence;
+        },
+      },
+    );
+    const service = module.get(LocalFlowService);
+    const originalAlign = service.alignAudio.bind(service);
+    service.alignAudio = (id) => generated.alignAudio(id);
+    try {
+      const aligned = await request(http)
+        .post(`${base}/audio/local_http_voice/align`)
+        .expect(201);
+      await request(http)
+        .post(`${base}/audio/local_http_voice/align`)
+        .expect(201)
+        .expect((r) => expect(r.body).toEqual(aligned.body));
+      await request(http)
+        .post(`${base}/alignments/${aligned.body.output.alignmentId}/subtitles`)
+        .expect(201);
+    } finally {
+      service.alignAudio = originalAlign;
+    }
     await request(http)
       .post(`${base}/alignments/missing/subtitles`)
       .expect(404);
