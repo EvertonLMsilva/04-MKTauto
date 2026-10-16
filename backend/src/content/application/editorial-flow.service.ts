@@ -1,4 +1,5 @@
 import type { ContentService } from './content.service.js';
+import type { AffiliateService } from '../../affiliate/application/affiliate.service.js';
 import { validateProjectSnapshot } from '../../project/domain/project-contracts.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
 import {
@@ -56,6 +57,7 @@ export class EditorialFlowService {
     private readonly operations: OperationsStore,
     private readonly finance: Pick<FinanceService, 'getGlobalOperation'>,
     private readonly provider: EditorialProvider,
+    private readonly catalog: Pick<AffiliateService, 'resolveBriefingSource'>,
   ) {}
   async generate(value: unknown) {
     const request = validateRequest(value);
@@ -90,6 +92,9 @@ export class EditorialFlowService {
         ),
       );
       const shortlist = this.research.getShortlist(request.researchShortlistId);
+      const campaignSource = await this.catalog.resolveBriefingSource(
+        briefing.briefingId,
+      );
       const references =
         request.referenceInsightId === null
           ? null
@@ -117,6 +122,7 @@ export class EditorialFlowService {
       const providerInput: EditorialProviderInput = immutable(
         structuredClone({
           briefing,
+          campaignSource,
           shortlist,
           references,
           projectSnapshot: validateProjectSnapshot(run.projectSnapshot),
@@ -125,6 +131,9 @@ export class EditorialFlowService {
       const requestHash = affiliateHash({
         request,
         briefingHash: briefing.contentHash,
+        ...(campaignSource
+          ? { campaignSourceHash: affiliateHash(campaignSource) }
+          : {}),
         shortlistHash: shortlist.contentHash,
         referenceHash: references?.contentHash ?? null,
         provider: this.provider.configurationVersion,

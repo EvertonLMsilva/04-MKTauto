@@ -189,6 +189,10 @@ export class AffiliateService {
       repo.getCampaignSource(id, revision),
     );
   }
+  async resolveBriefingSource(id: string) {
+    affiliateIdentifier(id, 'briefingId');
+    return this.withRepository(true, (repo) => repo.resolveBriefingSource(id));
+  }
   async registerProduct(command: unknown) {
     commandEnvelope(command, ['idempotencyKey', 'product']);
     const product = validateAffiliateProduct(command.product);

@@ -222,6 +222,43 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
       throw failure('AFFILIATE_HASH_MISMATCH', 'briefingId');
     return briefing;
   }
+  resolveBriefingSource(id: string): AffiliateCampaignSourceV1 | null {
+    const briefing = this.getBriefing(id);
+    if (!briefing) throw failure('AFFILIATE_BRIEFING_NOT_FOUND', 'briefingId');
+    // Supported historical catalogs predate the additive Shopee extension.
+    const version = Number(
+      this.db.prepare('PRAGMA user_version').get()?.user_version,
+    );
+    if (version < 42) return null;
+    const rows = this.db
+      .prepare(
+        'SELECT source_id,revision,briefing_id FROM affiliate_campaign_sources_v1 WHERE briefing_id=? OR (campaign_id=? AND campaign_revision=?)',
+      )
+      .all(id, briefing.campaignId, briefing.campaignRevision);
+    const linked = rows.filter((row) => row.briefing_id === id);
+    if (linked.length > 1)
+      throw failure('AFFILIATE_SOURCE_AMBIGUOUS', 'briefingId');
+    if (!linked.length) {
+      if (rows.length)
+        throw failure('AFFILIATE_SOURCE_BRIEFING_NOT_BOUND', 'briefingId');
+      return null;
+    }
+    const row = linked[0];
+    const source = this.getCampaignSource(
+      String(row.source_id),
+      Number(row.revision),
+    );
+    if (
+      !source ||
+      source.briefingId !== id ||
+      source.campaignId !== briefing.campaignId ||
+      source.campaignRevision !== briefing.campaignRevision ||
+      source.productId !== briefing.productId ||
+      source.productRevision !== briefing.productRevision
+    )
+      throw failure('AFFILIATE_SOURCE_SCOPE_MISMATCH', 'briefingId');
+    return source;
+  }
   getCampaignSource(
     id: string,
     revision: number,
