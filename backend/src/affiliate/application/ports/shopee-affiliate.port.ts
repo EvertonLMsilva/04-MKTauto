@@ -1,6 +1,8 @@
 import type {
   ShopeeAffiliateOffer,
   ShopeeAffiliateLink,
+  ShopeeAffiliateLinkInput,
+  ShopeeGeneratedAffiliateLink,
   ShopeeOfferQuery,
   ShopeeAffiliateOfferPage,
 } from '../../domain/shopee-affiliate-contracts.js';
@@ -9,6 +11,9 @@ export const SHOPEE_AFFILIATE = Symbol('SHOPEE_AFFILIATE');
 
 export interface ShopeeAffiliatePort {
   queryOffers(): Promise<ShopeeAffiliateOffer[]>;
+  generateLink(
+    input: ShopeeAffiliateLinkInput,
+  ): Promise<ShopeeGeneratedAffiliateLink>;
   generateLink(input: { offerId: string }): Promise<ShopeeAffiliateLink>;
 }
 
