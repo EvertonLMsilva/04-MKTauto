@@ -1,8 +1,16 @@
 import { createHash } from 'node:crypto';
-import type { ShopeeAffiliatePort } from '../application/ports/shopee-affiliate.port.js';
+import type { ShopeeOfferPagePort } from '../application/ports/shopee-affiliate.port.js';
+import {
+  buildShopeeOffersQuery,
+  normalizeShopeeOfferPage,
+  ShopeeOffersError,
+  SHOPEE_OFFER_FIELDS,
+} from './shopee-offers.js';
 import type {
   ShopeeAffiliateOffer,
   ShopeeAffiliateLink,
+  ShopeeOfferQuery,
+  ShopeeAffiliateOfferPage,
 } from '../domain/shopee-affiliate-contracts.js';
 
 // Primary technical evidence: official Explorer source and embedded V2 schema.
@@ -28,6 +36,12 @@ export interface ShopeeLiveMetadata {
 
 type Credentials = { appId: string; secret: string };
 type Dependencies = { fetch: typeof globalThis.fetch; now?: () => number };
+type Operation =
+  | { kind: 'probe'; request: { query: string } }
+  | { kind: 'offers'; request: ReturnType<typeof buildShopeeOffersQuery> };
+
+type OperationResult = ShopeeAffiliateOffer[] | ShopeeAffiliateOfferPage;
+
 function record(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
@@ -38,7 +52,7 @@ function fail(code: string): never {
   throw new LiveError(code);
 }
 
-export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
+export class ShopeeAffiliateLive implements ShopeeOfferPagePort {
   #credentials: Credentials;
   #fetch: typeof globalThis.fetch;
   #now: () => number;
@@ -71,10 +85,28 @@ export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
   }
 
   async queryOffers(): Promise<ShopeeAffiliateOffer[]> {
-    return this.#execute();
+    return this.#execute({
+      kind: 'probe',
+      request: { query: SHOPEE_OFFERS_QUERY },
+    });
   }
 
-  async #execute(): Promise<ShopeeAffiliateOffer[]> {
+  async queryOfferPage(
+    input: ShopeeOfferQuery = {},
+  ): Promise<ShopeeAffiliateOfferPage> {
+    return this.#execute({
+      kind: 'offers',
+      request: buildShopeeOffersQuery(input),
+    });
+  }
+
+  #execute(
+    operation: Extract<Operation, { kind: 'probe' }>,
+  ): Promise<ShopeeAffiliateOffer[]>;
+  #execute(
+    operation: Extract<Operation, { kind: 'offers' }>,
+  ): Promise<ShopeeAffiliateOfferPage>;
+  async #execute(operation: Operation): Promise<OperationResult> {
     if (this.#metadata.requestCount !== 0)
       fail('SHOPEE_LIVE_ALREADY_ATTEMPTED');
     // Reserve synchronously: concurrent calls and failures cannot consume a retry.
@@ -88,11 +120,14 @@ export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
           reject(new LiveError('SHOPEE_LIVE_TIMEOUT'));
         }, TIMEOUT_MS);
       });
-      return await Promise.race([this.#read(controller.signal), deadline]);
+      return await Promise.race([
+        this.#read(controller.signal, operation),
+        deadline,
+      ]);
     } catch (error) {
       const code = controller.signal.aborted
         ? 'SHOPEE_LIVE_TIMEOUT'
-        : error instanceof LiveError
+        : error instanceof LiveError || error instanceof ShopeeOffersError
           ? error.message
           : 'SHOPEE_LIVE_TRANSPORT_ERROR';
       if (!this.#metadata.errorCodes.length) this.#metadata.errorCodes = [code];
@@ -104,11 +139,14 @@ export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
     }
   }
 
-  async #read(signal: AbortSignal): Promise<ShopeeAffiliateOffer[]> {
+  async #read(
+    signal: AbortSignal,
+    operation: Operation,
+  ): Promise<OperationResult> {
     const now = this.#now();
     const timestamp = String(Math.ceil(now / 1000));
     // Same string, same UTF-8 bytes for signing and transport; no reserialization.
-    const payload = JSON.stringify({ query: SHOPEE_OFFERS_QUERY });
+    const payload = JSON.stringify(operation.request);
     const { appId, secret } = this.#credentials;
     const signature = createHash('sha256')
       .update(appId + timestamp + payload + secret, 'utf8')
@@ -157,7 +195,15 @@ export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
     }
     let body: unknown;
     try {
-      body = JSON.parse(Buffer.concat(chunks).toString('utf8')) as unknown;
+      body = JSON.parse(
+        Buffer.concat(chunks).toString('utf8'),
+        (key: string, value: unknown, context?: { source?: string }) =>
+          operation.kind === 'offers' &&
+          (key === 'itemId' || key === 'shopId') &&
+          typeof value === 'number'
+            ? (context?.source ?? value)
+            : value,
+      ) as unknown;
     } catch {
       fail('SHOPEE_LIVE_RESPONSE_INVALID');
     }
@@ -187,6 +233,37 @@ export class ShopeeAffiliateLive implements ShopeeAffiliatePort {
     const data = body.data;
     const connection = record(data) ? data.productOfferV2 : null;
     const nodes = record(connection) ? connection.nodes : null;
+    if (operation.kind === 'offers') {
+      const { variables } = operation.request;
+      const result = normalizeShopeeOfferPage(
+        body,
+        variables,
+        new Date(now).toISOString(),
+      );
+      if (signal.aborted) fail('SHOPEE_LIVE_TIMEOUT');
+      this.#metadata.authentication = 'SUCCESS';
+      this.#metadata.offersReturned = result.offers.length;
+      const info =
+        record(connection) && record(connection.pageInfo)
+          ? connection.pageInfo
+          : {};
+      const returnedKeys = new Set([
+        'data',
+        'productOfferV2',
+        'nodes',
+        'pageInfo',
+        ...Object.keys(info),
+        ...(Array.isArray(nodes)
+          ? nodes.flatMap((node: unknown) =>
+              record(node) ? Object.keys(node) : [],
+            )
+          : []),
+      ]);
+      this.#metadata.contractFields = SHOPEE_OFFER_FIELDS.filter((key) =>
+        returnedKeys.has(key),
+      );
+      return result;
+    }
     if (!Array.isArray(nodes) || nodes.length > 1)
       fail('SHOPEE_LIVE_RESPONSE_INVALID');
     const offers = nodes.map((node: unknown): ShopeeAffiliateOffer => {
