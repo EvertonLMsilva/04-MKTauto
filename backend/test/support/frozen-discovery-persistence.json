@@ -1,0 +1,699 @@
+{
+  "schemaVersion": 1,
+  "configured": {
+    "candidates": [
+      {
+        "schemaVersion": "affiliate-discovery/1.0.0",
+        "sourceId": "shopee_feed",
+        "sourceType": "AUTHORIZED_CSV",
+        "externalProductId": "item_001",
+        "productName": "Organizador de casa",
+        "brand": "Marca exemplo",
+        "category": "organizacao",
+        "affiliateUrl": "https://s.shopee.com.br/item_001",
+        "affiliateAssociationEvidence": {
+          "status": "VERIFIED",
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "af4f371fbffa2556418a03c3b508d6d42bed376400c0e3e364d64b38cdd3b190"
+          }
+        },
+        "price": {
+          "status": "UNKNOWN",
+          "amount": null,
+          "evidence": null
+        },
+        "currency": null,
+        "observedAt": null,
+        "availability": {
+          "status": "VERIFIED",
+          "value": "AVAILABLE",
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "0975af7674ab6dffad1378b73dfb18e34c631fc2516ae5c329ac484be843f5d2"
+          }
+        },
+        "mediaRightsEvidence": {
+          "status": "VERIFIED",
+          "materials": [
+            {
+              "assetType": "IMAGE",
+              "technicalProperties": {
+                "format": "png",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": null
+              },
+              "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+              "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            },
+            {
+              "assetType": "VIDEO",
+              "technicalProperties": {
+                "format": "mp4",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": 5000
+              },
+              "contentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+              "mediaReference": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            },
+            {
+              "assetType": "IMAGE",
+              "technicalProperties": {
+                "format": "png",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": null
+              },
+              "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+              "mediaReference": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            }
+          ],
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "8802fffd49202dbcc8779d6e710ea60328ced7a9dc7f458310b824ddfd692d67"
+          }
+        },
+        "productSpecificationEvidence": {
+          "status": "VERIFIED",
+          "product": {
+            "schemaVersion": "affiliate-product/1.0.0",
+            "productId": "prod_001",
+            "revision": 1,
+            "name": "Organizador de casa",
+            "brand": "Marca exemplo",
+            "attributes": [
+              {
+                "name": "connectivity",
+                "value": "Bluetooth",
+                "evidenceRef": "ev_spec"
+              }
+            ],
+            "media": [
+              {
+                "mediaRef": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                "evidenceRef": "ev_rights"
+              },
+              {
+                "mediaRef": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                "evidenceRef": "ev_rights"
+              },
+              {
+                "mediaRef": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                "evidenceRef": "ev_rights"
+              }
+            ],
+            "evidence": [
+              {
+                "id": "ev_spec",
+                "kind": "PRODUCT_SPECIFICATION",
+                "sourceRef": "manual-spec-001",
+                "recordedAt": "2026-10-11T12:00:00Z"
+              },
+              {
+                "id": "ev_rights",
+                "kind": "MEDIA_USAGE_RIGHT",
+                "sourceRef": "authorization-001",
+                "recordedAt": "2026-10-11T12:00:00Z"
+              }
+            ]
+          },
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "52aca9101b7124fd868491e081768b6223ba546416a9b780fe457f8fbd8a5ec2"
+          }
+        },
+        "provenance": {
+          "sourceHash": "6da936680827561660388a8b40f756b20bfff5bc21e37c6da2cac727cc0c107a",
+          "rowNumber": 2,
+          "authorizationRef": "authorized_fixture",
+          "obtainedAt": "2026-10-13T12:00:00.000Z"
+        },
+        "eligibilityStatus": "UNKNOWN",
+        "eligibilityReasons": []
+      }
+    ],
+    "errors": [],
+    "source": [
+      {
+        "feedId": "feed_001",
+        "obtainedAt": "2026-10-13T12:00:00.000Z",
+        "sourceUpdatedAt": null,
+        "sha256": "6da936680827561660388a8b40f756b20bfff5bc21e37c6da2cac727cc0c107a",
+        "sizeBytes": 3947,
+        "recordCount": 1,
+        "validationState": "VALID"
+      }
+    ]
+  },
+  "csv": {
+    "candidates": [
+      {
+        "schemaVersion": "affiliate-discovery/1.0.0",
+        "sourceId": "shopee_feed",
+        "sourceType": "AUTHORIZED_CSV",
+        "externalProductId": "item_001",
+        "productName": "Organizador de casa",
+        "brand": "Marca exemplo",
+        "category": "organizacao",
+        "affiliateUrl": "https://s.shopee.com.br/item_001",
+        "affiliateAssociationEvidence": {
+          "status": "VERIFIED",
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "af4f371fbffa2556418a03c3b508d6d42bed376400c0e3e364d64b38cdd3b190"
+          }
+        },
+        "price": {
+          "status": "UNKNOWN",
+          "amount": null,
+          "evidence": null
+        },
+        "currency": null,
+        "observedAt": null,
+        "availability": {
+          "status": "VERIFIED",
+          "value": "AVAILABLE",
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "0975af7674ab6dffad1378b73dfb18e34c631fc2516ae5c329ac484be843f5d2"
+          }
+        },
+        "mediaRightsEvidence": {
+          "status": "VERIFIED",
+          "materials": [
+            {
+              "assetType": "IMAGE",
+              "technicalProperties": {
+                "format": "png",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": null
+              },
+              "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+              "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            },
+            {
+              "assetType": "VIDEO",
+              "technicalProperties": {
+                "format": "mp4",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": 5000
+              },
+              "contentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+              "mediaReference": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            },
+            {
+              "assetType": "IMAGE",
+              "technicalProperties": {
+                "format": "png",
+                "widthPixels": 90,
+                "heightPixels": 160,
+                "durationMilliseconds": null
+              },
+              "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+              "mediaReference": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+              "origin": "OPERATOR_OWNED",
+              "provider": null,
+              "rights": {
+                "usageBasis": "OWNED",
+                "commercialUseAllowed": true
+              }
+            }
+          ],
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "8802fffd49202dbcc8779d6e710ea60328ced7a9dc7f458310b824ddfd692d67"
+          }
+        },
+        "productSpecificationEvidence": {
+          "status": "VERIFIED",
+          "product": {
+            "schemaVersion": "affiliate-product/1.0.0",
+            "productId": "prod_001",
+            "revision": 1,
+            "name": "Organizador de casa",
+            "brand": "Marca exemplo",
+            "attributes": [
+              {
+                "name": "connectivity",
+                "value": "Bluetooth",
+                "evidenceRef": "ev_spec"
+              }
+            ],
+            "media": [
+              {
+                "mediaRef": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                "evidenceRef": "ev_rights"
+              },
+              {
+                "mediaRef": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                "evidenceRef": "ev_rights"
+              },
+              {
+                "mediaRef": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                "evidenceRef": "ev_rights"
+              }
+            ],
+            "evidence": [
+              {
+                "id": "ev_spec",
+                "kind": "PRODUCT_SPECIFICATION",
+                "sourceRef": "manual-spec-001",
+                "recordedAt": "2026-10-11T12:00:00Z"
+              },
+              {
+                "id": "ev_rights",
+                "kind": "MEDIA_USAGE_RIGHT",
+                "sourceRef": "authorization-001",
+                "recordedAt": "2026-10-11T12:00:00Z"
+              }
+            ]
+          },
+          "evidence": {
+            "sourceRef": "authorization_fixture",
+            "recordedAt": "2026-10-13T12:00:00Z",
+            "subjectHash": "52aca9101b7124fd868491e081768b6223ba546416a9b780fe457f8fbd8a5ec2"
+          }
+        },
+        "provenance": {
+          "sourceHash": "f53d0292917d8d309149544acf5132a832c5f68617ba850fc469b6cd8d8ee42a",
+          "rowNumber": 2,
+          "authorizationRef": "authorized_fixture",
+          "obtainedAt": "2026-10-13T12:00:00.000Z"
+        },
+        "eligibilityStatus": "UNKNOWN",
+        "eligibilityReasons": []
+      }
+    ],
+    "errors": [
+      {
+        "rowNumber": 3,
+        "code": "DISCOVERY_JSON_INVALID"
+      }
+    ],
+    "source": {
+      "obtainedAt": "2026-10-13T12:00:00.000Z",
+      "sourceUpdatedAt": null,
+      "sha256": "f53d0292917d8d309149544acf5132a832c5f68617ba850fc469b6cd8d8ee42a",
+      "sizeBytes": 3992,
+      "recordCount": 2,
+      "validationState": "VALID"
+    }
+  },
+  "historical": {
+    "decision": {
+      "discoveryRunId": "historical_one",
+      "selection": null,
+      "ranking": {
+        "ranked": [
+          {
+            "candidate": {
+              "schemaVersion": "affiliate-discovery/1.0.0",
+              "sourceId": "shopee_feed",
+              "sourceType": "AUTHORIZED_CSV",
+              "externalProductId": "item_001",
+              "productName": "Organizador de casa",
+              "brand": "Marca exemplo",
+              "category": "organizacao",
+              "affiliateUrl": "https://s.shopee.com.br/item_001",
+              "affiliateAssociationEvidence": {
+                "status": "VERIFIED",
+                "evidence": {
+                  "sourceRef": "authorization_fixture",
+                  "recordedAt": "2026-10-13T12:00:00Z",
+                  "subjectHash": "af4f371fbffa2556418a03c3b508d6d42bed376400c0e3e364d64b38cdd3b190"
+                }
+              },
+              "price": {
+                "status": "UNKNOWN",
+                "amount": null,
+                "evidence": null
+              },
+              "currency": null,
+              "observedAt": null,
+              "availability": {
+                "status": "VERIFIED",
+                "value": "AVAILABLE",
+                "evidence": {
+                  "sourceRef": "authorization_fixture",
+                  "recordedAt": "2026-10-13T12:00:00Z",
+                  "subjectHash": "0975af7674ab6dffad1378b73dfb18e34c631fc2516ae5c329ac484be843f5d2"
+                }
+              },
+              "mediaRightsEvidence": {
+                "status": "VERIFIED",
+                "materials": [
+                  {
+                    "assetType": "IMAGE",
+                    "technicalProperties": {
+                      "format": "png",
+                      "widthPixels": 90,
+                      "heightPixels": 160,
+                      "durationMilliseconds": null
+                    },
+                    "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+                    "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                    "origin": "OPERATOR_OWNED",
+                    "provider": null,
+                    "rights": {
+                      "usageBasis": "OWNED",
+                      "commercialUseAllowed": true
+                    }
+                  },
+                  {
+                    "assetType": "VIDEO",
+                    "technicalProperties": {
+                      "format": "mp4",
+                      "widthPixels": 90,
+                      "heightPixels": 160,
+                      "durationMilliseconds": 5000
+                    },
+                    "contentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+                    "mediaReference": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                    "origin": "OPERATOR_OWNED",
+                    "provider": null,
+                    "rights": {
+                      "usageBasis": "OWNED",
+                      "commercialUseAllowed": true
+                    }
+                  },
+                  {
+                    "assetType": "IMAGE",
+                    "technicalProperties": {
+                      "format": "png",
+                      "widthPixels": 90,
+                      "heightPixels": 160,
+                      "durationMilliseconds": null
+                    },
+                    "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+                    "mediaReference": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                    "origin": "OPERATOR_OWNED",
+                    "provider": null,
+                    "rights": {
+                      "usageBasis": "OWNED",
+                      "commercialUseAllowed": true
+                    }
+                  }
+                ],
+                "evidence": {
+                  "sourceRef": "authorization_fixture",
+                  "recordedAt": "2026-10-13T12:00:00Z",
+                  "subjectHash": "8802fffd49202dbcc8779d6e710ea60328ced7a9dc7f458310b824ddfd692d67"
+                }
+              },
+              "productSpecificationEvidence": {
+                "status": "VERIFIED",
+                "product": {
+                  "schemaVersion": "affiliate-product/1.0.0",
+                  "productId": "prod_001",
+                  "revision": 1,
+                  "name": "Organizador de casa",
+                  "brand": "Marca exemplo",
+                  "attributes": [
+                    {
+                      "name": "connectivity",
+                      "value": "Bluetooth",
+                      "evidenceRef": "ev_spec"
+                    }
+                  ],
+                  "media": [
+                    {
+                      "mediaRef": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                      "evidenceRef": "ev_rights"
+                    },
+                    {
+                      "mediaRef": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                      "evidenceRef": "ev_rights"
+                    },
+                    {
+                      "mediaRef": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                      "evidenceRef": "ev_rights"
+                    }
+                  ],
+                  "evidence": [
+                    {
+                      "id": "ev_spec",
+                      "kind": "PRODUCT_SPECIFICATION",
+                      "sourceRef": "manual-spec-001",
+                      "recordedAt": "2026-10-11T12:00:00Z"
+                    },
+                    {
+                      "id": "ev_rights",
+                      "kind": "MEDIA_USAGE_RIGHT",
+                      "sourceRef": "authorization-001",
+                      "recordedAt": "2026-10-11T12:00:00Z"
+                    }
+                  ]
+                },
+                "evidence": {
+                  "sourceRef": "authorization_fixture",
+                  "recordedAt": "2026-10-13T12:00:00Z",
+                  "subjectHash": "52aca9101b7124fd868491e081768b6223ba546416a9b780fe457f8fbd8a5ec2"
+                }
+              },
+              "provenance": {
+                "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "rowNumber": 2,
+                "authorizationRef": "authorized_fixture",
+                "obtainedAt": "2026-10-13T12:00:00Z"
+              },
+              "eligibilityStatus": "VERIFIED",
+              "eligibilityReasons": []
+            },
+            "score": 700,
+            "components": {
+              "relevance": 100,
+              "evidence": 50,
+              "availability": 100
+            },
+            "reasons": [
+              "NICHE_MATCH",
+              "ASSOCIATION_VERIFIED",
+              "MEDIA_RIGHTS_VERIFIED",
+              "NOT_PREVIOUSLY_USED"
+            ],
+            "policyVersion": "affiliate-ranking/1.0.0"
+          }
+        ],
+        "duplicates": [],
+        "rejected": []
+      },
+      "candidates": [
+        {
+          "schemaVersion": "affiliate-discovery/1.0.0",
+          "sourceId": "shopee_feed",
+          "sourceType": "AUTHORIZED_CSV",
+          "externalProductId": "item_001",
+          "productName": "Organizador de casa",
+          "brand": "Marca exemplo",
+          "category": "organizacao",
+          "affiliateUrl": "https://s.shopee.com.br/item_001",
+          "affiliateAssociationEvidence": {
+            "status": "VERIFIED",
+            "evidence": {
+              "sourceRef": "authorization_fixture",
+              "recordedAt": "2026-10-13T12:00:00Z",
+              "subjectHash": "af4f371fbffa2556418a03c3b508d6d42bed376400c0e3e364d64b38cdd3b190"
+            }
+          },
+          "price": {
+            "status": "UNKNOWN",
+            "amount": null,
+            "evidence": null
+          },
+          "currency": null,
+          "observedAt": null,
+          "availability": {
+            "status": "VERIFIED",
+            "value": "AVAILABLE",
+            "evidence": {
+              "sourceRef": "authorization_fixture",
+              "recordedAt": "2026-10-13T12:00:00Z",
+              "subjectHash": "0975af7674ab6dffad1378b73dfb18e34c631fc2516ae5c329ac484be843f5d2"
+            }
+          },
+          "mediaRightsEvidence": {
+            "status": "VERIFIED",
+            "materials": [
+              {
+                "assetType": "IMAGE",
+                "technicalProperties": {
+                  "format": "png",
+                  "widthPixels": 90,
+                  "heightPixels": 160,
+                  "durationMilliseconds": null
+                },
+                "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+                "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                "origin": "OPERATOR_OWNED",
+                "provider": null,
+                "rights": {
+                  "usageBasis": "OWNED",
+                  "commercialUseAllowed": true
+                }
+              },
+              {
+                "assetType": "VIDEO",
+                "technicalProperties": {
+                  "format": "mp4",
+                  "widthPixels": 90,
+                  "heightPixels": 160,
+                  "durationMilliseconds": 5000
+                },
+                "contentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+                "mediaReference": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                "origin": "OPERATOR_OWNED",
+                "provider": null,
+                "rights": {
+                  "usageBasis": "OWNED",
+                  "commercialUseAllowed": true
+                }
+              },
+              {
+                "assetType": "IMAGE",
+                "technicalProperties": {
+                  "format": "png",
+                  "widthPixels": 90,
+                  "heightPixels": 160,
+                  "durationMilliseconds": null
+                },
+                "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+                "mediaReference": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                "origin": "OPERATOR_OWNED",
+                "provider": null,
+                "rights": {
+                  "usageBasis": "OWNED",
+                  "commercialUseAllowed": true
+                }
+              }
+            ],
+            "evidence": {
+              "sourceRef": "authorization_fixture",
+              "recordedAt": "2026-10-13T12:00:00Z",
+              "subjectHash": "8802fffd49202dbcc8779d6e710ea60328ced7a9dc7f458310b824ddfd692d67"
+            }
+          },
+          "productSpecificationEvidence": {
+            "status": "VERIFIED",
+            "product": {
+              "schemaVersion": "affiliate-product/1.0.0",
+              "productId": "prod_001",
+              "revision": 1,
+              "name": "Organizador de casa",
+              "brand": "Marca exemplo",
+              "attributes": [
+                {
+                  "name": "connectivity",
+                  "value": "Bluetooth",
+                  "evidenceRef": "ev_spec"
+                }
+              ],
+              "media": [
+                {
+                  "mediaRef": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+                  "evidenceRef": "ev_rights"
+                },
+                {
+                  "mediaRef": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+                  "evidenceRef": "ev_rights"
+                },
+                {
+                  "mediaRef": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+                  "evidenceRef": "ev_rights"
+                }
+              ],
+              "evidence": [
+                {
+                  "id": "ev_spec",
+                  "kind": "PRODUCT_SPECIFICATION",
+                  "sourceRef": "manual-spec-001",
+                  "recordedAt": "2026-10-11T12:00:00Z"
+                },
+                {
+                  "id": "ev_rights",
+                  "kind": "MEDIA_USAGE_RIGHT",
+                  "sourceRef": "authorization-001",
+                  "recordedAt": "2026-10-11T12:00:00Z"
+                }
+              ]
+            },
+            "evidence": {
+              "sourceRef": "authorization_fixture",
+              "recordedAt": "2026-10-13T12:00:00Z",
+              "subjectHash": "52aca9101b7124fd868491e081768b6223ba546416a9b780fe457f8fbd8a5ec2"
+            }
+          },
+          "provenance": {
+            "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "rowNumber": 2,
+            "authorizationRef": "authorized_fixture",
+            "obtainedAt": "2026-10-13T12:00:00Z"
+          },
+          "eligibilityStatus": "UNKNOWN",
+          "eligibilityReasons": []
+        }
+      ],
+      "source": {},
+      "errors": [],
+      "policy": {
+        "version": "affiliate-ranking/1.0.0",
+        "relevanceByCategory": {
+          "organizacao": 100,
+          "casa_pratica": 90
+        },
+        "requireAvailability": true,
+        "usePriceInScript": false,
+        "maxPriceAgeHours": 24,
+        "weights": {
+          "relevance": 5,
+          "evidence": 2,
+          "availability": 1
+        },
+        "avoidUsed": true,
+        "allowedAffiliateHosts": ["s.shopee.com.br", "shopee.com.br"]
+      },
+      "evaluatedAt": "2026-10-13T12:00:00Z"
+    },
+    "payloadHash": "d15c6c326ef9196ae6423eb466e40e89405db4acb3c5c7e18e81f5dca01031a6"
+  }
+}

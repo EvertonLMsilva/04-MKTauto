@@ -41,6 +41,15 @@ npm test
 npm start
 ```
 
+`npm test` compila o backend e executa somente as suítes JavaScript em
+`test/*.test.js` no runner Node. Para executar todas as suítes suportadas,
+use `npm run test:all`: Node, testes unitários NestJS, E2E NestJS e testes
+Python do alinhador (requer Python). As suítes NestJS usam Vitest e também
+podem ser executadas com `npm --prefix backend test` e
+`npm --prefix backend run test:e2e`. Os testes Python usam
+`npm run test:python`. O smoke CTC com modelo real permanece opt-in;
+os testes comuns não baixam modelos nem executam APIs pagas.
+
 A aplicação local fica em `http://localhost:3000`. Sem chaves, use a rodada de
 demonstração. Para dados atuais, mantenha o Ollama ativo e configure somente as
 credenciais oficiais necessárias no arquivo `.env`, que não entra no Git.

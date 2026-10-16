@@ -15,3 +15,4 @@ private/
 coverage/
 work/
 outputs/
+dist/

@@ -1,0 +1,1 @@
+export const RESEARCH_DATABASE = Symbol('RESEARCH_DATABASE');

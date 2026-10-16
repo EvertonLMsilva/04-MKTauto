@@ -1,0 +1,1807 @@
+{
+  "schemaVersion": 2,
+  "provenance": [
+    {
+      "path": "src/domain/affiliate-discovery-contracts.js",
+      "sha256": "372abaa536b884688794a77ca0a8e45f9c62dc83e0af47fb056ac411b16bcae8"
+    },
+    {
+      "path": "src/adapters/ffmpeg-video-composer.js",
+      "sha256": "fdacf0c6d4893a3af5b9162358418a301a4bd9c15f108a7bc587ed4da1f0312e"
+    },
+    {
+      "path": "src/domain/media-acquisition-contracts.js",
+      "sha256": "78715970e7acbb4fc60cc53f955960b05efba547a79f288b13ef97023d3ef2d7"
+    },
+    {
+      "path": "src/ffmpeg-video-config.js",
+      "sha256": "8a0ef0066322f353bda01a8d1ba923ea6f0c9080009f6feeed4adb3d1ced7513"
+    }
+  ],
+  "values": [
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "af4f371fbffa2556418a03c3b508d6d42bed376400c0e3e364d64b38cdd3b190"
+    },
+    {
+      "status": "VERIFIED",
+      "evidence": {
+        "$ref": 0
+      }
+    },
+    {
+      "status": "UNKNOWN",
+      "amount": null,
+      "evidence": null
+    },
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "0975af7674ab6dffad1378b73dfb18e34c631fc2516ae5c329ac484be843f5d2"
+    },
+    {
+      "status": "VERIFIED",
+      "value": "AVAILABLE",
+      "evidence": {
+        "$ref": 3
+      }
+    },
+    {
+      "format": "png",
+      "widthPixels": 90,
+      "heightPixels": 160,
+      "durationMilliseconds": null
+    },
+    {
+      "usageBasis": "OWNED",
+      "commercialUseAllowed": true
+    },
+    {
+      "assetType": "IMAGE",
+      "technicalProperties": {
+        "$ref": 5
+      },
+      "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      }
+    },
+    {
+      "format": "mp4",
+      "widthPixels": 90,
+      "heightPixels": 160,
+      "durationMilliseconds": 5000
+    },
+    {
+      "assetType": "VIDEO",
+      "technicalProperties": {
+        "$ref": 8
+      },
+      "contentHash": "2222222222222222222222222222222222222222222222222222222222222222",
+      "mediaReference": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      }
+    },
+    {
+      "assetType": "IMAGE",
+      "technicalProperties": {
+        "$ref": 5
+      },
+      "contentHash": "3333333333333333333333333333333333333333333333333333333333333333",
+      "mediaReference": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      }
+    },
+    [
+      {
+        "$ref": 7
+      },
+      {
+        "$ref": 9
+      },
+      {
+        "$ref": 10
+      }
+    ],
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "8802fffd49202dbcc8779d6e710ea60328ced7a9dc7f458310b824ddfd692d67"
+    },
+    {
+      "status": "VERIFIED",
+      "materials": {
+        "$ref": 11
+      },
+      "evidence": {
+        "$ref": 12
+      }
+    },
+    {
+      "name": "connectivity",
+      "value": "Bluetooth",
+      "evidenceRef": "ev_spec"
+    },
+    [
+      {
+        "$ref": 14
+      }
+    ],
+    {
+      "mediaRef": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+      "evidenceRef": "ev_rights"
+    },
+    {
+      "mediaRef": "media:sha256_2222222222222222222222222222222222222222222222222222222222222222",
+      "evidenceRef": "ev_rights"
+    },
+    {
+      "mediaRef": "media:sha256_3333333333333333333333333333333333333333333333333333333333333333",
+      "evidenceRef": "ev_rights"
+    },
+    [
+      {
+        "$ref": 16
+      },
+      {
+        "$ref": 17
+      },
+      {
+        "$ref": 18
+      }
+    ],
+    {
+      "id": "ev_spec",
+      "kind": "PRODUCT_SPECIFICATION",
+      "sourceRef": "manual-spec-001",
+      "recordedAt": "2026-10-11T12:00:00Z"
+    },
+    {
+      "id": "ev_rights",
+      "kind": "MEDIA_USAGE_RIGHT",
+      "sourceRef": "authorization-001",
+      "recordedAt": "2026-10-11T12:00:00Z"
+    },
+    [
+      {
+        "$ref": 20
+      },
+      {
+        "$ref": 21
+      }
+    ],
+    {
+      "schemaVersion": "affiliate-product/1.0.0",
+      "productId": "prod_001",
+      "revision": 1,
+      "name": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "attributes": {
+        "$ref": 15
+      },
+      "media": {
+        "$ref": 19
+      },
+      "evidence": {
+        "$ref": 22
+      }
+    },
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "52aca9101b7124fd868491e081768b6223ba546416a9b780fe457f8fbd8a5ec2"
+    },
+    {
+      "status": "VERIFIED",
+      "product": {
+        "$ref": 23
+      },
+      "evidence": {
+        "$ref": 24
+      }
+    },
+    {
+      "sourceHash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "rowNumber": 2,
+      "authorizationRef": "authorized_fixture",
+      "obtainedAt": "2026-10-13T12:00:00Z"
+    },
+    [],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "VERIFIED",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "bbd43f47862a751dced86949c09dd48e9a798e26d7a8d772aaf32c0fd80acb4e"
+    },
+    {
+      "status": "VERIFIED",
+      "evidence": {
+        "$ref": 30
+      }
+    },
+    {
+      "sourceRef": "authorization_fixture",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "8b72474793255d8f0210d1f2fcb3da489ee976d03a90b229d6d6c3eecb2bb376"
+    },
+    {
+      "status": "VERIFIED",
+      "value": "AVAILABLE",
+      "evidence": {
+        "$ref": 32
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_002",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_002",
+      "affiliateAssociationEvidence": {
+        "$ref": 31
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 33
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_002",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_002",
+      "affiliateAssociationEvidence": {
+        "$ref": 31
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 33
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "VERIFIED",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "__undefined": true
+    },
+    {
+      "name": "Error",
+      "message": "DISCOVERY_EVIDENCE_REQUIRED",
+      "code": "DISCOVERY_EVIDENCE_REQUIRED",
+      "field": {
+        "$ref": 36
+      },
+      "path": {
+        "$ref": 36
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "other",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    ["NICHE_MISMATCH"],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "other",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "INVALID",
+      "eligibilityReasons": {
+        "$ref": 39
+      }
+    },
+    {
+      "status": "UNKNOWN",
+      "amount": "12.00",
+      "evidence": null
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 41
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 41
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "VERIFIED",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "status": "UNKNOWN",
+      "evidence": null
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 44
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    ["ASSOCIATION_UNKNOWN"],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 44
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 46
+      }
+    },
+    {
+      "status": "UNKNOWN",
+      "materials": {
+        "$ref": 11
+      },
+      "evidence": {
+        "$ref": 12
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 48
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    ["MEDIA_RIGHTS_UNKNOWN"],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 48
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 50
+      }
+    },
+    {
+      "status": "INVALID",
+      "value": null,
+      "evidence": null
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 52
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "UNKNOWN",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    ["AVAILABILITY_INVALID", "PRODUCT_UNAVAILABLE"],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 52
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "INVALID",
+      "eligibilityReasons": {
+        "$ref": 54
+      }
+    },
+    {
+      "relevance": 100,
+      "evidence": 50,
+      "availability": 100
+    },
+    [
+      "NICHE_MATCH",
+      "ASSOCIATION_VERIFIED",
+      "MEDIA_RIGHTS_VERIFIED",
+      "NOT_PREVIOUSLY_USED"
+    ],
+    {
+      "candidate": {
+        "$ref": 29
+      },
+      "score": 700,
+      "components": {
+        "$ref": 56
+      },
+      "reasons": {
+        "$ref": 57
+      },
+      "policyVersion": "affiliate-ranking/1.0.0"
+    },
+    {
+      "candidate": {
+        "$ref": 35
+      },
+      "score": 700,
+      "components": {
+        "$ref": 56
+      },
+      "reasons": {
+        "$ref": 57
+      },
+      "policyVersion": "affiliate-ranking/1.0.0"
+    },
+    [
+      {
+        "$ref": 58
+      },
+      {
+        "$ref": 59
+      }
+    ],
+    {
+      "externalProductId": "item_001",
+      "sourceId": "shopee_feed",
+      "provenance": {
+        "$ref": 26
+      },
+      "reason": "DUPLICATE"
+    },
+    [
+      {
+        "$ref": 61
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 60
+      },
+      "duplicates": {
+        "$ref": 62
+      },
+      "rejected": {
+        "$ref": 27
+      }
+    },
+    [
+      {
+        "$ref": 59
+      }
+    ],
+    ["PRODUCT_ALREADY_USED"],
+    {
+      "externalProductId": "item_001",
+      "reasons": {
+        "$ref": 65
+      }
+    },
+    [
+      {
+        "$ref": 66
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 64
+      },
+      "duplicates": {
+        "$ref": 62
+      },
+      "rejected": {
+        "$ref": 67
+      }
+    },
+    {
+      "ranked": {
+        "$ref": 60
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 27
+      }
+    },
+    {
+      "ranked": {
+        "$ref": 64
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 67
+      }
+    },
+    ["CONFLICTING_DUPLICATE"],
+    {
+      "externalProductId": "item_001",
+      "reasons": {
+        "$ref": 71
+      }
+    },
+    [
+      {
+        "$ref": 72
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 27
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 73
+      }
+    },
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "another_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 2
+      },
+      "currency": null,
+      "observedAt": null,
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "VERIFIED",
+      "eligibilityReasons": {
+        "$ref": 27
+      }
+    },
+    {
+      "candidate": {
+        "$ref": 75
+      },
+      "score": 700,
+      "components": {
+        "$ref": 56
+      },
+      "reasons": {
+        "$ref": 57
+      },
+      "policyVersion": "affiliate-ranking/1.0.0"
+    },
+    [
+      {
+        "$ref": 76
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 77
+      },
+      "duplicates": {
+        "$ref": 62
+      },
+      "rejected": {
+        "$ref": 27
+      }
+    },
+    {
+      "ranked": {
+        "$ref": 27
+      },
+      "duplicates": {
+        "$ref": 62
+      },
+      "rejected": {
+        "$ref": 67
+      }
+    },
+    {
+      "sourceRef": "price_proof",
+      "recordedAt": "2026-10-13T12:00:00Z",
+      "subjectHash": "13eb9cae3f1099d68053461c5df281294293ece4629e7d58537583e22cbba75e"
+    },
+    {
+      "status": "VERIFIED",
+      "amount": "29.90",
+      "evidence": {
+        "$ref": 80
+      }
+    },
+    ["PRICE_STALE"],
+    {
+      "schemaVersion": "affiliate-discovery/1.0.0",
+      "sourceId": "shopee_feed",
+      "sourceType": "AUTHORIZED_CSV",
+      "externalProductId": "item_001",
+      "productName": "Organizador de casa",
+      "brand": "Marca exemplo",
+      "category": "organizacao",
+      "affiliateUrl": "https://s.shopee.com.br/item_001",
+      "affiliateAssociationEvidence": {
+        "$ref": 1
+      },
+      "price": {
+        "$ref": 81
+      },
+      "currency": "BRL",
+      "observedAt": "2026-10-10T12:00:00Z",
+      "availability": {
+        "$ref": 4
+      },
+      "mediaRightsEvidence": {
+        "$ref": 13
+      },
+      "productSpecificationEvidence": {
+        "$ref": 25
+      },
+      "provenance": {
+        "$ref": 26
+      },
+      "eligibilityStatus": "INVALID",
+      "eligibilityReasons": {
+        "$ref": 82
+      }
+    },
+    ["PRICE_UNKNOWN"],
+    {
+      "externalProductId": "item_001",
+      "reasons": {
+        "$ref": 84
+      }
+    },
+    {
+      "externalProductId": "item_002",
+      "reasons": {
+        "$ref": 84
+      }
+    },
+    [
+      {
+        "$ref": 85
+      },
+      {
+        "$ref": 86
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 27
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 87
+      }
+    },
+    ["AFFILIATE_URL_INVALID"],
+    {
+      "externalProductId": "item_001",
+      "reasons": {
+        "$ref": 89
+      }
+    },
+    {
+      "externalProductId": "item_002",
+      "reasons": {
+        "$ref": 89
+      }
+    },
+    [
+      {
+        "$ref": 90
+      },
+      {
+        "$ref": 91
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 27
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 92
+      }
+    },
+    {
+      "candidate": {
+        "$ref": 29
+      },
+      "score": 0,
+      "components": {
+        "$ref": 56
+      },
+      "reasons": {
+        "$ref": 57
+      },
+      "policyVersion": "affiliate-ranking/1.0.0"
+    },
+    {
+      "candidate": {
+        "$ref": 35
+      },
+      "score": 0,
+      "components": {
+        "$ref": 56
+      },
+      "reasons": {
+        "$ref": 57
+      },
+      "policyVersion": "affiliate-ranking/1.0.0"
+    },
+    [
+      {
+        "$ref": 94
+      },
+      {
+        "$ref": 95
+      }
+    ],
+    {
+      "ranked": {
+        "$ref": 96
+      },
+      "duplicates": {
+        "$ref": 27
+      },
+      "rejected": {
+        "$ref": 27
+      }
+    },
+    {
+      "name": "Error",
+      "message": "DISCOVERY_POLICY_INVALID",
+      "code": "DISCOVERY_POLICY_INVALID",
+      "field": {
+        "$ref": 36
+      },
+      "path": {
+        "$ref": 36
+      }
+    },
+    {
+      "name": "Error",
+      "message": "DISCOVERY_FIELDS_INVALID",
+      "code": "DISCOVERY_FIELDS_INVALID",
+      "field": {
+        "$ref": 36
+      },
+      "path": {
+        "$ref": 36
+      }
+    },
+    {
+      "name": "Error",
+      "message": "DISCOVERY_SCHEMA_INVALID",
+      "code": "DISCOVERY_SCHEMA_INVALID",
+      "field": {
+        "$ref": 36
+      },
+      "path": {
+        "$ref": 36
+      }
+    },
+    {
+      "name": "Error",
+      "message": "DISCOVERY_PROVENANCE_INVALID",
+      "code": "DISCOVERY_PROVENANCE_INVALID",
+      "field": {
+        "$ref": 36
+      },
+      "path": {
+        "$ref": 36
+      }
+    },
+    {
+      "provider": "fixture",
+      "model": "fixture",
+      "taskType": "image",
+      "promptVersion": "fixture/1.0.0",
+      "inputTokens": null,
+      "outputTokens": null,
+      "cachedInputTokens": null,
+      "usageOrigin": null,
+      "costAmount": null,
+      "currency": null,
+      "costOrigin": null,
+      "latencyMs": null,
+      "occurredAt": "2026-10-13T12:00:00.000Z",
+      "fallback": null,
+      "inputHash": null,
+      "outputHash": null
+    },
+    {
+      "assetType": "IMAGE",
+      "technicalProperties": {
+        "$ref": 5
+      },
+      "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      },
+      "telemetry": {
+        "$ref": 102
+      }
+    },
+    {
+      "provider": "fixture",
+      "model": "fixture",
+      "taskType": "image",
+      "promptVersion": "fixture/1.0.0",
+      "inputTokens": null,
+      "outputTokens": null,
+      "cachedInputTokens": null,
+      "usageOrigin": null,
+      "costAmount": "1.2",
+      "currency": "BRL",
+      "costOrigin": "fixture",
+      "latencyMs": null,
+      "occurredAt": "2026-10-13T12:00:00.000Z",
+      "fallback": null,
+      "inputHash": null,
+      "outputHash": null
+    },
+    {
+      "assetType": "IMAGE",
+      "technicalProperties": {
+        "$ref": 5
+      },
+      "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      },
+      "telemetry": {
+        "$ref": 104
+      }
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_COST_AMOUNT em costAmount: valor inválido",
+      "code": "INVALID_COST_AMOUNT",
+      "field": {
+        "$ref": 36
+      },
+      "path": "costAmount"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_USAGE_ORIGIN em usageOrigin: valor inválido",
+      "code": "INVALID_USAGE_ORIGIN",
+      "field": {
+        "$ref": 36
+      },
+      "path": "usageOrigin"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_USAGE_VALUE em cachedInputTokens: valor inválido",
+      "code": "INVALID_USAGE_VALUE",
+      "field": {
+        "$ref": 36
+      },
+      "path": "cachedInputTokens"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_VERSION em promptVersion: valor inválido",
+      "code": "INVALID_VERSION",
+      "field": {
+        "$ref": 36
+      },
+      "path": "promptVersion"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "COMMERCIAL_USE_REQUIRED em rights.commercialUseAllowed: valor inválido",
+      "code": "COMMERCIAL_USE_REQUIRED",
+      "field": {
+        "$ref": 36
+      },
+      "path": "rights.commercialUseAllowed"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_MEDIA_REFERENCE em mediaReference: valor inválido",
+      "code": "INVALID_MEDIA_REFERENCE",
+      "field": {
+        "$ref": 36
+      },
+      "path": "mediaReference"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_MEDIA_ORIGIN em origin: valor inválido",
+      "code": "INVALID_MEDIA_ORIGIN",
+      "field": {
+        "$ref": 36
+      },
+      "path": "origin"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "PROVIDER_NOT_APPLICABLE em provider: valor inválido",
+      "code": "PROVIDER_NOT_APPLICABLE",
+      "field": {
+        "$ref": 36
+      },
+      "path": "provider"
+    },
+    {
+      "format": "png",
+      "widthPixels": 90,
+      "heightPixels": 160,
+      "durationMilliseconds": null,
+      "mimeType": "image/png",
+      "hasAudio": null
+    },
+    {},
+    {
+      "assetType": "IMAGE",
+      "technicalProperties": {
+        "$ref": 114
+      },
+      "contentHash": "1111111111111111111111111111111111111111111111111111111111111111",
+      "mediaReference": "media:sha256_1111111111111111111111111111111111111111111111111111111111111111",
+      "origin": "OPERATOR_OWNED",
+      "provider": null,
+      "rights": {
+        "$ref": 6
+      },
+      "source": {
+        "$ref": 115
+      }
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_MEDIA_DIMENSION em technicalProperties.widthPixels: valor inválido",
+      "code": "INVALID_MEDIA_DIMENSION",
+      "field": {
+        "$ref": 36
+      },
+      "path": "technicalProperties.widthPixels"
+    },
+    {
+      "name": "ContractValidationError",
+      "message": "INVALID_HASH em contentHash: valor inválido",
+      "code": "INVALID_HASH",
+      "field": {
+        "$ref": 36
+      },
+      "path": "contentHash"
+    }
+  ],
+  "modules": {
+    "affiliate-discovery": [
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "11473f2e1496b9aa5254da0a4bc288a865005a0c1d288a538b010a25f3810aea",
+        "result": {
+          "$ref": 28
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "ad277ff34b647bc326718a212da814b72edce64992d9eab0f76f7f5eae5bc8b1",
+        "result": {
+          "$ref": 29
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "b8971ae08611443483eeee31c4b5ac14e2cb18ae14405aa15e79366d713d3dc3",
+        "result": {
+          "$ref": 34
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "eb0fbc778ff03fea11fe738a5018f523f02e4258d697da5a8379c816dcdf4a49",
+        "result": {
+          "$ref": 35
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "123e8a769eab7430aabf2156060218433e9512728b62c670457a86480be8af1b",
+        "error": {
+          "$ref": 37
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "fb34a882f9c1586c409706eb35b53de3be5a0a2a712eb7bc2ca5e2835a0a70b2",
+        "error": {
+          "$ref": 37
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "df2f1e6eae63ac4421d304e3f0d70918adc97abb3ebb7a8ef14006e3713dfc00",
+        "result": {
+          "$ref": 38
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "3a3b15c7d402bb7e7c5c233b76a2f23b3de24ce1b3743e66413a2ffa577f9a55",
+        "result": {
+          "$ref": 40
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "240dabcb4da6d6265b7bef9799c2c1407627a16ea1fb8484b1cf57bbeca04cbe",
+        "result": {
+          "$ref": 42
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "72574606fc2d6e3e28661a175ada6c211bd5bee66f6b2fe8933ad17047662770",
+        "result": {
+          "$ref": 43
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "2fb7a7b4e5cbcfb7327e285fd43aacd18cb8269eb756541ac9a48869721a209a",
+        "result": {
+          "$ref": 45
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "043b70c529284622a96cd7a6679ce2cd293351a656504994490f4c906a31b70a",
+        "result": {
+          "$ref": 47
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "e3bf6dfa76bd2119014c62b91d7765d5692d4a08fc629a95931d116b3d916491",
+        "result": {
+          "$ref": 49
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "ec73eeacc7d16b0e7d6596ef08f01394b8d21e649f2361d64e9b608ae87049cc",
+        "result": {
+          "$ref": 51
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "5823dc98aaaf34e6ebdddcf07d6fde61edb9053b2a198b77c99d15892143d708",
+        "result": {
+          "$ref": 53
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "3a7fdef29bd813d9f0435ca60a837249a6ad6735f24c7d0d954e23a861485b6a",
+        "result": {
+          "$ref": 55
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "a38381ac7422b2c30249ab1abda20a9f3bda86667469e9a2ecd4bbda72271695",
+        "result": {
+          "$ref": 63
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "c56550aad7ac80dde97dd6e04ebd7707fa94626f4bf288588ba4b9d482f45cef",
+        "result": {
+          "$ref": 68
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "14d1c3d53ec89557b1bb7ae3715b3d38b4ccd220c483887d4cae69d204c6416b",
+        "result": {
+          "$ref": 69
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "570a0fe231710a7273ab9358ee023ffe1670b13b4d6387459f12267eb5d435a6",
+        "result": {
+          "$ref": 70
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "f015e16fb668d25047979bca52e31d3b864ad51f292dd1f331db35de298c4775",
+        "result": {
+          "$ref": 74
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "3f22b66b3d8d44b32f68c123b2370da29c1a7f02f7a7a38b53f8db9a1488c4bd",
+        "result": {
+          "$ref": 74
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "b5d26981d0be213ed2ac4ee5b090d7760e8a5ce5002913cd5e959b3c8c40daaf",
+        "result": {
+          "$ref": 78
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "bbe26b9ff7c6e8856ba29632018aa05adbdb34e1dc6ccb49577d75535d83e4a2",
+        "result": {
+          "$ref": 79
+        },
+        "count": 1,
+        "scenario": "preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking"
+      },
+      {
+        "name": "evaluateAffiliateDiscovery",
+        "inputHash": "bc2e620460ae0f1041a00f323d9d6dd1be5be9f72dc9694a6a3dd09720838bb3",
+        "result": {
+          "$ref": 83
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "1407eb8e8fae853c20b09630a3ee320833a91c562304549768862f0bd2817088",
+        "result": {
+          "$ref": 88
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "9f59b2761abc0d40d62ff0ac78ee8342cc3e531e594f533cf1bb5f3d459132ba",
+        "result": {
+          "$ref": 69
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "5a7a70d330a437de18a896fb7067a15cfa793485da365e5638af316fd915d8f1",
+        "result": {
+          "$ref": 93
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "8c24aeed8db8cc1e8eb93aaf83f03eb8196d4cfec7ed3da4ff96090ce11b9fbe",
+        "result": {
+          "$ref": 97
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "911f756e2b97bcdbdb17993119e611ec1a6b488b8c483ee0165544d0f28172ca",
+        "error": {
+          "$ref": 98
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "rankAffiliateDiscovery",
+        "inputHash": "4d67a4ccd229ee4a74cd296d93c040d9e690352d729b5e6aac1ee61de00bd03f",
+        "error": {
+          "$ref": 99
+        },
+        "count": 1,
+        "scenario": "preserves price freshness, availability, ties and policy validation"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "530baebac2e4ea49553403e19d8f6e2893af52203335b23a6d93ef01582e04ca",
+        "error": {
+          "$ref": 100
+        },
+        "count": 1,
+        "scenario": "rejects altered proofs, future evidence and unsupported policies"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "7e8303f4f518243dd466d59fe1e8db14a6a622db8ebb5141be6b3d397ea14556",
+        "error": {
+          "$ref": 37
+        },
+        "count": 1,
+        "scenario": "rejects altered proofs, future evidence and unsupported policies"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "842c1df18bcce59efd2ebf374340d80285f7f4d02ef5bf50aaf1ae6a1ac008a2",
+        "error": {
+          "$ref": 101
+        },
+        "count": 1,
+        "scenario": "rejects altered proofs, future evidence and unsupported policies"
+      },
+      {
+        "name": "validateAffiliateDiscovery",
+        "inputHash": "c233a92098cc7ba3e4ecb828e2ee3db85a800ea076e3235c7aca70e13f1a7dc7",
+        "error": {
+          "$ref": 37
+        },
+        "count": 1,
+        "scenario": "rejects altered proofs, future evidence and unsupported policies"
+      }
+    ],
+    "discovery-media-evidence": [
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "e30755553f770ffe5e69f201805017e6e7769499b95016113f9223b8e75cf004",
+        "result": {
+          "$ref": 7
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "9ef6a774ab50ecae5b9195698ec198c6ebbf58858e195dc443274859e2f56f19",
+        "result": {
+          "$ref": 103
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "a843a4b0cdf2dbf202e3dd0c6b20e1ad9a0ddd5b0e93dd7ced1606a83e1b2586",
+        "result": {
+          "$ref": 105
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "ee14a8b121c26120798b9f183c4e4c8906d834ea0dc2b888ecf5f5462f9e4160",
+        "error": {
+          "$ref": 106
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "4a4828a9be9d6ab72a0a87e8c9b52650ab9d74225c89fe350403a26fb04a490e",
+        "error": {
+          "$ref": 107
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "c869dd7c7bfdfc7d557fba58054cf07183db69c5f6811a131eb68412af3cb510",
+        "error": {
+          "$ref": 108
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "4881f4a36da2c72c9ea41a9594501066a8da1e50ff14761a5d4ef3930f5d523e",
+        "error": {
+          "$ref": 109
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "1d7abd7603c07bab02e814bcf1c4c58730fb845fdc6d6efddf11a8c02ea105c2",
+        "error": {
+          "$ref": 110
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "722866aefb16c47d1656c4ba1cd6b7ae3678e1e1cc3afd7806b6768eaf5d64fe",
+        "error": {
+          "$ref": 111
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "e036f8101d6f25bbfed5be849e498c2bdf6904d7d2a239ff7edc8c6bcf1aedd3",
+        "error": {
+          "$ref": 112
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "721205f43d7564cd854382509c8b6d77e7ed96dea04b1caade595264f63b74b2",
+        "error": {
+          "$ref": 113
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "57132fd948bdafddc9fe950f921add2cdb8cdacc6ce946046382a3e5f4614849",
+        "result": {
+          "$ref": 116
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "6f66545d51c85650a0f34fa131cc64689f1b637949646eb483fe1efce2ad461a",
+        "error": {
+          "$ref": 117
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      },
+      {
+        "name": "validateMediaProviderOutput",
+        "inputHash": "c6849ea23c0334629e8c9444a4d95e1610ae85e69264939ba012d871d900c0a7",
+        "error": {
+          "$ref": 118
+        },
+        "count": 1,
+        "scenario": "matches validation of rights, provenance and optional normalized telemetry"
+      }
+    ]
+  }
+}

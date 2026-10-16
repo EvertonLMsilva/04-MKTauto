@@ -9,8 +9,8 @@ import {
   validateProject,
   validateProjectSnapshot,
   validateReferenceProfile,
-} from "../src/domain/project-contracts.js";
-import { ContractValidationError } from "../src/domain/contracts.js";
+} from "../backend/dist/project/domain/project-contracts.js";
+import { ContractValidationError } from "../backend/dist/project/domain/project.errors.js";
 
 function validProject(overrides = {}) {
   return {
@@ -100,6 +100,8 @@ test("aplica defaults determinísticos documentados", () => {
     aspectRatio: "9:16",
     minDurationSeconds: 25,
     maxDurationSeconds: 45,
+    minVideoAssetDurationSeconds: 25,
+    maxVideoAssetDurationSeconds: 45,
     editorialStyle: "informative",
     visualStyle: "dynamic",
     voiceStyle: "informative",
