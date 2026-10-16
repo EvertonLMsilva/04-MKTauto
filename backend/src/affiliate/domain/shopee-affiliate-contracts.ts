@@ -35,3 +35,45 @@ export interface ShopeeAffiliateLink {
   associationVerified: false;
   provenance: ShopeeAffiliateProvenance;
 }
+
+export interface ShopeeAffiliateLinkInput {
+  // Local correlation only; never sent as an undocumented Shopee argument.
+  offerId: string;
+  originUrl: string;
+  subIds?: readonly string[];
+}
+
+export interface ShopeeGeneratedAffiliateLink extends ShopeeAffiliateLink {
+  originUrl: string;
+  // null means omitted; [] means an explicitly empty list.
+  subIds: readonly string[] | null;
+}
+
+// Internal offer details; unknown business facts remain explicitly unknown.
+export interface ShopeeAffiliateOfferDetails extends ShopeeAffiliateOffer {
+  description: null;
+  availability: null;
+  shopName: string | null;
+  productUrl: string | null;
+  affiliateUrl: string | null;
+  priceRange: { min: ShopeeMoney; max: ShopeeMoney };
+  discountPercent: number | null;
+}
+
+export interface ShopeeOfferQuery {
+  page?: number;
+  limit?: number;
+  keyword?: string;
+  sortType?: 1 | 2 | 3 | 4 | 5;
+  productCatId?: number;
+}
+
+export interface ShopeeAffiliateOfferPage {
+  offers: ShopeeAffiliateOfferDetails[];
+  pageInfo: {
+    page: number | null;
+    limit: number;
+    hasNextPage: boolean;
+    nextPage: number | null;
+  };
+}

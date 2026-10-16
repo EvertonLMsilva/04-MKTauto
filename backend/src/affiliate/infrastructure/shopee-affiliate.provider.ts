@@ -5,7 +5,10 @@ import type {
   ShopeeAffiliateOffer,
   ShopeeAffiliateLink,
   ShopeeAffiliateProvenance,
+  ShopeeAffiliateLinkInput,
+  ShopeeGeneratedAffiliateLink,
 } from '../domain/shopee-affiliate-contracts.js';
+import { validateShopeeLinkInput } from './shopee-links.js';
 
 const provenance = (): ShopeeAffiliateProvenance => ({
   source: 'FAKE',
@@ -43,17 +46,36 @@ export class FakeShopeeAffiliate implements ShopeeAffiliatePort {
     ];
   }
 
-  async generateLink(input: { offerId: string }): Promise<ShopeeAffiliateLink> {
+  generateLink(
+    input: ShopeeAffiliateLinkInput,
+  ): Promise<ShopeeGeneratedAffiliateLink>;
+  generateLink(input: { offerId: string }): Promise<ShopeeAffiliateLink>;
+  async generateLink(
+    input: ShopeeAffiliateLinkInput | { offerId: string },
+  ): Promise<ShopeeAffiliateLink> {
+    const checked =
+      input && Object.hasOwn(input, 'originUrl')
+        ? validateShopeeLinkInput(input)
+        : null;
     const offer = (await this.queryOffers()).find(
-      (value) => value.offerId === input?.offerId,
+      (value) => value.offerId === (checked?.offerId ?? input?.offerId),
     );
     if (!offer) throw new Error('SHOPEE_AFFILIATE_OFFER_NOT_FOUND');
-    return {
+    const link: ShopeeAffiliateLink = {
       offerId: offer.offerId,
       url: `https://shopee-affiliate.invalid/link/${offer.offerId}`,
       associationVerified: false,
       provenance: provenance(),
     };
+    if (checked) {
+      const generated: ShopeeGeneratedAffiliateLink = {
+        ...link,
+        originUrl: checked.originUrl,
+        subIds: checked.subIds === undefined ? null : [...checked.subIds],
+      };
+      return generated;
+    }
+    return link;
   }
 }
 
