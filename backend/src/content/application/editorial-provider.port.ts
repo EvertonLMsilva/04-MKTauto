@@ -1,4 +1,5 @@
 import type { AffiliateBriefing } from '../../affiliate/domain/affiliate-contracts.js';
+import type { AffiliateCampaignSourceV1 } from '../../affiliate/domain/affiliate-campaign-source.js';
 import type { ProjectSnapshot } from '../../project/application/ports/project-snapshot-reader.port.js';
 import type {
   ResearchShortlist,
@@ -11,6 +12,7 @@ import type {
 
 export const EDITORIAL_PROVIDER = Symbol('EDITORIAL_PROVIDER');
 export interface EditorialProviderInput {
+  campaignSource: AffiliateCampaignSourceV1 | null;
   briefing: AffiliateBriefing;
   shortlist: ResearchShortlist;
   references: ReferenceInsight | null;

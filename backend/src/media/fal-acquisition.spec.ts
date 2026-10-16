@@ -8,6 +8,8 @@ import { OperationsPersistence } from '../content-operations/infrastructure/oper
 import { ContentService } from '../content/application/content.service.js';
 import { EditorialFlowService } from '../content/application/editorial-flow.service.js';
 import { FakeEditorialProvider } from '../content/infrastructure/fake-editorial.provider.js';
+import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
 import { MediaPersistence } from './infrastructure/media.persistence.js';
 import { MediaAssetRepository } from './infrastructure/media-asset.repository.js';
 import { CostLedgerRepository } from '../finance/infrastructure/cost-ledger.repository.js';
@@ -31,6 +33,9 @@ async function nativeFixture() {
       operations,
       { getGlobalOperation: () => null },
       new FakeEditorialProvider(),
+      new AffiliateService(new SqliteAffiliatePersistence(f.database), {
+        get: vi.fn(),
+      }),
     );
     const { script } = await editorial.generate({
       generationRequestId: 'fal_script_001',

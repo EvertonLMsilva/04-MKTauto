@@ -11,6 +11,7 @@ export interface CreateBriefingInput {
   campaignRevision: number;
 }
 export interface AffiliateRepository {
+  resolveBriefingSource(id: string): AffiliateCampaignSourceV1 | null;
   close(): void;
   getCampaignSource(
     id: string,

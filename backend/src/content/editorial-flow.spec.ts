@@ -7,6 +7,9 @@ import { ContentService } from './application/content.service.js';
 import { EditorialFlowService } from './application/editorial-flow.service.js';
 import { FakeEditorialProvider } from './infrastructure/fake-editorial.provider.js';
 import { scriptContentHash } from './domain/script-contracts.js';
+import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
+import { provisionSchema } from '../administration/schema-provisioner.js';
 
 export function editorialFixture() {
   const f = p2EditorialFixture();
@@ -22,6 +25,10 @@ export function editorialFixture() {
   };
   const finance = { getGlobalOperation: vi.fn(() => null) };
   const provider = new FakeEditorialProvider();
+  const catalog = new AffiliateService(
+    new SqliteAffiliatePersistence(f.database),
+    { get: vi.fn() },
+  );
   const flow = () =>
     new EditorialFlowService(
       content,
@@ -30,6 +37,7 @@ export function editorialFixture() {
       operations,
       finance,
       provider,
+      catalog,
     );
   const input = {
     generationRequestId: 'editorial_gen_001',
@@ -48,6 +56,7 @@ export function editorialFixture() {
     research,
     finance,
     provider,
+    catalog,
     flow,
     input,
   };
@@ -59,6 +68,85 @@ describe('Nest editorial production', () => {
     f = editorialFixture();
   });
   afterEach(() => f.cleanup());
+  it('passes exact Shopee provenance and commercial revisions to the existing flow, replays and detects source changes', async () => {
+    provisionSchema(f.base.db, 42);
+    const repo = new SqliteAffiliatePersistence(f.database).open();
+    const campaign = repo.getCampaign('camp_001', 1)!;
+    repo.registerCampaign(
+      {
+        ...campaign,
+        revision: 2,
+        affiliateUrl: 'https://s.shopee.com.br/offline',
+      },
+      'shopee_campaign',
+      true,
+    );
+    const source = repo.associateCampaignSource(
+      {
+        schemaVersion: 'affiliate-campaign-source/1.0.0',
+        sourceId: 'source_001',
+        revision: 1,
+        source: 'SHOPEE_AFFILIATE_API',
+        offer: {
+          offerId: 'offer-001',
+          productId: 'external-001',
+          shopId: null,
+          provenance: {
+            source: 'FAKE',
+            fixtureVersion: 'offline/1',
+            observedAt: null,
+          },
+        },
+        campaignId: 'camp_001',
+        campaignRevision: 2,
+        productId: 'prod_001',
+        productRevision: 1,
+        briefingId: 'brief_shopee',
+        affiliateUrl: 'https://s.shopee.com.br/offline',
+      },
+      'shopee_source',
+      ['authorized-image-001'],
+    );
+    repo.close();
+    const input = { ...f.input, briefingId: 'brief_shopee' };
+    const ideas = vi.spyOn(f.provider, 'ideas');
+    const scripts = vi.spyOn(f.provider, 'script');
+    const first = await f.flow().generate(input);
+    const briefing = f.affiliate.resolveRunBriefing(input.pipelineRunId)!;
+    expect(ideas.mock.calls[0][0].shortlist).toEqual(f.shortlist);
+    expect(ideas.mock.calls[0][0].briefing).toEqual(briefing);
+    expect(ideas.mock.calls[0][0]).toMatchObject({
+      campaignSource: source,
+      briefing: { campaignRevision: 2, productRevision: 1 },
+    });
+    expect(scripts.mock.calls[0][0].campaignSource).toEqual(source);
+    expect(await f.flow().generate(input)).toEqual(first);
+    expect(ideas).toHaveBeenCalledTimes(1);
+    vi.spyOn(f.catalog, 'resolveBriefingSource').mockResolvedValue({
+      ...source,
+      revision: 2,
+    });
+    await expect(f.flow().generate(input)).rejects.toMatchObject({
+      code: 'AFFILIATE_SCRIPT_CONTEXT_CONFLICT',
+    });
+    for (const table of [
+      'cost_events',
+      'campaign_executions',
+      'script_generation_requests',
+    ])
+      expect(
+        f.base.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()?.n,
+      ).toBe(0);
+    expect(f.base.db.prepare('SELECT COUNT(*) n FROM scripts').get()?.n).toBe(
+      1,
+    );
+  });
+  it('preserves non-Shopee briefings without deriving provenance from their URLs', async () => {
+    provisionSchema(f.base.db, 42);
+    const ideas = vi.spyOn(f.provider, 'ideas');
+    await f.flow().generate(f.input);
+    expect(ideas.mock.calls[0][0].campaignSource).toBeNull();
+  });
   it('selects an eligible product, produces ideas and script, preserves evidence, CTA and disclosure; replays after reopening', async () => {
     expect(f.base.db.prepare('PRAGMA user_version').get()?.user_version).toBe(
       40,

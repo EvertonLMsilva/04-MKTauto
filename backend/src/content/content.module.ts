@@ -3,6 +3,7 @@ import { ContentOperationsModule } from '../content-operations/content-operation
 import { CONTENT_OPERATIONS } from '../content-operations/application/ports/operations.port.js';
 import type { ContentOperationsService } from '../content-operations/application/content-operations.service.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
+import { AffiliateService } from '../affiliate/application/affiliate.service.js';
 import { AFFILIATE_RUN_CONTEXT } from '../affiliate/application/ports/affiliate-run-context.port.js';
 import type { AffiliateRunContext } from '../affiliate/application/ports/affiliate-run-context.port.js';
 import {
@@ -53,6 +54,7 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
         CONTENT_OPERATIONS_STORE,
         FinanceService,
         EDITORIAL_PROVIDER,
+        AffiliateService,
       ],
       useFactory: (
         content: ContentService,
@@ -61,6 +63,7 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
         operations: OperationsStore,
         finance: FinanceService,
         provider: EditorialProvider,
+        catalog: AffiliateService,
       ) =>
         new EditorialFlowService(
           content,
@@ -69,6 +72,7 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
           operations,
           finance,
           provider,
+          catalog,
         ),
     },
     {

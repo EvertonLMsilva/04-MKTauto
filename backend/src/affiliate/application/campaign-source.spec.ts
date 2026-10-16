@@ -73,6 +73,66 @@ describe('versioned Shopee campaign source, offline', () => {
     confirmed: true,
     verifiedMediaRefs: refs,
   });
+  it('resolves the exact briefing snapshot, never the latest source revision', async () => {
+    await service.associateCampaignSource(
+      command(source({ briefingId: 'brief_one' })),
+    );
+    await service.associateCampaignSource(
+      command(source({ revision: 2, briefingId: 'brief_two' }), 'source_two'),
+    );
+    expect(await service.resolveBriefingSource('brief_one')).toEqual(
+      source({ briefingId: 'brief_one' }),
+    );
+    expect(await service.resolveBriefingSource('brief_two')).toEqual(
+      source({ revision: 2, briefingId: 'brief_two' }),
+    );
+    await expect(
+      service.resolveBriefingSource('missing'),
+    ).rejects.toMatchObject({ code: 'AFFILIATE_BRIEFING_NOT_FOUND' });
+  });
+  it('rejects a Shopee campaign briefing without an explicit source binding', async () => {
+    await service.associateCampaignSource(command());
+    repo.createBriefing(
+      {
+        briefingId: 'brief_loose',
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+      },
+      'brief_loose',
+      true,
+    );
+    await expect(
+      service.resolveBriefingSource('brief_loose'),
+    ).rejects.toMatchObject({ code: 'AFFILIATE_SOURCE_BRIEFING_NOT_BOUND' });
+  });
+  it('detects ambiguous and inconsistent persisted source links', async () => {
+    await service.associateCampaignSource(
+      command(source({ briefingId: 'brief_one' })),
+    );
+    repo.db.exec('DROP INDEX affiliate_campaign_source_briefing_v1');
+    repo.db
+      .prepare(
+        'INSERT INTO affiliate_campaign_sources_v1 SELECT source_id,2,campaign_id,campaign_revision,product_id,product_revision,briefing_id,content_hash,content_json FROM affiliate_campaign_sources_v1',
+      )
+      .run();
+    await expect(
+      service.resolveBriefingSource('brief_one'),
+    ).rejects.toMatchObject({ code: 'AFFILIATE_SOURCE_AMBIGUOUS' });
+    repo.db.exec(
+      'DROP TRIGGER affiliate_campaign_sources_v1_no_delete; DELETE FROM affiliate_campaign_sources_v1 WHERE revision=2; DROP TRIGGER affiliate_campaign_sources_v1_no_update;',
+    );
+    repo.registerCampaign(
+      campaign({ revision: 2, affiliateUrl: source().affiliateUrl }),
+      'campaign_two',
+      true,
+    );
+    repo.db
+      .prepare('UPDATE affiliate_campaign_sources_v1 SET campaign_revision=2')
+      .run();
+    await expect(
+      service.resolveBriefingSource('brief_one'),
+    ).rejects.toMatchObject({ code: 'AFFILIATE_SOURCE_SCOPE_MISMATCH' });
+  });
   it('validates a strict versioned, immutable contract', () => {
     expect(validateAffiliateCampaignSource(source())).toEqual(source());
     expect(
