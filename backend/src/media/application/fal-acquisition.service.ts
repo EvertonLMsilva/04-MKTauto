@@ -21,7 +21,11 @@ export class FalAcquisitionService {
       if (!script || script.contentHash !== request.scriptContentHash)
         throw falFailure('PROVIDER_SCRIPT_MISMATCH');
       const run = repository.getRun(script.pipelineRunId);
-      if (!run || run.state !== 'RUNNING')
+      if (!run) throw falFailure('PROVIDER_RUN_NOT_ACTIVE');
+      const prior = repository.getMediaAcquisition(
+        request.mediaAcquisitionRequestId,
+      );
+      if (!prior && run.state !== 'RUNNING')
         throw falFailure('PROVIDER_RUN_NOT_ACTIVE');
       const direction = script.visualDirections.find(
         (d: { position: number }) =>
@@ -32,11 +36,18 @@ export class FalAcquisitionService {
         ...this.dependencies,
         jobs: this.dependencies.finance,
       });
-      const prior = repository.getMediaAcquisition(
-        request.mediaAcquisitionRequestId,
-      );
       if (prior) {
-        if (prior.requestHash !== request.contentHash)
+        if (
+          prior.requestHash !== request.contentHash ||
+          prior.mediaAsset.pipelineRunId !== run.pipelineRunId ||
+          prior.mediaAsset.projectId !== run.projectId ||
+          prior.mediaAsset.projectVersion !== run.projectVersion ||
+          prior.mediaAsset.scriptId !== request.scriptId ||
+          prior.mediaAsset.scriptContentHash !== request.scriptContentHash ||
+          prior.mediaAsset.visualDirectionPosition !==
+            request.visualDirectionPosition ||
+          prior.mediaAsset.assetType !== request.assetType
+        )
           throw falFailure('PROVIDER_REQUEST_CONFLICT');
         await adapter.validateReuse(prior.mediaAsset, request, options);
         return prior.mediaAsset;

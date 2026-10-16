@@ -9,6 +9,7 @@ import { ContentService } from '../content/application/content.service.js';
 import { EditorialFlowService } from '../content/application/editorial-flow.service.js';
 import { FakeEditorialProvider } from '../content/infrastructure/fake-editorial.provider.js';
 import { MediaPersistence } from './infrastructure/media.persistence.js';
+import { MediaAssetRepository } from './infrastructure/media-asset.repository.js';
 import { CostLedgerRepository } from '../finance/infrastructure/cost-ledger.repository.js';
 import { FalGenerationRepository } from '../finance/infrastructure/fal-generation.repository.js';
 import { FalFinanceService } from '../finance/application/fal-finance.service.js';
@@ -108,6 +109,107 @@ async function nativeFixture() {
 
 describe('NestJS fal acquisition boundary', () => {
   afterEach(() => vi.unstubAllEnvs());
+  const financialSnapshot = (f: Awaited<ReturnType<typeof nativeFixture>>) =>
+    [
+      'fal_generations',
+      'fal_generation_requests',
+      'fal_financial_settlements',
+      'cost_events',
+    ].map((table) =>
+      f.base.db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(),
+    );
+  const finishRun = (f: Awaited<ReturnType<typeof nativeFixture>>) =>
+    f.base.transitionRun({
+      pipelineRunId: 'run_001',
+      nextState: 'SUCCEEDED',
+      completedAt: '2026-10-14T13:00:00Z',
+    });
+
+  it.each(['RUNNING', 'SUCCEEDED'])(
+    'replays a valid receipt in %s without provider or financial writes',
+    async (state) => {
+      const f = await nativeFixture();
+      try {
+        f.queue.status.mockResolvedValue({ status: 'COMPLETED' });
+        const asset = await f.service().acquire(f.request, f.config);
+        if (state === 'SUCCEEDED') finishRun(f);
+        const before = financialSnapshot(f);
+        vi.clearAllMocks();
+        expect(await f.service().acquire(f.request, f.config)).toEqual(asset);
+        expect(await f.service().acquire(f.request, f.config)).toEqual(asset);
+        for (const call of Object.values(f.queue))
+          expect(call).not.toHaveBeenCalled();
+        expect(f.storage.store).not.toHaveBeenCalled();
+        expect(f.storage.verify).toHaveBeenCalledTimes(2);
+        expect(financialSnapshot(f)).toEqual(before);
+      } finally {
+        f.cleanup();
+      }
+    },
+  );
+
+  it('blocks acquisition without a receipt after completion', async () => {
+    const f = await nativeFixture();
+    try {
+      finishRun(f);
+      const before = financialSnapshot(f);
+      await expect(
+        f.service().acquire(f.request, f.config),
+      ).rejects.toMatchObject({ code: 'PROVIDER_RUN_NOT_ACTIVE' });
+      for (const call of Object.values(f.queue))
+        expect(call).not.toHaveBeenCalled();
+      expect(financialSnapshot(f)).toEqual(before);
+    } finally {
+      f.cleanup();
+    }
+  });
+
+  it.each(['request', 'scope', 'context', 'artifact'])(
+    'rejects incompatible %s on completed replay without side effects',
+    async (kind) => {
+      const f = await nativeFixture();
+      try {
+        f.queue.status.mockResolvedValue({ status: 'COMPLETED' });
+        const asset = await f.service().acquire(f.request, f.config);
+        finishRun(f);
+        const before = financialSnapshot(f);
+        vi.clearAllMocks();
+        const body = { ...f.request, requestedAt: '2026-10-14T12:03:00Z' };
+        const request =
+          kind === 'request'
+            ? { ...body, contentHash: mediaAcquisitionRequestHash(body) }
+            : f.request;
+        const config =
+          kind === 'context'
+            ? { ...f.config, mediaRef: 'another-image' }
+            : f.config;
+        if (kind === 'artifact') f.storage.verify.mockResolvedValue(false);
+        if (kind === 'scope')
+          vi.spyOn(
+            MediaAssetRepository.prototype,
+            'getMediaAcquisition',
+          ).mockReturnValueOnce({
+            requestHash: f.request.contentHash,
+            mediaAsset: { ...asset, projectId: 'another_project' },
+          });
+        await expect(
+          f.service().acquire(request, config),
+        ).rejects.toMatchObject({
+          code:
+            kind === 'artifact'
+              ? 'PROVIDER_ARTIFACT_UNAVAILABLE'
+              : 'PROVIDER_REQUEST_CONFLICT',
+        });
+        for (const call of Object.values(f.queue))
+          expect(call).not.toHaveBeenCalled();
+        expect(f.storage.store).not.toHaveBeenCalled();
+        expect(financialSnapshot(f)).toEqual(before);
+      } finally {
+        vi.restoreAllMocks();
+        f.cleanup();
+      }
+    },
+  );
   it('is provided by Media and refuses normal execution before opening storage', async () => {
     const { FalAcquisitionService } =
       await import('./application/fal-acquisition.service.js');
