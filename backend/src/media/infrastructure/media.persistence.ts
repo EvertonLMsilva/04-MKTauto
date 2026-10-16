@@ -6,6 +6,7 @@ import { QualityControlRepository } from './quality-control.repository.js';
 import { VideoRenderRepository } from './video-render.reader.js';
 import { LocalRenderIntegrity } from './local-render-integrity.js';
 import { CompositionPlanRepository } from './composition-plan.reader.js';
+import type { TemporalValidator } from '../domain/p4-qc-contracts.js';
 export const MEDIA_DATABASE = Symbol('MEDIA_DATABASE');
 export class MediaPersistence implements MediaStore {
   constructor(
@@ -14,6 +15,7 @@ export class MediaPersistence implements MediaStore {
     private readonly content: Pick<ContentService, 'getScript'>,
     private readonly renderRoot: string | null = process.env
       .PUBLISHING_RENDER_ROOT ?? null,
+    private readonly temporalValidator?: TemporalValidator,
   ) {}
   openRender() {
     return new VideoRenderRepository(
@@ -55,12 +57,12 @@ export class MediaPersistence implements MediaStore {
       { readOnly },
     );
   }
-  openQuality() {
+  openQuality(readOnly = true) {
     return new QualityControlRepository(
       this.database(),
       this.operations,
       this.content,
-      { readOnly: true },
+      { readOnly, temporalValidator: this.temporalValidator },
     );
   }
 }

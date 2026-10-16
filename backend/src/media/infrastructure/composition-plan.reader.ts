@@ -16,6 +16,7 @@ import {
   voiceTrackIdentityHash,
 } from '../domain/voice-track-contracts.js';
 import { MediaAssetRepository } from './media-asset.repository.js';
+import { getTemporalQC } from './p4-qc.reader.js';
 export class CompositionPlanRepositoryError extends Error {
   [key: string]: any;
   constructor(code: any, field: any, message: any, options?: any) {
@@ -316,7 +317,16 @@ export class CompositionPlanRepository extends MediaAssetRepository {
             )
             .all(compositionPlanId)
             .map(segmentFromRow);
-      if (JSON.stringify(storedSegments) !== JSON.stringify(plan.segments))
+      // Optional motion intent is covered by the V2 payload identity hash above;
+      // legacy relational segment columns remain unchanged.
+      if (
+        JSON.stringify(storedSegments) !==
+        JSON.stringify(
+          plan.segments.map(
+            ({ movementRequirement: _movement, ...segment }: any) => segment,
+          ),
+        )
+      )
         throw new Error('segmentos divergentes');
       const related: any = this.#relatedArtifacts(plan);
       this.#verifyRelated(plan, related);
@@ -479,6 +489,26 @@ export class CompositionPlanRepository extends MediaAssetRepository {
       const segmentDuration: any =
         segment.endMilliseconds - segment.startMilliseconds;
       if (asset.assetType === 'VIDEO') {
+        if (
+          plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION &&
+          (segment.movementRequirement === 'REAL_MOTION_REQUIRED' ||
+            asset.origin === 'PROVIDER_GENERATED')
+        ) {
+          const identity = {
+            mediaAssetId: asset.mediaAssetId,
+            mediaReference: asset.mediaReference,
+            contentHash: asset.contentHash,
+            scriptContentHash: asset.scriptContentHash,
+            visualDirectionPosition: asset.visualDirectionPosition,
+          };
+          const report = getTemporalQC(this, identity);
+          if (!report || report.result !== 'PASS')
+            throw failure(
+              'TEMPORAL_QC_REQUIRED',
+              `segments.${index}.mediaAssetId`,
+              'movimento, continuidade e fidelidade exigem QC independente',
+            );
+        }
         const duration: any = asset.technicalProperties.durationMilliseconds;
         if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
           if (segment.sourceStartMilliseconds >= duration)
@@ -738,6 +768,7 @@ function v1StorageProjection(plan: any): any {
         originalAudioMuted: _muted,
         framingStrategy: _framing,
         transition: _transition,
+        movementRequirement: _movement,
         ...segment
       }: any) => segment,
     ),

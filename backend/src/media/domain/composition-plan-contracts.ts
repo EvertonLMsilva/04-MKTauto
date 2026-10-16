@@ -132,7 +132,18 @@ function validateSegments(
   value.forEach((segment: any, index: any): any => {
     const path: any = `segments.${index}`;
     record(segment, path);
-    exact(segment, isV2 ? V2_SEGMENT_FIELDS : SEGMENT_FIELDS, path);
+    exact(
+      segment,
+      isV2
+        ? [
+            ...V2_SEGMENT_FIELDS,
+            ...(Object.hasOwn(segment, 'movementRequirement')
+              ? ['movementRequirement']
+              : []),
+          ]
+        : SEGMENT_FIELDS,
+      path,
+    );
     if (segment.position !== index + 1)
       fail('INVALID_SEGMENT_POSITION', `${path}.position`);
     positiveInteger(
@@ -165,6 +176,15 @@ function validateSegments(
     fail('TIMELINE_DURATION_MISMATCH', 'durationMilliseconds');
 }
 function validateV2Segment(segment: any, path: any): any {
+  if (
+    Object.hasOwn(segment, 'movementRequirement') &&
+    (!['REAL_MOTION_REQUIRED', 'STATIC_ALLOWED'].includes(
+      segment.movementRequirement,
+    ) ||
+      (segment.movementRequirement === 'REAL_MOTION_REQUIRED' &&
+        segment.mediaType !== 'VIDEO'))
+  )
+    fail('INVALID_MOVEMENT_REQUIREMENT', `${path}.movementRequirement`);
   if (!['IMAGE', 'VIDEO'].includes(segment.mediaType))
     fail('INVALID_MEDIA_TYPE', `${path}.mediaType`);
   nonNegativeInteger(

@@ -132,6 +132,16 @@ export class MediaService {
   report(id: string) {
     return this.quality((r) => r.getQualityControlReport(id));
   }
+  async evaluateTemporalMedia(id: string) {
+    const repository = this.store.openQuality(false);
+    try {
+      if (!repository.evaluateTemporalMedia)
+        throw new Error('TEMPORAL_QC_UNAVAILABLE');
+      return await repository.evaluateTemporalMedia(id);
+    } finally {
+      repository.close();
+    }
+  }
   findReport(policy: string, id: string, hash: string) {
     return this.quality((r) => r.findQualityControlReport(policy, id, hash));
   }
