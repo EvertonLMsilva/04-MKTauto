@@ -1,9 +1,10 @@
 import { lstat, realpath } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { ffmpegFailure } from './ffmpeg-video-error.js';
+import { parseMediaIdentity } from '../domain/media-identity.js';
+import { hashFile } from './local-video-storage.js';
 
 const VOICE_REFERENCE = /^object:voice\/sha256\/([a-f0-9]{64})$/;
-const MEDIA_REFERENCE = /^media:sha256_([a-f0-9]{64})$/;
 
 export class LocalCompositionReferenceResolver {
   private readonly voiceRoot: string;
@@ -33,7 +34,72 @@ export class LocalCompositionReferenceResolver {
         'reference',
         'extensão não autorizada',
       );
-    return this.#resolve(reference, MEDIA_REFERENCE, this.mediaRoot, extension);
+    let identity;
+    try {
+      identity = parseMediaIdentity(reference);
+    } catch {
+      throw ffmpegFailure(
+        'COMPOSER_REFERENCE_INVALID',
+        'reference',
+        'referência lógica não reconhecida',
+      );
+    }
+    return safeFile(
+      join(
+        this.mediaRoot,
+        'sha256',
+        identity.contentHash.slice(0, 2),
+        `${identity.contentHash}.${extension}`,
+      ),
+      this.mediaRoot,
+    );
+  }
+
+  /** Explicit historical read only. Current composition never falls back to an old layout. */
+  async resolveHistoricalVideo(
+    reference: string,
+    contentHash: string,
+    maxBytes = 524288000,
+  ): Promise<string> {
+    const identity = parseMediaIdentity(reference, {
+      expectedHash: contentHash,
+      allowLegacy: true,
+    });
+    const canonical = join(
+      this.mediaRoot,
+      'sha256',
+      contentHash.slice(0, 2),
+      `${contentHash}.mp4`,
+    );
+    const candidates =
+      identity.format === 'LEGACY_LTX_VIDEO'
+        ? [join(this.mediaRoot, 'sha256', `${contentHash}.mp4`), canonical]
+        : [canonical];
+    for (let i = 0; i < candidates.length; i++) {
+      let path;
+      try {
+        path = await safeFile(candidates[i], this.mediaRoot);
+      } catch (error) {
+        if (
+          i < candidates.length - 1 &&
+          (error as { code?: string }).code === 'COMPOSER_INPUT_NOT_FOUND'
+        )
+          continue;
+        throw error;
+      }
+      if ((await hashFile(path, maxBytes)) !== contentHash)
+        throw ffmpegFailure(
+          'COMPOSER_MEDIA_HASH_MISMATCH',
+          'reference',
+          'hash físico divergente',
+        );
+      return path;
+    }
+    throw ffmpegFailure(
+      'COMPOSER_INPUT_NOT_FOUND',
+      'reference',
+      'arquivo físico não encontrado',
+    );
   }
 
   async #resolve(

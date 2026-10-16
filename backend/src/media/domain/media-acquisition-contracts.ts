@@ -3,6 +3,7 @@ import { validateMediaRightsEvidence } from './media-processing-rights.js';
 import { validateAiCallObservation } from '../../finance/domain/ai-call-telemetry-contracts.js';
 import { ContractValidationError } from '../../project/domain/project.errors.js';
 import type { AcquisitionRequest } from './media.types.js';
+import { parseMediaIdentity } from './media-identity.js';
 export const MEDIA_ACQUISITION_REQUEST_VERSION =
   'media-acquisition-request/1.0.0';
 const REQUEST_FIELDS = Object.freeze([
@@ -93,7 +94,10 @@ export function mediaAcquisitionRequestHash(value: any) {
   const { contentHash: _contentHash, ...content } = value;
   return createHash('sha256').update(stableJson(content)).digest('hex');
 }
-export function validateMediaProviderOutput(value: any) {
+export function validateMediaProviderOutput(
+  value: any,
+  { physicalWrite = false } = {},
+) {
   record(value, 'output');
   exactAllowedRequired(value, OUTPUT_FIELDS, REQUIRED_OUTPUT_FIELDS, 'output');
   if (!ASSET_TYPES.includes(value.assetType))
@@ -105,6 +109,10 @@ export function validateMediaProviderOutput(value: any) {
   );
   hash(value.contentHash, 'contentHash');
   mediaReference(value.mediaReference);
+  if (physicalWrite)
+    parseMediaIdentity(value.mediaReference, {
+      expectedHash: value.contentHash,
+    });
   if (!ORIGINS.includes(value.origin)) fail('INVALID_MEDIA_ORIGIN', 'origin');
   if (value.provider !== null) identifier(value.provider, 'provider', 100);
   if (PROVIDER_ORIGINS.has(value.origin) && value.provider === null)

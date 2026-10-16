@@ -1,5 +1,6 @@
 import { adaptationHash } from './media-hash.js';
 import { immutable } from '../../affiliate/domain/affiliate-contracts.js';
+import { parseMediaIdentity } from './media-identity.js';
 export const P4_QC_POLICY = 'quality-control-policy/2.0.0';
 export function p4Fail(code: any, field: any = 'contract'): never {
   throw Object.assign(new Error(`${code}: ${field}`), { code, field });
@@ -142,13 +143,15 @@ export function mediaIdentityHash(
   return contentHash as string;
 }
 function validMediaIdentity(reference: unknown, contentHash: unknown): boolean {
-  return (
-    typeof contentHash === 'string' &&
-    /^[a-f0-9]{64}$/.test(contentHash) &&
-    typeof reference === 'string' &&
-    (reference === `media:sha256_${contentHash}` ||
-      reference === `object:ltx-video/sha256/${contentHash}`)
-  );
+  try {
+    parseMediaIdentity(reference, {
+      expectedHash: contentHash,
+      allowLegacy: true,
+    });
+    return true;
+  } catch {
+    return false;
+  }
 }
 export type TemporalStatus = 'PASS' | 'FAIL' | 'NOT_VALIDATED';
 export interface TemporalEvidence {

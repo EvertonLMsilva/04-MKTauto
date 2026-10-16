@@ -193,23 +193,26 @@ export class FalVideoAdapter {
     }
     const bytes = await this.queue.download(result.video?.url, { signal });
     const stored = await this.storage.store(bytes, { signal });
-    const output = validateMediaProviderOutput({
-      assetType: 'VIDEO',
-      technicalProperties: {
-        format: stored.format,
-        mimeType: stored.mimeType,
-        widthPixels: stored.widthPixels,
-        heightPixels: stored.heightPixels,
-        durationMilliseconds: stored.durationMilliseconds,
-        hasAudio: stored.hasAudio,
+    const output = validateMediaProviderOutput(
+      {
+        assetType: 'VIDEO',
+        technicalProperties: {
+          format: stored.format,
+          mimeType: stored.mimeType,
+          widthPixels: stored.widthPixels,
+          heightPixels: stored.heightPixels,
+          durationMilliseconds: stored.durationMilliseconds,
+          hasAudio: stored.hasAudio,
+        },
+        contentHash: stored.contentHash,
+        mediaReference: stored.mediaReference,
+        origin: 'PROVIDER_GENERATED',
+        provider: 'fal_ai',
+        rights: this.config.rights,
+        source: null,
       },
-      contentHash: stored.contentHash,
-      mediaReference: stored.mediaReference,
-      origin: 'PROVIDER_GENERATED',
-      provider: 'fal_ai',
-      rights: this.config.rights,
-      source: null,
-    });
+      { physicalWrite: true },
+    );
     return this.jobs.complete(job.key, output);
   }
 }
