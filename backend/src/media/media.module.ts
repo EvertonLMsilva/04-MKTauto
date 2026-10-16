@@ -54,11 +54,15 @@ import {
   providers: [
     {
       provide: VideoGenerationService,
-      useFactory: () => {
+      inject: [FalAcquisitionService],
+      useFactory: (acquisition: FalAcquisitionService) => {
         const mode = process.env.FAL_GENERATION_MODE ?? 'fake';
         if (mode === 'live') throw new Error('FAL_LIVE_DISABLED');
         if (mode !== 'fake') throw new Error('FAL_MODE_INVALID');
-        return new VideoGenerationService(new FakeVideoGenerationProvider());
+        return new VideoGenerationService(
+          new FakeVideoGenerationProvider(),
+          acquisition,
+        );
       },
     },
     {

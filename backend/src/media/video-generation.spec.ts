@@ -82,6 +82,9 @@ describe('offline in-memory video generation', () => {
       const service = module.get(VideoGenerationService);
       await service.submit(f.request);
       expect(service.poll('operation_001').state).toBe('COMPLETED');
+      await expect(service.generatePrepared({} as any, {})).rejects.toThrow(
+        'FAL_LIVE_DISABLED',
+      );
       expect(boundaries.sqlite).not.toHaveBeenCalled();
       expect(fetch).not.toHaveBeenCalled();
     } finally {

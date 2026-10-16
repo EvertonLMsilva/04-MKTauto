@@ -1,17 +1,112 @@
 import { FalVideoAdapter } from './fal-video-provider.js';
 import { validateMediaAcquisitionRequest } from '../domain/media-acquisition-contracts.js';
 import { validateMediaAsset } from '../domain/media-asset-contracts.js';
-import type { FalAcquisitionDependencies } from './fal-acquisition.port.js';
+import type {
+  FalAcquisitionDependencies,
+  PreparedFalRequest,
+} from './fal-acquisition.port.js';
 import { falFailure } from '../../finance/domain/fal-errors.js';
+import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
+import { stageIdentifier } from '../../content-operations/domain/stage-contracts.js';
+import { requireGeneratedVideoScene } from '../domain/video-production-preparation.js';
+import { validateFalVideoModel } from '../domain/fal-model.js';
 
 export class FalAcquisitionService {
   constructor(
     private readonly dependencies: FalAcquisitionDependencies | null,
   ) {}
+  async acquirePrepared(
+    value: PreparedFalRequest,
+    configuration: unknown,
+    options: { signal?: AbortSignal } = {},
+  ) {
+    if (!this.dependencies) throw falFailure('FAL_LIVE_DISABLED');
+    if (!this.dependencies.preparations)
+      throw falFailure('VIDEO_PREPARATION_RESOLVER_REQUIRED');
+    const input = structuredClone(value),
+      config = structuredClone(configuration) as any;
+    const scene = requireGeneratedVideoScene(
+      input.preparation,
+      input.scenePosition,
+    );
+    const request = validateMediaAcquisitionRequest(input.request);
+    const model = validateFalVideoModel(config?.model);
+    if (
+      !config.budget ||
+      typeof config.budget !== 'object' ||
+      Array.isArray(config.budget)
+    )
+      throw falFailure('PROVIDER_INVALID_BUDGET');
+    const authorization = input.authorization;
+    if (
+      !authorization ||
+      authorization.authorized !== true ||
+      authorization.preparationHash !== input.preparation.contentHash ||
+      authorization.requestHash !== request.contentHash ||
+      authorization.modelHash !== affiliateHash(model) ||
+      authorization.budgetHash !== affiliateHash(config.budget) ||
+      typeof authorization.statement !== 'string' ||
+      !authorization.statement.trim() ||
+      authorization.statement.length > 2000
+    )
+      throw falFailure('FAL_EXECUTION_AUTHORIZATION_REQUIRED');
+    stageIdentifier(authorization.actorId, 'authorization.actorId', 200);
+    if (
+      request.assetType !== 'VIDEO' ||
+      request.scriptId !== scene.acquisitionPlanned.scriptId ||
+      request.scriptContentHash !==
+        scene.acquisitionPlanned.scriptContentHash ||
+      request.visualDirectionPosition !== scene.position ||
+      scene.acquisitionPlanned.assetType !== 'VIDEO'
+    )
+      throw falFailure('PROVIDER_INPUT_MISMATCH');
+    // Rebuild against current authoritative Content/Affiliate contracts, not caller-resealed data.
+    const preparation = await this.dependencies.preparations.prepare({
+      scriptId: input.preparation.script.scriptId,
+      scriptContentHash: input.preparation.script.contentHash,
+      scriptRevision: input.preparation.script.revision,
+      expectedPreparationHash: input.preparation.contentHash,
+      scenes: input.preparation.scenes.map((s) => ({
+        visualDirectionPosition: s.position,
+        sceneMediaType: s.sceneMediaType,
+        movementRequirement: s.movementRequirement,
+      })),
+    });
+    if (preparation.contentHash !== input.preparation.contentHash)
+      throw falFailure('VIDEO_GENERATION_PREPARATION_CONFLICT');
+    const mediaAsset = await this.perform(request, config, options, {
+      preparation,
+    });
+    const job = this.dependencies.finance.getByAcquisitionRequest(
+      request.mediaAcquisitionRequestId,
+    );
+    if (!job?.output || job.state !== 'COMPLETED')
+      throw falFailure('PROVIDER_RECONCILIATION_PENDING');
+    return {
+      preparationId: preparation.preparationId,
+      sceneId: scene.sceneId,
+      jobState: job.state,
+      providerRequestId: job.requestId,
+      materialization: 'MATERIALIZED' as const,
+      mediaAsset,
+      motionValidation: 'NOT_VALIDATED' as const,
+      compositionReady: false as const,
+      financiallySettled: job.financiallySettled,
+      observedCostAmount: job.observedCostAmount,
+    };
+  }
   async acquire(
     input: unknown,
     config: unknown,
     options: { signal?: AbortSignal } = {},
+  ) {
+    return this.perform(input, config, options);
+  }
+  private async perform(
+    input: unknown,
+    config: unknown,
+    options: { signal?: AbortSignal },
+    prepared?: { preparation: PreparedFalRequest['preparation'] },
   ) {
     if (!this.dependencies) throw falFailure('FAL_LIVE_DISABLED');
     const request = validateMediaAcquisitionRequest(input);
@@ -35,6 +130,7 @@ export class FalAcquisitionService {
       const adapter = new FalVideoAdapter(repository, config, {
         ...this.dependencies,
         jobs: this.dependencies.finance,
+        prepared,
       });
       if (prior) {
         if (
