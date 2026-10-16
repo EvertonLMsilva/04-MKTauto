@@ -36,6 +36,19 @@ export interface ShopeeAffiliateLink {
   provenance: ShopeeAffiliateProvenance;
 }
 
+export interface ShopeeAffiliateLinkInput {
+  // Local correlation only; never sent as an undocumented Shopee argument.
+  offerId: string;
+  originUrl: string;
+  subIds?: readonly string[];
+}
+
+export interface ShopeeGeneratedAffiliateLink extends ShopeeAffiliateLink {
+  originUrl: string;
+  // null means omitted; [] means an explicitly empty list.
+  subIds: readonly string[] | null;
+}
+
 // Internal offer details; unknown business facts remain explicitly unknown.
 export interface ShopeeAffiliateOfferDetails extends ShopeeAffiliateOffer {
   description: null;
