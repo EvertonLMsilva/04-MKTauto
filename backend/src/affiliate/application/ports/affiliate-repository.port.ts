@@ -1,3 +1,4 @@
+import type { AffiliateCampaignSourceV1 } from '../../domain/affiliate-campaign-source.js';
 import type {
   AffiliateProduct,
   AffiliateCampaign,
@@ -11,8 +12,17 @@ export interface CreateBriefingInput {
 }
 export interface AffiliateRepository {
   close(): void;
+  getCampaignSource(
+    id: string,
+    revision: number,
+  ): AffiliateCampaignSourceV1 | null;
+  associateCampaignSource(
+    value: unknown,
+    key: string,
+    verifiedMediaRefs: readonly string[],
+  ): AffiliateCampaignSourceV1;
   replay<T>(
-    type: 'PRODUCT' | 'CAMPAIGN' | 'BRIEFING',
+    type: 'PRODUCT' | 'CAMPAIGN' | 'BRIEFING' | 'CAMPAIGN_SOURCE',
     payload: unknown,
     key: string,
   ): T | null;

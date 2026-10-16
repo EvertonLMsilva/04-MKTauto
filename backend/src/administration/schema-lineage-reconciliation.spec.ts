@@ -188,6 +188,7 @@ describe('preserve both applied 031/032 histories', () => {
           ).toBe('historical_acquisition');
         }
         for (const table of [
+          'affiliate_campaign_sources_v1',
           'fal_generations',
           'fal_financial_settlements',
           'video_generation_operations',
