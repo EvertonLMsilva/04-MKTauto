@@ -123,26 +123,71 @@ export function rejectAffiliateDynamicPrice(value: string, field: string) {
   )
     fail('AFFILIATE_DYNAMIC_PRICE_UNSUPPORTED', field);
 }
-export function validateAffiliateProduct(value: unknown): AffiliateProduct {
-  exact(value, PRODUCT_FIELDS, 'product');
-  const isV2 = value.schemaVersion === AFFILIATE_PRODUCT_V2_VERSION;
-  if (!isV2) schema(value.schemaVersion, AFFILIATE_PRODUCT_VERSION);
-  affiliateIdentifier(value.productId, 'productId');
-  revision(value.revision, 'revision');
-  text(value.name, 'name');
-  if (!isV2) text(value.brand, 'brand');
-  const evidence = validateEvidence(value.evidence);
-  if (isV2) validateBrand(value.brand, evidence);
-  validateAttributes(value.attributes, evidence);
-  list(value.media, 'media');
-  const refs = new Set<string>();
-  value.media.forEach((media, index) => {
-    exact(media, ['mediaRef', 'evidenceRef'], `media.${index}`);
-    text(media.mediaRef, 'mediaRef');
-    unique(refs, media.mediaRef, 'mediaRef');
-    reference(evidence, media.evidenceRef, 'MEDIA_USAGE_RIGHT');
+export interface AffiliateProductIssue {
+  code: string;
+  field: string;
+}
+type Check = (
+  operation: () => void,
+  path?: string,
+  issueField?: string,
+) => void;
+const strictCheck: Check = (operation) => operation();
+
+export function collectAffiliateProductIssues(
+  value: unknown,
+): AffiliateProductIssue[] {
+  const issues: AffiliateProductIssue[] = [];
+  checkProduct(value, (operation, path, issueField) => {
+    try {
+      operation();
+    } catch (error) {
+      if (!(error instanceof ContractValidationError)) throw error;
+      const leaf = error.path.replace(/^(?:attribute|evidence)\./, '');
+      const field = issueField ?? (path ? `${path}.${leaf}` : error.path);
+      if (
+        !issues.some(
+          (issue) => issue.code === error.code && issue.field === field,
+        )
+      )
+        issues.push({ code: error.code, field });
+    }
   });
-  return immutable(value) as unknown as AffiliateProduct;
+  return issues;
+}
+export function validateAffiliateProduct(value: unknown): AffiliateProduct {
+  checkProduct(value, strictCheck);
+  return immutable(value) as AffiliateProduct;
+}
+function checkProduct(value: unknown, check: Check) {
+  check(() => exact(value, PRODUCT_FIELDS, 'product', check));
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return;
+  const product = value as Record<string, unknown>;
+  const isV2 = product.schemaVersion === AFFILIATE_PRODUCT_V2_VERSION;
+  if (!isV2)
+    check(() => schema(product.schemaVersion, AFFILIATE_PRODUCT_VERSION));
+  check(() => affiliateIdentifier(product.productId, 'productId'));
+  check(() => revision(product.revision, 'revision'));
+  check(() => text(product.name, 'name'));
+  if (!isV2) check(() => text(product.brand, 'brand'));
+  const evidence = validateEvidence(product.evidence, check);
+  if (isV2) check(() => validateBrand(product.brand, evidence, check));
+  validateAttributes(product.attributes, evidence, check);
+  check(() => list(product.media, 'media'));
+  const refs = new Set<string>();
+  if (Array.isArray(product.media))
+    product.media.forEach((media, index) => {
+      check(() =>
+        exact(media, ['mediaRef', 'evidenceRef'], `media.${index}`, check),
+      );
+      if (!media || typeof media !== 'object' || Array.isArray(media)) return;
+      check(() => text(media.mediaRef, 'mediaRef'), `media.${index}`);
+      check(() => unique(refs, media.mediaRef, 'mediaRef'), `media.${index}`);
+      check(
+        () => reference(evidence, media.evidenceRef, 'MEDIA_USAGE_RIGHT'),
+        `media.${index}`,
+      );
+    });
 }
 export function affiliateBrandName(product?: AffiliateProduct | null) {
   return product?.schemaVersion === AFFILIATE_PRODUCT_V2_VERSION
@@ -154,18 +199,22 @@ export function affiliateBrandName(product?: AffiliateProduct | null) {
 function validateBrand(
   value: unknown,
   evidence: Map<string, AffiliateEvidence>,
+  check: Check = strictCheck,
 ) {
-  exact(value, ['status', 'name', 'evidenceRef'], 'brand');
+  exact(value, ['status', 'name', 'evidenceRef'], 'brand', check);
   if (
     !['KNOWN', 'DECLARED_UNBRANDED', 'NOT_PROVIDED'].includes(
       value.status as string,
     )
   )
-    fail('INVALID_AFFILIATE_BRAND_STATUS', 'brand.status');
-  if (value.status === 'KNOWN') text(value.name, 'brand.name');
+    check(() => fail('INVALID_AFFILIATE_BRAND_STATUS', 'brand.status'));
+  if (value.status === 'KNOWN') check(() => text(value.name, 'brand.name'));
   else if (value.name !== null)
-    fail('INVALID_AFFILIATE_BRAND_NAME', 'brand.name');
-  reference(evidence, value.evidenceRef, 'PRODUCT_SPECIFICATION');
+    check(() => fail('INVALID_AFFILIATE_BRAND_NAME', 'brand.name'));
+  check(
+    () => reference(evidence, value.evidenceRef, 'PRODUCT_SPECIFICATION'),
+    'brand',
+  );
 }
 export function validateAffiliateCampaign(value: unknown): AffiliateCampaign {
   exact(value, CAMPAIGN_FIELDS, 'campaign');
@@ -258,47 +307,100 @@ export function immutable<T>(value: T): T {
   freeze(copy);
   return copy;
 }
-function validateEvidence(value: unknown) {
-  list(value, 'evidence');
+function validateEvidence(value: unknown, check: Check = strictCheck) {
+  check(() => list(value, 'evidence'));
   const map = new Map<string, AffiliateEvidence>();
+  if (!Array.isArray(value)) return map;
   value.forEach((item, index) => {
-    exact(item, ['id', 'kind', 'sourceRef', 'recordedAt'], `evidence.${index}`);
-    const id = affiliateIdentifier(item.id, 'evidence.id');
-    if (map.has(id)) fail('DUPLICATE_AFFILIATE_VALUE', 'evidence.id');
-    if (
-      !['PRODUCT_SPECIFICATION', 'MEDIA_USAGE_RIGHT'].includes(
-        item.kind as string,
+    check(() =>
+      exact(
+        item,
+        ['id', 'kind', 'sourceRef', 'recordedAt'],
+        `evidence.${index}`,
+        check,
+      ),
+    );
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+    let valid = true;
+    const entryCheck: Check = (operation) =>
+      check(() => {
+        try {
+          operation();
+        } catch (error) {
+          valid = false;
+          throw error;
+        }
+      }, `evidence.${index}`);
+    entryCheck(() => affiliateIdentifier(item.id, 'evidence.id'));
+    entryCheck(() => {
+      if (map.has(item.id)) fail('DUPLICATE_AFFILIATE_VALUE', 'evidence.id');
+    });
+    entryCheck(() => {
+      if (!['PRODUCT_SPECIFICATION', 'MEDIA_USAGE_RIGHT'].includes(item.kind))
+        fail('INVALID_AFFILIATE_EVIDENCE_KIND', 'kind');
+    });
+    entryCheck(() => text(item.sourceRef, 'sourceRef'));
+    entryCheck(() => {
+      if (
+        typeof item.recordedAt !== 'string' ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
+          item.recordedAt,
+        ) ||
+        !Number.isFinite(Date.parse(item.recordedAt))
       )
-    )
-      fail('INVALID_AFFILIATE_EVIDENCE_KIND', 'kind');
-    text(item.sourceRef, 'sourceRef');
-    if (
-      typeof item.recordedAt !== 'string' ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?(?:Z|[+-]\d{2}:\d{2})$/.test(
-        item.recordedAt,
-      ) ||
-      !Number.isFinite(Date.parse(item.recordedAt))
-    )
-      fail('INVALID_AFFILIATE_TIMESTAMP', 'recordedAt');
-    map.set(id, item as unknown as AffiliateEvidence);
+        fail('INVALID_AFFILIATE_TIMESTAMP', 'recordedAt');
+    });
+    if (valid) map.set(item.id, item as AffiliateEvidence);
   });
   return map;
 }
 function validateAttributes(
   value: unknown,
   evidence: Map<string, AffiliateEvidence>,
+  check: Check = strictCheck,
 ) {
-  list(value, 'attributes');
+  check(() => list(value, 'attributes'));
   const names = new Set<string>();
+  if (!Array.isArray(value)) return;
   value.forEach((item, index) => {
-    exact(item, ['name', 'value', 'evidenceRef'], `attributes.${index}`);
-    text(item.name, 'attribute.name');
-    text(item.value, 'attribute.value');
-    unique(names, item.name, 'attribute.name');
-    if (/(?:price|pre[çc]o|valor monet[aá]rio)/i.test(item.name))
-      fail('AFFILIATE_DYNAMIC_PRICE_UNSUPPORTED', 'attributes');
-    rejectAffiliateDynamicPrice(item.value, 'attributes');
-    reference(evidence, item.evidenceRef, 'PRODUCT_SPECIFICATION');
+    check(() =>
+      exact(
+        item,
+        ['name', 'value', 'evidenceRef'],
+        `attributes.${index}`,
+        check,
+      ),
+    );
+    if (!item || typeof item !== 'object' || Array.isArray(item)) return;
+    check(() => text(item.name, 'attribute.name'), `attributes.${index}`);
+    check(() => text(item.value, 'attribute.value'), `attributes.${index}`);
+    check(
+      () => unique(names, item.name, 'attribute.name'),
+      `attributes.${index}`,
+    );
+    check(
+      () => {
+        if (
+          typeof item.name === 'string' &&
+          /(?:price|pre[\u00e7c]o|valor monet[a\u00e1]rio)/i.test(item.name)
+        )
+          fail('AFFILIATE_DYNAMIC_PRICE_UNSUPPORTED', 'attributes');
+      },
+      `attributes.${index}`,
+      `attributes.${index}.name`,
+    );
+    check(
+      () => {
+        if (typeof item.value === 'string')
+          rejectAffiliateDynamicPrice(item.value, 'attributes');
+      },
+      `attributes.${index}`,
+      `attributes.${index}.value`,
+    );
+    check(
+      () => reference(evidence, item.evidenceRef, 'PRODUCT_SPECIFICATION'),
+      `attributes.${index}`,
+    );
   });
 }
 function reference(
@@ -314,13 +416,16 @@ function exact(
   value: unknown,
   fields: string[],
   path: string,
+  check: Check = strictCheck,
 ): asserts value is Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     fail('INVALID_AFFILIATE_TYPE', path);
   for (const key of Object.keys(value))
-    if (!fields.includes(key)) fail('UNKNOWN_FIELD', `${path}.${key}`);
+    if (!fields.includes(key))
+      check(() => fail('UNKNOWN_FIELD', `${path}.${key}`));
   for (const key of fields)
-    if (!Object.hasOwn(value, key)) fail('REQUIRED_FIELD', `${path}.${key}`);
+    if (!Object.hasOwn(value, key))
+      check(() => fail('REQUIRED_FIELD', `${path}.${key}`));
 }
 function text(
   value: unknown,

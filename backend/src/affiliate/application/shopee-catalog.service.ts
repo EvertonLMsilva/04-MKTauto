@@ -5,14 +5,39 @@ import type {
   ShopeeAffiliateOffer,
   ShopeeAffiliateOfferDetails,
 } from '../domain/shopee-affiliate-contracts.js';
-import type { ShopeeOfferCandidate } from '../domain/shopee-offer-candidate.js';
+import type {
+  ShopeeOfferCandidate,
+  ShopeeOfferSelection,
+} from '../domain/shopee-offer-candidate.js';
 import { immutable } from '../domain/affiliate-contracts.js';
+import { ContractValidationError } from '../domain/affiliate.errors.js';
 
 @Injectable()
 export class ShopeeCatalogService {
   constructor(
     @Inject(SHOPEE_AFFILIATE) private readonly shopee: ShopeeAffiliatePort,
   ) {}
+
+  selectCandidate(
+    candidate: ShopeeOfferCandidate,
+    confirmed: true,
+  ): ShopeeOfferSelection {
+    if (
+      confirmed !== true ||
+      candidate?.source !== 'SHOPEE_AFFILIATE_API' ||
+      candidate.eligibility !== 'NOT_EVALUATED'
+    )
+      throw new ContractValidationError(
+        'SHOPEE_SELECTION_REQUIRED',
+        'selection',
+        'seleção explícita obrigatória',
+      );
+    return immutable({
+      state: 'SELECTED',
+      eligibility: 'NOT_EVALUATED',
+      candidate,
+    });
+  }
 
   async listCandidates(): Promise<readonly ShopeeOfferCandidate[]> {
     return this.toCandidates(await this.shopee.queryOffers());
