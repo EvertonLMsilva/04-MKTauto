@@ -19,6 +19,7 @@ export interface MediaRepository {
   getMediaSelection(id: string): SelectionReceipt | null;
 }
 export interface QualityRepository {
+  evaluateTemporalMedia?(id: string): Promise<unknown>;
   close(): void;
   getQualityControlReport(id: string): QualityControlReport | null;
   findQualityControlReport(
@@ -31,7 +32,7 @@ export interface MediaStore {
   openInitialRender?(readOnly?: boolean): InitialRenderRepository;
   openComposition(readOnly?: boolean): CompositionRepository;
   open(readOnly?: boolean): MediaRepository;
-  openQuality(): QualityRepository;
+  openQuality(readOnly?: boolean): QualityRepository;
   openRender(): {
     getVideoRender(id: string): VideoRender | null;
     close(): void;

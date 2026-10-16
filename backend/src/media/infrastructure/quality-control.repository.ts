@@ -4,7 +4,20 @@ import {
   qualityControlReportIdentityHash,
 } from '../domain/quality-control-contracts.js';
 import { MediaDatabase } from './media-database.js';
-import { getP4 } from './p4-qc.reader.js';
+import { getP4, getTemporalQC } from './p4-qc.reader.js';
+import {
+  mediaIdentityHash,
+  p4Fail,
+  p4ReportHash,
+  temporalReportId,
+  temporalResult,
+  validateTemporalEvidence,
+  validateTemporalReport,
+  type TemporalValidator,
+  type TemporalMediaIdentity,
+} from '../domain/p4-qc-contracts.js';
+import { adaptationHash } from '../domain/media-hash.js';
+import { MediaAssetRepository } from './media-asset.repository.js';
 export class QualityControlRepositoryError extends Error {
   readonly code: string;
   readonly field: string;
@@ -20,7 +33,95 @@ export class QualityControlRepositoryError extends Error {
     this.field = field;
   }
 }
-export class QualityControlRepository extends MediaDatabase {
+export class QualityControlRepository extends MediaAssetRepository {
+  private readonly temporalValidator?: TemporalValidator;
+  constructor(
+    path: ConstructorParameters<typeof MediaDatabase>[0],
+    operations: ConstructorParameters<typeof MediaDatabase>[1],
+    content: ConstructorParameters<typeof MediaDatabase>[2],
+    options: { readOnly?: boolean; temporalValidator?: TemporalValidator } = {},
+  ) {
+    super(path, operations, content, options);
+    this.temporalValidator = options.temporalValidator;
+  }
+  async evaluateTemporalMedia(mediaAssetId: string) {
+    // Read via the existing Media validator, including persisted identity integrity.
+    const asset = this.getMediaAsset(mediaAssetId);
+    if (!asset || asset.assetType !== 'VIDEO')
+      p4Fail('TEMPORAL_VIDEO_REQUIRED');
+    const identity: TemporalMediaIdentity = {
+      mediaAssetId: asset.mediaAssetId,
+      mediaReference: asset.mediaReference,
+      contentHash: asset.contentHash,
+      scriptContentHash: asset.scriptContentHash,
+      visualDirectionPosition: asset.visualDirectionPosition,
+    };
+    mediaIdentityHash(identity.mediaReference, identity.contentHash);
+    const validator = this.temporalValidator;
+    if (
+      validator &&
+      (!validator.id.trim() ||
+        !validator.version.trim() ||
+        validator.id === asset.provider ||
+        validator.id === 'fal_ai')
+    )
+      p4Fail('TEMPORAL_INDEPENDENT_VALIDATOR_REQUIRED');
+    const evidence = validateTemporalEvidence(
+      validator
+        ? await validator.evaluate(Object.freeze({ ...identity }))
+        : {
+            mediaReference: identity.mediaReference,
+            contentHash: identity.contentHash,
+            motion: 'NOT_VALIDATED',
+            continuity: 'NOT_VALIDATED',
+            fidelity: 'NOT_VALIDATED',
+            motionBasis: 'UNKNOWN',
+            provenance: null,
+          },
+      identity,
+    );
+    if (
+      validator &&
+      (evidence.provenance?.validator !== validator.id ||
+        evidence.provenance.version !== validator.version)
+    )
+      p4Fail('TEMPORAL_VALIDATOR_MISMATCH');
+    const report = {
+      schemaVersion: 'temporal-quality-control/1.0.0',
+      qualityControlReportId: temporalReportId(identity, evidence),
+      identity,
+      evidence,
+      result: temporalResult(evidence),
+      contentHash: '',
+    };
+    report.contentHash = p4ReportHash(report);
+    validateTemporalReport(report, identity);
+    const prior = getP4(this, 'qc_report', report.qualityControlReportId);
+    if (prior) {
+      validateTemporalReport(prior, identity);
+      if (prior.contentHash !== report.contentHash)
+        p4Fail('TEMPORAL_REPORT_CONFLICT');
+      return prior;
+    }
+    this.db
+      .prepare(
+        'INSERT OR IGNORE INTO p4_artifacts (kind,artifact_id,identity_hash,pipeline_run_id,payload_json) VALUES (?,?,?,?,?)',
+      )
+      .run(
+        'qc_report',
+        report.qualityControlReportId,
+        adaptationHash(report),
+        asset.pipelineRunId,
+        JSON.stringify(report),
+      );
+    return validateTemporalReport(
+      getP4(this, 'qc_report', report.qualityControlReportId),
+      identity,
+    );
+  }
+  getTemporalMediaQC(identity: TemporalMediaIdentity) {
+    return getTemporalQC(this, identity);
+  }
   getQualityControlReport(reportId: string): QualityControlReport | null {
     requireIdentifier(reportId, 'qualityControlReportId');
     const p4 = getP4(this, 'qc_report', reportId);
