@@ -3,6 +3,8 @@ import { ContentModule } from '../content/content.module.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import { AffiliateService } from '../affiliate/application/affiliate.service.js';
 import { VideoProductionPreparationService } from './application/video-production-preparation.service.js';
+import { VideoGenerationService } from './application/video-generation.service.js';
+import { FakeVideoGenerationProvider } from './infrastructure/fake-video-generation.provider.js';
 import { ContentService } from '../content/application/content.service.js';
 import { ContentOperationsModule } from '../content-operations/content-operations.module.js';
 import { CONTENT_OPERATIONS } from '../content-operations/application/ports/operations.port.js';
@@ -47,8 +49,18 @@ import {
     LocalFlowService,
     FalAcquisitionService,
     VideoProductionPreparationService,
+    VideoGenerationService,
   ],
   providers: [
+    {
+      provide: VideoGenerationService,
+      useFactory: () => {
+        const mode = process.env.FAL_GENERATION_MODE ?? 'fake';
+        if (mode === 'live') throw new Error('FAL_LIVE_DISABLED');
+        if (mode !== 'fake') throw new Error('FAL_MODE_INVALID');
+        return new VideoGenerationService(new FakeVideoGenerationProvider());
+      },
+    },
     {
       provide: VideoProductionPreparationService,
       inject: [ContentService, CONTENT_OPERATIONS, AffiliateService],
