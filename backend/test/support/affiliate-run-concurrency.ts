@@ -23,6 +23,8 @@ export async function raceRunContext(
   for (const [folder, name] of [
     ['domain', 'affiliate.errors'],
     ['domain', 'affiliate-contracts'],
+    ['domain', 'affiliate-campaign-source'],
+    ['domain', 'shopee-link-url'],
     ['domain', 'affiliate-run-context'],
     ['application', 'affiliate-commands.dto'],
     ['application/ports', 'affiliate-run-context.port'],

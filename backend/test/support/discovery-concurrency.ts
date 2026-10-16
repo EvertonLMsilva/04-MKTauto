@@ -19,6 +19,8 @@ export async function raceDiscovery(
   for (const [folder, name] of [
     ['domain', 'affiliate.errors'],
     ['domain', 'affiliate-contracts'],
+    ['domain', 'affiliate-campaign-source'],
+    ['domain', 'shopee-link-url'],
     ['application', 'affiliate-commands.dto'],
     ['infrastructure', 'sqlite-affiliate.repository'],
     ['domain', 'discovery-media-evidence'],

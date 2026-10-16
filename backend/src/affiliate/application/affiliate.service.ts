@@ -1,3 +1,7 @@
+import {
+  type AffiliateCampaignSourceV1,
+  validateAffiliateCampaignSource,
+} from '../domain/affiliate-campaign-source.js';
 import { Inject, Injectable } from '@nestjs/common';
 import { AFFILIATE_REPOSITORY } from './ports/affiliate-repository.port.js';
 import type {
@@ -126,6 +130,64 @@ export class AffiliateService {
       idempotencyKey,
       product: result.validatedProduct,
     });
+  }
+  async associateCampaignSource(command: unknown) {
+    commandEnvelope(command, [
+      'idempotencyKey',
+      'source',
+      'confirmed',
+      'verifiedMediaRefs',
+    ]);
+    if (command.confirmed !== true)
+      throw new ContractValidationError(
+        'AFFILIATE_SOURCE_CONFIRMATION_REQUIRED',
+        'confirmed',
+        'confirma��o expl�cita obrigat�ria',
+      );
+    const source = validateAffiliateCampaignSource(command.source);
+    const key = affiliateIdentifier(command.idempotencyKey, 'idempotencyKey');
+    const refs = command.verifiedMediaRefs;
+    if (
+      !Array.isArray(refs) ||
+      refs.some((ref) => typeof ref !== 'string' || !ref.trim()) ||
+      new Set(refs).size !== refs.length
+    )
+      throw new AffiliateRepositoryError(
+        'INVALID_AFFILIATE_INPUT',
+        'verifiedMediaRefs',
+      );
+    return this.withRepository(false, async (repo) => {
+      const payload = {
+        source,
+        verifiedMediaRefs: [...refs].sort((a, b) =>
+          a < b ? -1 : a > b ? 1 : 0,
+        ),
+      };
+      const replay = repo.replay<AffiliateCampaignSourceV1>(
+        'CAMPAIGN_SOURCE',
+        payload,
+        key,
+      );
+      if (replay !== null) return replay;
+      const campaign = repo.getCampaign(
+        source.campaignId,
+        source.campaignRevision,
+      );
+      if (!campaign)
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_CAMPAIGN_NOT_FOUND',
+          'campaignRevision',
+        );
+      await this.verifyProject(campaign);
+      return repo.associateCampaignSource(source, key, refs);
+    });
+  }
+  async getCampaignSource(id: string, revision: number) {
+    affiliateIdentifier(id, 'sourceId');
+    this.revision(revision);
+    return this.withRepository(true, (repo) =>
+      repo.getCampaignSource(id, revision),
+    );
   }
   async registerProduct(command: unknown) {
     commandEnvelope(command, ['idempotencyKey', 'product']);

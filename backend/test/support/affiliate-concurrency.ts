@@ -8,9 +8,22 @@ interface Result {
   ok: boolean;
   code?: string;
 }
-export async function raceProducts(
+export function raceProducts(
   database: string,
   inputs: { product: unknown; key: string }[],
+) {
+  return raceAffiliate(database, inputs, 'product');
+}
+export function raceCampaignSources(
+  database: string,
+  inputs: { source: unknown; key: string; refs: string[] }[],
+) {
+  return raceAffiliate(database, inputs, 'source');
+}
+async function raceAffiliate(
+  database: string,
+  inputs: unknown[],
+  operation: 'product' | 'source',
 ): Promise<Result[]> {
   const directory = dirname(database);
   // Execute the actual TS implementation in separate native workers. Transpile
@@ -18,6 +31,8 @@ export async function raceProducts(
   for (const [folder, name] of [
     ['domain', 'affiliate.errors'],
     ['domain', 'affiliate-contracts'],
+    ['domain', 'affiliate-campaign-source'],
+    ['domain', 'shopee-link-url'],
     ['application', 'affiliate-commands.dto'],
     ['infrastructure', 'sqlite-affiliate.repository'],
   ]) {
@@ -45,7 +60,11 @@ export async function raceProducts(
     parentPort.postMessage('ready');
     Atomics.wait(barrier, 0, 0);
     let result;
-    try { repository.registerProduct(workerData.input.product, workerData.input.key); result = {ok:true}; }
+    try {
+      if (workerData.operation === 'source') repository.associateCampaignSource(workerData.input.source, workerData.input.key, workerData.input.refs);
+      else repository.registerProduct(workerData.input.product, workerData.input.key);
+      result = {ok:true};
+    }
     catch(error) { result = {ok:false,code:error.code}; }
     finally { repository.close(); }
     parentPort.postMessage(result);
@@ -60,7 +79,7 @@ export async function raceProducts(
         (input) =>
           new Promise<Result>((resolve, reject) => {
             const worker = new Worker(pathToFileURL(workerPath), {
-              workerData: { database, input, barrier },
+              workerData: { database, input, barrier, operation },
             });
             workers.push(worker);
             const timer = setTimeout(
