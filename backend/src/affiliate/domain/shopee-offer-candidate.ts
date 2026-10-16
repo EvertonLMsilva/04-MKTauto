@@ -7,3 +7,10 @@ export interface ShopeeOfferCandidate {
   // Keeps FAKE/LIVE provenance distinct from the integration's source label.
   readonly offer: ShopeeAffiliateOfferDetails;
 }
+
+// Transient explicit user action; neither eligibility nor registration is implied.
+export interface ShopeeOfferSelection {
+  readonly state: 'SELECTED';
+  readonly eligibility: 'NOT_EVALUATED';
+  readonly candidate: ShopeeOfferCandidate;
+}

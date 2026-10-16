@@ -10,16 +10,36 @@ import {
   affiliateIdentifier,
   validateAffiliateProduct,
   validateAffiliateCampaign,
+  collectAffiliateProductIssues,
+  immutable,
 } from '../domain/affiliate-contracts.js';
 import type {
   AffiliateCampaign,
   AffiliateBriefing,
+  AffiliateProduct,
+  AffiliateProductIssue,
 } from '../domain/affiliate-contracts.js';
-import { AffiliateRepositoryError } from '../domain/affiliate.errors.js';
+import type { ShopeeOfferSelection } from '../domain/shopee-offer-candidate.js';
+import {
+  AffiliateRepositoryError,
+  ContractValidationError,
+} from '../domain/affiliate.errors.js';
 import {
   commandEnvelope,
   validateBriefingInput,
 } from './affiliate-commands.dto.js';
+
+export type ShopeeEligibilityResult =
+  | {
+      eligibility: 'BLOCKED';
+      pending: readonly AffiliateProductIssue[];
+      validatedProduct: null;
+    }
+  | {
+      eligibility: 'ELIGIBLE';
+      pending: readonly AffiliateProductIssue[];
+      validatedProduct: AffiliateProduct;
+    };
 
 @Injectable()
 export class AffiliateService {
@@ -29,6 +49,84 @@ export class AffiliateService {
     @Inject(PROJECT_SNAPSHOT_READER)
     private readonly projects: ProjectSnapshotReader,
   ) {}
+  // No repository, source adapter, or project reads. Candidate metadata is never evidence.
+  evaluateShopeeSelection(
+    selection: ShopeeOfferSelection,
+    product: unknown,
+    verifiedMediaRefs: readonly string[] = [],
+  ): ShopeeEligibilityResult {
+    if (
+      selection?.state !== 'SELECTED' ||
+      selection.candidate?.source !== 'SHOPEE_AFFILIATE_API'
+    )
+      return immutable({
+        eligibility: 'BLOCKED',
+        pending: [{ code: 'SHOPEE_SELECTION_REQUIRED', field: 'selection' }],
+        validatedProduct: null,
+      });
+    const pending = collectAffiliateProductIssues(product);
+    if (
+      product &&
+      typeof product === 'object' &&
+      'media' in product &&
+      Array.isArray(product.media)
+    ) {
+      product.media.forEach((media: unknown, index: number) => {
+        if (
+          !media ||
+          typeof media !== 'object' ||
+          !('mediaRef' in media) ||
+          !Array.isArray(verifiedMediaRefs) ||
+          !verifiedMediaRefs.includes(media.mediaRef as string)
+        )
+          pending.push({
+            code: 'SHOPEE_MEDIA_NOT_VERIFIED',
+            field: `media.${index}.mediaRef`,
+          });
+      });
+    }
+    if (pending.length)
+      return immutable({
+        eligibility: 'BLOCKED',
+        pending,
+        validatedProduct: null,
+      });
+    return immutable({
+      eligibility: 'ELIGIBLE',
+      pending: [],
+      validatedProduct: validateAffiliateProduct(product),
+    });
+  }
+
+  async registerShopeeSelection(
+    selection: ShopeeOfferSelection,
+    product: unknown,
+    verifiedMediaRefs: readonly string[],
+    idempotencyKey: string,
+    confirmed: true,
+  ) {
+    if (confirmed !== true)
+      throw new ContractValidationError(
+        'SHOPEE_REGISTRATION_CONFIRMATION_REQUIRED',
+        'confirmed',
+        'confirmação explícita obrigatória',
+      );
+    const result = this.evaluateShopeeSelection(
+      selection,
+      product,
+      verifiedMediaRefs,
+    );
+    if (result.eligibility !== 'ELIGIBLE')
+      throw new ContractValidationError(
+        'SHOPEE_SELECTION_BLOCKED',
+        'product',
+        'produto inelegível',
+      );
+    return this.registerProduct({
+      idempotencyKey,
+      product: result.validatedProduct,
+    });
+  }
   async registerProduct(command: unknown) {
     commandEnvelope(command, ['idempotencyKey', 'product']);
     const product = validateAffiliateProduct(command.product);
