@@ -1,5 +1,6 @@
 import type { MediaAsset } from './media.types.js';
 import { createHash } from 'node:crypto';
+import { validateMediaRightsEvidence } from './media-processing-rights.js';
 import { ContractValidationError } from '../../project/domain/project.errors.js';
 export const MEDIA_ASSET_CONTRACT_VERSION = 'media-asset/1.0.0';
 export const MEDIA_ASSET_V2_CONTRACT_VERSION = 'media-asset/2.0.0';
@@ -100,6 +101,11 @@ export function validateMediaAsset(input: unknown): MediaAsset {
   if (!PROVIDER_ORIGINS.has(value.origin) && value.provider !== null)
     fail('PROVIDER_NOT_APPLICABLE', 'provider');
   rights(value.rights);
+  if (Object.hasOwn(value.rights, 'evidence'))
+    validateMediaRightsEvidence(value.rights.evidence, {
+      mediaRef: value.mediaReference,
+      contentHash: value.contentHash,
+    });
   validateRightsOrigin(value.origin, value.rights.usageBasis);
   if (isV2) source(value.source, value.origin, value.provider);
   timestamp(value.createdAt, 'createdAt');
@@ -195,7 +201,14 @@ function httpsUrl(value: any, path: any): any {
 }
 function rights(value: any): any {
   record(value, 'rights');
-  exact(value, RIGHTS_FIELDS, 'rights');
+  exact(
+    value,
+    [
+      ...RIGHTS_FIELDS,
+      ...(Object.hasOwn(value, 'evidence') ? ['evidence'] : []),
+    ],
+    'rights',
+  );
   if (!USAGE_BASES.includes(value.usageBasis))
     fail('INVALID_USAGE_BASIS', 'rights.usageBasis');
   if (value.commercialUseAllowed !== true)

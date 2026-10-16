@@ -1,3 +1,5 @@
+import type { AffiliateEvidence } from '../../affiliate/domain/affiliate-contracts.js';
+
 export interface MediaAsset {
   schemaVersion: string;
   mediaAssetId: string;
@@ -27,6 +29,7 @@ export interface MediaAsset {
   rights: {
     usageBasis: 'OWNED' | 'LICENSED' | 'EXPLICIT_PERMISSION' | 'PROVIDER_TERMS';
     commercialUseAllowed: boolean;
+    evidence?: AffiliateEvidence[];
   };
   createdAt: string;
   revision: number;

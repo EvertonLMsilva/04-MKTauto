@@ -10,6 +10,16 @@ export interface AffiliateEvidence {
   kind: 'PRODUCT_SPECIFICATION' | 'MEDIA_USAGE_RIGHT';
   sourceRef: string;
   recordedAt: string;
+  mediaAuthorization?: MediaAuthorization;
+}
+export interface MediaAuthorization {
+  mediaRef: string;
+  contentHash: string;
+  commercialUse: 'GRANTED' | 'DENIED' | 'UNCONFIRMED';
+  processing: 'GRANTED' | 'DENIED' | 'UNCONFIRMED';
+  localProcessing: boolean;
+  // Exact provider identities. Local permission never implies third-party transfer.
+  externalProviders: string[];
 }
 export interface AffiliateAttribute {
   name: string;
@@ -315,7 +325,15 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
     check(() =>
       exact(
         item,
-        ['id', 'kind', 'sourceRef', 'recordedAt'],
+        [
+          'id',
+          'kind',
+          'sourceRef',
+          'recordedAt',
+          ...(Object.hasOwn(item ?? {}, 'mediaAuthorization')
+            ? ['mediaAuthorization']
+            : []),
+        ],
         `evidence.${index}`,
         check,
       ),
@@ -340,6 +358,39 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
         fail('INVALID_AFFILIATE_EVIDENCE_KIND', 'kind');
     });
     entryCheck(() => text(item.sourceRef, 'sourceRef'));
+    if (Object.hasOwn(item, 'mediaAuthorization'))
+      entryCheck(() => {
+        if (item.kind !== 'MEDIA_USAGE_RIGHT')
+          fail('INVALID_MEDIA_AUTHORIZATION', 'kind');
+        const a = item.mediaAuthorization as MediaAuthorization;
+        exact(
+          a,
+          [
+            'mediaRef',
+            'contentHash',
+            'commercialUse',
+            'processing',
+            'localProcessing',
+            'externalProviders',
+          ],
+          'mediaAuthorization',
+        );
+        text(a.mediaRef, 'mediaAuthorization.mediaRef', 250);
+        if (
+          typeof a.contentHash !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(a.contentHash) ||
+          !['GRANTED', 'DENIED', 'UNCONFIRMED'].includes(a.commercialUse) ||
+          !['GRANTED', 'DENIED', 'UNCONFIRMED'].includes(a.processing) ||
+          typeof a.localProcessing !== 'boolean' ||
+          !Array.isArray(a.externalProviders) ||
+          a.externalProviders.length > 100 ||
+          new Set(a.externalProviders).size !== a.externalProviders.length
+        )
+          fail('INVALID_MEDIA_AUTHORIZATION', 'mediaAuthorization');
+        a.externalProviders.forEach((provider) =>
+          affiliateIdentifier(provider, 'externalProviders'),
+        );
+      });
     entryCheck(() => {
       if (
         typeof item.recordedAt !== 'string' ||
@@ -353,6 +404,10 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
     if (valid) map.set(item.id, item as AffiliateEvidence);
   });
   return map;
+}
+export function validateAffiliateEvidence(value: unknown): AffiliateEvidence {
+  validateEvidence([value]);
+  return immutable(value) as AffiliateEvidence;
 }
 function validateAttributes(
   value: unknown,
