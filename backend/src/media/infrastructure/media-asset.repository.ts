@@ -20,6 +20,7 @@ import {
 import { validateMediaSelectionRequest } from '../domain/media-selection-contracts.js';
 import { createHash } from 'node:crypto';
 import { MediaDatabase } from './media-database.js';
+import { assertNewPhysicalMediaIdentity } from '../domain/media-identity.js';
 export class MediaAssetRepositoryError extends Error {
   readonly code: string;
   readonly field: string;
@@ -361,6 +362,7 @@ export class MediaAssetRepository extends MediaDatabase {
         );
       return this.getMediaAsset(asset.mediaAssetId)!;
     }
+    assertNewPhysicalMediaIdentity(asset.mediaReference, asset.contentHash);
     const logicalPrior = this.db
       .prepare(
         `SELECT media_asset_id FROM media_assets

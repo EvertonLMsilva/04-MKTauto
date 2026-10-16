@@ -1,8 +1,14 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
-import { mkdir, link, open, readFile, unlink } from 'node:fs/promises';
+import { mkdir, link, open, readFile, unlink, lstat } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { promisify } from 'node:util';
+import {
+  canonicalMediaReference,
+  parseMediaIdentity,
+  assertNewPhysicalMediaIdentity,
+} from '../domain/media-identity.js';
+import { LocalCompositionReferenceResolver } from './local-composition-reference-resolver.js';
 class PexelsVideoAdapterError extends Error {
   code: string;
   field: string;
@@ -43,7 +49,7 @@ export class FalVideoStorage {
     if (bytes.length > this.maxBytes)
       fail('PROVIDER_VIDEO_TOO_LARGE', 'video', 'vídeo excede o limite');
     const staging = join(this.root, '.staging');
-    await mkdir(staging, { recursive: true });
+    await this.prepareDirectory(['.staging']);
     const temporaryPath = inside(
       this.root,
       join(staging, `${randomUUID()}.mp4`),
@@ -68,7 +74,7 @@ export class FalVideoStorage {
         this.root,
         join(this.root, 'sha256', contentHash.slice(0, 2)),
       );
-      await mkdir(directory, { recursive: true });
+      await this.prepareDirectory(['sha256', contentHash.slice(0, 2)]);
       const physicalPath = inside(
         this.root,
         join(directory, `${contentHash}.mp4`),
@@ -78,6 +84,12 @@ export class FalVideoStorage {
         await link(temporaryPath, physicalPath);
       } catch (caught: any) {
         if (caught?.code !== 'EEXIST') throw caught;
+        if ((await lstat(physicalPath)).isSymbolicLink())
+          fail(
+            'PROVIDER_STORAGE_HASH_CONFLICT',
+            'storage',
+            'link simbólico não autorizado',
+          );
         const existing = await readFile(physicalPath);
         if (createHash('sha256').update(existing).digest('hex') !== contentHash)
           fail(
@@ -97,7 +109,7 @@ export class FalVideoStorage {
       }
       return Object.freeze({
         contentHash,
-        mediaReference: `media:sha256_${contentHash}`,
+        mediaReference: canonicalMediaReference(contentHash),
         physicalPath,
         reused,
         ...properties,
@@ -115,18 +127,74 @@ export class FalVideoStorage {
       await unlink(temporaryPath).catch(() => {});
     }
   }
-  async verify(output: any, { signal }: any = {}) {
-    if (!/^[a-f0-9]{64}$/.test(output?.contentHash)) return false;
-    const path = inside(
-      this.root,
-      join(
-        this.root,
-        'sha256',
-        output.contentHash.slice(0, 2),
-        `${output.contentHash}.mp4`,
-      ),
+  private async prepareDirectory(parts: string[]) {
+    await mkdir(this.root, { recursive: true });
+    let path = this.root;
+    for (let i = -1; i < parts.length; i++) {
+      if (i >= 0) {
+        path = join(path, parts[i]);
+        try {
+          await mkdir(path);
+        } catch (error) {
+          if ((error as { code?: string }).code !== 'EEXIST') throw error;
+        }
+      }
+      const entry = await lstat(path);
+      if (entry.isSymbolicLink() || !entry.isDirectory())
+        fail(
+          'PROVIDER_STORAGE_FAILED',
+          'storage',
+          'diretório físico não autorizado',
+        );
+    }
+  }
+  /** Copy verified bytes only. No MediaAsset, Finance operation, QC or approval is created. */
+  async materializeHistorical(
+    reference: string,
+    {
+      legacyRoot,
+      contentHash,
+      signal,
+    }: { legacyRoot: string; contentHash: string; signal?: AbortSignal },
+  ) {
+    parseMediaIdentity(reference, {
+      expectedHash: contentHash,
+      allowLegacy: true,
+    });
+    if (signal?.aborted)
+      fail('PROVIDER_CANCELLED', 'signal', 'operação cancelada');
+    const resolver = new LocalCompositionReferenceResolver({
+      voiceRoot: legacyRoot,
+      mediaRoot: legacyRoot,
+    });
+    const path = await resolver.resolveHistoricalVideo(
+      reference,
+      contentHash,
+      this.maxBytes,
     );
+    const bytes = await readFile(path, { signal });
+    // Verify again on the exact buffer passed to storage; never trust the reference alone.
+    if (createHash('sha256').update(bytes).digest('hex') !== contentHash)
+      fail(
+        'PROVIDER_STORAGE_HASH_CONFLICT',
+        'storage',
+        'origem física divergente',
+      );
+    return this.store(bytes, { signal });
+  }
+  async verify(output: any, { signal }: any = {}) {
     try {
+      const reference = canonicalMediaReference(output?.contentHash);
+      if (typeof output.mediaReference === 'string')
+        assertNewPhysicalMediaIdentity(
+          output.mediaReference,
+          output.contentHash,
+        );
+      const resolver = new LocalCompositionReferenceResolver({
+        voiceRoot: this.root,
+        mediaRoot: this.root,
+      });
+      const path = await resolver.resolveMedia(reference, 'mp4');
       const bytes = await readFile(path);
       if (
         createHash('sha256').update(bytes).digest('hex') !== output.contentHash
