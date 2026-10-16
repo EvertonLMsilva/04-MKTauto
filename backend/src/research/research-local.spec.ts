@@ -1,3 +1,8 @@
+import {
+  reference,
+  referenceResearchStore,
+} from '../../test/support/frozen-parity.js';
+import { provisionSchema } from '../administration/schema-provisioner.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -22,24 +27,28 @@ import {
 import { referenceInsight } from '../../test/support/research-insight-fixture.js';
 import { SqliteResearchReader } from './infrastructure/sqlite-research.reader.js';
 import { raceResearch } from '../../test/support/research-concurrency.js';
-const { ProjectRepository } = await import(
-  new URL('../../../src/project-repository.js', import.meta.url).href
-);
-const { TrendCatalogStore } = await import(
-  new URL('../../../src/trend-store.js', import.meta.url).href
-);
-const ranking = await import(
-  new URL('../../../src/domain/ranking.js', import.meta.url).href
-);
-const analysis = await import(
-  new URL('../../../src/trend-analysis.js', import.meta.url).href
-);
-const shortlist = await import(
-  new URL('../../../src/research-shortlist.js', import.meta.url).href
-);
-const research = await import(
-  new URL('../../../src/domain/research-contracts.js', import.meta.url).href
-);
+const ranking = {
+  rankTrendCandidates: reference('ranking.rankTrendCandidates'),
+  calculateTrendScores: reference('ranking.calculateTrendScores'),
+};
+const analysis = { analyzeTrendRun: reference('analysis.analyzeTrendRun') };
+const shortlist = {
+  buildResearchShortlist: reference('shortlist.buildResearchShortlist'),
+  selectResearchShortlistCandidates: reference(
+    'shortlist.selectResearchShortlistCandidates',
+  ),
+};
+const research = {
+  createResearchInput: reference('research.createResearchInput'),
+};
+function provision(path: string) {
+  const db = new DatabaseSync(path);
+  try {
+    provisionSchema(db, 39);
+  } finally {
+    db.close();
+  }
+}
 function json(value: any): string {
   return Array.isArray(value)
     ? `[${value.map(json).join(',')}]`
@@ -59,10 +68,9 @@ function fixture(
 ) {
   const directory = mkdtempSync(join(tmpdir(), 'research-parity-'));
   const path = join(directory, 'ts.sqlite');
-  const legacyPath = join(directory, 'js.sqlite');
-  for (const file of [path, legacyPath]) new ProjectRepository(file).close();
+  provision(path);
   const ts = new SqliteResearchRepository(path);
-  const js = new TrendCatalogStore(legacyPath);
+  const js = referenceResearchStore();
   try {
     operation(ts, js, path);
   } finally {
@@ -72,11 +80,11 @@ function fixture(
   }
 }
 
-describe('local Research JS/TS persistence parity', () => {
+describe('local Research against frozen legacy evidence', () => {
   it('serializes simultaneous exact retries and rejects competing content without partial writes', async () => {
     const directory = mkdtempSync(join(tmpdir(), 'research-race-'));
     const path = join(directory, 'catalog.sqlite');
-    new ProjectRepository(path).close();
+    provision(path);
     const value = batch({ key: 'race', at: DAY_ONE, views: 100 });
     try {
       expect(await raceResearch(path, [value, value])).toEqual([

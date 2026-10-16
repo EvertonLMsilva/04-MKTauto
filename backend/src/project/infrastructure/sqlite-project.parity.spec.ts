@@ -1,15 +1,17 @@
+import {
+  ReferenceProjectDatabase,
+  ReferenceProjectService,
+  seedRows,
+} from '../../../test/support/frozen-parity.js';
 import { DatabaseSync } from 'node:sqlite';
+import { readFileSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { provisionSchema } from '../../administration/schema-provisioner.js';
 import { SqliteProjectRepository } from './sqlite-project.repository.js';
 import { ProjectApplicationService } from '../application/project-application.service.js';
 import { projectFixture } from '../../../test/support/project-fixture.js';
 
-const legacyRepository = (await import(
-  new URL('../../../../src/project-repository.js', import.meta.url).href
-)) as { ProjectRepository: typeof SqliteProjectRepository };
-const js = (await import(
-  new URL('../../../../src/project-application-service.js', import.meta.url)
-    .href
-)) as { ProjectApplicationService: typeof ProjectApplicationService };
 const project = {
   id: 'project_parity',
   name: ' Nome ',
@@ -62,13 +64,69 @@ function failure(run: () => unknown) {
     return { name: e.name, code: e.code, field: e.field, message: e.message };
   }
 }
-describe('SQLite and commands JS × TS', () => {
+describe('SQLite commands against frozen legacy evidence', () => {
+  it.each([39, 42])(
+    'reads independently frozen legacy history and replays commands on schema %s without migrating',
+    (schema) => {
+      const golden = JSON.parse(
+        readFileSync(
+          new URL('../../../test/support/frozen-project.json', import.meta.url),
+          'utf8',
+        ),
+      );
+      const scenario = Object.entries(golden.records).find(([name]) =>
+        name.includes('produces byte-identical'),
+      )![1] as Record<string, any[]>;
+      const expected = scenario['project.archiveProject']![0]!.rows;
+      const directory = mkdtempSync(join(tmpdir(), 'project-frozen-history-'));
+      const path = join(directory, 'history.sqlite');
+      const db = new DatabaseSync(path);
+      try {
+        provisionSchema(db, schema);
+        seedRows(db, expected);
+        const before = db
+          .prepare('SELECT * FROM schema_migrations ORDER BY version')
+          .all();
+        const repository = new SqliteProjectRepository(path);
+        try {
+          const service = new ProjectApplicationService(repository);
+          for (const [method, command] of [
+            ['createProject', create],
+            ['createProjectVersion', version],
+            ['archiveProject', archive],
+          ] as const)
+            expect(service[method](command)).toEqual(
+              scenario['project.' + method]![0]!.result,
+            );
+          for (const snapshot of expected[1])
+            expect(repository.get(project.id, snapshot.version)).toEqual(
+              JSON.parse(snapshot.snapshot_json),
+            );
+          expect(rows(path)).toEqual(expected);
+          expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(
+            schema,
+          );
+          expect(
+            db
+              .prepare('SELECT * FROM schema_migrations ORDER BY version')
+              .all(),
+          ).toEqual(before);
+          expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+        } finally {
+          repository.close();
+        }
+      } finally {
+        db.close();
+        rmSync(directory, { recursive: true, force: true });
+      }
+    },
+  );
   it('canonicalizes object keys and metadata while preserving significant array order', async () => {
     const fixture = await projectFixture();
-    const legacy = new legacyRepository.ProjectRepository(fixture.database);
+    const legacy = new ReferenceProjectDatabase(fixture.database);
     const repository = new SqliteProjectRepository(fixture.database);
     try {
-      const a = new js.ProjectApplicationService(legacy);
+      const a = new ReferenceProjectService(legacy);
       const b = new ProjectApplicationService(repository);
       const input = {
         ...create,
@@ -122,7 +180,7 @@ describe('SQLite and commands JS × TS', () => {
     { ...create, project: { ...project, version: 2 } },
   ])('preserves command error precedence and fields %#', async (command) => {
     const fixture = await projectFixture();
-    const legacy = new legacyRepository.ProjectRepository(fixture.database);
+    const legacy = new ReferenceProjectDatabase(fixture.database);
     const repository = new SqliteProjectRepository(fixture.database);
     try {
       expect(
@@ -131,7 +189,7 @@ describe('SQLite and commands JS × TS', () => {
         ),
       ).toEqual(
         failure(() =>
-          new js.ProjectApplicationService(legacy).createProject(command),
+          new ReferenceProjectService(legacy).createProject(command),
         ),
       );
       expect(rows(fixture.database)).toEqual([[], [], []]);
@@ -144,10 +202,10 @@ describe('SQLite and commands JS × TS', () => {
   it('preserves conflicts and first state failure while leaving history intact', async () => {
     const left = await projectFixture();
     const right = await projectFixture();
-    const legacy = new legacyRepository.ProjectRepository(left.database);
+    const legacy = new ReferenceProjectDatabase(left.database);
     const repository = new SqliteProjectRepository(right.database);
     try {
-      const a = new js.ProjectApplicationService(legacy);
+      const a = new ReferenceProjectService(legacy);
       const b = new ProjectApplicationService(repository);
       a.createProject(create);
       b.createProject(create);
@@ -262,12 +320,10 @@ describe('SQLite and commands JS × TS', () => {
   it('produces byte-identical JSON, hashes and rows through all transitions', async () => {
     const left = await projectFixture();
     const right = await projectFixture();
-    const legacy = new legacyRepository.ProjectRepository(left.database);
+    const legacy = new ReferenceProjectDatabase(left.database);
     const repository = new SqliteProjectRepository(right.database);
     try {
-      const a = new js.ProjectApplicationService(
-        legacy as unknown as SqliteProjectRepository,
-      );
+      const a = new ReferenceProjectService(legacy);
       const b = new ProjectApplicationService(repository);
       expect(b.createProject(create)).toEqual(a.createProject(create));
       expect(b.createProjectVersion(version)).toEqual(
@@ -287,14 +343,12 @@ describe('SQLite and commands JS × TS', () => {
       right.cleanup();
     }
   });
-  it('replays commands across JS and TS in both directions after archival', async () => {
+  it('replays frozen commands and NestJS commands in both directions after archival', async () => {
     const fixture = await projectFixture();
-    const legacy = new legacyRepository.ProjectRepository(fixture.database);
+    const legacy = new ReferenceProjectDatabase(fixture.database);
     const repository = new SqliteProjectRepository(fixture.database);
     try {
-      const a = new js.ProjectApplicationService(
-        legacy as unknown as SqliteProjectRepository,
-      );
+      const a = new ReferenceProjectService(legacy);
       const b = new ProjectApplicationService(repository);
       const first = a.createProject(create);
       expect(b.createProject(create)).toEqual(first);

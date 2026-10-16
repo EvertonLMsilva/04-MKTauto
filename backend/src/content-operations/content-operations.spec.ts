@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import {
   affiliateRunFixture,
   outcome,
@@ -8,12 +10,8 @@ import {
   validateHandoff,
   sanitizePipelineRunError,
 } from './domain/operations-contracts.js';
-const legacyContracts = await import(
-  new URL('../../../src/domain/pipeline-run-contracts.js', import.meta.url).href
-);
-const legacyHandoff = await import(
-  new URL('../../../src/project-pipeline-handoff.js', import.meta.url).href
-);
+const legacyContracts = historicalResidualContracts('pipeline-run-contracts');
+const legacyHandoff = historicalResidualPersistence('project-pipeline-handoff');
 
 describe('Content Operations legacy parity', () => {
   let fixture: ReturnType<typeof affiliateRunFixture>;

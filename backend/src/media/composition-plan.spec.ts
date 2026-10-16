@@ -1,3 +1,4 @@
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { fixture } from '../../test/support/composition-plan-fixture.js';
 import { raceMedia } from '../../test/support/media-concurrency.js';
 import { CompositionPlanRepository } from './infrastructure/composition-plan.reader.js';
@@ -5,10 +6,7 @@ import {
   compositionPlanContentHash,
   compositionPlanIdentityHash,
 } from './domain/composition-plan-contracts.js';
-const contracts = await import(
-  new URL('../../../src/domain/composition-plan-contracts.js', import.meta.url)
-    .href
-);
+const contracts = historicalResidualContracts('composition-plan-contracts');
 
 function changed(value: any, changes: any) {
   const v = { ...value, ...changes };

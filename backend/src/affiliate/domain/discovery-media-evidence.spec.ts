@@ -1,14 +1,11 @@
 import { validateDiscoveryMedia } from './discovery-media-evidence.js';
+import { readFileSync } from 'node:fs';
 import {
   discoveryCandidate,
   discoveryAt,
 } from '../../../test/support/discovery-fixture.js';
-const legacy = await import(
-  new URL(
-    '../../../../src/domain/media-acquisition-contracts.js',
-    import.meta.url,
-  ).href
-);
+import { historicalContracts } from '../../../test/support/historical-contracts.js';
+const legacy = historicalContracts('discovery-media-evidence');
 const outcome = (fn: () => unknown) => {
   try {
     return fn();
@@ -20,6 +17,14 @@ const outcome = (fn: () => unknown) => {
   }
 };
 describe('embedded discovery media evidence JS × TS', () => {
+  it('uses independent historical observations instead of a legacy runtime', () => {
+    expect(
+      readFileSync(
+        new URL('./discovery-media-evidence.spec.ts', import.meta.url),
+        'utf8',
+      ),
+    ).not.toMatch(/new URL\(\s*['"]\.\.\/\.\.\/\.\.\/\.\.\/src\/[^'"]+\.js/);
+  });
   it('matches validation of rights, provenance and optional normalized telemetry', () => {
     const m = discoveryCandidate().mediaRightsEvidence.materials[0];
     const telemetry = {

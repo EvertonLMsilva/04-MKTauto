@@ -1,18 +1,16 @@
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
+import { historicalResidualContracts } from './historical-residual-contracts.js';
 import { campaignFinanceFixture, time } from './finance-fixture.js';
-const { registerAudioConfig } = await import(
-  new URL('../../../src/p4-video-repository.js', import.meta.url).href
+const { registerAudioConfig } = historicalResidualPersistence(
+  'p4-video-repository',
 );
-const { adaptationHash } = await import(
-  new URL('../../../src/domain/video-adaptation-contracts.js', import.meta.url)
-    .href
+const { adaptationHash } = historicalResidualContracts(
+  'video-adaptation-contracts',
 );
-const { videoRequestHash } = await import(
-  new URL('../../../src/domain/video-generation-contracts.js', import.meta.url)
-    .href
+const { videoRequestHash } = historicalResidualContracts(
+  'video-generation-contracts',
 );
-const { ttsRequest } = await import(
-  new URL('../../../src/domain/tts-finance-contracts.js', import.meta.url).href
-);
+const { ttsRequest } = historicalResidualContracts('tts-finance-contracts');
 
 export function ttsFinanceFixture() {
   const f = campaignFinanceFixture();

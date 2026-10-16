@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { affiliateRunFixture } from '../../test/support/affiliate-run-fixture.js';
 import { contentStore } from '../../test/support/content-store.js';
 import { script } from '../../test/support/content-fixture.js';
@@ -6,12 +8,8 @@ import { SqliteAffiliateRunContextPersistence } from '../affiliate/infrastructur
 import { affiliateHash } from '../affiliate/domain/affiliate-contracts.js';
 import { scriptContentHash } from './domain/script-contracts.js';
 import { validateAffiliateEditorialSelection } from './domain/affiliate-editorial-contracts.js';
-const legacy = await import(
-  new URL('../../../src/script-repository.js', import.meta.url).href
-);
-const contracts = await import(
-  new URL('../../../src/domain/affiliate-contracts.js', import.meta.url).href
-);
+const legacy = historicalResidualPersistence('script-repository');
+const contracts = historicalResidualContracts('affiliate-contracts');
 
 describe('Content owns Affiliate editorial decisions', () => {
   it('preserves editorial selection, commercial script, provenance and replay across JS/TS', () => {

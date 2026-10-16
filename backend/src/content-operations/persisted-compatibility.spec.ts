@@ -8,6 +8,18 @@ describe('Persisted pipeline identity compatibility', () => {
   let repository: SqliteOperationsRepository;
   beforeEach(() => {
     f = affiliateRunFixture();
+    // Seed the historical wire format explicitly: the shared fixture now creates
+    // canonical snapshots, which would make the partial/hash cases no-ops.
+    const snapshot = JSON.parse(String(row().project_snapshot_json));
+    delete snapshot.channel.minVideoAssetDurationSeconds;
+    delete snapshot.channel.maxVideoAssetDurationSeconds;
+    const trigger = f.base.db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE type='trigger' AND name='pipeline_runs_no_identity_update'",
+      )
+      .get()!;
+    rewrite(snapshot);
+    f.base.db.exec(String(trigger.sql));
     repository = new SqliteOperationsRepository(f.database);
   });
   afterEach(() => {
@@ -47,9 +59,21 @@ describe('Persisted pipeline identity compatibility', () => {
       )
       .run(JSON.stringify(snapshot), hash ?? digest);
   }
+  it('uses a historical fixture without canonical asset duration fields', () => {
+    const snapshot = JSON.parse(String(row().project_snapshot_json));
+    expect(snapshot.channel).not.toHaveProperty('minVideoAssetDurationSeconds');
+    expect(snapshot.channel).not.toHaveProperty('maxVideoAssetDurationSeconds');
+    expect(validateProjectSnapshot(snapshot).channel).toMatchObject({
+      minVideoAssetDurationSeconds: 25,
+      maxVideoAssetDurationSeconds: 45,
+    });
+  });
   it('reads and replays historical identity without modifying storage', () => {
     const before = row();
-    const expected = f.base.getRun('run_001');
+    const expected = {
+      ...f.base.getRun('run_001'),
+      projectSnapshot: JSON.parse(String(before.project_snapshot_json)),
+    };
     expect(repository.getRun('run_001')).toEqual(expected);
     expect(repository.startRun(replay())).toEqual(expected);
     expect(row()).toEqual(before);

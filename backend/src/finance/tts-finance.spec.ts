@@ -1,3 +1,4 @@
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { FinanceSession } from './infrastructure/finance.session.js';
 import { FinanceService } from './application/finance.service.js';
 import { ttsFinanceFixture } from '../../test/support/tts-finance-fixture.js';
@@ -10,13 +11,8 @@ import {
   ttsHash,
   ttsAudio,
 } from './domain/tts-financial-contracts.js';
-const legacy = await import(
-  new URL('../../../src/domain/tts-finance-contracts.js', import.meta.url).href
-);
-const voiceLegacy = await import(
-  new URL('../../../src/domain/voice-generation-contracts.js', import.meta.url)
-    .href
-);
+const legacy = historicalResidualContracts('tts-finance-contracts');
+const voiceLegacy = historicalResidualContracts('voice-generation-contracts');
 
 describe('safe TTS financial cycle', () => {
   it('preserves successful and invalid wire contracts against JS', () => {
@@ -130,51 +126,51 @@ describe('safe TTS financial cycle', () => {
       f.close();
     }
   });
-  it.each(['ts', 'js'] as const)(
-    'serializes identical claims with a %s contender and replayed cost reconciliation',
-    async (engine) => {
-      const f = ttsFinanceFixture(),
-        service = new FinanceService({
-          open: () => new FinanceSession(f.path),
-        });
-      try {
-        service.approveTts(f.plan, f.approval);
-        const claims = await raceFinance(f.path, [
-          { method: 'beginTts', args: [f.plan, time] },
-          { engine, method: 'beginTts', args: [f.plan, time] },
-        ]);
-        expect(claims.filter((r) => r.ok)).toHaveLength(1);
-        expect(claims.find((r) => !r.ok)?.code).toBe(
-          'TTS_RECONCILIATION_REQUIRED',
-        );
-        service.markTtsUnknown('tts_001');
-        service.recordTtsResult('tts_001', {
-          audio: f.audio,
-          billing: {
-            actualCostUsd: '0.004',
-            evidenceReference: 'fixture/invoice',
-          },
-        });
-        const reconciliations = await raceFinance(f.path, [
-          {
-            method: 'reconcileTts',
-            args: ['tts_001', 'fixture/reconciliation'],
-          },
-          {
-            method: 'reconcileTts',
-            args: ['tts_001', 'fixture/reconciliation'],
-          },
-        ]);
-        expect(reconciliations.every((r) => r.ok)).toBe(true);
-        expect(service.getLedgerByPipelineRun('run_001').events).toHaveLength(
-          1,
-        );
-        expect(service.getTts('tts_001')!.state).toBe('COMPLETED');
-      } finally {
-        f.close();
-      }
-    },
-  );
+  it('serializes identical claims between independent NestJS workers and replayed cost reconciliation', async () => {
+    const f = ttsFinanceFixture(),
+      service = new FinanceService({
+        open: () => new FinanceSession(f.path),
+      });
+    try {
+      service.approveTts(f.plan, f.approval);
+      const claims = await raceFinance(f.path, [
+        { method: 'beginTts', args: [f.plan, time] },
+        { method: 'beginTts', args: [f.plan, time] },
+      ]);
+      expect(new Set(claims.map((r) => r.workerThreadId)).size).toBe(2);
+      expect(claims.every((r) => r.workerThreadId > 0)).toBe(true);
+      expect(claims.filter((r) => r.ok)).toHaveLength(1);
+      expect(claims.find((r) => !r.ok)?.code).toBe(
+        'TTS_RECONCILIATION_REQUIRED',
+      );
+      service.markTtsUnknown('tts_001');
+      service.recordTtsResult('tts_001', {
+        audio: f.audio,
+        billing: {
+          actualCostUsd: '0.004',
+          evidenceReference: 'fixture/invoice',
+        },
+      });
+      const reconciliations = await raceFinance(f.path, [
+        {
+          method: 'reconcileTts',
+          args: ['tts_001', 'fixture/reconciliation'],
+        },
+        {
+          method: 'reconcileTts',
+          args: ['tts_001', 'fixture/reconciliation'],
+        },
+      ]);
+      expect(new Set(reconciliations.map((r) => r.workerThreadId)).size).toBe(
+        2,
+      );
+      expect(reconciliations.every((r) => r.ok)).toBe(true);
+      expect(service.getLedgerByPipelineRun('run_001').events).toHaveLength(1);
+      expect(service.getTts('tts_001')!.state).toBe('COMPLETED');
+    } finally {
+      f.close();
+    }
+  });
   it('blocks an unpaid transport and rolls back missing approval, scope and terminal transitions', async () => {
     const f = ttsFinanceFixture(),
       service = new FinanceService({ open: () => new FinanceSession(f.path) });

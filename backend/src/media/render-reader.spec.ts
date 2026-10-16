@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -11,12 +13,9 @@ import { HumanApprovalRepository } from '../publishing/infrastructure/human-appr
 import { HumanApprovalService } from '../publishing/application/human-approval.service.js';
 import { p4Qc } from '../../test/support/media-qc-fixture.js';
 import { p4ReportHash } from './domain/p4-qc-contracts.js';
-const p4 = await import(
-  new URL('../../../src/p4-video-repository.js', import.meta.url).href
-);
-const originContracts = await import(
-  new URL('../../../src/domain/video-generation-contracts.js', import.meta.url)
-    .href
+const p4 = historicalResidualPersistence('p4-video-repository');
+const originContracts = historicalResidualContracts(
+  'video-generation-contracts',
 );
 const hash = (v: unknown) =>
   import('./domain/media-hash.js').then((m) => m.adaptationHash(v));

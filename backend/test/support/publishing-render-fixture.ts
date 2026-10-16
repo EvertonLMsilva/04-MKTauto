@@ -1,39 +1,33 @@
-// Legacy provisions immutable fixtures only; no rendering or providers.
-const { ARTIFACT_LINEAGE_CONTRACT_VERSION } = await import(
-  new URL('../../../src/domain/artifact-lineage-contracts.js', import.meta.url)
-    .href
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
+import { historicalResidualContracts } from './historical-residual-contracts.js';
+// Historical observations provision immutable fixtures; no rendering or providers.
+const { ARTIFACT_LINEAGE_CONTRACT_VERSION } = historicalResidualContracts(
+  'artifact-lineage-contracts',
 );
 const { COMPOSITION_PLAN_CONTRACT_VERSION, compositionPlanContentHash } =
-  await import(
-    new URL(
-      '../../../src/domain/composition-plan-contracts.js',
-      import.meta.url,
-    ).href
-  );
-const { MEDIA_ASSET_CONTRACT_VERSION } = await import(
-  new URL('../../../src/domain/media-asset-contracts.js', import.meta.url).href
+  historicalResidualContracts('composition-plan-contracts');
+const { MEDIA_ASSET_CONTRACT_VERSION } = historicalResidualContracts(
+  'media-asset-contracts',
 );
 const { SCRIPT_CONTRACT_VERSION, scriptContentHash, validateScript } =
-  await import(
-    new URL('../../../src/domain/script-contracts.js', import.meta.url).href
-  );
-const { VIDEO_RENDER_CONTRACT_VERSION } = await import(
-  new URL('../../../src/domain/video-render-contracts.js', import.meta.url).href
+  historicalResidualContracts('script-contracts');
+const { VIDEO_RENDER_CONTRACT_VERSION } = historicalResidualContracts(
+  'video-render-contracts',
 );
-const { VOICE_TRACK_CONTRACT_VERSION } = await import(
-  new URL('../../../src/domain/voice-track-contracts.js', import.meta.url).href
+const { VOICE_TRACK_CONTRACT_VERSION } = historicalResidualContracts(
+  'voice-track-contracts',
 );
-const { PIPELINE_HANDOFF_CONTRACT_VERSION } = await import(
-  new URL('../../../src/project-pipeline-handoff.js', import.meta.url).href
+const { PIPELINE_HANDOFF_CONTRACT_VERSION } = historicalResidualPersistence(
+  'project-pipeline-handoff',
 );
-const { PipelineRunService } = await import(
-  new URL('../../../src/pipeline-run-service.js', import.meta.url).href
+const { PipelineRunService } = historicalResidualPersistence(
+  'pipeline-run-service',
 );
-const { VoiceTrackRepository } = await import(
-  new URL('../../../src/voice-track-repository.js', import.meta.url).href
+const { VoiceTrackRepository } = historicalResidualPersistence(
+  'voice-track-repository',
 );
-const { VideoRenderRepository } = await import(
-  new URL('../../../src/video-render-repository.js', import.meta.url).href
+const { VideoRenderRepository } = historicalResidualPersistence(
+  'video-render-repository',
 );
 const STARTED_AT = '2026-09-28T12:00:00.000Z';
 export function setup(

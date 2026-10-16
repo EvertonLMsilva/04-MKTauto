@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { contentFixture, script } from '../../test/support/content-fixture.js';
 import { contentStore } from '../../test/support/content-store.js';
 import { mediaStore } from '../../test/support/media-store.js';
@@ -9,12 +11,8 @@ import {
 import { mediaAcquisitionRequestHash } from './domain/media-acquisition-contracts.js';
 import { mediaSelectionRequestHash } from './domain/media-selection-contracts.js';
 import type { MediaAsset } from './domain/media.types.js';
-const legacy = await import(
-  new URL('../../../src/media-asset-repository.js', import.meta.url).href
-);
-const contracts = await import(
-  new URL('../../../src/domain/media-asset-contracts.js', import.meta.url).href
-);
+const legacy = historicalResidualPersistence('media-asset-repository');
+const contracts = historicalResidualContracts('media-asset-contracts');
 function outcome(action: () => unknown) {
   try {
     return { result: action() };

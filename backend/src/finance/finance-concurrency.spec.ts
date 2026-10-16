@@ -7,41 +7,39 @@ import {
 } from '../../test/support/finance-fixture.js';
 import { raceFinance } from '../../test/support/finance-concurrency.js';
 describe('Finance real simultaneous SQLite transactions', () => {
-  it.each(['ts', 'js'] as const)(
-    'shares the final global balance across campaigns with a %s contender',
-    async (engine) => {
-      const f = campaignFinanceFixture();
+  it('shares the final global balance across campaigns between two independent NestJS workers', async () => {
+    const f = campaignFinanceFixture();
+    try {
+      const results = await raceFinance(f.path, [
+        {
+          method: 'reserveGlobal',
+          args: [{ ...proof('a'), pipelineRunId: 'run_001' }, time],
+        },
+        {
+          method: 'reserveGlobal',
+          args: [{ ...proof('b'), pipelineRunId: 'run_002' }, time],
+        },
+      ]);
+      expect(new Set(results.map((r) => r.workerThreadId)).size).toBe(2);
+      expect(results.every((r) => r.workerThreadId > 0)).toBe(true);
+      expect(results.filter((r) => r.ok)).toHaveLength(1);
+      expect(results.find((r) => !r.ok)?.code).toBe(
+        'GLOBAL_DAILY_BUDGET_EXCEEDED',
+      );
+      const ts = new FinanceSession(f.path);
       try {
-        const results = await raceFinance(f.path, [
-          {
-            method: 'reserveGlobal',
-            args: [{ ...proof('a'), pipelineRunId: 'run_001' }, time],
-          },
-          {
-            engine,
-            method: 'reserveGlobal',
-            args: [{ ...proof('b'), pipelineRunId: 'run_002' }, time],
-          },
-        ]);
-        expect(results.filter((r) => r.ok)).toHaveLength(1);
-        expect(results.find((r) => !r.ok)?.code).toBe(
-          'GLOBAL_DAILY_BUDGET_EXCEEDED',
-        );
-        const ts = new FinanceSession(f.path);
-        try {
-          expect(ts.getGlobalUsage(time).dailyUsd).toBe('0.6');
-          expect(
-            ts.db.prepare('SELECT count(*) n FROM global_paid_operations').get()
-              .n,
-          ).toBe(1);
-        } finally {
-          ts.close();
-        }
+        expect(ts.getGlobalUsage(time).dailyUsd).toBe('0.6');
+        expect(
+          ts.db.prepare('SELECT count(*) n FROM global_paid_operations').get()
+            .n,
+        ).toBe(1);
       } finally {
-        f.close();
+        ts.close();
       }
-    },
-  );
+    } finally {
+      f.close();
+    }
+  });
   it('claims the same intent once and only one dispatcher can proceed', async () => {
     const f = financeFixture();
     try {
@@ -74,7 +72,6 @@ describe('Finance real simultaneous SQLite transactions', () => {
           args: ['a', { actualCostUsd: '0.2', evidenceReference: 'bill:a' }],
         },
         {
-          engine: 'js',
           method: 'settleGlobal',
           args: ['a', { actualCostUsd: '0.3', evidenceReference: 'bill:b' }],
         },

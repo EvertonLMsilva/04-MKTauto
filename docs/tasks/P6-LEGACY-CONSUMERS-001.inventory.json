@@ -1,0 +1,2086 @@
+{
+  "scope": "Modified and untracked local JS tests; direct imports/requires/dynamic literal imports. Computed loaders require individual review.",
+  "baseline": "8b951d595867af5ab17bfcc4bf1b5f2cad675b5e",
+  "consumers": [
+    {
+      "path": "test/affiliate-repository.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "cadastro idempotente, revisões consecutivas, conflitos e reabertura preservam dados exatos",
+        "referências inválidas e falha transacional não deixam campanha/vínculo/chave parcial",
+        "SQL impede update/delete de revisões, briefing, comandos e vínculo; vínculo divergente é rejeitado",
+        "adulteração em disco é detectada na leitura; vínculo sem briefing ou hash divergente interrompe recuperação",
+        "briefing referenciado ausente impede recuperação; comandos conflitam entre tipos",
+        "reserva de contexto genérico bloqueia vínculo tardio e rejeita reutilização divergente",
+        "migração 029 preserva projeto/run do schema 028 e rollback não deixa schema parcial"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:sqlite",
+        "../src/project-repository.js",
+        "node:os",
+        "node:path",
+        "../src/pipeline-run-repository.js",
+        "../src/affiliate-repository.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/cost-ledger.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "cleanup mantém erro original e expõe falha de remoção",
+        "cleanup remove banco temporário após erro e propaga falha isolada de remoção",
+        "registra, recupera e lista eventos em ordem determinística",
+        "retry idêntico não duplica e conflitos falham sem efeito parcial",
+        "exige run persistida e projeto e versão coerentes",
+        "valida artefato opcional e identidade de conteúdo contra a linhagem",
+        "ledger soma decimais exatamente, separa moedas e não inventa zero",
+        "banco impede update e delete retroativos",
+        "falha transacional não deixa estado parcial e expõe erro sanitizado",
+        "leitura revalida contrato e hash persistidos",
+        "migração 010 é aditiva e preserva registros existentes"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:sqlite",
+        "../src/cost-ledger-repository.js",
+        "../src/cost-ledger-service.js",
+        "../src/domain/cost-event-contracts.js",
+        "../src/domain/artifact-lineage-contracts.js",
+        "../src/project-pipeline-handoff.js",
+        "../src/pipeline-run-service.js",
+        "../src/project-repository.js"
+      ]
+    },
+    {
+      "path": "test/ffmpeg-video-composer.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "catálogo dedicado e fake determinístico preservam as portas existentes",
+        "resolver aceita referências exatas e bloqueia desconhecida, traversal, ausência e symlink fora do root",
+        "storage promove por hard-link, reutiliza conteúdo íntegro e recusa conflito",
+        "adapter valida cadeia, cópias consumidas, timeline e argumentos allowlisted",
+        "V2 compõe VIDEO seguido de IMAGE com trim ou loop, crop, cortes e somente voz mapeada",
+        "V2 rejeita vídeo curto sem loop antes do FFmpeg",
+        "falha antes do processo para cadeia divergente, direitos, formato, limites e cancelamento",
+        "falha sanitizada para saída ausente, probe malformado, timeout e limpa staging",
+        "rejeita hash físico divergente da voz copiada antes de executar processo",
+        "rejeita streams e propriedades medidas divergentes sem promover render",
+        "classifica binário ausente e falha de decode sem expor detalhes",
+        "executor limita logs e encerra por timeout ou cancelamento",
+        "aceita duração do container quantizada para o próximo frame CFR"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/adapters/composition-artifact-catalog.js",
+        "../src/adapters/local-composition-reference-resolver.js",
+        "../src/adapters/local-video-storage.js",
+        "../src/domain/composition-plan-contracts.js",
+        "../test-support/physical-fixtures.js",
+        "../test-support/fake-video-composer.js"
+      ]
+    },
+    {
+      "path": "test/human-approval.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "contrato fecha identidade exata, decisões e política de justificativa",
+        "service aprova PASS/WARN, rejeita, deduplica retry e detecta conflito lógico",
+        "service rejeita render ou QC divergente e nova identidade exige nova decisão",
+        "repository aplica migration 025, mantém histórico imutável e consulta aprovação por escopo exato"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/domain/human-approval-contracts.js",
+        "../src/human-approval-repository.js",
+        "../src/human-approval-service.js",
+        "../src/project-repository.js"
+      ]
+    },
+    {
+      "path": "test/idea-scoring.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "normaliza conteúdo, deriva intenção do snapshot e produz score reproduzível",
+        "score gerado respeita o contrato após arredondamento dos componentes",
+        "ideia única mantém novidade e diversidade indisponíveis",
+        "empates usam identidade e ID estáveis"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "../src/domain/idea-contracts.js",
+        "node:test",
+        "node:assert/strict",
+        "../src/idea-scoring.js"
+      ]
+    },
+    {
+      "path": "test/idea-selection-repository.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "seleciona ideia explícita, recupera e lista sem duplicar retry",
+        "rejeita artefatos ausentes, escopo divergente e hashes inexatos",
+        "retry conflitante usa código estável e falha transacional não deixa linhagem parcial",
+        "correção cria nova revisão append-only e preserva ordem determinística",
+        "rejeita revisão sem predecessora imediata e dupla substituição",
+        "leitura revalida contrato e hash persistidos",
+        "leitura revalida os hashes persistidos da ideia e do score",
+        "migração 012 é aditiva e preserva ideias existentes"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "../src/project-repository.js",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:sqlite",
+        "../src/idea-selection-repository.js",
+        "../src/idea-selection-service.js",
+        "../src/idea-service.js",
+        "../src/pipeline-run-service.js",
+        "../src/project-pipeline-handoff.js",
+        "../src/domain/contracts.js",
+        "../src/domain/idea-selection-contracts.js",
+        "../src/domain/research-shortlist-contracts.js"
+      ]
+    },
+    {
+      "path": "test/media-acquisition-service.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "obtém uma vez com entrada pública derivada da direção e do snapshot",
+        "separa duração física do asset VIDEO da duração alvo do conteúdo",
+        "retry terminal retorna ativo persistido sem nova chamada",
+        "liga telemetria e custo comprovável ao ativo sem inventar custo ausente",
+        "conflito de identidade falha antes de roteiro e provider",
+        "revalida hash, escopo e direção antes do provider",
+        "rejeita saída não confiável ou divergente sem persistir",
+        "sanitiza falha externa sem persistência parcial"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/media-acquisition-contracts.js",
+        "../src/media-acquisition-service.js",
+        "../src/media-provider.js"
+      ]
+    },
+    {
+      "path": "test/ollama.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "usa schema estruturado local e força fonte verde para falso",
+        "propõe clusters somente com rótulos e referências de evidência conhecidas",
+        "consome resposta estruturada em streaming sem depender do término para receber headers",
+        "rejeita tentativa da IA de fornecer snapshot e deriva evidência pelo candidato",
+        "completa aliases ausentes em uma correção dirigida",
+        "repara localmente batch com aliases duplicados sem reiniciar o clustering",
+        "reparo de um batch não invalida aliases dos batches anteriores",
+        "repete reparo local do batch antes de exigir retry global",
+        "divide volume real em lotes determinísticos e preserva cobertura exata"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/adapters/ollama.js"
+      ]
+    },
+    {
+      "path": "test/openai-adapter.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "P1 adapter inclui briefing/evidências e regras comerciais com fetch fake",
+        "adapter comercial envia seleção e slots sem ideia; negativa financeira comprova ausência de transporte",
+        "configuração vem do ambiente, expõe somente valores públicos e hash estável",
+        "adapter usa Responses com schema estrito e não devolve payload bruto",
+        "adapter envia faixa alvo segura sem mutar os limites físicos",
+        "adapter usa fallback físico determinístico quando as margens inverteriam a faixa",
+        "adapter classifica resposta inválida, falhas HTTP, timeout e cancelamento sem vazar detalhes"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "./global-finance-fixtures.js",
+        "node:test",
+        "../src/domain/affiliate-contracts.js",
+        "./affiliate-fixtures.js",
+        "node:assert/strict",
+        "../src/adapters/openai.js",
+        "../src/openai-config.js",
+        "../src/script-generation-policy.js"
+      ]
+    },
+    {
+      "path": "test/openai-idea-adapter.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "adapter gera propostas estruturadas somente com evidência da shortlist",
+        "adapter mantém validação local de evidência duplicada sem keyword incompatível",
+        "adapter classifica recusas HTTP sem expor resposta externa",
+        "adapter rejeita ID inventado pelo provider"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "./global-finance-fixtures.js",
+        "node:test",
+        "node:assert/strict",
+        "../src/adapters/openai-idea.js"
+      ]
+    },
+    {
+      "path": "test/openai-image-adapter.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "configura snapshot, 9:16 exato, direitos automáticos e pricing versionados",
+        "gera PNG físico, mede dimensões, calcula hash e persiste referência opaca",
+        "não cria custo sem usage completo e rejeita usage inválido",
+        "recusa vídeo, campos inesperados e referência estratégica antes da rede",
+        "valida PNG somente por bytes, estrutura, CRC, dimensões e conteúdo completo",
+        "aceita Base64 grande sem RangeError e preserva a validação física do PNG",
+        "valida alfabetos e padding Base64 sem aceitar padding intermediário",
+        "limita resposta e imagem sem deixar temporários",
+        "storage content-addressed reutiliza conteúdo válido e não sobrescreve conflito",
+        "timeout, cancelamento, redirect e erros externos são sanitizados"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "./global-finance-fixtures.js",
+        "node:test",
+        "node:assert/strict",
+        "node:crypto",
+        "node:zlib",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/adapters/openai-image.js",
+        "../src/adapters/local-media-storage.js",
+        "../src/adapters/png-image.js",
+        "../src/openai-image-config.js",
+        "../src/media-provider.js",
+        "../src/domain/media-acquisition-contracts.js"
+      ]
+    },
+    {
+      "path": "test/openai-voice-adapter.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "configura modelo, voz built-in e direitos de forma explícita e reproduzível",
+        "política V2 seleciona voz e estilo em pt-BR com transporte fake, mantendo V1 restrita",
+        "gera WAV físico, mede duração, calcula hash dos bytes e devolve referência opaca",
+        "aceita WAV PCM válido com chunks auxiliares e tamanhos de streaming",
+        "rejeita chunks WAV duplicados, truncados ou com streaming fora de data",
+        "falha fechado para limites do endpoint, estilo não suportado e custom voice antes da rede",
+        "rejeita output externo vazio, excessivo, formato incorreto e WAV fora do subconjunto MVP",
+        "storage content-addressed valida e reutiliza hash existente sem sobrescrever",
+        "timeout, cancelamento e recusas do provider são sanitizados e limpam temporários"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "./global-finance-fixtures.js",
+        "node:test",
+        "node:assert/strict",
+        "node:crypto",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/adapters/openai-voice.js",
+        "../src/adapters/local-voice-storage.js",
+        "../src/adapters/wav-audio.js",
+        "../src/openai-voice-config.js",
+        "../src/voice-provider.js",
+        "../src/domain/voice-generation-contracts.js"
+      ]
+    },
+    {
+      "path": "test/operator-preview-console.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "estado das sete etapas e QC e reconstruído somente de artefatos persistidos",
+        "run persistida não simula etapa ativa antes de Gerar Preview",
+        "catálogo expõe somente código e campo públicos da falha de bootstrap",
+        "status vincula MP4 e QC ao mesmo VideoRender final por ID e SHA-256",
+        "FAIL permanece explícito e bloqueia visualmente aprovação",
+        "decisão usa render e QC exatos e refresh recupera persistência e histórico",
+        "status não marca Composition como SUCCEEDED quando tentativa real está RUNNING",
+        "status usa estado persistido das tentativas para todas as etapas",
+        "status não associa QC de outro VideoRender da mesma execução",
+        "falha persistida marca somente a primeira etapa incompleta e usa mensagem pública",
+        "start concorrente é idempotente e refresh consulta persistência novamente",
+        "falha de execução em run terminal permanece pública e sanitizada para retry",
+        "vídeo aceita somente ID e hash válidos e resolve referência persistida",
+        "console cria run por bootstrap e persiste seleção por service sem lógica HTTP",
+        "bootstrap preserva campo público indexado sem refletir detalhe privado",
+        "start propaga opt-in explícito de recuperação para execução do preview",
+        "start mantém recuperação desativada por padrão"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/operator-preview-console.js"
+      ]
+    },
+    {
+      "path": "test/operator-preview-http.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "HTTP expõe catálogo, status, início e decisão humana",
+        "HTTP cria run/bootstrap e registra seleção de ideia pelos endpoints mínimos",
+        "HTTP transmite MP4 exato com range sem aceitar path do cliente",
+        "HTTP decodifica identidade opaca do vídeo antes de consultar o adapter",
+        "HTTP sanitiza erro público sem stack, path ou segredo",
+        "HTTP recuperação solicita start com opt-in explícito"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:http",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/operator-preview-http.js"
+      ]
+    },
+    {
+      "path": "test/pexels-video-adapter.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "usa endpoint V1, seleção determinística e preserva atribuição Pexels",
+        "usa description como fallback quando mediaSearchQuery está ausente",
+        "não repete ID externo e falha de forma sanitizada sem candidato",
+        "descarta clipe físico inválido e tenta o próximo candidato elegível",
+        "configuração recusa endpoint antigo e mantém chave fora da configuração pública"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:stream",
+        "../src/adapters/pexels-video.js",
+        "../src/pexels-video-config.js"
+      ]
+    },
+    {
+      "path": "test/project-application-service.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "criação registra comando e produz ProjectSnapshot versão 1",
+        "retry idêntico retorna exatamente o resultado persistido sem repetir efeitos",
+        "reutilização da chave com conteúdo ou tipo divergente falha de forma estável",
+        "nova versão exige versão esperada e mantém snapshots históricos estáveis",
+        "arquivamento é lógico, idempotente e preserva todo o histórico",
+        "valida chave, ator, instante e payload antes de persistir",
+        "falha ao registrar comando reverte projeto e snapshot e permite retry limpo",
+        "falha no registro não deixa versão ou arquivamento parcial",
+        "migração de comandos é aditiva, reproduzível e registros são imutáveis"
+      ],
+      "disposition": "migrated to compiled NestJS contracts; explicit administrative provisioning for database fixtures; assertions retained",
+      "originalImports": [
+        "node:test",
+        "node:assert/strict",
+        "./sqlite-test-fixture.js",
+        "node:sqlite",
+        "../src/project-application-service.js",
+        "../src/project-repository.js"
+      ],
+      "imports": [
+        "../backend/dist/administration/schema-provisioner.js",
+        "node:test",
+        "node:assert/strict",
+        "./sqlite-test-fixture.js",
+        "node:sqlite",
+        "../backend/dist/project/application/project-application.service.js",
+        "../backend/dist/project/infrastructure/sqlite-project.repository.js"
+      ]
+    },
+    {
+      "path": "test/project-contracts.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "produz ProjectSnapshot normalizado, versionado e profundamente imutável",
+        "revalida o envelope normalizado de ProjectSnapshot",
+        "aplica defaults determinísticos documentados",
+        "mantém imagens estáticas por padrão e aceita mídia mista explicitamente",
+        "separa duração de assets de vídeo da duração final no MIXED_MEDIA_V2",
+        "define schemas separados para Project, ChannelProfile, ReferenceProfile e ProjectSnapshot",
+        "validadores de entidade retornam somente dados normalizados",
+        "rejeita duração invertida, frequência e agenda inconsistentes com código e campo estáveis",
+        "rejeita redes, timezone, horário, idioma, formato e proporção inválidos",
+        "rejeita identificação, listas duplicadas, referências não estratégicas e schema incompatível",
+        "rejeita credenciais, tokens e segredos em qualquer profundidade",
+        "rejeita campos desconhecidos sem refletir payload não sanitizado"
+      ],
+      "disposition": "migrated to compiled NestJS contracts; explicit administrative provisioning for database fixtures; assertions retained",
+      "originalImports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/project-contracts.js",
+        "../src/domain/contracts.js"
+      ],
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../backend/dist/project/domain/project-contracts.js",
+        "../backend/dist/project/domain/project.errors.js"
+      ]
+    },
+    {
+      "path": "test/project-repository.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "migra banco vazio e reabre sem alterar projetos persistidos",
+        "falha de migração reverte schema e versão integralmente",
+        "cria e recupera snapshot normalizado, versionado e profundamente imutável",
+        "nova versão exige versão esperada e preserva integralmente o histórico",
+        "lista projetos e versões persistidas para seleção explícita do operador",
+        "impede colisões de identificação e versão com códigos e campos estáveis",
+        "impede update perdido quando a versão esperada diverge",
+        "arquiva logicamente sem remover o histórico e bloqueia novas versões",
+        "triggers do banco impedem alteração ou remoção retroativa de snapshots",
+        "falha intermediária reverte integralmente a criação",
+        "valida pelo contrato antes de persistir e rejeita segredos",
+        "valida novamente após recuperar e não devolve payload adulterado"
+      ],
+      "disposition": "migrated to compiled NestJS contracts; explicit administrative provisioning for database fixtures; assertions retained",
+      "originalImports": [
+        "node:test",
+        "../src/project-repository.js",
+        "node:assert/strict",
+        "./sqlite-test-fixture.js",
+        "node:sqlite",
+        "../src/domain/project-contracts.js",
+        "../src/project-repository.js"
+      ],
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "./sqlite-test-fixture.js",
+        "node:sqlite",
+        "../backend/dist/project/domain/project-contracts.js",
+        "../backend/dist/project/infrastructure/sqlite-project.repository.js",
+        "../backend/dist/project/domain/project.errors.js",
+        "../backend/dist/administration/schema-provisioner.js"
+      ]
+    },
+    {
+      "path": "test/quality-control.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "política versionada agrega PASS, WARN e FAIL de forma determinística",
+        "QC reconhece revisão de voz com predecessora exata e rejeita hash adulterado",
+        "QC reconhece revisão de mídia e rejeita predecessora adulterada",
+        "contrato vincula QC ao ID e SHA-256 exatos e bloqueia somente FAIL",
+        "service persiste uma vez, reutiliza retry e não reaproveita QC para hash divergente",
+        "repository preserva QC após migration 25, persiste findings imutáveis e deduplica retry"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "../src/project-repository.js",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/domain/quality-control-contracts.js",
+        "../src/quality-control-repository.js",
+        "../src/quality-control-service.js"
+      ]
+    },
+    {
+      "path": "test/real-preview-service.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "timeline preserva ordem, cobre exatamente a voz e é reproduzível",
+        "orquestra em ordem e retorna somente render revisão 2 fisicamente verificado",
+        "retry com novo requestedAt reutiliza timestamp original e efeitos terminais",
+        "cancelamento interrompe efeitos restantes, não falha run e não emite preview",
+        "falha definitiva sanitiza, terminaliza a run e não verifica preview",
+        "falhas de provider, mídia, legenda e burn-in não deixam preview final falso",
+        "preserva código público específico de falha do provider na run",
+        "preserva falha pública de duração física da voz na run",
+        "recupera etapa interrompida explicitamente sem tratar execução concorrente como crash",
+        "propaga recuperação explícita para qualquer etapa interrompida",
+        "não recupera etapa RUNNING sem opt-in explícito",
+        "integra etapas existentes com identidades explícitas na fundação de recovery",
+        "MIXED_MEDIA_V2 persiste seleção e plano explícito sem alterar o caminho estático"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/real-preview-service.js",
+        "../src/domain/real-preview-contracts.js"
+      ]
+    },
+    {
+      "path": "test/script-contracts.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "valida e congela roteiro completo com ordem e hash reproduzíveis",
+        "rejeita ordem, narração incoerente, duração e revisão inválidas",
+        "exige indicação visual vinculada e sinalização de afirmação sensível",
+        "rejeita campos proibidos, conteúdo sensível e hash inexato",
+        "aceita mediaSearchQuery opcional na direção visual persistida",
+        "rejeita mediaSearchQuery acima de 100 caracteres"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/script-contracts.js"
+      ]
+    },
+    {
+      "path": "test/script-generation-contracts.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "valida solicitação de geração com identidade e hash reproduzível",
+        "rejeita identidade reutilizável inválida, campos desconhecidos e segredo",
+        "trata a saída do provider como entrada não confiável",
+        "aceita mediaSearchQuery explícita e curta na direção visual"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/script-generation-contracts.js"
+      ]
+    },
+    {
+      "path": "test/script-generation-service.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "P1 entrega briefing validado, CTA, disclosure e evidências ao provider fake",
+        "P1 briefing ausente, inválido ou adulterado impede provider e retry",
+        "P1 rejeita CTA divergente, disclosure ausente e preço sem validade sem persistir roteiro",
+        "gera uma vez a partir da seleção explícita e persiste script/1.0.0 com escopo exato",
+        "retry concluído retorna o roteiro persistido sem nova chamada e conflito falha de forma estável",
+        "rejeita seleção ausente, não selecionada e cadeia divergente antes do provider",
+        "saída inválida, duração incompatível e falha do provider não deixam persistência parcial",
+        "serviço mantém a validação de duração na faixa física original",
+        "custo conhecido cria evento correlacionado e retry não o duplica",
+        "retry de falha observada não chama novamente o provider",
+        "falha com custo conhecido atribui custo à chamada sem artefato ou detalhe privado",
+        "cancelamento anterior à chamada não invoca o provider",
+        "bloqueio financeiro mantém código global sanitizado"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/script-generator.js",
+        "../src/script-generation-service.js",
+        "../src/domain/script-generation-contracts.js",
+        "../src/domain/affiliate-contracts.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/script-repository.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "P1 geração real no SQLite preserva briefing original, linhagem e retry após reabertura",
+        "P1 fluxo genérico usa repositório real e impede vinculação durante chamada em andamento",
+        "FIX01 falha antes do dispatch libera reserva; resultado incerto permanece bloqueado após reabrir",
+        "FIX01 reserva expirada antes do provider admite recuperação e impede executor antigo",
+        "FIX01 migração 030 não reenvia contexto legado sem resultado conhecido",
+        "registra, recupera e lista roteiro explícito sem duplicar retry",
+        "persiste identidade e metadados públicos de geração atomicamente",
+        "falha ao registrar identidade reverte roteiro e linhagem gerados",
+        "persiste telemetria e custo correlacionados na mesma transação",
+        "falha registra telemetria sanitizada sem criar artefato falso",
+        "falha ao inserir telemetria reverte roteiro, linhagem e custo",
+        "rejeita seleção ausente, escopo, hashes e configuração divergentes",
+        "correção cria revisão append-only e preserva roteiro anterior",
+        "conflitos usam códigos estáveis e rollback não deixa linhagem parcial",
+        "leitura revalida contrato, colunas e hashes da seleção e ideia",
+        "leitura rejeita quando a ideia selecionada deixa de preservar o hash exato",
+        "migração comercial preserva roteiro legado, dependentes e chaves estrangeiras",
+        "migrações 013 a 024 são aditivas e preservam seleção existente"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "../src/project-repository.js",
+        "node:fs",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:sqlite",
+        "../src/script-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/script-generation-service.js",
+        "./affiliate-fixtures.js",
+        "../src/domain/ai-call-telemetry-contracts.js",
+        "../src/domain/cost-event-contracts.js",
+        "../src/script-service.js",
+        "../src/idea-selection-service.js",
+        "../src/idea-service.js",
+        "../src/pipeline-run-service.js",
+        "../src/project-pipeline-handoff.js",
+        "../src/domain/contracts.js",
+        "../src/domain/idea-selection-contracts.js",
+        "../src/domain/script-contracts.js",
+        "../src/domain/script-generation-contracts.js",
+        "../src/domain/research-shortlist-contracts.js"
+      ]
+    },
+    {
+      "path": "test/trend-daily.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "execução diária consolida fontes, ranking e artefatos sem repetir etapas no retry",
+        "retry com a mesma identidade rejeita mudança material de configuração",
+        "fontes sem configuração não são chamadas e preservam resultado válido do YouTube",
+        "propaga categoria YouTube derivada do nicho editorial",
+        "CSV neutraliza fórmula, HTML escapa conteúdo e catálogo não expõe segredos",
+        "exportação de Research não antecipa shortlist global",
+        "falha de escrita não substitui catálogo anterior",
+        "shortlist consome somente a execução e o catálogo exatos, preserva lacunas e retry",
+        "dois projetos executam na mesma data sem colisão e ficam rastreáveis",
+        "pipelineRunId não pode ser reutilizado por outro projeto",
+        "plano registra rede sem adapter e YouTube como dependência técnica",
+        "idioma e contexto vêm do snapshot enquanto regiões permanecem operacionais",
+        "relatório mantém links dos candidatos quando o ranking está indisponível",
+        "relatório exibe views e dia publicado para candidatos ranqueados e sem ranking",
+        "clustering usa no máximo cinco tentativas com backoff injetável",
+        "clustering esgotado preserva a causa original para diagnóstico",
+        "clustering não repete erro de configuração ou HTTP 4xx",
+        "clustering registra exaustão após cinco tentativas",
+        "execução diária recupera clustering transitório e registra tentativas"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/domain/contracts.js",
+        "../src/domain/research-contracts.js",
+        "../src/domain/project-contracts.js",
+        "../src/trend-daily.js",
+        "../src/trend-export.js",
+        "../src/research-shortlist.js",
+        "../src/trend-store.js"
+      ]
+    },
+    {
+      "path": "test/trend-store.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "catálogo preserva compatibilidade com projeto schema 36 sem migrá-lo",
+        "pesquisa abre schema atual de projeto sem rebaixar ou alterar migrações",
+        "versão atual declarada sem histórico compatível permanece rejeitada",
+        "migra banco vazio e reabre o catálogo sem alteração destrutiva",
+        "migrações 007 a 024 preservam catálogo e análises existentes da versão 6",
+        "deduplica por ID em dias diferentes e preserva snapshots e reaparição",
+        "retry com a mesma chave não duplica entidades e rejeita conteúdo divergente",
+        "IDs de plataforma distintos têm precedência mesmo quando a URL coincide",
+        "URL canônica equivalente deduplica fallback e identidade é promovida quando surge ID",
+        "métrica ausente e contador incompatível mantêm velocidade indisponível",
+        "recupera run completa com cobertura, cluster e score preservados",
+        "anexa análise atomicamente e retry não duplica clusters ou scores",
+        "snapshot gravado não pode ser substituído por outra observação",
+        "falha por chave estrangeira reverte toda a transação com código estável",
+        "rejeita versão futura do catálogo com código estável"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:sqlite",
+        "../src/domain/contracts.js",
+        "../src/trend-store.js",
+        "../src/project-repository.js"
+      ]
+    },
+    {
+      "path": "test/youtube.test.js",
+      "localState": " M",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "coleta categorias oficiais e remove vídeos duplicados",
+        "ignora categoria sem chart disponível na região",
+        "aplica categoria editorial na descoberta regional mostPopular",
+        "resolve categoria YouTube para nicho editorial de jogos"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/adapters/youtube.js"
+      ]
+    },
+    {
+      "path": "test/affiliate-discovery.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "contrato independente: VERIFIED exige prova vinculada; preço UNKNOWN não é inventado",
+        "elegibilidade aplica política sem promover UNKNOWN; preço só é exigido quando utilizado",
+        "ranking determinístico deduplica e exclui histórico de uso",
+        "CSV enumera candidatos, registra erro por linha e preserva findProduct",
+        "fonte sem autorização é rejeitada",
+        "runtime configura enumeração opt-in sem quebrar lookup legado",
+        "provas divergentes, duplicatas conflitantes e linha JSON inválida não aprovam produto",
+        "descoberta alimenta CommercialAutoService real com dependências simuladas",
+        "seleção persistida concorrente entrega catálogo e briefing ao comercial uma só vez",
+        "jobs concorrentes não reservam o mesmo produto; execução UNKNOWN nunca é reenviada",
+        "descoberta interrompida retoma seleção persistida e propaga recuperação comercial"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/domain/affiliate-contracts.js",
+        "../src/domain/affiliate-discovery-contracts.js",
+        "../src/adapters/csv-external-catalog.js",
+        "../src/adapters/local-catalog-cache.js",
+        "../src/external-catalog-runtime.js",
+        "../src/affiliate-discovery-service.js",
+        "../src/affiliate-repository.js",
+        "../src/human-approval-repository.js",
+        "../src/commercial-auto-service.js",
+        "../src/script-generation-service.js",
+        "../src/voice-generation-service.js",
+        "../src/daily-auto-runtime.js",
+        "../src/budget-gate.js",
+        "../src/cost-ledger-repository.js",
+        "../src/subtitle-track-repository.js",
+        "../src/stage-recovery-repository.js",
+        "../src/stage-recovery-service.js",
+        "./affiliate-fixtures.js",
+        "node:fs/promises"
+      ]
+    },
+    {
+      "path": "test/affiliate-editorial.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "seleção comercial e roteiro OPERATOR reutilizam briefing real sem tendências ou scores",
+        "gerador comercial usa seleção AUTOMATION e briefing sem criar ideias; reutiliza resultado",
+        "AUTOMATION persiste política e vínculo comercial sem inventar ator HUMAN",
+        "AUTOMATION rejeita política incompleta, vínculo divergente e direitos ausentes",
+        "migração incremental 038 preserva seleção HUMAN e roteiro OPERATOR do schema 037",
+        "seleção comercial rejeita ator automático, evidência inexistente, hash e escopo divergentes",
+        "roteiro comercial não aceita seleção ausente nem origem gerada por IA",
+        "referência canônica da imagem mantém direitos somente com bytes e escopo idênticos",
+        "derivado local exige proveniência exata e não modifica a operação UNKNOWN"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/script-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/domain/affiliate-contracts.js",
+        "../src/domain/script-contracts.js",
+        "../src/script-generation-service.js",
+        "../src/project-repository.js",
+        "../src/domain/script-generation-contracts.js",
+        "./affiliate-fixtures.js",
+        "../src/commercial-hybrid-service.js",
+        "../src/commercial-video-generation.js",
+        "../src/domain/video-generation-contracts.js"
+      ]
+    },
+    {
+      "path": "test/affiliate-product-v2.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "V2 rejeita estados, nomes e evidências inconsistentes sem enfraquecer V1",
+        "V2 mantém preço variável e campos fora do contrato proibidos",
+        "persistência JSON aceita revisões V1/V2 sem migração e mantém hashes/idempotência"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/affiliate-contracts.js",
+        "../src/pipeline-run-repository.js",
+        "../src/affiliate-repository.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/commercial-auto.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "master simulado 20s: seleção, roteiro, mídia, Kokoro, plano, render e QC idempotentes",
+        "mesma identidade concorrente não duplica transporte; UNKNOWN permanece bloqueado",
+        "RUNNING interrompido exige reconciliação; resultado persistido é reutilizado sem transporte",
+        "identidade comercial rejeita mudança de materiais e preserva histórico",
+        "bloqueio financeiro comprovado antes do transporte permite retomada após resolução"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/human-approval-repository.js",
+        "../src/stage-recovery-repository.js",
+        "../src/subtitle-track-repository.js",
+        "../src/stage-recovery-service.js",
+        "../src/affiliate-repository.js",
+        "../src/commercial-auto-service.js",
+        "../src/script-generation-service.js",
+        "../src/voice-generation-service.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/commercial-hybrid.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "produto V2: identidade visual usa projeto versionado, sem confundir fabricante e anunciante",
+        "narração comercial preserva parágrafos do roteiro e rejeita outros controles ou segredos",
+        "evidência privada de direitos aceita locator Windows e rejeita controles/credenciais",
+        "identificação publicitária fica presente em todos os segmentos comerciais",
+        "contrato 20s, mídias/direitos/narração e identidade exata; sem conceder aprovação",
+        "persistência aditiva mantém P4 fechado, schema atual e recibos imutáveis",
+        "perfil 5s preserva LIVE 10s; autorização financeira ausente bloqueia antes do provider",
+        "orçamento e aprovação exata persistidos, direitos e retry idempotente com fal mock",
+        "E2E local: master 20s 1080x1920, movimento, voz e legenda; reexecução não codifica"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "../src/project-repository.js",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:child_process",
+        "node:util",
+        "../test-support/physical-fixtures.js",
+        "../src/domain/composition-plan-contracts.js",
+        "../src/domain/affiliate-contracts.js",
+        "../src/domain/commercial-hybrid-contracts.js",
+        "../src/commercial-video-generation.js",
+        "../src/adapters/local-generated-video-storage.js",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/commercial-hybrid-service.js",
+        "../src/budget-gate.js",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/video-generation-service.js",
+        "../src/domain/video-generation-contracts.js",
+        "../src/domain/live-video-contracts.js",
+        "./affiliate-fixtures.js",
+        "../src/human-approval-repository.js",
+        "../src/subtitle-generation-service.js",
+        "../src/subtitle-rendering-service.js",
+        "../src/adapters/ffmpeg-subtitle-renderer.js",
+        "../src/adapters/ffmpeg-quality-inspector.js",
+        "../src/quality-control-service.js",
+        "../src/manual-distribution-service.js",
+        "../src/commercial-hybrid-repository.js",
+        "../src/adapters/ffmpeg-commercial-hybrid.js",
+        "node:fs/promises"
+      ]
+    },
+    {
+      "path": "test/daily-auto.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "Brasília muda data às 03 UTC",
+        "claims entre instâncias e versão/retry preservam uma identidade",
+        "reinício recupera apenas dono morto e usa entrada original",
+        "UNKNOWN não reenvia; falha conhecida permite retry",
+        "sem elegibilidade, orçamento global e QC bloqueiam",
+        "scheduler configura horário, ignora inativas e retoma no mesmo dia",
+        "reinício após meia-noite retoma dia anterior antes do horário diário",
+        "SQLite arbitra claims em executores paralelos reais",
+        "campanhas diárias compartilham reservas atômicas do BudgetGate",
+        "bloqueio após render mantém referência ao master persistido"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:worker_threads",
+        "../src/cost-ledger-repository.js",
+        "../src/budget-gate.js",
+        "../src/daily-auto.js",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "path": "test/economic-video-profile.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "perfil econômico versionado e hash exato; divergências rejeitadas sem afetar LIVE",
+        "adapter envia audio=false só para perfil explícito; legado false e respostas incorretas bloqueiam",
+        "financeiro: sem autorização/orçamento, hash errado e UNKNOWN não provocam novo POST",
+        "storage requer requisição econômica íntegra para MP4 sem áudio"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/commercial-video-generation.js",
+        "../src/domain/live-video-contracts.js",
+        "../src/domain/video-generation-contracts.js",
+        "../src/adapters/fal-ltx-video-generation.js",
+        "../src/adapters/local-generated-video-storage.js",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/budget-gate.js",
+        "../src/video-generation-service.js",
+        "../test-support/physical-fixtures.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/external-catalog-runtime.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "duas fontes do mesmo provider mantêm identidade, cache e resultado independentes",
+        "NOT_FOUND é resultado real de varredura; identidade não sofre coerção",
+        "falha de um feed é explícita e não vira NOT_FOUND nem esconde outro feed",
+        "configuração rejeita feeds duplicados e data da fonte sem evidência",
+        "data comprovada é preservada sem afirmar atualização da fonte hoje",
+        "CLI recebe configuração explícita e retorna JSON; falha tem exitCode não zero"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/external-catalog-runtime.js",
+        "../src/external-catalog-cli.js"
+      ]
+    },
+    {
+      "path": "test/external-catalog.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "port, identidade opaca, busca exata e CSV com aspas/multilinha",
+        "reutiliza no dia local e atualiza na virada, sem confundir data da fonte",
+        "fonte inacessível não permite fallback antigo; primeira falha é explícita",
+        "concorrência entre instâncias promove somente um snapshot",
+        "bloqueio de outro processo impede atualização duplicada",
+        "hash adulterado é rejeitado e não aparece como válido",
+        "CSV grande é processado incrementalmente e encontra o último item",
+        "configuração exige política e limites; registros acima do limite são rejeitados",
+        "cache reutilizável rejeita produção incompleta e limpa staging/lock",
+        "mapeamento, delimitador e política são injetados; cache não mistura contratos",
+        "UTF-8 inválido e cabeçalhos duplicados não são promovidos"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/adapters/csv-external-catalog.js",
+        "../src/adapters/local-catalog-cache.js",
+        "../src/ports/external-catalog-port.js"
+      ]
+    },
+    {
+      "path": "test/fal-ltx-p3-e2e.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "E2E: AURA ONE → adapter real/fila fake → 3 MP4 → 9 derivados → reinício idempotente",
+        "E2E falhas: perda de dispatch/timeout preservam reserva, tentativa e bloqueio após reinício",
+        "E2E falhas: polling incerto recupera pelo ID; erro remoto e MP4 inválido nunca completam",
+        "E2E gates: preço ausente/estimado, 0.34 e saldo insuficiente bloqueiam antes de POST"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:crypto",
+        "node:child_process",
+        "node:util",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:url",
+        "../src/adapters/fal-ltx-video-generation.js",
+        "../src/adapters/local-generated-video-storage.js",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/video-generation-service.js",
+        "../src/budget-gate.js",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/domain/video-generation-contracts.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/fal-ltx-video-generation.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "submit mapeia v2, protege headers e persiste request_id sem segundo POST",
+        "timeout pós-dispatch e HTTP 503 não geram retry nem recuperação sem ID",
+        "recuperação usa ID persistido, consulta resultado e guarda bytes originais com áudio",
+        "COMPLETED com erro ou resultado inválido nunca vira sucesso",
+        "imagem adulterada ou não autorizada e configuração incompatível bloqueiam antes do dispatch",
+        "sem teto ou com estimativa o BudgetGate bloqueia antes de reservar e enviar",
+        "reinício do adapter recupera pelo ID sem imagem, preço ou nova submissão",
+        "MP4 físico mantém hash e áudio original após armazenamento",
+        "consulta incerta preserva ID; resposta de outra operação é rejeitada",
+        "sem áudio validado o resultado permanece desconhecido e não guarda URL assinada",
+        "storage local preserva bytes e exige faixa de áudio antes de aceitar original"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:crypto",
+        "node:child_process",
+        "node:util",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/adapters/fal-ltx-video-generation.js",
+        "../src/adapters/local-generated-video-storage.js",
+        "../src/video-generation-service.js",
+        "../src/budget-gate.js",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/domain/video-generation-contracts.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/ffmpeg-multiplatform.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "1 original produz 3 formatos com padding, áudio copiado, duração e sincronização",
+        "3 originais produzem 9 versões; reinício e repetição reutilizam manifesto sem encode",
+        "sem áudio mantém silêncio; áudio não autorizado é removido",
+        "direitos, hash, referência e margens inválidas bloqueiam; artefato adulterado não é reutilizado",
+        "áudio com offset preserva sincronização; falha parcial não publica manifesto"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:path",
+        "node:os",
+        "node:crypto",
+        "node:child_process",
+        "node:util",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/adapters/local-generated-video-storage.js",
+        "node:fs/promises"
+      ]
+    },
+    {
+      "path": "test/global-finance-fixtures.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "../src/cost-ledger-repository.js",
+        "../src/budget-gate.js"
+      ]
+    },
+    {
+      "path": "test/global-finance.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "global: campaigns share daily limit and no transport after denial",
+        "global: monthly limit, daily rollover and month rollover",
+        "global: UNKNOWN carries liability into later periods and cannot resubmit",
+        "global: estimates, expired or incomplete ceilings denied",
+        "global: restart and two connections preserve claim and last balance",
+        "global: transport is claimed before call and uncertainty never retries",
+        "global: OpenAI adapter fails closed without financial boundary",
+        "global: cached paid response survives restart without another POST",
+        "global: real concurrent connections cannot spend the last daily balance twice",
+        "global: alternate operation ID cannot duplicate the same paid intent",
+        "global: daily rollover uses configured timezone",
+        "global: receipt cannot rewrite known cost or terminal identity",
+        "global: default monthly 20 USD blocks the twenty-first day",
+        "global: persistence failures before dispatch send nothing; after transport retain UNKNOWN",
+        "global: timezone cannot reclassify liabilities after reservation"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/cost-ledger-repository.js",
+        "../src/budget-gate.js",
+        "../src/budget-gate.js",
+        "../src/adapters/openai-idea.js",
+        "node:worker_threads",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "path": "test/google-drive-blocked-reconciliation.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "BLOCKED: zero/um/múltiplos sem mutação nem sucesso automático",
+        "diagnóstico identifica MIME/tamanho/checksum/version/revision sem vazamento",
+        "CLI exige escopo/input/chave originais, abre LIVE somente leitura e não habilita POST",
+        "divergência de privacidade impede download; operação inexistente é rejeitada",
+        "reconciliação BLOCKED é limitada ao erro após POST confirmado"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:path",
+        "node:os",
+        "node:crypto",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js",
+        "../src/google-drive-reconcile-cli.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-daily-folders.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "data operacional MM-DD-YYYY respeita meia-noite de São Paulo e virada do ano",
+        "reutiliza dia, persiste data/pai e muda pasta na próxima data; concorrência não duplica",
+        "LIVE interceptado reutiliza READY sem autorizar criação; CLI diário reconcilia somente leitura Drive",
+        "timeout mantém intenção; exige reconciliação explícita sem POST adicional",
+        "adapter resolve antes do upload e preserva nome original e pasta no reinício",
+        "nega processamento antes de criar pasta; protege raiz, modo e datas inválidas",
+        "pasta diária movida ou compartilhada é bloqueada sem criar outra"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/google-drive-folder.js",
+        "../src/google-drive-daily-folders.js",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js",
+        "../src/google-drive-folder-cli.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-finalization.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "finalização verifica remoto, preserva BLOCKED no histórico e é idempotente",
+        "ausência/divergência/incerteza bloqueiam finalização sem mudar recibo",
+        "CLI exige finalização explícita e ID esperado; não habilita POST",
+        "incerteza de rede, mudança de versão e ID diferente preservam BLOCKED",
+        "transição genérica e evidência incompleta não finalizam; concorrência produz um evento"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:path",
+        "node:os",
+        "node:crypto",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js",
+        "../src/google-drive-reconcile-cli.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-folder.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "provisiona pasta privada; intenção antes do POST, reutiliza após reinício",
+        "resultado incerto e reinício não repetem POST; reconciliação somente GET",
+        "401/403/404 mantêm erro público e diagnóstico sanitizado",
+        "compartilhamento e reconciliação ambígua bloqueiam sem recriar pasta",
+        "concorrência/isolation e guard LIVE do comando/cliente",
+        "CLI LIVE interceptado separa criação de reconciliação e nunca habilita upload",
+        "propriedade/capacidade/ACL e vínculo da operação são obrigatórios",
+        "intenção SUBMITTING após interrupção reconcilia sem reenvio"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/google-drive-folder.js",
+        "../src/adapters/google-drive-http.js",
+        "../src/google-drive-folder-cli.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-metadata-diagnostics.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "sensitive metadata is redacted; complete responses never persisted",
+        "legacy receipts and successful idempotent uploads remain compatible",
+        "repository rejects unsafe, cross-operation and extended diagnostics atomically",
+        "legacy BLOCKED receipt without diagnostic remains readable"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-oauth.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "config usa nomes existentes, oculta segredos e normaliza somente loopback",
+        "authorization code PKCE S256, state e drive.file; callback inválido não consome código",
+        "loopback timeout fecha listener; state válido com erro de consentimento não troca token",
+        "renovação controlada por expiração, single flight e sem retries após falha",
+        "invalid_grant requer nova autorização; resposta de escopo extra não é aceita",
+        "HTTP token: timeout, redirects, limites e nenhum segredo em erros",
+        "cliente Drive compatível, headers preservados e POST live negado antes de HTTP",
+        "comandos autorização/upload separados, guardados e sem chamadas externas por padrão",
+        "timeout de callback também limita navegador fake bloqueado",
+        "cliente real preparado integra adapter Drive com HTTP interceptado e uma renovação",
+        "ausência de refresh token no consentimento e falha no cofre não criam acesso utilizável"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:http",
+        "node:crypto",
+        "../src/google-drive-oauth-config.js",
+        "../src/google-drive-oauth.js",
+        "../src/adapters/google-drive-http.js",
+        "../src/google-drive-oauth-cli.js",
+        "../src/google-drive-upload-cli.js",
+        "../src/google-drive-oauth-runtime.js",
+        "node:sqlite",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-storage-smoke.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "smoke exige consentimentos/hash/flags/namespace antes de HTTP",
+        "smoke privado persiste recibo segregado, verifica bytes e não duplica após reinício",
+        "pasta compartilhada bloqueia antes do POST; resultado incerto nunca reenvia",
+        "caminho comercial continua exigindo pacote e banco de aprovação",
+        "smoke concorrente permite apenas um POST e um objeto por banco",
+        "objeto compartilhado é bloqueado na verificação e erro não revela token",
+        "smoke mantém erro público mas diferencia HTTP de acesso sem divulgar resposta",
+        "novos uploads exigem cache de pastas e criação LIVE explicitamente autorizada"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/google-drive-upload-cli.js",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js",
+        "../src/adapters/google-drive-http.js",
+        "../src/google-drive-folder.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-storage.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "upload multipart fake, referência/hash, metadados e URL; reinício não duplica",
+        "bytes locais/identidade aprovados não podem ser substituídos; política nega sem HTTP",
+        "alteração externa de versão ou bytes e perda de acesso bloqueiam objeto",
+        "timeout/incerteza e recuperação somente leitura sem novo upload",
+        "concorrência entre duas conexões envia um único POST",
+        "Drive não atesta URL pública imutável e não desbloqueia Instagram",
+        "mode/namespace segregados; LIVE upload bloqueado por padrão e nenhum token serializado",
+        "multipart contém metadados/bytes exatos; não cria permissões nem sobrescreve arquivo",
+        "LIVE upload e banco principal recusados antes de qualquer POST",
+        "timeout real do cliente fake, limites/redirects e erro de integridade no upload",
+        "reconciliação ambígua não escolhe arquivo nem reenvia; identidade protegida em SQL",
+        "contrato fechado e limite local bloqueiam antes da criação remota"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:path",
+        "node:os",
+        "node:crypto",
+        "../src/drive-storage-repository.js",
+        "../src/adapters/google-drive-storage.js",
+        "../src/adapters/hosted-instagram-media-integrity.js"
+      ]
+    },
+    {
+      "path": "test/google-drive-token-vault.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "cofre criptografado vincula cliente/modo; refresh protegido, access não persistido",
+        "DPAPI CurrentUser real protege apenas fixture local, sem rede ou credenciais reais",
+        "ausência/falha do cofre é explícita e nunca usa plaintext como fallback"
+      ],
+      "disposition": "blocked: no NestJS GoogleDriveTokenVault/WindowsDpapiProtector equivalent; preserve encryption, binding, DPAPI and fail-closed scenarios",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/adapters/google-drive-token-vault.js"
+      ]
+    },
+    {
+      "path": "test/hybrid-video.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "contrato híbrido exige direitos explícitos, áudio original e CTA aprovada",
+        "duração medida altera apenas encerramento; clipes fora de aproximadamente 5s são rejeitados",
+        "E2E simulado: produto, movimento, áudio, CTA, três formatos e reinício sem encode"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/hybrid-composition-contracts.js",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "node:child_process",
+        "node:util",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "../src/adapters/local-generated-video-storage.js"
+      ]
+    },
+    {
+      "path": "test/instagram-http-transport.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "serialização form/Bearer v26 usando somente fetch interceptado",
+        "POST LIVE bloqueado mesmo com transporte real selecionado; GET permitido interceptado",
+        "config fake por padrão, independente de Facebook Login; flags estritas",
+        "timeout aborta, zero retries, erro sanitizado; sem dependência da cooperação do fetch",
+        "redirect, host errado, resposta excedida e JSON inválido não vazam segredos",
+        "LIVE POST habilitado explicitamente ainda usa interceptor no teste",
+        "timeout cobre leitura do corpo; limite declarado cancela resposta"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/adapters/instagram-http-transport.js",
+        "../src/adapters/instagram-publisher.js",
+        "../src/social-publisher-config.js"
+      ]
+    },
+    {
+      "path": "test/instagram-isolation.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "bancos, operações e eventos vinculados ao modo; cópia fake rejeitada em live",
+        "banco legado sem proveniência não pode ser adotado; memória não admite live",
+        "hash calculado dos bytes imutáveis, prova vinculada à URL e revalidada por versão",
+        "runtime fake ignora token real; LIVE guard impede intenção e prova ausente bloqueia ambos"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:sqlite",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/social-publication-repository.js",
+        "../src/adapters/hosted-instagram-media-integrity.js",
+        "node:crypto",
+        "../src/social-publisher-runtime.js",
+        "../src/social-publication-service.js"
+      ]
+    },
+    {
+      "path": "test/instagram-live-database.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "novo banco usa migrações oficiais, contexto LIVE vazio e identidade estável sem regravação",
+        "fake, legado, schema antigo e arquivo vazio rejeitados sem efeitos",
+        "principal, aliases, hardlinks e junctions bloqueados sem criação",
+        "diagnóstico detecta proteção ausente sem reparar",
+        "trigger com mesmo nome/código mas condição adulterada é rejeitado",
+        "CLI explícita init/diagnose sem credenciais ou ativação LIVE"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/human-approval-repository.js",
+        "../src/social-publication-repository.js",
+        "../src/instagram-live-database.js"
+      ]
+    },
+    {
+      "path": "test/instagram-media.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "MP4 real: derivado novo, QC vinculado, sem edit lists, áudio conforme; original intacto"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:child_process",
+        "../src/adapters/instagram-reels-media.js",
+        "../src/domain/p4-video-contracts.js"
+      ]
+    },
+    {
+      "path": "test/instagram-publisher.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "fluxo HTTP fake completo, intenção antes do POST e reinício",
+        "timeout publicação não reenvia após reinício; FINISHED não significa publicado",
+        "timeout criação sem ID permanece incerto e nunca recria",
+        "duas conexões disputam intenção; resposta atrasada não sobrescreve reconciliação",
+        "gates revalidados, destino, aprovação e perfil bloqueiam antes de HTTP",
+        "contratos fechados, legenda final, URL expirada, sem fetch global",
+        "intenções interrompidas, rejeição HTTP e estados externos não causam retry",
+        "ERROR/EXPIRED/IN_PROGRESS, GET indisponível e resposta inválida são explícitos",
+        "migração 035→036 preserva registros; falha é atômica",
+        "workers simultâneos obtêm somente uma intenção de POST",
+        "identidade, transições e histórico não podem ser resetados",
+        "falha ao persistir recibo é exposta; intenção sobrevive sem repetir POST",
+        "sem prova, mídia alterada ou prova ausente bloqueiam antes do POST",
+        "evidência persistida sobrevive reinício; bytes alterados bloqueiam publicação",
+        "serviço rejeita transporte LIVE em banco fake; guarda atua antes da intenção"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "../src/human-approval-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/manual-distribution-repository.js",
+        "../src/manual-distribution-service.js",
+        "../src/social-publication-repository.js",
+        "../src/social-publication-service.js",
+        "../src/project-repository.js",
+        "../src/adapters/instagram-publisher.js",
+        "node:worker_threads",
+        "node:crypto",
+        "../src/adapters/hosted-instagram-media-integrity.js",
+        "../src/adapters/instagram-http-transport.js",
+        "./affiliate-fixtures.js",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "path": "test/instagram-resumable.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "offline: gates, criação e binário, intenção persistida, READY sem publicação e reinício",
+        "URI inválida, host/caminho/container/query rejeitados sem upload nem vazamento",
+        "upload parcial/timeout não reenvia, reinício reconcilia FINISHED sem publicar",
+        "criação incerta sem ID nunca recria",
+        "bytes alterados e QC reprovado bloqueiam antes de efeito externo",
+        "processamento IN_PROGRESS, timeout limitado e ERROR",
+        "EXPIRED é terminal; GET inválido ou rejeitado não permite READY",
+        "rejeição de upload e ACK negativo ficam incertos; sem retry",
+        "intenção de upload sobrevive falha ao persistir ACK e reconcilia após reinício",
+        "idempotencyKey conflitante e transições regressivas são rejeitados",
+        "direitos revogados bloqueiam upload; versão diferente no reinício é rejeitada",
+        "fake rejeita fetch global e ignora callback de credenciais; LIVE autorizado somente interceptado",
+        "LIVE bloqueado antes de token/HTTP; fake não lê token real; URL não consome operação direta"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/human-approval-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/manual-distribution-repository.js",
+        "../src/manual-distribution-service.js",
+        "../src/social-publication-service.js",
+        "../src/instagram-resumable-runtime.js",
+        "../src/adapters/instagram-resumable.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/instagram-smoke-executor.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "pré-verificação LIVE somente leitura, idempotente, sem HTTP e sem token no resultado",
+        "execução LIVE/publicação e opções de token são bloqueadas antes do callback",
+        "banco principal, ausente, aliases, hardlinks e symlinks são rejeitados",
+        "proveniência fake ou ausente não pode ser promovida",
+        "aprovação ausente, pacote inexistente, QC/direitos/bytes inválidos bloqueiam",
+        "conta, versão e callback ausente/inválido bloqueiam sem expor credencial",
+        "UNCERTAIN do P5.4.1 é preservado e exige reconciliação futura",
+        "conexão somente leitura impede escrita e não migra schema incompleto",
+        "proveniência adulterada em eventos é rejeitada sem promoção"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/human-approval-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/manual-distribution-repository.js",
+        "../src/manual-distribution-service.js",
+        "../src/social-publication-repository.js",
+        "../src/instagram-smoke-executor.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/kokoro-local.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "Kokoro usa subprocesso configurável e registra WAV com direitos sem política OpenAI"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "../test-support/physical-fixtures.js",
+        "../src/adapters/kokoro-local.js"
+      ]
+    },
+    {
+      "path": "test/legacy-start.test.js",
+      "localState": "??",
+      "classification": "fixture-or-indirect-consumer",
+      "scenarios": [
+        "npm start executa NestJS compilado e mantém dependências isoladas no backend"
+      ],
+      "disposition": "preserved: package metadata assertions; no executable legacy runtime import",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs"
+      ]
+    },
+    {
+      "path": "test/live-rights-binding.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "evidência restrita ao LIVE-01 não autoriza outra solicitação, configuração ou imagem"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/live-video-contracts.js",
+        "../src/domain/video-generation-contracts.js"
+      ]
+    },
+    {
+      "path": "test/live-video.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "estimativa não é teto; exige aprovação exata e conserva reserva/contagem após reinício",
+        "excesso efetivo é registrado uma vez, bloqueia novas gerações e não vira teto falso",
+        "direitos internos/simulados não autorizam processamento LIVE",
+        "preparação usa backup SQLite consistente, preserva fonte e compatibiliza migrations divergentes",
+        "CLI submit exige confirmação explícita; comandos inválidos não abrem banco nem chamam rede",
+        "CLI operacional fake: planejar, direitos, aprovar, um POST, reinício, GET e custo efetivo"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:sqlite",
+        "../src/cost-ledger-repository.js",
+        "../src/project-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/budget-gate.js",
+        "../src/video-generation-service.js",
+        "../src/adapters/fake-video-generation.js",
+        "../src/adapters/fal-ltx-video-generation.js",
+        "../src/domain/live-video-contracts.js",
+        "../src/live-video-cli.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/manual-distribution.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "pacote completo, aprovação, registro idempotente, resultados e reinício",
+        "direitos, QC, AURA ONE, mídia adulterada e escopo de campanha bloqueiam",
+        "adapter local verifica bytes sem processar e bloqueia referência inválida",
+        "duas conexões simultâneas não duplicam comandos/publicações",
+        "texto/destino alterado exige nova aprovação; conflitos não geram registros",
+        "rejeição do pacote é persistente e não aceita aprovação contraditória",
+        "resultados validam desconhecidos, publicação correta e não somam campanha como publicação",
+        "migração 035 preserva registros 034 e rollback não altera versão",
+        "duas conexões compartilham identidade; rollback não deixa chave/registro parcial",
+        "CLI exige banco explícito e retorna erro sem rede; consulta pacote"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "../src/human-approval-repository.js",
+        "../src/project-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/manual-distribution-repository.js",
+        "../src/manual-distribution-service.js",
+        "../src/manual-distribution-cli.js",
+        "../src/adapters/local-distribution-evidence.js",
+        "node:fs",
+        "node:worker_threads",
+        "./affiliate-fixtures.js",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "path": "test/p4-contracts.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "configuração de áudio tem três modos e capacidades explícitas, sem duplicar porta TTS",
+        "origem e render V2 rejeitam linhagem inventada, direitos ausentes e perfis incoerentes"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/domain/p4-video-contracts.js"
+      ]
+    },
+    {
+      "path": "test/p4-integration.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "P4: verdadeiro lineage AI, três formatos, PRESERVE/REPLACE/MIX, QC/approval e reinício"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs/promises",
+        "node:os",
+        "node:path",
+        "node:crypto",
+        "node:child_process",
+        "node:util",
+        "../src/human-approval-repository.js",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/voice-track-repository.js",
+        "../src/voice-generation-service.js",
+        "../src/voice-provider.js",
+        "../src/budget-gate.js",
+        "../src/video-generation-service.js",
+        "../src/p4-runtime.js",
+        "../src/p4-video-repository.js",
+        "../src/domain/live-video-contracts.js",
+        "../src/domain/video-generation-contracts.js",
+        "../src/domain/video-adaptation-contracts.js",
+        "../src/adapters/ffmpeg-video-composer.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/pixabay-video-adapter.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "usa endpoint Pixabay, busca vídeo vertical e preserva origem",
+        "não repete externalAssetId já utilizado",
+        "descarta vídeo fisicamente inválido e tenta o próximo candidato",
+        "não expõe PIXABAY_API_KEY quando provider retorna erro HTTP",
+        "rejeita configuração sem PIXABAY_API_KEY",
+        "limita semanticamente a query Pixabay a 100 caracteres sem alterar a direção visual"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:stream",
+        "../src/adapters/pixabay-video.js",
+        "../src/pixabay-video-config.js"
+      ]
+    },
+    {
+      "path": "test/preview-execution.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "propaga opt-in explícito de recuperação para execução do preview",
+        "mantém recuperação desativada por padrão",
+        "recupera QC interrompido quando recuperação explícita está habilitada",
+        "QC usa nome de policy compatível com contrato de stage recovery"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/preview-execution.js"
+      ]
+    },
+    {
+      "path": "test/sqlite-test-fixture.js",
+      "localState": "??",
+      "classification": "fixture-or-indirect-consumer",
+      "scenarios": [],
+      "disposition": "preserved: independent generic resource cleanup fixture; no runtime import",
+      "imports": [
+        "node:fs",
+        "node:os",
+        "node:path"
+      ]
+    },
+    {
+      "path": "test/sqlite-test-fixture.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "fecha todas as conexões e remove fixture após falha de assertion"
+      ],
+      "disposition": "migrated to compiled NestJS contracts; explicit administrative provisioning for database fixtures; assertions retained",
+      "originalImports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:path",
+        "node:sqlite",
+        "../src/project-repository.js",
+        "./sqlite-test-fixture.js"
+      ],
+      "imports": [
+        "../backend/dist/administration/schema-provisioner.js",
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:path",
+        "node:sqlite",
+        "../backend/dist/project/infrastructure/sqlite-project.repository.js",
+        "./sqlite-test-fixture.js"
+      ]
+    },
+    {
+      "path": "test/tts-finance.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "aprovação ausente, divergente e duplicada; identidade do texto/preço/voz",
+        "sucesso: reserva antes do transporte, reinício sem POST; estimativa no ledger uma vez",
+        "falha após envio e reinício bloqueiam outro POST, inclusive com outro operationId",
+        "crash em SUBMITTING mantém reserva e bloqueia concorrência/reenvio",
+        "áudio longo preservado para revisão; custo efetivo identificado quando disponível",
+        "orçamento insuficiente bloqueia antes da reserva e do POST",
+        "CLI: banco copiado, aprovação oficial, WAV fake, request_id, idempotência e nenhum retry",
+        "reconciliação de áudio persistido após crash não envia POST; reserva cobre estouro",
+        "duas conexões concorrentes fazem um envio; falha no ledger recupera sem POST"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:crypto",
+        "node:os",
+        "node:path",
+        "../src/cost-ledger-repository.js",
+        "../src/voice-track-repository.js",
+        "../src/budget-gate.js",
+        "../src/affiliate-repository.js",
+        "../src/p4-video-repository.js",
+        "../src/domain/video-adaptation-contracts.js",
+        "../src/tts-execution-service.js",
+        "../src/domain/tts-finance-contracts.js",
+        "../src/domain/video-generation-contracts.js",
+        "../src/tts-cli.js",
+        "../src/openai-voice-config.js",
+        "./affiliate-fixtures.js"
+      ]
+    },
+    {
+      "path": "test/video-generation.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "fixture fecha SQLite quando a composição do serviço falha",
+        "0.33 permitido e custo efetivo registrado uma vez; 0.34 bloqueado",
+        "orçamento agregado inclui CostLedger de outras runs da campanha",
+        "três originais e máximo de três submissões; quarta bloqueada",
+        "sem teto comprovado, moeda incorreta ou evidência expirada bloqueia antes da reserva",
+        "falha de persistência antes da chamada reverte reserva; cancelamento libera tentativa",
+        "erro pós-submissão mantém reserva e só recupera a mesma operação",
+        "retry automático recusado e adaptações não submetem; slot original não pode duplicar",
+        "concorrência da mesma identidade submete uma vez e identidade divergente bloqueia",
+        "reinício recupera operação incerta, registra custo uma vez e nunca ressubmete",
+        "política por campanha permanece imutável e limite global protege outro projeto",
+        "identidade inclui imagem, endpoint e configuração completa com ordem canônica",
+        "imagem fora do briefing e resolução não vertical bloqueiam antes da chamada",
+        "confirmação persiste request_id antes de timeout; recuperação consulta apenas esse ID",
+        "resposta perdida sem request_id não consulta fornecedor nem tenta reenviar",
+        "conciliação posterior é idempotente e vinculada a request_id",
+        "custo tardio acima do teto bloqueia nova submissão; custo zero comprovado não cria despesa",
+        "identidade v1 persistida permanece legível mas não autoriza nova geração",
+        "migração 032 preserva operações e reverte integralmente em conflito",
+        "custo tardio sobrevive reinício e falha de escrita sem duplicar cobrança",
+        "request_id do fornecedor não pode cobrar duas operações locais",
+        "duas conexões concorrentes disputam a última vaga sem ultrapassar o limite",
+        "terceira submissão desconhecida conta para o limite e a quarta é bloqueada",
+        "falha no registro de custo mantém resultado e reconcilia sem nova chamada",
+        "reinício antes de dispatch libera reserva; após marker mantém incerteza sem submeter",
+        "teto excedido pelo fornecedor é registrado no ledger e impede novas submissões",
+        "status remoto é consulta e resultado sem custo mantém teto sem inventar cobrança",
+        "evidência de outro request ou provider e escopo divergente não autorizam",
+        "migração 031 é aditiva e falha reverte schema integralmente em banco temporário",
+        "SQL protege identidade, teto e proprietário antes do dispatch e impede reenvio",
+        "global entre campanhas e editorial: reserva compartilhada preserva políticas locais",
+        "autorização automática de vídeo não aceita estimativa mesmo antes da aprovação manual"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "node:fs",
+        "node:os",
+        "node:path",
+        "node:worker_threads",
+        "node:sqlite",
+        "../src/cost-ledger-repository.js",
+        "../src/affiliate-repository.js",
+        "../src/budget-gate.js",
+        "../src/video-generation-service.js",
+        "../src/adapters/fake-video-generation.js",
+        "../src/domain/video-generation-contracts.js",
+        "../src/project-repository.js",
+        "./affiliate-fixtures.js",
+        "node:worker_threads"
+      ]
+    },
+    {
+      "path": "test/video-provider-factory.test.js",
+      "localState": "??",
+      "classification": "direct-legacy-runtime",
+      "scenarios": [
+        "mantém Pexels quando Pixabay não está configurado",
+        "usa Pixabay quando PIXABAY_API_KEY está configurada",
+        "prioriza Pixabay quando ambos providers estão configurados"
+      ],
+      "disposition": "preserved; behavioral equivalence not established",
+      "imports": [
+        "node:test",
+        "node:assert/strict",
+        "../src/video-provider-factory.js",
+        "../src/adapters/pixabay-video.js",
+        "../src/adapters/pexels-video.js"
+      ]
+    }
+  ],
+  "summary": {
+    "localFiles": 72,
+    "originalDirectConsumers": 70,
+    "migratedFiles": [
+      "test/project-repository.test.js",
+      "test/project-contracts.test.js",
+      "test/project-application-service.test.js",
+      "test/sqlite-test-fixture.test.js"
+    ],
+    "remainingDirectConsumers": 66,
+    "testsBefore": 34,
+    "testsAfter": 35,
+    "physicalRemovalReady": false
+  },
+  "limitations": [
+    "This is a directed local-test inventory, not a repeated P6.2 operational audit.",
+    "Remaining consumers have not been proven obsolete or behaviorally equivalent. They are preserved, not silently excluded.",
+    "Literal module references are recorded. Computed loaders and executable subprocess paths have not all been migrated."
+  ],
+  "behaviorChanges": [
+    "Repository constructors no longer migrate: empty provisioning and migration rollback assertions now exercise provisionSchema. Domain errors, history, immutability, concurrency, idempotency, rollback, normalization, media defaults and cleanup assertions retained.",
+    "Command schema assertions cover both original 39 and target 42.",
+    "Frozen project/research observations remain unchanged and are validated by their existing suites.",
+    "npm test builds before Node tests so compiled NestJS imports cannot silently use stale output."
+  ],
+  "protectedChanges": {
+    "previousLocalFilesChanged": [
+      "test/project-application-service.test.js",
+      "test/project-contracts.test.js",
+      "test/project-repository.test.js",
+      "test/sqlite-test-fixture.test.js"
+    ],
+    "otherPreviouslyModifiedOrUntrackedFilesHashVerified": 222,
+    "scopeNote": "Hashes cover individually listed Git status files. Untracked directories were not recursively fingerprinted; no commands write to them."
+  },
+  "validations": {
+    "before": "34/34 legacy assertions passed",
+    "red": "NestJS import replacement: 12/12 repository failures; 10/22 other failures exposed missing explicit provisioning",
+    "after": "35/35 migrated tests passed with Node resolve hook rejecting every legacy src/*.js module",
+    "frozenRegression": "105/105 tests, 9 files (project, schema administration, frozen research)",
+    "typescript": "PASS: npm --prefix backend exec -- tsc --noEmit -p backend/tsconfig.json",
+    "build": "PASS: npm run build",
+    "lint": "PASS (3 existing warnings outside task); migrated Node tests oxlint PASS",
+    "diffCheck": "Task files PASS; global FAIL on pre-existing whitespace in src/adapters/ollama.js, src/db/migrations/038_commercial_automation.sql, src/preview-runtime.js, test/pexels-video-adapter.test.js",
+    "scriptContract": "test/legacy-start.test.js PASS"
+  }
+}

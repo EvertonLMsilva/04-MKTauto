@@ -27,9 +27,12 @@ import {
   qualityControlReportContentHash,
   qualityControlReportId,
 } from '../src/media/domain/quality-control-contracts.js';
-const affiliate = await import(
-  new URL('../../src/affiliate-repository.js', import.meta.url).href
-);
+import { SqliteAffiliateRepository } from '../src/affiliate/infrastructure/sqlite-affiliate.repository.js';
+import { SqliteAffiliatePersistence } from '../src/affiliate/infrastructure/sqlite-affiliate.persistence.js';
+import {
+  validateAffiliateProduct,
+  validateAffiliateCampaign,
+} from '../src/affiliate/domain/affiliate-contracts.js';
 const fixtures = await import(
   new URL('../../test/affiliate-fixtures.js', import.meta.url).href
 );
@@ -39,6 +42,7 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
     const path = join(root, 'fixture.sqlite');
     const f = setup(path);
     let app: any;
+    let catalog: SqliteAffiliateRepository | undefined;
     try {
       const bytes = Buffer.from('authorized-fixture');
       const hash = createHash('sha256').update(bytes).digest('hex');
@@ -74,12 +78,19 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
       }));
       q.contentHash = qualityControlReportContentHash(q);
       seedQc(f.repository.db, q);
-      const catalog = new affiliate.AffiliateRepository(f.repository);
-      catalog.registerProduct(fixtures.product(), 'prod');
-      catalog.registerCampaign(
+      catalog = new SqliteAffiliateRepository(path);
+      const product = validateAffiliateProduct(fixtures.product());
+      const campaign = validateAffiliateCampaign(
         fixtures.campaign({ projectId: r.projectId }),
-        'campaign',
       );
+      catalog.registerProduct(product, 'prod');
+      catalog.registerCampaign(
+        campaign,
+        'campaign',
+        Boolean(f.repository.get(campaign.projectId)),
+      );
+      expect(catalog.getProduct(product.productId, product.revision)).toEqual(product);
+      expect(catalog.getCampaign(campaign.campaignId, campaign.revision)).toEqual(campaign);
       const media = new MediaService(
         new MediaPersistence(
           path,
@@ -110,15 +121,7 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
         .overrideProvider(MediaService)
         .useValue(media)
         .overrideProvider(AFFILIATE_REPOSITORY)
-        .useValue({
-          open: () => ({
-            getProduct: (id: string, rev: number) =>
-              catalog.getProduct(id, rev),
-            getCampaign: (id: string, rev: number) =>
-              catalog.getCampaign(id, rev),
-            close() {},
-          }),
-        })
+        .useValue(new SqliteAffiliatePersistence(path))
         .overrideProvider(AFFILIATE_RUN_CONTEXT)
         .useValue({
           resolveRunBriefing: () => ({
@@ -251,6 +254,7 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
         .expect(400);
     } finally {
       if (app) await app.close();
+      catalog?.close();
       f.repository.close();
       rmSync(root, { recursive: true, force: true, maxRetries: 5 });
     }

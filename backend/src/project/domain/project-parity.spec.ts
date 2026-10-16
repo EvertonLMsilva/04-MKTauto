@@ -1,8 +1,7 @@
+import { historicalResidualContracts } from '../../../test/support/historical-residual-contracts.js';
 import * as ts from './project-contracts.js';
 
-const legacy = (await import(
-  new URL('../../../../src/domain/project-contracts.js', import.meta.url).href
-)) as typeof ts;
+const legacy = historicalResidualContracts('project-contracts') as typeof ts;
 const valid = {
   id: 'project_parity',
   name: '  Nome   Original ',

@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { contentFixture } from '../../test/support/content-fixture.js';
 import { mediaStore } from '../../test/support/media-store.js';
 import {
@@ -10,13 +12,8 @@ import {
   validateQualityControlReport,
   aggregateQualityControlStatus,
 } from './domain/quality-control-contracts.js';
-const legacy = await import(
-  new URL('../../../src/quality-control-repository.js', import.meta.url).href
-);
-const contracts = await import(
-  new URL('../../../src/domain/quality-control-contracts.js', import.meta.url)
-    .href
-);
+const legacy = historicalResidualPersistence('quality-control-repository');
+const contracts = historicalResidualContracts('quality-control-contracts');
 function failure(action: () => unknown) {
   try {
     action();

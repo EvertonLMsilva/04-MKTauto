@@ -1,3 +1,4 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
 import {
   readFileSync,
   writeFileSync,
@@ -141,9 +142,8 @@ async function validateMedia(
   report: Record<string, unknown>,
 ) {
   const base = contentFixture(); // Fully seeded disposable editorial DB, never the main DB.
-  const { ScriptRepository } = await import(
-    new URL('../../../src/script-repository.js', import.meta.url).href
-  );
+  const { ScriptRepository } =
+    historicalResidualPersistence('script-repository');
   const { png } = await import(
     new URL('../../../test-support/physical-fixtures.js', import.meta.url).href
   );

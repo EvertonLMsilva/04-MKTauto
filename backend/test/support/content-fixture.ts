@@ -1,40 +1,28 @@
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
+import { historicalResidualContracts } from './historical-residual-contracts.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-const { ScriptRepository } = await import(
-  new URL('../../../src/script-repository.js', import.meta.url).href
+const { ScriptRepository } = historicalResidualPersistence('script-repository');
+const { IdeaService } = historicalResidualPersistence('idea-service');
+const { IdeaSelectionService } = historicalResidualPersistence(
+  'idea-selection-service',
 );
-const { IdeaService } = await import(
-  new URL('../../../src/idea-service.js', import.meta.url).href
+const { PipelineRunService } = historicalResidualPersistence(
+  'pipeline-run-service',
 );
-const { IdeaSelectionService } = await import(
-  new URL('../../../src/idea-selection-service.js', import.meta.url).href
+const { PIPELINE_HANDOFF_CONTRACT_VERSION } = historicalResidualPersistence(
+  'project-pipeline-handoff',
 );
-const { PipelineRunService } = await import(
-  new URL('../../../src/pipeline-run-service.js', import.meta.url).href
-);
-const { PIPELINE_HANDOFF_CONTRACT_VERSION } = await import(
-  new URL('../../../src/project-pipeline-handoff.js', import.meta.url).href
-);
-const { RADAR_CONTRACT_VERSION } = await import(
-  new URL('../../../src/domain/contracts.js', import.meta.url).href
-);
+const { RADAR_CONTRACT_VERSION } = historicalResidualContracts('contracts');
 const {
   DEFAULT_RESEARCH_SHORTLIST_POLICY,
   RESEARCH_SHORTLIST_CONTRACT_VERSION,
-} = await import(
-  new URL(
-    '../../../src/domain/research-shortlist-contracts.js',
-    import.meta.url,
-  ).href
-);
-const { IDEA_SELECTION_CONTRACT_VERSION, selectionContentHash } = await import(
-  new URL('../../../src/domain/idea-selection-contracts.js', import.meta.url)
-    .href
-);
-const { SCRIPT_CONTRACT_VERSION, scriptContentHash } = await import(
-  new URL('../../../src/domain/script-contracts.js', import.meta.url).href
-);
+} = historicalResidualContracts('research-shortlist-contracts');
+const { IDEA_SELECTION_CONTRACT_VERSION, selectionContentHash } =
+  historicalResidualContracts('idea-selection-contracts');
+const { SCRIPT_CONTRACT_VERSION, scriptContentHash } =
+  historicalResidualContracts('script-contracts');
 const STARTED_AT = '2026-09-28T11:00:00.000Z';
 function script(selection: any, overrides: any = {}): any {
   const blocks = [

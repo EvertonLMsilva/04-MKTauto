@@ -1,3 +1,4 @@
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { FinanceSession } from './infrastructure/finance.session.js';
 import {
   campaignFinanceFixture,
@@ -18,9 +19,7 @@ import {
   validateCostEvent,
   createCostLedger,
 } from './domain/cost-event-contracts.js';
-const contracts = await import(
-  new URL('../../../src/domain/cost-event-contracts.js', import.meta.url).href
-);
+const contracts = historicalResidualContracts('cost-event-contracts');
 function outcome(fn: () => unknown) {
   try {
     return { result: fn() };

@@ -7,11 +7,11 @@ const unavailable = (command) => new Error(`COMMAND_UNAVAILABLE: ${command}; sem
 // HTTP adapter only: no database access, provider execution or legacy imports.
 export async function run(argv, dependencies = {}) {
   const [entry, ...args] = argv;
-  if (!['project', 'preview'].includes(entry)) throw unavailable(entry);
-  const command = entry === 'project' ? args.shift() : 'render';
+  if (!['project', 'preview', 'trend:shortlist'].includes(entry)) throw unavailable(entry);
+  const command = entry === 'project' ? args.shift() : entry === 'preview' ? 'render' : 'shortlist';
   if (entry === 'project' && !['create', 'version', 'archive', 'latest', 'get', 'review', 'select'].includes(command)) throw unavailable(`project ${command}`);
   if (entry === 'preview' && !args.includes('--render-id')) throw unavailable('preview pipeline; consulta disponível: preview --render-id ID --api-url URL');
-  const allowed = command === 'render' ? ['render-id'] : ['create', 'version', 'archive'].includes(command) ? ['input'] : command === 'latest' ? ['project-id'] : ['project-id', 'version'];
+  const allowed = command === 'render' ? ['render-id'] : ['create', 'version', 'archive', 'shortlist'].includes(command) ? ['input'] : command === 'latest' ? ['project-id'] : ['project-id', 'version'];
   const options = {};
   if (args.length % 2) throw new Error('INVALID_OPTION: use --nome valor');
   for (let i = 0; i < args.length; i += 2) {
@@ -29,6 +29,10 @@ export async function run(argv, dependencies = {}) {
   let body;
   const encode = encodeURIComponent;
   if (command === 'render') path = `/media/renders/${encode(options['render-id'])}`;
+  else if (command === 'shortlist') {
+    path = '/research/shortlists';
+    body = JSON.parse((dependencies.readText ?? ((file) => readFileSync(file, 'utf8')))(options.input));
+  }
   else if (['create', 'version', 'archive'].includes(command)) {
     body = JSON.parse((dependencies.readText ?? ((file) => readFileSync(file, 'utf8')))(options.input));
     const id = command === 'archive' ? body.projectId : body.project?.id;

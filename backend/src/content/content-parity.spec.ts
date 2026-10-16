@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { DatabaseSync } from 'node:sqlite';
 import {
   contentFixture,
@@ -9,16 +11,9 @@ import { selectionContentHash } from './domain/idea-selection-contracts.js';
 import { scriptContentHash } from './domain/script-contracts.js';
 import type { IdeaSelection } from './domain/content.types.js';
 import { createReferenceInsight } from '../research/domain/reference-insight-contracts.js';
-const legacy = await import(
-  new URL('../../../src/script-repository.js', import.meta.url).href
-);
-const legacySelection = await import(
-  new URL('../../../src/domain/idea-selection-contracts.js', import.meta.url)
-    .href
-);
-const legacyScript = await import(
-  new URL('../../../src/domain/script-contracts.js', import.meta.url).href
-);
+const legacy = historicalResidualPersistence('script-repository');
+const legacySelection = historicalResidualContracts('idea-selection-contracts');
+const legacyScript = historicalResidualContracts('script-contracts');
 function failure(operation: () => unknown) {
   try {
     operation();
@@ -216,12 +211,7 @@ describe('Content JS/TS parity and historical inputs', () => {
     }
   });
   it('preserves ReferenceInsight validation parity for malformed historical records', async () => {
-    const js = await import(
-      new URL(
-        '../../../src/domain/reference-insight-contracts.js',
-        import.meta.url,
-      ).href
-    );
+    const js = historicalResidualContracts('reference-insight-contracts');
     for (const v of [null, {}, { schemaVersion: 'invalid' }])
       expect(failure(() => createReferenceInsight(v))).toEqual(
         failure(() => js.createReferenceInsight(v)),

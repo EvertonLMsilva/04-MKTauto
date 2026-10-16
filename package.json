@@ -15,7 +15,9 @@
     "trend:export": "node --env-file-if-exists=.env scripts/operational-cli.mjs trend:export",
     "drive:authorize": "node --env-file-if-exists=.env scripts/operational-cli.mjs drive:authorize",
     "drive:upload": "node --env-file-if-exists=.env scripts/operational-cli.mjs drive:upload",
-    "test": "node --test",
+    "test": "npm run build && node --test \"test/*.test.js\"",
+    "test:all": "npm test && npm --prefix backend test && npm --prefix backend run test:e2e && npm run test:python",
+    "test:python": "python -B -m unittest discover -s backend/python/alignment -p \"test_*.py\"",
     "start:legacy": "node --env-file-if-exists=.env scripts/operational-cli.mjs start:legacy"
   },
   "engines": {

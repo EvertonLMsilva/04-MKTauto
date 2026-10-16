@@ -1,19 +1,35 @@
-import { writeFileSync } from 'node:fs';
+import { writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { affiliateFixture } from '../../../test/support/affiliate-fixture.js';
-import { discoveryCandidate } from '../../../test/support/discovery-fixture.js';
+import {
+  discoveryCandidate,
+  discoveryAt,
+} from '../../../test/support/discovery-fixture.js';
 import { ConfiguredDiscoverySource } from './configured-discovery-source.js';
-const { loadExternalCatalogRuntime } = await import(
-  new URL('../../../../src/external-catalog-runtime.js', import.meta.url).href
-);
+import {
+  historicalDiscovery,
+  csvScope,
+  configuredScope,
+} from '../../../test/support/historical-discovery.js';
 describe('configured authorized discovery source', () => {
   let f: ReturnType<typeof affiliateFixture>;
   beforeEach(() => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(discoveryAt);
     f = affiliateFixture();
   });
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllEnvs();
     f.cleanup();
+  });
+  it('does not load the retired catalog runtime', () => {
+    expect(
+      readFileSync(
+        new URL('./configured-discovery-source.spec.ts', import.meta.url),
+        'utf8',
+      ),
+    ).not.toMatch(/new URL\(\s*['"]\.\.\/\.\.\/\.\.\/\.\.\/src\/[^'"]+\.js/);
   });
   it('loads the existing local feed configuration and matches aggregate JS enumeration', async () => {
     const root = dirname(f.database),
@@ -49,9 +65,17 @@ describe('configured authorized discovery source', () => {
     vi.stubEnv('AFFILIATE_DISCOVERY_CONFIG', path);
     const source = await new ConfiguredDiscoverySource().open(),
       batch = await source.enumerateCandidates();
-    const legacy = await loadExternalCatalogRuntime(path);
-    expect(source.scope).toBe(legacy.scope);
-    expect(batch).toEqual(await legacy.enumerateCandidates());
+    const expectedScope = csvScope({
+      ...feed,
+      sourcePath: join(root, 'feed.csv'),
+      cacheRoot: join(root, 'cache'),
+      cacheKey: feed.feedId,
+      timeZone: config.policy.timeZone,
+    });
+    expect(source.scope).toBe(
+      configuredScope([{ feedId: feed.feedId, scope: expectedScope }]),
+    );
+    expect(batch).toEqual(historicalDiscovery.configured);
     writeFileSync(
       path,
       JSON.stringify({

@@ -1,0 +1,2522 @@
+{
+  "provenance": {
+    "baseline": "8b951d595867af5ab17bfcc4bf1b5f2cad675b5e",
+    "source": "Legacy JS working tree; captured only while original parity assertions passed",
+    "schema": 39,
+    "task": "P6-TEST-DECOUPLING-001",
+    "sources": {
+      "src/project-repository.js": "6a15695a4a0b2bad133ed83f6decfc0020f5e5552749e7d30c2ba737252c775c",
+      "src/project-application-service.js": "d7aebca0c907f81698b440c073800157015cd31b94f3d633aed255624f872b8b"
+    }
+  },
+  "records": {
+    "SQLite commands against frozen legacy evidence > canonicalizes object keys and metadata while preserving significant array order": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram",
+                      "threads"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "subniches": [
+                  "IA",
+                  "Ferramentas"
+                ]
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram",
+                  "threads"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [
+                "ia",
+                "ferramentas"
+              ],
+              "version": 1
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[\"ia\",\"ferramentas\"],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\",\"threads\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "bb503f87fa432fc9f96060b2c2cabe3402c589a4d9a1ac71b38b849f7edd60fc",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[\"ia\",\"ferramentas\"],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\",\"threads\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram",
+                      "threads"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "subniches": [
+                  "Ferramentas",
+                  "IA"
+                ]
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "IDEMPOTENCY_KEY_REUSED",
+            "field": "idempotencyKey",
+            "message": "IDEMPOTENCY_KEY_REUSED em idempotencyKey: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[\"ia\",\"ferramentas\"],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\",\"threads\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "bb503f87fa432fc9f96060b2c2cabe3402c589a4d9a1ac71b38b849f7edd60fc",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[\"ia\",\"ferramentas\"],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\",\"threads\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 0": {
+      "project.createProject": [
+        {
+          "args": [
+            null
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_TYPE",
+            "field": "command",
+            "message": "INVALID_TYPE em command: deve ser um objeto",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 1": {
+      "project.createProject": [
+        {
+          "args": [
+            []
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_TYPE",
+            "field": "command",
+            "message": "INVALID_TYPE em command: deve ser um objeto",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 2": {
+      "project.createProject": [
+        {
+          "args": [
+            {}
+          ],
+          "effects": [],
+          "error": {
+            "code": "REQUIRED_FIELD",
+            "field": "idempotencyKey",
+            "message": "REQUIRED_FIELD em idempotencyKey: campo obrigatório",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 3": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": "",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_ACTOR",
+            "field": "actor",
+            "message": "INVALID_ACTOR em actor: ator obrigatório com até 160 caracteres",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 4": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "1",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_TIMESTAMP",
+            "field": "occurredAt",
+            "message": "INVALID_TIMESTAMP em occurredAt: use um instante ISO 8601 válido",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 5": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "unsafe key",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_IDEMPOTENCY_KEY",
+            "field": "idempotencyKey",
+            "message": "INVALID_IDEMPOTENCY_KEY em idempotencyKey: use de 1 a 200 caracteres seguros",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 6": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              },
+              "unexpected": true
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "UNKNOWN_FIELD",
+            "field": "command.unexpected",
+            "message": "UNKNOWN_FIELD em command.unexpected: campo não permitido",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 7": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "UPPER",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "password": "private"
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "SENSITIVE_FIELD_REJECTED",
+            "field": "project.password",
+            "message": "SENSITIVE_FIELD_REJECTED em project.password: credenciais, tokens e segredos não pertencem ao comando",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves command error precedence and fields 8": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_VERSION_CONFLICT",
+            "field": "project.version",
+            "message": "PROJECT_VERSION_CONFLICT em project.version: um projeto novo deve começar na versão 1",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [],
+            [],
+            []
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > preserves conflicts and first state failure while leaving history intact": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 1
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": "other",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "IDEMPOTENCY_KEY_REUSED",
+            "field": "idempotencyKey",
+            "message": "IDEMPOTENCY_KEY_REUSED em idempotencyKey: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "duplicate",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_ID_CONFLICT",
+            "field": "project.id",
+            "message": "PROJECT_ID_CONFLICT em project.id: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.createProjectVersion": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 2,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "EXPECTED_VERSION_MISMATCH",
+            "field": "expectedVersion",
+            "message": "EXPECTED_VERSION_MISMATCH em expectedVersion: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 3
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_VERSION_CONFLICT",
+            "field": "project.version",
+            "message": "PROJECT_VERSION_CONFLICT em project.version: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_missing",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_NOT_FOUND",
+            "field": "project.id",
+            "message": "PROJECT_NOT_FOUND em project.id: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 0,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "INVALID_EXPECTED_VERSION",
+            "field": "expectedVersion",
+            "message": "INVALID_EXPECTED_VERSION em expectedVersion: deve ser inteiro positivo",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 2
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "after-archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_ARCHIVED",
+            "field": "project.id",
+            "message": "PROJECT_ARCHIVED em project.id: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.archiveProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 2,
+              "idempotencyKey": "parity:archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "projectId": "project_parity"
+            }
+          ],
+          "effects": [],
+          "result": {
+            "archivedAt": "2026-10-14T12:00:00.000Z",
+            "createdAt": "2026-10-14T12:00:00.000Z",
+            "id": "project_parity",
+            "latestVersion": 2,
+            "snapshot": {
+              "channel": {
+                "aspectRatio": "9:16",
+                "editorialStyle": "informative",
+                "format": "short_video",
+                "maxDurationSeconds": 45,
+                "maxVideoAssetDurationSeconds": 45,
+                "minDurationSeconds": 25,
+                "minVideoAssetDurationSeconds": 25,
+                "productionProfile": "STATIC_IMAGE_V1",
+                "publishing": {
+                  "contentsPerDay": 1,
+                  "networks": [
+                    "instagram"
+                  ],
+                  "times": [
+                    "10:00"
+                  ],
+                  "timezone": "America/Sao_Paulo"
+                },
+                "visualStyle": "dynamic",
+                "voiceStyle": "informative"
+              },
+              "project": {
+                "audience": {
+                  "language": "pt-BR",
+                  "profile": "Público"
+                },
+                "id": "project_parity",
+                "name": "Nome",
+                "niche": "tecnologia",
+                "subniches": [],
+                "version": 2
+              },
+              "references": [],
+              "schemaVersion": "project-contracts/1.0.0"
+            },
+            "updatedAt": "2026-10-14T12:00:00.000Z"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "repeat-archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "projectId": "project_parity"
+            }
+          ],
+          "effects": [],
+          "error": {
+            "code": "PROJECT_ARCHIVED",
+            "field": "project.id",
+            "message": "PROJECT_ARCHIVED em project.id: comando de projeto rejeitado",
+            "name": "ProjectApplicationError"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > produces byte-identical JSON, hashes and rows through all transitions": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 1
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 1
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.createProjectVersion": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 2
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 2
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.archiveProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 2,
+              "idempotencyKey": "parity:archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "projectId": "project_parity"
+            }
+          ],
+          "effects": [],
+          "result": {
+            "archivedAt": "2026-10-14T12:00:00.000Z",
+            "createdAt": "2026-10-14T12:00:00.000Z",
+            "id": "project_parity",
+            "latestVersion": 2,
+            "snapshot": {
+              "channel": {
+                "aspectRatio": "9:16",
+                "editorialStyle": "informative",
+                "format": "short_video",
+                "maxDurationSeconds": 45,
+                "maxVideoAssetDurationSeconds": 45,
+                "minDurationSeconds": 25,
+                "minVideoAssetDurationSeconds": 25,
+                "productionProfile": "STATIC_IMAGE_V1",
+                "publishing": {
+                  "contentsPerDay": 1,
+                  "networks": [
+                    "instagram"
+                  ],
+                  "times": [
+                    "10:00"
+                  ],
+                  "timezone": "America/Sao_Paulo"
+                },
+                "visualStyle": "dynamic",
+                "voiceStyle": "informative"
+              },
+              "project": {
+                "audience": {
+                  "language": "pt-BR",
+                  "profile": "Público"
+                },
+                "id": "project_parity",
+                "name": "Nome",
+                "niche": "tecnologia",
+                "subniches": [],
+                "version": 2
+              },
+              "references": [],
+              "schemaVersion": "project-contracts/1.0.0"
+            },
+            "updatedAt": "2026-10-14T12:00:00.000Z"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 2,
+              "idempotencyKey": "parity:archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "projectId": "project_parity"
+            }
+          ],
+          "effects": [],
+          "result": {
+            "archivedAt": "2026-10-14T12:00:00.000Z",
+            "createdAt": "2026-10-14T12:00:00.000Z",
+            "id": "project_parity",
+            "latestVersion": 2,
+            "snapshot": {
+              "channel": {
+                "aspectRatio": "9:16",
+                "editorialStyle": "informative",
+                "format": "short_video",
+                "maxDurationSeconds": 45,
+                "maxVideoAssetDurationSeconds": 45,
+                "minDurationSeconds": 25,
+                "minVideoAssetDurationSeconds": 25,
+                "productionProfile": "STATIC_IMAGE_V1",
+                "publishing": {
+                  "contentsPerDay": 1,
+                  "networks": [
+                    "instagram"
+                  ],
+                  "times": [
+                    "10:00"
+                  ],
+                  "timezone": "America/Sao_Paulo"
+                },
+                "visualStyle": "dynamic",
+                "voiceStyle": "informative"
+              },
+              "project": {
+                "audience": {
+                  "language": "pt-BR",
+                  "profile": "Público"
+                },
+                "id": "project_parity",
+                "name": "Nome",
+                "niche": "tecnologia",
+                "subniches": [],
+                "version": 2
+              },
+              "references": [],
+              "schemaVersion": "project-contracts/1.0.0"
+            },
+            "updatedAt": "2026-10-14T12:00:00.000Z"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ]
+    },
+    "SQLite commands against frozen legacy evidence > replays frozen commands and NestJS commands in both directions after archival": {
+      "project.createProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "idempotencyKey": "parity:create",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia "
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 1
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 1,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.createProjectVersion": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 2
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": null,
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        },
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 1,
+              "idempotencyKey": "parity:version",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "project": {
+                "audience": {
+                  "profile": "Público"
+                },
+                "channel": {
+                  "publishing": {
+                    "networks": [
+                      "instagram"
+                    ]
+                  }
+                },
+                "id": "project_parity",
+                "name": " Nome ",
+                "niche": " Tecnologia ",
+                "version": 2
+              }
+            }
+          ],
+          "effects": [],
+          "result": {
+            "channel": {
+              "aspectRatio": "9:16",
+              "editorialStyle": "informative",
+              "format": "short_video",
+              "maxDurationSeconds": 45,
+              "maxVideoAssetDurationSeconds": 45,
+              "minDurationSeconds": 25,
+              "minVideoAssetDurationSeconds": 25,
+              "productionProfile": "STATIC_IMAGE_V1",
+              "publishing": {
+                "contentsPerDay": 1,
+                "networks": [
+                  "instagram"
+                ],
+                "times": [
+                  "10:00"
+                ],
+                "timezone": "America/Sao_Paulo"
+              },
+              "visualStyle": "dynamic",
+              "voiceStyle": "informative"
+            },
+            "project": {
+              "audience": {
+                "language": "pt-BR",
+                "profile": "Público"
+              },
+              "id": "project_parity",
+              "name": "Nome",
+              "niche": "tecnologia",
+              "subniches": [],
+              "version": 2
+            },
+            "references": [],
+            "schemaVersion": "project-contracts/1.0.0"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ],
+      "project.archiveProject": [
+        {
+          "args": [
+            {
+              "actor": " operator:test ",
+              "expectedVersion": 2,
+              "idempotencyKey": "parity:archive",
+              "occurredAt": "2026-10-14T09:00:00-03:00",
+              "projectId": "project_parity"
+            }
+          ],
+          "effects": [],
+          "result": {
+            "archivedAt": "2026-10-14T12:00:00.000Z",
+            "createdAt": "2026-10-14T12:00:00.000Z",
+            "id": "project_parity",
+            "latestVersion": 2,
+            "snapshot": {
+              "channel": {
+                "aspectRatio": "9:16",
+                "editorialStyle": "informative",
+                "format": "short_video",
+                "maxDurationSeconds": 45,
+                "maxVideoAssetDurationSeconds": 45,
+                "minDurationSeconds": 25,
+                "minVideoAssetDurationSeconds": 25,
+                "productionProfile": "STATIC_IMAGE_V1",
+                "publishing": {
+                  "contentsPerDay": 1,
+                  "networks": [
+                    "instagram"
+                  ],
+                  "times": [
+                    "10:00"
+                  ],
+                  "timezone": "America/Sao_Paulo"
+                },
+                "visualStyle": "dynamic",
+                "voiceStyle": "informative"
+              },
+              "project": {
+                "audience": {
+                  "language": "pt-BR",
+                  "profile": "Público"
+                },
+                "id": "project_parity",
+                "name": "Nome",
+                "niche": "tecnologia",
+                "subniches": [],
+                "version": 2
+              },
+              "references": [],
+              "schemaVersion": "project-contracts/1.0.0"
+            },
+            "updatedAt": "2026-10-14T12:00:00.000Z"
+          },
+          "rows": [
+            [
+              {
+                "archived_at": "2026-10-14T12:00:00.000Z",
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "id": "project_parity",
+                "latest_version": 2,
+                "updated_at": "2026-10-14T12:00:00.000Z"
+              }
+            ],
+            [
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 1
+              },
+              {
+                "created_at": "2026-10-14T12:00:00.000Z",
+                "project_id": "project_parity",
+                "schema_version": "project-contracts/1.0.0",
+                "snapshot_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}",
+                "version": 2
+              }
+            ],
+            [
+              {
+                "actor": "operator:test",
+                "command_type": "ARCHIVE_PROJECT",
+                "idempotency_key": "parity:archive",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "087cff236726a599c1d2cda05239eb98688698538b1e9a7bce1495071c45873a",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"id\":\"project_parity\",\"latestVersion\":2,\"archivedAt\":\"2026-10-14T12:00:00.000Z\",\"createdAt\":\"2026-10-14T12:00:00.000Z\",\"updatedAt\":\"2026-10-14T12:00:00.000Z\",\"snapshot\":{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT",
+                "idempotency_key": "parity:create",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "035e36ebec600616bf7d5cb3b226f0480007bb1904e62a42cd98b82f74675943",
+                "project_id": "project_parity",
+                "project_version": 1,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":1,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              },
+              {
+                "actor": "operator:test",
+                "command_type": "CREATE_PROJECT_VERSION",
+                "idempotency_key": "parity:version",
+                "occurred_at": "2026-10-14T12:00:00.000Z",
+                "payload_hash": "cb8fe037603c5660c1d8e29471bb8619698ba99c772e6e6f4950bd016815f075",
+                "project_id": "project_parity",
+                "project_version": 2,
+                "result_json": "{\"schemaVersion\":\"project-contracts/1.0.0\",\"project\":{\"id\":\"project_parity\",\"name\":\"Nome\",\"version\":2,\"niche\":\"tecnologia\",\"subniches\":[],\"audience\":{\"profile\":\"Público\",\"language\":\"pt-BR\"}},\"channel\":{\"format\":\"short_video\",\"aspectRatio\":\"9:16\",\"minDurationSeconds\":25,\"maxDurationSeconds\":45,\"minVideoAssetDurationSeconds\":25,\"maxVideoAssetDurationSeconds\":45,\"editorialStyle\":\"informative\",\"visualStyle\":\"dynamic\",\"voiceStyle\":\"informative\",\"productionProfile\":\"STATIC_IMAGE_V1\",\"publishing\":{\"contentsPerDay\":1,\"networks\":[\"instagram\"],\"timezone\":\"America/Sao_Paulo\",\"times\":[\"10:00\"]}},\"references\":[]}"
+              }
+            ]
+          ]
+        }
+      ]
+    }
+  }
+}

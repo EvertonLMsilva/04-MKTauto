@@ -1,3 +1,5 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import {
   affiliateRunFixture,
   outcome,
@@ -9,16 +11,9 @@ import {
   stageExecutionIdentityHash,
   validateStageExecutionRequest,
 } from './domain/stage-contracts.js';
-const legacyContracts = await import(
-  new URL('../../../src/domain/stage-recovery-contracts.js', import.meta.url)
-    .href
-);
-const legacy = await import(
-  new URL('../../../src/stage-recovery-repository.js', import.meta.url).href
-);
-const legacyService = await import(
-  new URL('../../../src/stage-recovery-service.js', import.meta.url).href
-);
+const legacyContracts = historicalResidualContracts('stage-recovery-contracts');
+const legacy = historicalResidualPersistence('stage-recovery-repository');
+const legacyService = historicalResidualPersistence('stage-recovery-service');
 const req = (id = 'run_001') => ({
   schemaVersion: 'stage-recovery/1.0.0',
   pipelineRunId: id,

@@ -12,24 +12,22 @@ import {
   rankAffiliateDiscovery,
 } from '../domain/affiliate-discovery.js';
 import { affiliateHash } from '../domain/affiliate-contracts.js';
-const { AffiliateDiscoveryRepository } = await import(
-  new URL('../../../../src/affiliate-discovery-repository.js', import.meta.url)
-    .href
-);
-const { CsvExternalCatalogAdapter } = await import(
-  new URL('../../../../src/adapters/csv-external-catalog.js', import.meta.url)
-    .href
-);
-const { LocalCatalogCache } = await import(
-  new URL('../../../../src/adapters/local-catalog-cache.js', import.meta.url)
-    .href
-);
+import {
+  historicalDiscovery,
+  csvScope,
+} from '../../../test/support/historical-discovery.js';
+
 describe('authorized discovery persistence and CSV', () => {
   let f: ReturnType<typeof affiliateFixture>;
   beforeEach(() => {
     f = affiliateFixture();
   });
   afterEach(() => f.cleanup());
+  it('does not load retired CSV or discovery repositories', () => {
+    expect(
+      readFileSync(new URL('./discovery.spec.ts', import.meta.url), 'utf8'),
+    ).not.toMatch(/new URL\(\s*['"]\.\.\/\.\.\/\.\.\/\.\.\/src\/[^'"]+\.js/);
+  });
   it('shares concurrent cache refresh and retains the prior snapshot after a failed stale refresh', async () => {
     const root = join(f.database, '..'),
       sourcePath = join(root, 'cache-feed.csv'),
@@ -125,16 +123,8 @@ describe('authorized discovery persistence and CSV', () => {
     expect(batch.errors).toEqual([
       { rowNumber: 3, code: 'DISCOVERY_JSON_INVALID' },
     ]);
-    const legacy = new CsvExternalCatalogAdapter({
-      ...source.config,
-      cache: new LocalCatalogCache({
-        root: join(root, 'legacy-cache'),
-        clock: () => new Date(discoveryAt),
-        isFresh: () => true,
-      }),
-    });
-    expect(source.scope).toBe(legacy.scope);
-    expect(batch).toEqual(await legacy.enumerateCandidates());
+    expect(source.scope).toBe(csvScope(source.config));
+    expect(batch).toEqual(historicalDiscovery.csv);
     expect(batch.candidates[0].provenance.sourceHash).toBe(batch.source.sha256);
     writeFileSync(sourcePath, 'broken');
     expect(await source.enumerateCandidates()).toEqual(batch);
@@ -167,20 +157,32 @@ describe('authorized discovery persistence and CSV', () => {
       });
       const hash = affiliateHash({ test: 1 });
       const saved = repo.reserve('discovery_one', hash, create, discoveryAt);
-      const legacy = new AffiliateDiscoveryRepository(f.catalog);
-      expect(legacy.get('discovery_one', hash).decision).toEqual(saved);
-      const historical = legacy.reserve(
-        'historical_one',
-        hash,
-        () => ({
-          ...create(),
-          discoveryRunId: 'historical_one',
-          selection: null,
-        }),
-        discoveryAt,
-      );
+      const persisted = f.catalog.db
+        .prepare(
+          'SELECT payload_json FROM affiliate_discovery_decisions WHERE discovery_run_id=?',
+        )
+        .get('discovery_one');
+      expect(JSON.parse(String(persisted.payload_json))).toEqual(saved);
+      const historical = historicalDiscovery.historical;
+      f.catalog.db
+        .prepare('INSERT INTO affiliate_discovery_decisions VALUES(?,?,?,?,?)')
+        .run(
+          'historical_one',
+          hash,
+          null,
+          historical.payloadHash,
+          JSON.stringify(historical.decision),
+        );
+      f.catalog.db
+        .prepare('INSERT INTO affiliate_discovery_execution VALUES(?,?,NULL)')
+        .run('historical_one', 'BLOCKED');
+      f.catalog.db
+        .prepare(
+          'INSERT INTO affiliate_discovery_events(discovery_run_id,state,recorded_at) VALUES(?,?,?)',
+        )
+        .run('historical_one', 'BLOCKED', discoveryAt);
       expect(repo.get('historical_one', hash)).toEqual(historical.decision);
-      legacy.db
+      f.catalog.db
         .prepare(
           "UPDATE affiliate_discovery_execution SET state='UNKNOWN',result_json=? WHERE discovery_run_id='discovery_one'",
         )

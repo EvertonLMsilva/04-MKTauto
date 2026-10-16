@@ -1,14 +1,13 @@
+import { provisionSchema } from "../backend/dist/administration/schema-provisioner.js";
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { withTemporarySqlite } from "./sqlite-test-fixture.js";
 import { DatabaseSync } from "node:sqlite";
 import {
   ProjectApplicationError,
   ProjectApplicationService,
-} from "../src/project-application-service.js";
-import { ProjectRepository } from "../src/project-repository.js";
+} from "../backend/dist/project/application/project-application.service.js";
+import { SqliteProjectRepository as ProjectRepository } from "../backend/dist/project/infrastructure/sqlite-project.repository.js";
 
 const CREATED_AT = "2026-09-27T12:00:00.000Z";
 const UPDATED_AT = "2026-09-27T13:00:00.000Z";
@@ -143,8 +142,8 @@ test("valida chave, ator, instante e payload antes de persistir", () => {
 });
 
 test("falha ao registrar comando reverte projeto e snapshot e permite retry limpo", () => {
-  withApplication(({ service, path }) => {
-    const raw = new DatabaseSync(path);
+  withApplication(({ service, path, open }) => {
+    const raw = open(DatabaseSync, path);
     raw.exec(`CREATE TRIGGER reject_project_command BEFORE INSERT ON project_commands
       BEGIN SELECT RAISE(ABORT, 'FORCED_COMMAND_FAILURE'); END;`);
     raw.close();
@@ -153,7 +152,7 @@ test("falha ao registrar comando reverte projeto e snapshot e permite retry limp
     assert.throws(() => service.createProject(command), /FORCED_COMMAND_FAILURE/);
     assert.deepEqual(counts(path), { projects: 0, snapshots: 0, commands: 0 });
 
-    const repair = new DatabaseSync(path);
+    const repair = open(DatabaseSync, path);
     repair.exec("DROP TRIGGER reject_project_command");
     repair.close();
     assert.equal(service.createProject(command).project.version, 1);
@@ -162,9 +161,9 @@ test("falha ao registrar comando reverte projeto e snapshot e permite retry limp
 });
 
 test("falha no registro não deixa versão ou arquivamento parcial", () => {
-  withApplication(({ service, repository, path }) => {
+  withApplication(({ service, repository, path, open }) => {
     service.createProject(createCommand());
-    const raw = new DatabaseSync(path);
+    const raw = open(DatabaseSync, path);
     raw.exec(`CREATE TRIGGER reject_project_mutation_command BEFORE INSERT ON project_commands
       WHEN NEW.command_type IN ('CREATE_PROJECT_VERSION', 'ARCHIVE_PROJECT')
       BEGIN SELECT RAISE(ABORT, 'FORCED_MUTATION_COMMAND_FAILURE'); END;`);
@@ -181,12 +180,12 @@ test("falha no registro não deixa versão ou arquivamento parcial", () => {
     assert.equal(repository.getProject("project_curiosidades_ia").latestVersion, 1);
     assert.equal(repository.get("project_curiosidades_ia", 2), null);
 
-    const repairVersion = new DatabaseSync(path);
+    const repairVersion = open(DatabaseSync, path);
     repairVersion.exec("DROP TRIGGER reject_project_mutation_command");
     repairVersion.close();
     service.createProjectVersion(versionCommand);
 
-    const blockArchive = new DatabaseSync(path);
+    const blockArchive = open(DatabaseSync, path);
     blockArchive.exec(`CREATE TRIGGER reject_project_archive_command BEFORE INSERT ON project_commands
       WHEN NEW.command_type = 'ARCHIVE_PROJECT'
       BEGIN SELECT RAISE(ABORT, 'FORCED_ARCHIVE_COMMAND_FAILURE'); END;`);
@@ -202,7 +201,7 @@ test("falha no registro não deixa versão ou arquivamento parcial", () => {
     assert.equal(repository.getProject("project_curiosidades_ia").archivedAt, null);
     assert.equal(commandRow(path, archiveCommand.idempotencyKey), undefined);
 
-    const repairArchive = new DatabaseSync(path);
+    const repairArchive = open(DatabaseSync, path);
     repairArchive.exec("DROP TRIGGER reject_project_archive_command");
     repairArchive.close();
     assert.equal(service.archiveProject(archiveCommand).archivedAt, ARCHIVED_AT);
@@ -210,21 +209,24 @@ test("falha no registro não deixa versão ou arquivamento parcial", () => {
   });
 });
 
-test("migração de comandos é aditiva, reproduzível e registros são imutáveis", () => {
-  withDatabase((path) => {
-    const repository = new ProjectRepository(path);
+for (const schema of [39, 42]) test(`provisionamento de comandos é reproduzível e registros são imutáveis no schema ${schema}`, () => {
+  withDatabase((path, open) => {
+    const repository = open(ProjectRepository, path);
     const service = new ProjectApplicationService(repository);
     service.createProject(createCommand());
     repository.close();
 
-    const reopened = new ProjectRepository(path);
+    const reopened = open(ProjectRepository, path);
     const retry = new ProjectApplicationService(reopened).createProject(createCommand());
     assert.equal(retry.project.version, 1);
     assert.equal(Object.isFrozen(retry), true);
     reopened.close();
-    const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
+    const raw = open(DatabaseSync, path);
+    const history = raw.prepare("SELECT * FROM schema_migrations ORDER BY version").all();
+    provisionSchema(raw, schema);
+    assert.deepEqual(raw.prepare("SELECT * FROM schema_migrations ORDER BY version").all(), history);
+    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, schema);
+    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, schema);
     assert.throws(
       () => raw.prepare("UPDATE project_commands SET actor = 'outro' WHERE idempotency_key = ?")
         .run("project:create:1"),
@@ -235,7 +237,7 @@ test("migração de comandos é aditiva, reproduzível e registros são imutáve
       /IMMUTABLE_PROJECT_COMMAND/,
     );
     raw.close();
-  });
+  }, schema);
 });
 
 function createCommand(overrides = {}) {
@@ -298,21 +300,21 @@ function applicationError(code, field) {
 }
 
 function withApplication(callback) {
-  withDatabase((path) => {
-    const repository = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const repository = open(ProjectRepository, path);
     try {
-      callback({ service: new ProjectApplicationService(repository), repository, path });
+      callback({ service: new ProjectApplicationService(repository), repository, path, open });
     } finally {
       repository.close();
     }
   });
 }
 
-function withDatabase(callback) {
-  const directory = mkdtempSync(join(tmpdir(), "mktauto-project-application-"));
-  try {
-    callback(join(directory, "catalog.sqlite"));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+function withDatabase(callback, schema = 42) {
+  return withTemporarySqlite('mktauto-project-application-', (path, open) => {
+    const setup = open(DatabaseSync, path);
+    provisionSchema(setup, schema);
+    setup.close();
+    return callback(path, open);
+  });
 }

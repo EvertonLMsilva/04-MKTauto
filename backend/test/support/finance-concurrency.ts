@@ -6,7 +6,7 @@ import { transpileModule, ModuleKind, ScriptTarget } from 'typescript';
 
 export async function raceFinance(
   database: string,
-  commands: { engine?: 'ts' | 'js'; method: string; args: unknown[] }[],
+  commands: { method: string; args: unknown[] }[],
 ) {
   const directory = dirname(database),
     visited = new Set<string>();
@@ -36,14 +36,12 @@ export async function raceFinance(
   writeFileSync(
     entry,
     `
-import {parentPort,workerData as w} from 'node:worker_threads';
+import {parentPort,workerData as w,threadId} from 'node:worker_threads';
 import {FinanceSession} from './finance/infrastructure/finance.session.js';
-const {CostLedgerRepository}=await import(w.repositoryUrl),{BudgetGate}=await import(w.gateUrl);
-const repository=w.engine==='js'?new CostLedgerRepository(w.database):new FinanceSession(w.database);
-const engine=w.engine==='js'?new BudgetGate(repository):repository;
+const repository=new FinanceSession(w.database);
 parentPort.postMessage('ready');Atomics.wait(new Int32Array(w.barrier),0,0);
-try{const value=engine[w.method](...w.args);parentPort.postMessage({ok:true,value});}
-catch(e){parentPort.postMessage({ok:false,code:e.code,message:e.message});}
+try{const value=repository[w.method](...w.args);parentPort.postMessage({ok:true,value,workerThreadId:threadId});}
+catch(e){parentPort.postMessage({ok:false,code:e.code,message:e.message,workerThreadId:threadId});}
 finally{repository.close();}
 `,
   );
@@ -54,42 +52,43 @@ finally{repository.close();}
     return await Promise.all(
       commands.map(
         (command) =>
-          new Promise<{ ok: boolean; code?: string; value?: any }>(
-            (resolve, reject) => {
-              const worker = new Worker(pathToFileURL(entry), {
-                workerData: {
-                  ...command,
-                  database,
-                  barrier,
-                  repositoryUrl: new URL(
-                    '../../../src/cost-ledger-repository.js',
-                    import.meta.url,
-                  ).href,
-                  gateUrl: new URL(
-                    '../../../src/budget-gate.js',
-                    import.meta.url,
-                  ).href,
-                },
-              });
-              workers.push(worker);
-              let result:
-                { ok: boolean; code?: string; value?: any } | undefined;
-              worker.on('message', (message) => {
-                if (message === 'ready') {
-                  if (++ready === commands.length) {
-                    Atomics.store(new Int32Array(barrier), 0, 1);
-                    Atomics.notify(new Int32Array(barrier), 0);
-                  }
-                } else result = message;
-              });
-              worker.on('error', reject);
-              worker.on('exit', (code) =>
-                code === 0 && result
-                  ? resolve(result)
-                  : reject(new Error(`finance worker exit ${code}`)),
-              );
-            },
-          ),
+          new Promise<{
+            ok: boolean;
+            workerThreadId: number;
+            code?: string;
+            value?: any;
+          }>((resolve, reject) => {
+            const worker = new Worker(pathToFileURL(entry), {
+              workerData: {
+                ...command,
+                database,
+                barrier,
+              },
+            });
+            workers.push(worker);
+            let result:
+              | {
+                  ok: boolean;
+                  workerThreadId: number;
+                  code?: string;
+                  value?: any;
+                }
+              | undefined;
+            worker.on('message', (message) => {
+              if (message === 'ready') {
+                if (++ready === commands.length) {
+                  Atomics.store(new Int32Array(barrier), 0, 1);
+                  Atomics.notify(new Int32Array(barrier), 0);
+                }
+              } else result = message;
+            });
+            worker.on('error', reject);
+            worker.on('exit', (code) =>
+              code === 0 && result
+                ? resolve(result)
+                : reject(new Error(`finance worker exit ${code}`)),
+            );
+          }),
       ),
     );
   } finally {

@@ -25,10 +25,21 @@ import { MediaService } from './application/media.service.js';
 const { png, sha256, wav } = await import(
   new URL('../../../test-support/physical-fixtures.js', import.meta.url).href
 );
-const { FfmpegVideoComposer: LegacyComposer } = await import(
-  new URL('../../../src/adapters/ffmpeg-video-composer.js', import.meta.url)
-    .href
-);
+import {
+  frozenFfmpegAdapter,
+  frozenFfmpegConfig,
+  normalizedFfmpegTrace,
+} from '../../test/support/historical-ffmpeg.js';
+test('composition regression uses independent observations without a legacy runtime import', () => {
+  const source = readFileSync(
+    new URL('./ffmpeg-video-composer.spec.ts', import.meta.url),
+    'utf8',
+  );
+  assert.doesNotMatch(
+    source,
+    /new URL\(\s*['"]\.\.\/\.\.\/\.\.\/src\/[^'"]+\.js/,
+  );
+});
 
 test.each([false, true])(
   'native composition serializes overlapping requests, conflicting=%s',
@@ -309,8 +320,8 @@ test.each(['V1', 'TRIM', 'LOOP'])(
       });
     }
     assert.deepEqual(
-      await capture(FfmpegVideoComposer),
-      await capture(LegacyComposer),
+      normalizedFfmpegTrace(await capture(FfmpegVideoComposer)),
+      frozenFfmpegAdapter(mode),
     );
   },
 );
@@ -324,12 +335,10 @@ test('config retains legacy policy identity and provider activates only with val
       FFMPEG_MEDIA_ROOT: roots.mediaRoot,
       FFMPEG_RENDER_ROOT: roots.renderRoot,
     };
-    const legacyConfig = await import(
-      new URL('../../../src/ffmpeg-video-config.js', import.meta.url).href
-    );
+
     assert.deepEqual(
       loadFfmpegVideoConfig(env),
-      legacyConfig.loadFfmpegVideoConfig(env),
+      frozenFfmpegConfig(roots, process.execPath),
     );
     const store: any = {};
     const disabled = await createVideoComposer(store, {});
@@ -1102,7 +1111,7 @@ async function withRoots(run: any): Promise<any> {
     mkdirSync(path, { recursive: true }),
   );
   try {
-    await run(roots);
+    return await run(roots);
   } finally {
     rmSync(root, {
       recursive: true,

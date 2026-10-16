@@ -1,3 +1,4 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
 import { readFileSync } from 'node:fs';
 import { FinanceSession } from './infrastructure/finance.session.js';
 import { migrateFinance40 } from './infrastructure/finance-schema-migration.js';
@@ -17,8 +18,8 @@ const sql = readFileSync(
   ),
   'utf8',
 );
-const { CostLedgerRepository: LegacyLedger } = await import(
-  new URL('../../../src/cost-ledger-repository.js', import.meta.url).href
+const { CostLedgerRepository: LegacyLedger } = historicalResidualPersistence(
+  'cost-ledger-repository',
 );
 const { MediaDatabase } =
   await import('./../media/infrastructure/media-database.js');

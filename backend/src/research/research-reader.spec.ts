@@ -1,3 +1,4 @@
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { DatabaseSync } from 'node:sqlite';
 import {
   contentFixture,
@@ -12,15 +13,9 @@ import {
 import { SqliteResearchReader } from './infrastructure/sqlite-research.reader.js';
 import { createResearchShortlist } from './domain/research-shortlist-contracts.js';
 import { createReferenceInsight } from './domain/reference-insight-contracts.js';
-const legacy = await import(
-  new URL(
-    '../../../src/domain/research-shortlist-contracts.js',
-    import.meta.url,
-  ).href
-);
-const legacyInsight = await import(
-  new URL('../../../src/domain/reference-insight-contracts.js', import.meta.url)
-    .href
+const legacy = historicalResidualContracts('research-shortlist-contracts');
+const legacyInsight = historicalResidualContracts(
+  'reference-insight-contracts',
 );
 
 describe('Research public historical read boundary', () => {

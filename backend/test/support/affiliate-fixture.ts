@@ -1,16 +1,16 @@
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
+import { historicalResidualContracts } from './historical-residual-contracts.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-// Legacy code is an oracle/provisioner in tests only; runtime never imports it.
-export const legacyDomain = await import(
-  new URL('../../../src/domain/affiliate-contracts.js', import.meta.url).href
+// Fixed historical observations seed test data; no retired JS runtime is loaded.
+export const legacyDomain = historicalResidualContracts('affiliate-contracts');
+const { PipelineRunRepository } = historicalResidualPersistence(
+  'pipeline-run-repository',
 );
-const { PipelineRunRepository } = await import(
-  new URL('../../../src/pipeline-run-repository.js', import.meta.url).href
-);
-const { AffiliateRepository } = await import(
-  new URL('../../../src/affiliate-repository.js', import.meta.url).href
+const { AffiliateRepository } = historicalResidualPersistence(
+  'affiliate-repository',
 );
 const fixtures = await import(
   new URL('../../../test/affiliate-fixtures.js', import.meta.url).href

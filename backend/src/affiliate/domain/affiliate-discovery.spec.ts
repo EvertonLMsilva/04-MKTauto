@@ -9,12 +9,9 @@ import {
   DEFAULT_AFFILIATE_DISCOVERY_POLICY as policy,
 } from './affiliate-discovery.js';
 import { affiliateHash } from './affiliate-contracts.js';
-const legacy = await import(
-  new URL(
-    '../../../../src/domain/affiliate-discovery-contracts.js',
-    import.meta.url,
-  ).href
-);
+import { readFileSync } from 'node:fs';
+import { historicalContracts } from '../../../test/support/historical-contracts.js';
+const legacy = historicalContracts('affiliate-discovery');
 const outcome = (fn: () => unknown) => {
   try {
     return fn();
@@ -23,6 +20,14 @@ const outcome = (fn: () => unknown) => {
   }
 };
 describe('discovery JS × TS segment', () => {
+  it('uses independent historical observations instead of a legacy runtime', () => {
+    expect(
+      readFileSync(
+        new URL('./affiliate-discovery.spec.ts', import.meta.url),
+        'utf8',
+      ),
+    ).not.toMatch(/new URL\(\s*['"]\.\.\/\.\.\/\.\.\/\.\.\/src\/[^'"]+\.js/);
+  });
   it('preserves validation, UNKNOWN, eligibility, evidence and deterministic ranking', () => {
     const a = discoveryCandidate(),
       b = discoveryCandidate('item_002');

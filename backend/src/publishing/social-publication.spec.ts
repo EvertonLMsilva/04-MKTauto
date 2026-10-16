@@ -1,13 +1,14 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
 import { test } from 'vitest';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-const { HumanApprovalRepository } = await import(
-  new URL('../../../src/human-approval-repository.js', import.meta.url).href
+const { HumanApprovalRepository } = historicalResidualPersistence(
+  'human-approval-repository',
 );
-const { AffiliateRepository } = await import(
-  new URL('../../../src/affiliate-repository.js', import.meta.url).href
+const { AffiliateRepository } = historicalResidualPersistence(
+  'affiliate-repository',
 );
 import { ManualDistributionRepository } from './infrastructure/manual-distribution.repository.js';
 import { ManualDistributionService } from './application/manual-distribution.service.js';

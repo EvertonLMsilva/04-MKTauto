@@ -1,25 +1,23 @@
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
+import { historicalResidualContracts } from './historical-residual-contracts.js';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-const { CostLedgerRepository } = await import(
-  new URL('../../../src/cost-ledger-repository.js', import.meta.url).href
+const { CostLedgerRepository } = historicalResidualPersistence(
+  'cost-ledger-repository',
 );
-const { BudgetGate } = await import(
-  new URL('../../../src/budget-gate.js', import.meta.url).href
-);
-const { AffiliateRepository } = await import(
-  new URL('../../../src/affiliate-repository.js', import.meta.url).href
+const { BudgetGate } = historicalResidualPersistence('budget-gate');
+const { AffiliateRepository } = historicalResidualPersistence(
+  'affiliate-repository',
 );
 const fixtures = await import(
   new URL('../../../test/affiliate-fixtures.js', import.meta.url).href
 );
-const { adaptationHash } = await import(
-  new URL('../../../src/domain/video-adaptation-contracts.js', import.meta.url)
-    .href
+const { adaptationHash } = historicalResidualContracts(
+  'video-adaptation-contracts',
 );
-const { videoRequestHash } = await import(
-  new URL('../../../src/domain/video-generation-contracts.js', import.meta.url)
-    .href
+const { videoRequestHash } = historicalResidualContracts(
+  'video-generation-contracts',
 );
 export const time = '2026-10-13T12:00:00Z';
 export const proof = (id = 'a', amount = '0.6') => ({

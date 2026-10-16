@@ -1,3 +1,4 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -9,12 +10,8 @@ import {
   SocialPublicationRepository,
 } from './infrastructure/social-publication.repository.js';
 import { LocalRenderIntegrity } from '../media/infrastructure/local-render-integrity.js';
-const legacy = await import(
-  new URL('../../../src/human-approval-repository.js', import.meta.url).href
-);
-const affiliate = await import(
-  new URL('../../../src/affiliate-repository.js', import.meta.url).href
-);
+const legacy = historicalResidualPersistence('human-approval-repository');
+const affiliate = historicalResidualPersistence('affiliate-repository');
 const fixtures = await import(
   new URL('../../../test/affiliate-fixtures.js', import.meta.url).href
 );

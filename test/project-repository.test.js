@@ -1,55 +1,46 @@
 import test from "node:test";
+// Run `npm run build` before this Node suite: all behavior uses NestJS contracts.
+const PROJECT_SCHEMA_VERSION = 42;
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { withTemporarySqlite } from "./sqlite-test-fixture.js";
 import { DatabaseSync } from "node:sqlite";
-import { createProjectSnapshot } from "../src/domain/project-contracts.js";
-import { ProjectRepository, ProjectRepositoryError } from "../src/project-repository.js";
+import { createProjectSnapshot } from "../backend/dist/project/domain/project-contracts.js";
+import { SqliteProjectRepository as ProjectRepository } from "../backend/dist/project/infrastructure/sqlite-project.repository.js";
+import { ProjectRepositoryError } from "../backend/dist/project/domain/project.errors.js";
+import { provisionSchema } from "../backend/dist/administration/schema-provisioner.js";
 
 const CREATED_AT = "2026-09-27T12:00:00.000Z";
 const UPDATED_AT = "2026-09-27T13:00:00.000Z";
 
-test("migra banco vazio e reabre sem alterar projetos persistidos", () => {
-  withDatabase((path) => {
-    const first = new ProjectRepository(path);
+test("provisiona banco vazio administrativamente e reabre sem alterar projetos persistidos", () => {
+  withDatabase((path, open) => {
+    const first = open(ProjectRepository, path);
     first.create(project(), { createdAt: CREATED_AT });
     first.close();
 
-    const second = new ProjectRepository(path);
+    const second = open(ProjectRepository, path);
     assert.deepEqual(second.get("project_curiosidades_ia"), createProjectSnapshot(project()));
     second.close();
 
-    const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 30);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
-    raw.close();
+    const raw = open(DatabaseSync, path);
+    try {
+      assert.equal(raw.prepare("PRAGMA user_version").get().user_version, PROJECT_SCHEMA_VERSION);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, PROJECT_SCHEMA_VERSION);
+      assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM project_snapshots").get().total, 1);
+    } finally { raw.close(); }
   });
 });
 
-test("falha de migração reverte schema e versão integralmente", () => {
-  withDatabase((path) => {
-    const setup = new DatabaseSync(path);
-    setup.exec(`
-      CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, applied_at TEXT NOT NULL);
-      INSERT INTO schema_migrations VALUES (1, '001_trend_catalog', '${CREATED_AT}');
-      INSERT INTO schema_migrations VALUES (2, '002_daily_catalog', '${CREATED_AT}');
-      CREATE TABLE project_snapshots (blocker TEXT);
-      PRAGMA user_version = 2;
-    `);
+test("falha de migração administrativa reverte schema e versão integralmente", () => {
+  withTemporarySqlite('mktauto-project-migration-', (path, open) => {
+    const setup = open(DatabaseSync, path);
+    provisionSchema(setup, 2);
+    setup.exec("CREATE TABLE project_snapshots (blocker TEXT)");
+    assert.throws(() => provisionSchema(setup), /project_snapshots already exists/);
+    assert.equal(setup.prepare("PRAGMA user_version").get().user_version, 2);
+    assert.equal(setup.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 2);
+    assert.equal(setup.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get().total, 0);
     setup.close();
-
-    assert.throws(
-      () => new ProjectRepository(path),
-      error("PROJECT_MIGRATION_FAILED", "schemaVersion"),
-    );
-
-    const raw = new DatabaseSync(path);
-    assert.equal(raw.prepare("PRAGMA user_version").get().user_version, 2);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM schema_migrations").get().total, 2);
-    assert.equal(raw.prepare("SELECT COUNT(*) AS total FROM sqlite_master WHERE type = 'table' AND name = 'projects'").get().total, 0);
-    raw.close();
   });
 });
 
@@ -110,9 +101,9 @@ test("impede colisões de identificação e versão com códigos e campos estáv
 });
 
 test("impede update perdido quando a versão esperada diverge", () => {
-  withDatabase((path) => {
-    const first = new ProjectRepository(path);
-    const second = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const first = open(ProjectRepository, path);
+    const second = open(ProjectRepository, path);
     try {
       first.create(project(), { createdAt: CREATED_AT });
       first.createVersion(project({ version: 2 }), { expectedVersion: 1, createdAt: UPDATED_AT });
@@ -152,12 +143,12 @@ test("arquiva logicamente sem remover o histórico e bloqueia novas versões", (
 });
 
 test("triggers do banco impedem alteração ou remoção retroativa de snapshots", () => {
-  withDatabase((path) => {
-    const repository = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const repository = open(ProjectRepository, path);
     repository.create(project(), { createdAt: CREATED_AT });
     repository.close();
 
-    const raw = new DatabaseSync(path);
+    const raw = open(DatabaseSync, path);
     assert.throws(
       () => raw.prepare("UPDATE project_snapshots SET snapshot_json = '{}' WHERE project_id = ? AND version = 1")
         .run("project_curiosidades_ia"),
@@ -173,15 +164,15 @@ test("triggers do banco impedem alteração ou remoção retroativa de snapshots
 });
 
 test("falha intermediária reverte integralmente a criação", () => {
-  withDatabase((path) => {
-    const migrated = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const migrated = open(ProjectRepository, path);
     migrated.close();
-    const raw = new DatabaseSync(path);
+    const raw = open(DatabaseSync, path);
     raw.exec(`CREATE TRIGGER reject_project_snapshot BEFORE INSERT ON project_snapshots
       BEGIN SELECT RAISE(ABORT, 'FORCED_SNAPSHOT_FAILURE'); END;`);
     raw.close();
 
-    const repository = new ProjectRepository(path);
+    const repository = open(ProjectRepository, path);
     assert.throws(() => repository.create(project(), { createdAt: CREATED_AT }), /FORCED_SNAPSHOT_FAILURE/);
     assert.equal(repository.getProject("project_curiosidades_ia"), null);
     repository.close();
@@ -199,12 +190,12 @@ test("valida pelo contrato antes de persistir e rejeita segredos", () => {
 });
 
 test("valida novamente após recuperar e não devolve payload adulterado", () => {
-  withDatabase((path) => {
-    const repository = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const repository = open(ProjectRepository, path);
     repository.create(project(), { createdAt: CREATED_AT });
     repository.close();
 
-    const raw = new DatabaseSync(path);
+    const raw = open(DatabaseSync, path);
     raw.exec("DROP TRIGGER project_snapshots_no_update");
     const snapshot = JSON.parse(raw.prepare(
       "SELECT snapshot_json FROM project_snapshots WHERE project_id = ? AND version = 1",
@@ -214,7 +205,7 @@ test("valida novamente após recuperar e não devolve payload adulterado", () =>
       .run(JSON.stringify(snapshot), "project_curiosidades_ia");
     raw.close();
 
-    const reopened = new ProjectRepository(path);
+    const reopened = open(ProjectRepository, path);
     assert.throws(
       () => reopened.get("project_curiosidades_ia", 1),
       (caught) => caught.code === "SENSITIVE_FIELD_REJECTED" && caught.path === "channel.accessToken",
@@ -249,8 +240,8 @@ function error(code, field) {
 }
 
 function withRepository(callback) {
-  withDatabase((path) => {
-    const repository = new ProjectRepository(path);
+  withDatabase((path, open) => {
+    const repository = open(ProjectRepository, path);
     try {
       callback(repository);
     } finally {
@@ -260,10 +251,11 @@ function withRepository(callback) {
 }
 
 function withDatabase(callback) {
-  const directory = mkdtempSync(join(tmpdir(), "mktauto-projects-"));
-  try {
-    callback(join(directory, "catalog.sqlite"));
-  } finally {
-    rmSync(directory, { recursive: true, force: true });
-  }
+  return withTemporarySqlite('mktauto-projects-', (path, open) => {
+    // Administrative provisioning is explicit; repository constructors never migrate.
+    const setup = open(DatabaseSync, path);
+    provisionSchema(setup);
+    setup.close();
+    return callback(path, open);
+  });
 }

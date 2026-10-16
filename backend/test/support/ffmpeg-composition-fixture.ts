@@ -1,3 +1,4 @@
+import { historicalResidualPersistence } from './historical-residual-persistence.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fixture } from './composition-plan-fixture.js';
@@ -7,11 +8,11 @@ import type { ProcessRunner } from '../../src/media/infrastructure/ffmpeg-proces
 const { png, sha256, wav } = await import(
   new URL('../../../test-support/physical-fixtures.js', import.meta.url).href
 );
-const { VoiceTrackRepository } = await import(
-  new URL('../../../src/voice-track-repository.js', import.meta.url).href
+const { VoiceTrackRepository } = historicalResidualPersistence(
+  'voice-track-repository',
 );
 
-// Legacy is used only to provision voice fixtures; all composition writes use TS.
+// Historical observations seed voice fixtures; all composition writes use TS.
 export function ffmpegFixture() {
   const f = fixture(true);
   const roots = {

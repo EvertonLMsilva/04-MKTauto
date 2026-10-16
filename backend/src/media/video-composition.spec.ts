@@ -1,15 +1,14 @@
+import { historicalResidualPersistence } from '../../test/support/historical-residual-persistence.js';
+import { historicalResidualContracts } from '../../test/support/historical-residual-contracts.js';
 import { fixture } from '../../test/support/composition-plan-fixture.js';
 import { raceMedia } from '../../test/support/media-concurrency.js';
 import { render } from '../../test/support/publishing-render-fixture.js';
 import { VideoCompositionService } from './application/video-composition.service.js';
 import { videoCompositionRequestHash } from './domain/video-composition-contracts.js';
 import { VideoRenderRepository } from './infrastructure/video-render.reader.js';
-const legacy = await import(
-  new URL('../../../src/video-composition-service.js', import.meta.url).href
-);
-const legacyContracts = await import(
-  new URL('../../../src/domain/video-composition-contracts.js', import.meta.url)
-    .href
+const legacy = historicalResidualPersistence('video-composition-service');
+const legacyContracts = historicalResidualContracts(
+  'video-composition-contracts',
 );
 function request(plan: any, overrides: any = {}) {
   const value = {
