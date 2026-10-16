@@ -1,0 +1,623 @@
+{
+  "task": "P6-LEGACY-REMAINDER-001",
+  "baseline": {
+    "directModules": [
+      "src/affiliate-repository.js",
+      "src/budget-gate.js",
+      "src/cost-ledger-repository.js",
+      "src/domain/affiliate-contracts.js",
+      "src/domain/artifact-lineage-contracts.js",
+      "src/domain/composition-plan-contracts.js",
+      "src/domain/contracts.js",
+      "src/domain/cost-event-contracts.js",
+      "src/domain/idea-selection-contracts.js",
+      "src/domain/media-asset-contracts.js",
+      "src/domain/pipeline-run-contracts.js",
+      "src/domain/project-contracts.js",
+      "src/domain/quality-control-contracts.js",
+      "src/domain/reference-insight-contracts.js",
+      "src/domain/research-shortlist-contracts.js",
+      "src/domain/script-contracts.js",
+      "src/domain/stage-recovery-contracts.js",
+      "src/domain/tts-finance-contracts.js",
+      "src/domain/video-adaptation-contracts.js",
+      "src/domain/video-composition-contracts.js",
+      "src/domain/video-generation-contracts.js",
+      "src/domain/video-render-contracts.js",
+      "src/domain/voice-generation-contracts.js",
+      "src/domain/voice-track-contracts.js",
+      "src/human-approval-repository.js",
+      "src/idea-selection-service.js",
+      "src/idea-service.js",
+      "src/media-asset-repository.js",
+      "src/p4-video-repository.js",
+      "src/pipeline-run-repository.js",
+      "src/pipeline-run-service.js",
+      "src/project-pipeline-handoff.js",
+      "src/quality-control-repository.js",
+      "src/script-repository.js",
+      "src/stage-recovery-repository.js",
+      "src/stage-recovery-service.js",
+      "src/video-composition-service.js",
+      "src/video-render-repository.js",
+      "src/voice-track-repository.js"
+    ],
+    "reachableModules": [
+      "src/affiliate-repository.js",
+      "src/artifact-lineage-repository.js",
+      "src/budget-gate.js",
+      "src/composition-plan-repository.js",
+      "src/cost-ledger-repository.js",
+      "src/domain/affiliate-contracts.js",
+      "src/domain/ai-call-telemetry-contracts.js",
+      "src/domain/artifact-lineage-contracts.js",
+      "src/domain/composition-plan-contracts.js",
+      "src/domain/contracts.js",
+      "src/domain/cost-event-contracts.js",
+      "src/domain/economic-video-profile.js",
+      "src/domain/human-approval-contracts.js",
+      "src/domain/idea-contracts.js",
+      "src/domain/idea-selection-contracts.js",
+      "src/domain/media-acquisition-contracts.js",
+      "src/domain/media-asset-contracts.js",
+      "src/domain/media-selection-contracts.js",
+      "src/domain/p4-video-contracts.js",
+      "src/domain/pipeline-run-contracts.js",
+      "src/domain/project-contracts.js",
+      "src/domain/quality-control-contracts.js",
+      "src/domain/reference-insight-contracts.js",
+      "src/domain/research-shortlist-contracts.js",
+      "src/domain/script-contracts.js",
+      "src/domain/script-generation-contracts.js",
+      "src/domain/stage-recovery-contracts.js",
+      "src/domain/subtitle-render-contracts.js",
+      "src/domain/subtitle-track-contracts.js",
+      "src/domain/tts-finance-contracts.js",
+      "src/domain/video-adaptation-contracts.js",
+      "src/domain/video-composition-contracts.js",
+      "src/domain/video-generation-contracts.js",
+      "src/domain/video-render-contracts.js",
+      "src/domain/voice-capabilities.js",
+      "src/domain/voice-generation-contracts.js",
+      "src/domain/voice-track-contracts.js",
+      "src/human-approval-repository.js",
+      "src/idea-repository.js",
+      "src/idea-scoring.js",
+      "src/idea-selection-repository.js",
+      "src/idea-selection-service.js",
+      "src/idea-service.js",
+      "src/media-asset-repository.js",
+      "src/p4-video-repository.js",
+      "src/pipeline-run-repository.js",
+      "src/pipeline-run-service.js",
+      "src/project-pipeline-handoff.js",
+      "src/project-repository.js",
+      "src/quality-control-repository.js",
+      "src/script-repository.js",
+      "src/stage-recovery-repository.js",
+      "src/stage-recovery-service.js",
+      "src/tts-finance.js",
+      "src/video-composition-service.js",
+      "src/video-render-repository.js",
+      "src/voice-track-repository.js"
+    ]
+  },
+  "legacyModulesBefore": 57,
+  "legacyModulesDecoupled": 57,
+  "legacyModulesRemaining": [],
+  "consumers": [
+    "backend/src/content-operations/content-operations.spec.ts",
+    "backend/src/content-operations/stage-recovery.spec.ts",
+    "backend/src/content/affiliate-editorial.spec.ts",
+    "backend/src/content/content-parity.spec.ts",
+    "backend/src/finance/finance-adjustments.spec.ts",
+    "backend/src/finance/finance-aggregation.spec.ts",
+    "backend/src/finance/finance-concurrency.spec.ts",
+    "backend/src/finance/tts-finance.spec.ts",
+    "backend/src/media/composition-plan.spec.ts",
+    "backend/src/media/local-ctc.operational.spec.ts",
+    "backend/src/media/media-parity.spec.ts",
+    "backend/src/media/quality-control.spec.ts",
+    "backend/src/media/render-reader.spec.ts",
+    "backend/src/media/video-composition.spec.ts",
+    "backend/src/project/domain/project-parity.spec.ts",
+    "backend/src/publishing/publishing.spec.ts",
+    "backend/src/publishing/social-publication.spec.ts",
+    "backend/src/research/research-reader.spec.ts",
+    "backend/test/support/affiliate-fixture.ts",
+    "backend/test/support/content-fixture.ts",
+    "backend/test/support/ffmpeg-composition-fixture.ts",
+    "backend/test/support/finance-concurrency.ts",
+    "backend/test/support/finance-fixture.ts",
+    "backend/test/support/publishing-render-fixture.ts",
+    "backend/test/support/tts-finance-fixture.ts"
+  ],
+  "removalCandidates": [
+    {
+      "path": "src/affiliate-repository.js",
+      "sha256": "fac07254c149bc42ae4f242d49407610495357b3e627bac6cef7ad8c416f70f6",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\affiliate-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/artifact-lineage-repository.js",
+      "sha256": "ec4b4c52eea7335e26828eca09c4f08f85735c2d23591121d1bc24d8c1d6a8ef",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\artifact-lineage-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/budget-gate.js",
+      "sha256": "93546ef94fb7da01fa38dadd4ee4d396d2b09139d3885c16d339505b8b415cda",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\budget-gate.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/composition-plan-repository.js",
+      "sha256": "1a987cb37a74a926538b48ef311ad6b9b451b9ad1f7a5da6ffadede90891d354",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\composition-plan-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/cost-ledger-repository.js",
+      "sha256": "ff7c9216194a25d679d7f3956bf888930fa00d036bcfe754d2e94557946936f9",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\cost-ledger-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/affiliate-contracts.js",
+      "sha256": "663e1bfe4766902fc7cf7ace85d2d9ddb5564b6d3999f20f4bbde45e3534109a",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\affiliate-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/ai-call-telemetry-contracts.js",
+      "sha256": "2e8804c5c77d2f5e128c3df48c2d0fa9f57afcf440ddf0ce6457ce78e03b3eed",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\ai-call-telemetry-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/artifact-lineage-contracts.js",
+      "sha256": "663ca78b21448a6fac96607be2ff5575eaefc399aad1f7a0b7bd9fd37a25a864",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\artifact-lineage-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/composition-plan-contracts.js",
+      "sha256": "4920fe6eb8bfafdeee4631e7c39ec8ad95ef5e985894d9d03a4c88e50a5d623d",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\composition-plan-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/contracts.js",
+      "sha256": "e6d8ab741d590b792b557138557ae8d14865359842f2ea1d83d841fca03cf9b4",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/cost-event-contracts.js",
+      "sha256": "d2ffb4fc587dd9c0dc531381721dc48f955d92fbc6124d845500205116ed2c66",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\cost-event-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/economic-video-profile.js",
+      "sha256": "e8732b76cc0edabd459729ad4c92b8aa272571af44c6653f96fd59516f2e7f3e",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\economic-video-profile.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/human-approval-contracts.js",
+      "sha256": "4e24b63d0bf3ee41fb5b5c480bd1ca1631042c3dd97356d2a15a47ce45b677fa",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\human-approval-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/idea-contracts.js",
+      "sha256": "c314c27e40976a2dbb9d16b918eb5735c8b54c0eaf76ad9c13aa9986e44abd22",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\idea-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/idea-selection-contracts.js",
+      "sha256": "6a0d2e8d511eff439c3cd00e8fc14a33fffc46d52292ebad19a9432c394965f7",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\idea-selection-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/media-acquisition-contracts.js",
+      "sha256": "78715970e7acbb4fc60cc53f955960b05efba547a79f288b13ef97023d3ef2d7",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\media-acquisition-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/media-asset-contracts.js",
+      "sha256": "24b1d45324902d4b54fc27c8c70dce615e46e0ea88d5a957b0cc4baed3fca67e",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\media-asset-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/media-selection-contracts.js",
+      "sha256": "6843942f8938d210222e583ff209ad5ecb3808673a186c3a91fec0003ec68c86",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\media-selection-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/p4-video-contracts.js",
+      "sha256": "73dc64cff7f6842afa548300135bb2d6b81a15eb090c4ed2ad0fbba17c311158",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\p4-video-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/pipeline-run-contracts.js",
+      "sha256": "a71d05dfaac367edb631ec0c9f82ab6d459c7e41731cc28b8dabdf8f5e61ced4",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\pipeline-run-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/project-contracts.js",
+      "sha256": "a56e5df76871d7f9aed365a891edc1fe6b69acf5c25a6df10cb160b64d77af43",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\project-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/quality-control-contracts.js",
+      "sha256": "52294e050ef2ca5f9a05826ac3c63bd77f9be8206f29d6e79f64ce421e34e977",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\quality-control-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/reference-insight-contracts.js",
+      "sha256": "7b6b76f24d6bcf30a180cad17b024ecbca78504e8612ba62d35406de100e97e4",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\reference-insight-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/research-shortlist-contracts.js",
+      "sha256": "9b3220c4b0e6ea549d1b0fdffb0db2e0d7fad121c0ab2be5956038c261661fc9",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\research-shortlist-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/script-contracts.js",
+      "sha256": "243ddc62fc612e171eaa56e1c30adf627217bf3fbf9759e790ddc906aba45f72",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\script-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/script-generation-contracts.js",
+      "sha256": "0512cca4a8d5725072caf2cb98872f5d1a00aa2414cdbe76fcec0e68a68ed7ee",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\script-generation-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/stage-recovery-contracts.js",
+      "sha256": "c074b505669b03775d646832edc791552fd217c6a293fe4756de2855c4bc218c",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\stage-recovery-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/subtitle-render-contracts.js",
+      "sha256": "f8ef83fcf937f451e683787c0ab628090465b6b0cec154104b01531e78de08d4",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\subtitle-render-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/subtitle-track-contracts.js",
+      "sha256": "a43a82b33cf8765ca204eea7e3128312dcfed026073201f48ab3f319f8549e33",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\subtitle-track-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/tts-finance-contracts.js",
+      "sha256": "6fc1c1ef184bb6b88e02e6793b79d297489e59e2cc59705a8278a39a5ca5f3d5",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\tts-finance-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/video-adaptation-contracts.js",
+      "sha256": "05ca0dd88800625cf27cf2df17c8e4db58315b11921c961b6c95ef3294e20c5b",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\video-adaptation-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/video-composition-contracts.js",
+      "sha256": "34d153e2642ce0f2747c0732f292177bf8c7cf4f1f8fabcb940e2fd9d8bba0fc",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\video-composition-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/video-generation-contracts.js",
+      "sha256": "a94a5330aa5d8a3611313875c2897a5dc78502be0b5edbcaebf3b4358e39a9ca",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\video-generation-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/video-render-contracts.js",
+      "sha256": "5dc693c366ababd83e34a28148f050945d10e542d23926b35f6b923d8d34135e",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\video-render-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/voice-capabilities.js",
+      "sha256": "38df1da7aa59ea09b51390016e4c6a75940bb24b4a439e4463e6d7d8ffc749c5",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\voice-capabilities.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/voice-generation-contracts.js",
+      "sha256": "321cdeb768824baa1f7e6e13b20ed357c899f09e3d327ad5150d632de179ca5b",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\voice-generation-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/domain/voice-track-contracts.js",
+      "sha256": "f50cfe6d7eb1564f71ff0ed9a774f13e5adf427fb2da3ba056f2745e36956e62",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\domain\\voice-track-contracts.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/human-approval-repository.js",
+      "sha256": "9990a6e14de6956ad54ed4f59523a587c1fc195b89d4d2f1987e27c4aaca039a",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\human-approval-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/idea-repository.js",
+      "sha256": "81c5958ebfd29f3473c1f7a03f5f3cd6471e6595467b4282a3eb01df0e0555ff",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\idea-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/idea-scoring.js",
+      "sha256": "4a8e4451f13d60c8d20a2d430580a1a7c594229717c414d721bc5626393e19c2",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\idea-scoring.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/idea-selection-repository.js",
+      "sha256": "f17a10a90db7af7fb7c835c6fe73634f7b1fe0ab33207b2328c262da1caae354",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\idea-selection-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/idea-selection-service.js",
+      "sha256": "f5d886aacb3223f86c80e03390badf190c62b812ba7fe55a1efa4a0ac323b168",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\idea-selection-service.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/idea-service.js",
+      "sha256": "bf629e8a05f3e5f42853b329bc0c98e4a17125e27d5d881054bf7103d803eb1d",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\idea-service.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/media-asset-repository.js",
+      "sha256": "281530d834eda1ea28d6f655ce3679d7a3945e57f96f098c3b9fb45428b664b2",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\media-asset-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/p4-video-repository.js",
+      "sha256": "382d6ebb861b10f86c820144b87717be74ba0ef814d62339988484580e217e92",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\p4-video-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/pipeline-run-repository.js",
+      "sha256": "3a47f9ac6d603b2a249872431915f6c9185695da0b8c3214df9e3f369dcd1002",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\pipeline-run-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/pipeline-run-service.js",
+      "sha256": "db7ca19d0ce16d7305c30264150ae37654f2343311930b5d85e3cd90dc41327e",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\pipeline-run-service.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/project-pipeline-handoff.js",
+      "sha256": "c4e41a54ad01d38c2cdca346aba45181390c3a84e69ae34fe40554de7620e62b",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\project-pipeline-handoff.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/project-repository.js",
+      "sha256": "6a15695a4a0b2bad133ed83f6decfc0020f5e5552749e7d30c2ba737252c775c",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\project-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/quality-control-repository.js",
+      "sha256": "fcbeeb53f37b1d7da68a5c358b737a3219991c1fadb701c2146f6deff645a187",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\quality-control-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/script-repository.js",
+      "sha256": "5aa9c82525a16ea0f708cd163c2153aea102c2a730cda5a676df7a4c76e407ce",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\script-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/stage-recovery-repository.js",
+      "sha256": "7c2a7ab8f6de89e560b299c8cfff4514b325ff53c33c772d0267e63237fe5dec",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\stage-recovery-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/stage-recovery-service.js",
+      "sha256": "28df98ca84033a2cc3a01818efc46468ccfe72f4a0129cf3e8a2ac791950119e",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\stage-recovery-service.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/tts-finance.js",
+      "sha256": "f66c3d1441b994a774e0e4b88492067be0654b8dc314ef38e84439492510b6b7",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\tts-finance.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/video-composition-service.js",
+      "sha256": "502c4d2cc1dd03d6f8a3041c34c60be70badeceef5fc5e8de268cb986b86acb1",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\video-composition-service.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/video-render-repository.js",
+      "sha256": "7b90a7b727a8f3115cb2af999d810b3759a3a186ff5bfdb59daf99d17ba65aaf",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\video-render-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    },
+    {
+      "path": "src/voice-track-repository.js",
+      "sha256": "5853bf035201abbec061960ea6ba7d069096f9847bf845b7fa8c8fc5a11e5a53",
+      "backup": "D:\\04-Projetos\\23-MKTauto-backups\\P6-REMAINDER-CONTINUE\\removal-candidates\\src\\voice-track-repository.js",
+      "classification": "REMOVAL_CANDIDATE_PENDING_AUTHORIZATION"
+    }
+  ],
+  "protectedManifest": "D:\\04-Projetos\\23-MKTauto-backups\\P6-FINAL-CODE-CLEANUP-2026-10-15T17-04-21-060Z\\protected-removal-pending.json",
+  "protectedIntegrity": [
+    {
+      "path": "src/adapters/csv-catalog-reader.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/csv-external-catalog.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/ffmpeg-commercial-hybrid.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/ffmpeg-hybrid-composition.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/ffmpeg-multiplatform-adaptation.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/local-catalog-cache.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/affiliate-discovery-repository.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/domain/affiliate-discovery-contracts.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/domain/commercial-hybrid-contracts.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/domain/hybrid-composition-contracts.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/domain/manual-distribution-contracts.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/external-catalog-runtime.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/ports/external-catalog-port.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/ffmpeg-video-composer.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/adapters/local-video-storage.js",
+      "exists": true,
+      "sha256Matches": true
+    },
+    {
+      "path": "src/video-composer.js",
+      "exists": true,
+      "sha256Matches": true
+    }
+  ],
+  "removedFiles": [],
+  "historicalObservations": {
+    "contractVectors": 538,
+    "persistenceCalls": 5786,
+    "persistenceScenarios": 270,
+    "originalUnitTestsPassed": 495,
+    "originalE2eTestsPassed": 55,
+    "sha256": {
+      "frozen-residual-contracts.json": "b6728a3bf5e20d18ad7d9c383d6c7cead039a01c331cf215475d22dc2b3bd769",
+      "frozen-residual-persistence.json": "06c22b123ccd91a22c32202b567a351a15a7c016e96517e7d5c69a1eb0e26995"
+    }
+  },
+  "filesChanged": [
+    "backend/src/content-operations/content-operations.spec.ts",
+    "backend/src/content-operations/stage-recovery.spec.ts",
+    "backend/src/content/affiliate-editorial.spec.ts",
+    "backend/src/content/content-parity.spec.ts",
+    "backend/src/finance/finance-adjustments.spec.ts",
+    "backend/src/finance/finance-aggregation.spec.ts",
+    "backend/src/finance/finance-concurrency.spec.ts",
+    "backend/src/finance/tts-finance.spec.ts",
+    "backend/src/media/composition-plan.spec.ts",
+    "backend/src/media/local-ctc.operational.spec.ts",
+    "backend/src/media/media-parity.spec.ts",
+    "backend/src/media/quality-control.spec.ts",
+    "backend/src/media/render-reader.spec.ts",
+    "backend/src/media/video-composition.spec.ts",
+    "backend/src/project/domain/project-parity.spec.ts",
+    "backend/src/publishing/publishing.spec.ts",
+    "backend/src/publishing/social-publication.spec.ts",
+    "backend/src/research/research-reader.spec.ts",
+    "backend/test/legacy-decoupling.spec.ts",
+    "backend/test/support/affiliate-fixture.ts",
+    "backend/test/support/content-fixture.ts",
+    "backend/test/support/ffmpeg-composition-fixture.ts",
+    "backend/test/support/finance-concurrency.ts",
+    "backend/test/support/finance-fixture.ts",
+    "backend/test/support/frozen-residual-contracts.json",
+    "backend/test/support/frozen-residual-persistence.json",
+    "backend/test/support/historical-residual-contracts.ts",
+    "backend/test/support/historical-residual-persistence.ts",
+    "backend/test/support/publishing-render-fixture.ts",
+    "backend/test/support/tts-finance-fixture.ts",
+    "docs/tasks/P6-LEGACY-REMAINDER-001.inventory.json",
+    "docs/tasks/P6-LEGACY-REMAINDER-001.md"
+  ],
+  "validation": {
+    "testAll": "PASS",
+    "nodeTestsPassed": 43,
+    "backendTestsPassed": 496,
+    "backendTestsSkipped": 1,
+    "e2eTestsPassed": 55,
+    "pythonTestsPassed": 7,
+    "build": "PASS (npm run build invoked by test:all)",
+    "typeScript": "PASS",
+    "lint": "PASS (3 warnings outside task diff)",
+    "financeFocusedTestsPassed": 29,
+    "boundaryRegression": "PASS; rejects a reintroduced legacy URL",
+    "diffCheck": "PASS (git diff --check scoped to task; untracked files checked for whitespace)",
+    "backupIntegrity": "PASS (57 residual copies; 16 protected originals and previous copies)"
+  }
+}

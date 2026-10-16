@@ -1,0 +1,1 @@
+export const AFFILIATE_DATABASE = Symbol('AFFILIATE_DATABASE');
