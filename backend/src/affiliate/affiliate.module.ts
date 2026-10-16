@@ -1,6 +1,9 @@
 import { PROJECT_SNAPSHOT_READER } from '../project/application/ports/project-snapshot-reader.port.js';
 import type { ProjectSnapshotReader } from '../project/application/ports/project-snapshot-reader.port.js';
 import { Module } from '@nestjs/common';
+import { ShopeeCatalogService } from './application/shopee-catalog.service.js';
+import { SHOPEE_AFFILIATE } from './application/ports/shopee-affiliate.port.js';
+import { shopeeAffiliateProvider } from './infrastructure/shopee-affiliate.provider.js';
 import { DiscoveryController } from './discovery.controller.js';
 import { AffiliateDiscoveryService } from './application/discovery.service.js';
 import {
@@ -31,12 +34,16 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     DiscoveryController,
   ],
   exports: [
+    ShopeeCatalogService,
+    SHOPEE_AFFILIATE,
     AffiliateService,
     AFFILIATE_RUN_CONTEXT,
     AFFILIATE_REPOSITORY,
     AffiliateDiscoveryService,
   ],
   providers: [
+    ShopeeCatalogService,
+    shopeeAffiliateProvider,
     {
       provide: AffiliateDiscoveryService,
       useFactory: (

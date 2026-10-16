@@ -1,5 +1,6 @@
 node_modules/
 .env
+.env_1
 .env.*
 !.env.example
 data/*.sqlite
