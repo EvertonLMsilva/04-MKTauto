@@ -6,6 +6,7 @@ import { provisionSchema } from '../../src/administration/schema-provisioner.js'
 import { SqliteOperationsRepository } from '../../src/content-operations/infrastructure/sqlite-operations.repository.js';
 import { SqliteAffiliateRepository } from '../../src/affiliate/infrastructure/sqlite-affiliate.repository.js';
 import { affiliateHash } from '../../src/affiliate/domain/affiliate-contracts.js';
+import type { MediaAuthorization } from '../../src/affiliate/domain/affiliate-contracts.js';
 import { SqliteResearchRepository } from '../../src/research/infrastructure/sqlite-research.repository.js';
 import { createResearchInput } from '../../src/research/domain/research-contracts.js';
 import { createResearchShortlist } from '../../src/research/domain/research-shortlist-contracts.js';
@@ -36,6 +37,13 @@ export function p2EditorialFixture({
   projectId = 'project_001',
   briefingId = 'brief_001',
   references = false,
+  mediaAuthorization,
+}: {
+  pipelineRunId?: string;
+  projectId?: string;
+  briefingId?: string;
+  references?: boolean;
+  mediaAuthorization?: MediaAuthorization;
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'mktauto-p2-native-'));
   const database = join(directory, 'catalog.sqlite');
@@ -105,6 +113,7 @@ export function p2EditorialFixture({
               kind: 'MEDIA_USAGE_RIGHT',
               sourceRef: 'authorization-001',
               recordedAt: P2_TIME,
+              ...(mediaAuthorization ? { mediaAuthorization } : {}),
             },
           ],
         },

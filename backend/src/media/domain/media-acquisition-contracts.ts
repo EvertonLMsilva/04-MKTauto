@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { validateMediaRightsEvidence } from './media-processing-rights.js';
 import { validateAiCallObservation } from '../../finance/domain/ai-call-telemetry-contracts.js';
 import { ContractValidationError } from '../../project/domain/project.errors.js';
 import type { AcquisitionRequest } from './media.types.js';
@@ -111,6 +112,11 @@ export function validateMediaProviderOutput(value: any) {
   if (!PROVIDER_ORIGINS.has(value.origin) && value.provider !== null)
     fail('PROVIDER_NOT_APPLICABLE', 'provider');
   rights(value.rights);
+  if (Object.hasOwn(value.rights, 'evidence'))
+    validateMediaRightsEvidence(value.rights.evidence, {
+      mediaRef: value.mediaReference,
+      contentHash: value.contentHash,
+    });
   validateRightsOrigin(value.origin, value.rights.usageBasis);
   if (value.origin === 'PROVIDER_LICENSED' && value.source === undefined)
     fail('SOURCE_REQUIRED', 'source');
@@ -168,7 +174,14 @@ function technicalProperties(value: any, assetType: any, isV2: any) {
 }
 function rights(value: any) {
   record(value, 'rights');
-  exact(value, RIGHTS_FIELDS, 'rights');
+  exact(
+    value,
+    [
+      ...RIGHTS_FIELDS,
+      ...(Object.hasOwn(value, 'evidence') ? ['evidence'] : []),
+    ],
+    'rights',
+  );
   if (!USAGE_BASES.includes(value.usageBasis))
     fail('INVALID_USAGE_BASIS', 'rights.usageBasis');
   if (value.commercialUseAllowed !== true)

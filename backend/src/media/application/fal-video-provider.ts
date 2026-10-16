@@ -5,6 +5,7 @@ import {
 import { falFailure } from '../../finance/domain/fal-errors.js';
 
 import { FAL_VIDEO_ENDPOINT } from '../domain/fal-model.js';
+import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
 export class FalVideoAdapter {
   repository: any;
   config: any;
@@ -109,6 +110,14 @@ export class FalVideoAdapter {
       !/^[a-f0-9]{64}$/.test(image.contentHash)
     )
       throw falFailure('PROVIDER_IMAGE_INVALID');
+    assertMediaProcessingRights(
+      briefing.evidence,
+      {
+        mediaRef: this.config.mediaRef,
+        contentHash: image.contentHash,
+      },
+      'fal_ai',
+    );
     const parameters = {
       prompt: direction.description,
       image_url: url.href,

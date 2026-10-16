@@ -17,9 +17,22 @@ import { FalGenerationRepository } from '../finance/infrastructure/fal-generatio
 import { FalFinanceService } from '../finance/application/fal-finance.service.js';
 import { FalAcquisitionService } from './application/fal-acquisition.service.js';
 import { mediaAcquisitionRequestHash } from './domain/media-acquisition-contracts.js';
+import type { MediaAuthorization } from '../affiliate/domain/affiliate-contracts.js';
 
-async function nativeFixture() {
-  const f = p2EditorialFixture();
+const authorized = (): MediaAuthorization => ({
+  mediaRef: 'authorized-image-001',
+  contentHash: 'c'.repeat(64),
+  commercialUse: 'GRANTED',
+  processing: 'GRANTED',
+  localProcessing: true,
+  externalProviders: ['fal_ai'],
+});
+async function nativeFixture(
+  mediaAuthorization: MediaAuthorization | null = authorized(),
+) {
+  const f = p2EditorialFixture({
+    mediaAuthorization: mediaAuthorization ?? undefined,
+  });
   try {
     const affiliate = new AffiliateRunContextService(
       new SqliteAffiliateRunContextPersistence(f.database),
@@ -123,6 +136,43 @@ describe('NestJS fal acquisition boundary', () => {
     ].map((table) =>
       f.base.db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all(),
     );
+  it.each([
+    'legacy',
+    'commercialOnly',
+    'processingOnly',
+    'denied',
+    'unknown',
+    'localOnly',
+    'hash',
+    'reference',
+  ])(
+    'blocks %s rights before provider dispatch or financial reservation',
+    async (kind) => {
+      const a = authorized();
+      if (kind === 'commercialOnly') a.processing = 'UNCONFIRMED';
+      if (kind === 'processingOnly') a.commercialUse = 'UNCONFIRMED';
+      if (kind === 'denied') a.processing = 'DENIED';
+      if (kind === 'unknown') a.commercialUse = 'UNCONFIRMED';
+      if (kind === 'localOnly') a.externalProviders = [];
+      if (kind === 'hash') a.contentHash = 'd'.repeat(64);
+      if (kind === 'reference') a.mediaRef = 'another-image';
+      const f = await nativeFixture(kind === 'legacy' ? null : a);
+      try {
+        const before = financialSnapshot(f);
+        await expect(
+          f.service().acquire(f.request, f.config),
+        ).rejects.toMatchObject({
+          code: 'MEDIA_PROCESSING_RIGHTS_UNCONFIRMED',
+        });
+        for (const call of Object.values(f.queue))
+          expect(call).not.toHaveBeenCalled();
+        expect(f.storage.store).not.toHaveBeenCalled();
+        expect(financialSnapshot(f)).toEqual(before);
+      } finally {
+        f.cleanup();
+      }
+    },
+  );
   const finishRun = (f: Awaited<ReturnType<typeof nativeFixture>>) =>
     f.base.transitionRun({
       pipelineRunId: 'run_001',
