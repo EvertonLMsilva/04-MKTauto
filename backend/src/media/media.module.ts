@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 import { ContentModule } from '../content/content.module.js';
+import { AffiliateModule } from '../affiliate/affiliate.module.js';
+import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { VideoProductionPreparationService } from './application/video-production-preparation.service.js';
 import { ContentService } from '../content/application/content.service.js';
 import { ContentOperationsModule } from '../content-operations/content-operations.module.js';
 import { CONTENT_OPERATIONS } from '../content-operations/application/ports/operations.port.js';
@@ -31,15 +34,31 @@ import {
 } from './application/video-composition.port.js';
 
 @Module({
-  imports: [ContentModule, ContentOperationsModule, FinanceModule],
+  imports: [
+    ContentModule,
+    ContentOperationsModule,
+    FinanceModule,
+    AffiliateModule,
+  ],
   controllers: [MediaController, NarrationController, LocalFlowController],
   exports: [
     MediaService,
     NarrationService,
     LocalFlowService,
     FalAcquisitionService,
+    VideoProductionPreparationService,
   ],
   providers: [
+    {
+      provide: VideoProductionPreparationService,
+      inject: [ContentService, CONTENT_OPERATIONS, AffiliateService],
+      useFactory: (
+        content: ContentService,
+        operations: ContentOperationsService,
+        affiliate: AffiliateService,
+      ) =>
+        new VideoProductionPreparationService(content, operations, affiliate),
+    },
     {
       provide: FalAcquisitionService,
       useFactory: () => {
