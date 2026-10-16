@@ -1,3 +1,21 @@
+# Operator originals, command snapshots and local document archive (not fixtures)
+/00-materiais/prototipo/Elegant Home Organisation Banner.png
+/00-materiais/prototipo/Kate MKT Home Organisation Brand Kit.png
+/00-materiais/prototipo/Kate MKT_ Achadinhos para o Dia a Dia.png
+/00-materiais/prototipo/Kate MKT_ Casa Prática e Ofertas.png
+/00-materiais/prototipo/Kate MKT_ Casa Prática e Organização.png
+/00-materiais/prototipo/Kate MKT_ Organised Home Inspiration.png
+/00-materiais/prototipo/Luxurious Kate MKT Circular Emblem.png
+/assets/references/aura-one.jpg
+/assets/references/aura-one.png
+/pixabay-test.mp4
+/project-demo.json
+/project-games.json
+/project-games-v2.json
+/project-games-v2-export.json
+/project-games-v3.json
+/docs/MKTauto-docs.zip
+
 node_modules/
 .env
 .env_1
