@@ -28,6 +28,7 @@ export function assertMediaProcessingRights(
   evidence: unknown,
   identity: { mediaRef: string; contentHash: string },
   provider: string,
+  operationScope?: string,
 ): void {
   if (!Array.isArray(evidence))
     throw falFailure('MEDIA_PROCESSING_RIGHTS_UNCONFIRMED');
@@ -47,6 +48,8 @@ export function assertMediaProcessingRights(
       (a) =>
         a.commercialUse !== 'GRANTED' ||
         a.processing !== 'GRANTED' ||
+        (a.operationScope !== undefined &&
+          a.operationScope !== operationScope) ||
         !a.externalProviders.includes(provider),
     )
   )

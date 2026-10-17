@@ -1,8 +1,12 @@
 import { Module } from '@nestjs/common';
 import { createTemporalValidator } from './infrastructure/offline-temporal.validator.js';
+import { createFalControl } from './infrastructure/controlled-fal.js';
+import { FalVideoStorage } from './infrastructure/fal-video-storage.js';
+import { FalFinanceService } from '../finance/application/fal-finance.service.js';
 import { ContentModule } from '../content/content.module.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { AFFILIATE_RUN_CONTEXT } from '../affiliate/application/ports/affiliate-run-context.port.js';
 import { VideoProductionPreparationService } from './application/video-production-preparation.service.js';
 import { VideoGenerationService } from './application/video-generation.service.js';
 import { FakeVideoGenerationProvider } from './infrastructure/fake-video-generation.provider.js';
@@ -59,7 +63,8 @@ import {
       useFactory: (acquisition: FalAcquisitionService) => {
         const mode = process.env.FAL_GENERATION_MODE ?? 'fake';
         if (mode === 'live') throw new Error('FAL_LIVE_DISABLED');
-        if (mode !== 'fake') throw new Error('FAL_MODE_INVALID');
+        if (!['fake', 'controlled'].includes(mode))
+          throw new Error('FAL_MODE_INVALID');
         return new VideoGenerationService(
           new FakeVideoGenerationProvider(),
           acquisition,
@@ -78,10 +83,51 @@ import {
     },
     {
       provide: FalAcquisitionService,
-      useFactory: () => {
+      inject: [
+        MediaPersistence,
+        FalFinanceService,
+        FinanceService,
+        VideoProductionPreparationService,
+        AFFILIATE_RUN_CONTEXT,
+      ],
+      useFactory: (
+        store: MediaPersistence,
+        jobs: FalFinanceService,
+        finance: FinanceService,
+        preparations: VideoProductionPreparationService,
+        briefings: any,
+      ) => {
         const mode = process.env.FAL_GENERATION_MODE ?? 'fake';
         if (mode === 'live') throw new Error('FAL_LIVE_DISABLED');
-        if (mode !== 'fake') throw new Error('FAL_MODE_INVALID');
+        if (!['fake', 'controlled'].includes(mode))
+          throw new Error('FAL_MODE_INVALID');
+        if (mode === 'controlled') {
+          const control = createFalControl(process.env, finance);
+          const unavailable = async (): Promise<never> => {
+            throw new Error('CONTROLLED_FAL_AUTHORIZATION_REQUIRED');
+          };
+          return new FalAcquisitionService({
+            store,
+            finance: jobs,
+            preparations,
+            briefings,
+            control,
+            queue: {
+              submit: unavailable,
+              status: unavailable,
+              result: unavailable,
+              download: unavailable,
+            },
+            resolveImage: unavailable,
+            storage: new FalVideoStorage({
+              root: process.env.FFMPEG_MEDIA_ROOT ?? '',
+              maxBytes: 104857600,
+              ffmpegPath: process.env.FFMPEG_PATH,
+              ffprobePath: process.env.FFPROBE_PATH,
+              allowAudio: true,
+            }),
+          });
+        }
         // No normal path constructs a paid transport or opens a repository.
         return new FalAcquisitionService(null);
       },

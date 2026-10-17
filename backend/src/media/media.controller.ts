@@ -1,5 +1,6 @@
 import { QcIdentityError } from '../publishing/application/local-qc-identity.js';
-import { UseGuards, Req, HttpException } from '@nestjs/common';
+import { UseGuards, Req, HttpException, Optional } from '@nestjs/common';
+import { FalAcquisitionService } from './application/fal-acquisition.service.js';
 import {
   LocalQcGuard,
   QC_REVIEWER_CONTEXT,
@@ -22,7 +23,44 @@ import { MediaService } from './application/media.service.js';
 import { ContractValidationError } from '../project/domain/project.errors.js';
 @Controller('media')
 export class MediaController {
-  constructor(@Inject(MediaService) private readonly media: MediaService) {}
+  constructor(
+    @Inject(MediaService) private readonly media: MediaService,
+    @Optional()
+    @Inject(FalAcquisitionService)
+    private readonly fal?: FalAcquisitionService,
+  ) {}
+  @Get('controlled-fal/readiness')
+  @UseGuards(LocalQcGuard)
+  controlledReadiness() {
+    return this.respond(() => {
+      if (!this.fal)
+        throw new ServiceUnavailableException({ code: 'FAL_LIVE_DISABLED' });
+      return this.fal.controlledReadiness();
+    });
+  }
+  @Post('controlled-fal/execute')
+  @UseGuards(LocalQcGuard)
+  async controlledExecution(@Body() value: any, @Req() request: any) {
+    try {
+      if (!this.fal)
+        throw new ServiceUnavailableException({ code: 'FAL_LIVE_DISABLED' });
+      if (
+        !value ||
+        Object.keys(value).sort().join(',') !== 'confirmation,input'
+      )
+        throw new BadRequestException({
+          code: 'FAL_EXECUTION_AUTHORIZATION_REQUIRED',
+        });
+      return await this.fal.acquirePrepared(value.input, undefined, {
+        principal: request[QC_REVIEWER_CONTEXT],
+        confirmation: value.confirmation,
+      });
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
+  }
   @Post('assets/:id/temporal-analysis')
   @UseGuards(LocalQcGuard)
   async temporalAnalysis(@Param('id') id: string) {

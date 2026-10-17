@@ -99,6 +99,12 @@ export class FalQueueClient {
           : {
               authorization: `Key ${this.apiKey}`,
               'content-type': 'application/json',
+              ...(method === 'POST'
+                ? {
+                    'X-Fal-No-Retry': '1',
+                    'x-app-fal-disable-fallback': '1',
+                  }
+                : {}),
             },
         ...(parameters ? { body: JSON.stringify(parameters) } : {}),
       });

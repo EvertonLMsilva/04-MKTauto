@@ -50,6 +50,7 @@ export interface FalMediaSession {
   close(): void;
 }
 export interface FalAcquisitionDependencies {
+  control?: FalControl;
   preparations?: Pick<VideoProductionPreparationService, 'prepare'>;
   store: { open(): FalMediaSession };
   finance: FalFinanceService;
@@ -63,5 +64,22 @@ export interface FalAcquisitionDependencies {
     url: string;
     contentHash: string;
     provenance?: { evidenceRef: string; sourceRef: string };
+  }>;
+}
+export interface FalExecutionOptions {
+  signal?: AbortSignal;
+  principal?: unknown;
+  confirmation?: unknown;
+}
+export interface FalControl {
+  readiness(): unknown;
+  authorize(
+    input: PreparedFalRequest,
+    options: FalExecutionOptions,
+  ): Promise<{
+    input: PreparedFalRequest;
+    configuration: unknown;
+    queue: FalTransport;
+    resolveImage: FalAcquisitionDependencies['resolveImage'];
   }>;
 }

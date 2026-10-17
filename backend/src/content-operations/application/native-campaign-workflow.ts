@@ -188,7 +188,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         (evidence) =>
           evidence.mediaAuthorization?.localProcessing !== true ||
           evidence.mediaAuthorization?.processing !== 'GRANTED' ||
-          evidence.mediaAuthorization.commercialUse !== 'GRANTED',
+          evidence.mediaAuthorization.commercialUse !== 'GRANTED' ||
+          evidence.mediaAuthorization.operationScope !== undefined,
       )
     )
       throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
