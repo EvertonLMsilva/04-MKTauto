@@ -1,3 +1,9 @@
+import { Req, UseGuards } from '@nestjs/common';
+import {
+  LocalQcGuard,
+  QC_REVIEWER_CONTEXT,
+  serverApprovalRequest,
+} from './application/local-qc.guard.js';
 import { InstagramPublicationService } from './application/instagram-publication.service.js';
 import {
   Body,
@@ -49,8 +55,11 @@ export class PublishingController {
       return action(value.input, value.idempotencyKey);
     });
   }
-  @Post('approvals') decide(@Body() value: unknown) {
-    return this.respond(() => this.publishing.decide(value));
+  @Post('approvals')
+  @UseGuards(LocalQcGuard)
+  decide(@Body() value: unknown, @Req() request: any) {
+    const input = serverApprovalRequest(value, request[QC_REVIEWER_CONTEXT]);
+    return this.respond(() => this.publishing.decide(input));
   }
   @Get('approvals') approvals(@Query('pipelineRunId') id: string) {
     return this.respond(() => this.publishing.approvals(id));

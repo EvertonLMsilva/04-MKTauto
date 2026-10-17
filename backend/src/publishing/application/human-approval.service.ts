@@ -1,4 +1,15 @@
 import {
+  operationalQcIdentity,
+  assertQcReviewer,
+} from './local-qc-identity.js';
+import { adaptationHash } from '../../media/domain/media-hash.js';
+import {
+  p4ReportHash,
+  temporalReportId,
+  temporalResult,
+  validateTemporalReport,
+} from '../../media/domain/p4-qc-contracts.js';
+import {
   HUMAN_APPROVAL_DECISION_VERSION,
   HUMAN_APPROVAL_DECISIONS,
   humanApprovalDecisionContentHash,
@@ -30,6 +41,196 @@ export class HumanApprovalError extends Error {
   }
 }
 export class HumanApprovalService {
+  /** Semantic attestation only. The repository supplies independently verified
+   * technical evidence and rights; no caller can submit technical PASS here. */
+  static async reviewTemporal(context: {
+    input: any;
+    principal: unknown;
+    automatic: any;
+    asset: any;
+    reference: any;
+    technical: any;
+    referenceTechnical: any;
+  }) {
+    const reviewer = assertQcReviewer(context.principal);
+    operationalQcIdentity.assertActive(reviewer);
+    const {
+      input: request,
+      asset,
+      reference,
+      automatic,
+      technical,
+      referenceTechnical,
+    } = context;
+    const invalid = () => {
+      throw failure(
+        'HUMAN_APPROVAL_REVIEW_INVALID',
+        'review',
+        'revisão inválida',
+      );
+    };
+    if (
+      !request ||
+      Object.keys(request).sort().join(',') !==
+        'automaticReportHash,criteria,decision,mediaAssetId,mediaContentHash,mediaRevision,referenceImage,schemaVersion' ||
+      request.schemaVersion !== 'human-temporal-review-request/1.0.0' ||
+      !['APPROVED', 'REJECTED'].includes(request.decision)
+    )
+      invalid();
+    if (
+      !request.referenceImage ||
+      Object.keys(request.referenceImage).sort().join(',') !==
+        'contentHash,mediaAssetId,revision'
+    )
+      invalid();
+    if (
+      request.mediaAssetId !== asset.mediaAssetId ||
+      request.mediaContentHash !== asset.contentHash ||
+      request.mediaRevision !== asset.revision ||
+      request.automaticReportHash !== automatic.contentHash ||
+      request.referenceImage?.mediaAssetId !== reference.mediaAssetId ||
+      request.referenceImage.contentHash !== reference.contentHash ||
+      request.referenceImage.revision !== reference.revision
+    )
+      throw failure(
+        'HUMAN_APPROVAL_VIDEO_BINDING_MISMATCH',
+        'review',
+        'revisão não corresponde aos artefatos exatos',
+      );
+    if (
+      referenceTechnical?.schemaVersion !== 'reference-image-analysis/1.0.0' ||
+      referenceTechnical.validator !== 'offline-temporal-ffmpeg' ||
+      referenceTechnical.version !== automatic.evidence.provenance?.version ||
+      referenceTechnical.contentHash !== reference.contentHash ||
+      referenceTechnical.policyHash !==
+        adaptationHash(technical.parameters?.policy) ||
+      referenceTechnical.width !== reference.technicalProperties.widthPixels ||
+      referenceTechnical.height !==
+        reference.technicalProperties.heightPixels ||
+      !/^[a-f0-9]{64}$/.test(referenceTechnical.frameHash) ||
+      technical.schemaVersion !== 'offline-temporal-analysis/1.1.0' ||
+      technical.validator !== 'offline-temporal-ffmpeg' ||
+      adaptationHash(technical.identity) !==
+        adaptationHash(automatic.identity) ||
+      technical.version !== automatic.evidence.provenance?.version ||
+      adaptationHash(technical.parameters) !==
+        adaptationHash(automatic.evidence.provenance?.parameters) ||
+      asset.technicalProperties.widthPixels !== technical.metadata.width ||
+      asset.technicalProperties.heightPixels !== technical.metadata.height ||
+      Math.abs(
+        asset.technicalProperties.durationMilliseconds -
+          technical.metadata.duration * 1000,
+      ) >
+        1000 / technical.metadata.fps ||
+      technical.measurements.decodedFrames < 2 ||
+      technical.measurements.sampleCount < 2 ||
+      automatic.evidence.provenance?.validator !== 'offline-temporal-ffmpeg'
+    )
+      throw failure(
+        'HUMAN_APPROVAL_TECHNICAL_REQUIRED',
+        'review',
+        'evidência técnica independente obrigatória',
+      );
+    if (
+      request.decision === 'APPROVED' &&
+      ['motion', 'continuity', 'fidelity'].some(
+        (criterion) => automatic.evidence[criterion] === 'FAIL',
+      )
+    )
+      throw failure(
+        'HUMAN_APPROVAL_QC_FAILED',
+        'review',
+        'FAIL automático não pode ser substituído',
+      );
+    if (
+      !request.criteria ||
+      Object.keys(request.criteria).sort().join(',') !==
+        'continuity,fidelity,motion'
+    )
+      invalid();
+    for (const criterion of Object.values(request.criteria) as any[]) {
+      if (
+        !criterion ||
+        Object.keys(criterion).sort().join(',') !==
+          'endSeconds,observation,startSeconds' ||
+        !Number.isFinite(criterion.startSeconds) ||
+        !Number.isFinite(criterion.endSeconds) ||
+        criterion.startSeconds < 0 ||
+        criterion.endSeconds <= criterion.startSeconds ||
+        criterion.endSeconds > technical.metadata.duration
+      )
+        invalid();
+      publicText(criterion.observation, 'observation', 1000);
+      if (criterion.observation.length < 10) invalid();
+    }
+    for (const name of ['continuity', 'fidelity']) {
+      if (
+        request.criteria[name].startSeconds !== 0 ||
+        request.criteria[name].endSeconds !== technical.metadata.duration
+      )
+        invalid();
+    }
+    const decisionKey = adaptationHash({
+      identity: automatic.identity,
+      automaticReportHash: automatic.contentHash,
+      assetRevision: asset.revision,
+      reference: request.referenceImage,
+    });
+    const requestHash = adaptationHash({
+      request,
+      actor: reviewer.id,
+      credentialFingerprint: operationalQcIdentity.fingerprint(reviewer),
+    });
+    const audit = {
+      schemaVersion: 'human-temporal-review/1.0.0',
+      actor: reviewer.id,
+      credentialFingerprint: operationalQcIdentity.fingerprint(reviewer),
+      decidedAt: new Date().toISOString(),
+      decision: request.decision,
+      criteria: request.criteria,
+      automaticReportId: automatic.qualityControlReportId,
+      automaticReportHash: automatic.contentHash,
+      assetRevision: asset.revision,
+      assetRightsHash: adaptationHash(asset.rights),
+      referenceImage: request.referenceImage,
+      referenceRightsHash: adaptationHash(reference.rights),
+      referenceTechnical,
+      decisionKey,
+      requestHash,
+    };
+    const signature = operationalQcIdentity.signReview(
+      reviewer,
+      adaptationHash(audit),
+    );
+    const evidence = {
+      ...automatic.evidence,
+      motion: request.decision === 'APPROVED' ? 'PASS' : 'FAIL',
+      continuity: request.decision === 'APPROVED' ? 'PASS' : 'FAIL',
+      fidelity: request.decision === 'APPROVED' ? 'PASS' : 'FAIL',
+      motionBasis:
+        request.decision === 'APPROVED'
+          ? 'SUBJECT_MOTION'
+          : automatic.evidence.motionBasis,
+      provenance: {
+        reference: 'human-review:sha256_' + adaptationHash(audit),
+        contentHash: adaptationHash(audit),
+        validator: 'authenticated-human-qc',
+        version: '1.0.0',
+        parameters: { humanReview: audit, signature },
+      },
+    };
+    const report = {
+      schemaVersion: 'temporal-quality-control/1.0.0',
+      identity: automatic.identity,
+      qualityControlReportId: temporalReportId(automatic.identity, evidence),
+      evidence,
+      result: temporalResult(evidence),
+      contentHash: '',
+    };
+    report.contentHash = p4ReportHash(report);
+    return validateTemporalReport(report, automatic.identity);
+  }
+
   [key: string]: any;
   constructor({ repository, now = (): any => new Date().toISOString() }: any) {
     requireMethods(

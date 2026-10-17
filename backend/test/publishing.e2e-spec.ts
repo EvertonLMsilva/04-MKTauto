@@ -1,10 +1,17 @@
+import { provisionQcReviewer } from '../src/publishing/application/local-qc-identity.js';
 import {
   provisionSocialContext,
   SocialPublicationRepository,
 } from '../src/publishing/infrastructure/social-publication.repository.js';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  rmSync,
+  readFileSync,
+} from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { createHash } from 'node:crypto';
@@ -44,6 +51,11 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
     let app: any;
     let catalog: SqliteAffiliateRepository | undefined;
     try {
+      const configFile = join(root, 'qc-identities.json'),
+        secretFile = join(root, 'individual-credential');
+      await provisionQcReviewer(configFile, 'operator', secretFile);
+      vi.stubEnv('QC_IDENTITIES_FILE', configFile);
+      const credential = readFileSync(secretFile, 'utf8');
       const bytes = Buffer.from('authorized-fixture');
       const hash = createHash('sha256').update(bytes).digest('hex');
       const dir = join(root, 'sha256', hash.slice(0, 2));
@@ -89,8 +101,12 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
         'campaign',
         Boolean(f.repository.get(campaign.projectId)),
       );
-      expect(catalog.getProduct(product.productId, product.revision)).toEqual(product);
-      expect(catalog.getCampaign(campaign.campaignId, campaign.revision)).toEqual(campaign);
+      expect(catalog.getProduct(product.productId, product.revision)).toEqual(
+        product,
+      );
+      expect(
+        catalog.getCampaign(campaign.campaignId, campaign.revision),
+      ).toEqual(campaign);
       const media = new MediaService(
         new MediaPersistence(
           path,
@@ -187,19 +203,21 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
       const approval = {
         ...p.identity,
         decision: 'APPROVED',
-        actor: 'operator',
         justification: null,
       };
       const decision = (
         await request(http)
           .post('/publishing/approvals')
+          .set('Authorization', 'Bearer ' + credential)
           .send(approval)
           .expect(201)
       ).body;
+      expect(decision.actor).toBe('operator');
       expect(
         (
           await request(http)
             .post('/publishing/approvals')
+            .set('Authorization', 'Bearer ' + credential)
             .send(approval)
             .expect(201)
         ).body,
@@ -232,6 +250,7 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
         (
           await request(http)
             .post('/publishing/approvals')
+            .set('Authorization', 'Bearer ' + credential)
             .send(approval)
             .expect(400)
         ).body.code,
@@ -253,6 +272,7 @@ describe('Publishing HTTP with exact local bytes, no publishers', () => {
         .send({ ...receipt, secret: 'private' })
         .expect(400);
     } finally {
+      vi.unstubAllEnvs();
       if (app) await app.close();
       catalog?.close();
       f.repository.close();

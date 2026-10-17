@@ -19,7 +19,7 @@ export class LocalEvidenceStorage {
   path(hash: string, extension: string) {
     if (
       !/^[a-f0-9]{64}$/.test(hash) ||
-      !['wav', 'json', 'srt', 'ass', 'mp4'].includes(extension)
+      !['wav', 'json', 'srt', 'ass', 'mp4', 'png'].includes(extension)
     )
       localFail('LOCAL_REFERENCE_INVALID');
     const dir = join(this.root, 'sha256', hash.slice(0, 2));

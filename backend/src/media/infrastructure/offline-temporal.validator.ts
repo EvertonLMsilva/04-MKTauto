@@ -1,5 +1,6 @@
+import { adaptationHash } from '../domain/media-hash.js';
 import { createReadStream, createWriteStream } from 'node:fs';
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
 import { Transform } from 'node:stream';
 import { createHash } from 'node:crypto';
@@ -8,6 +9,7 @@ import { join, resolve } from 'node:path';
 import { parseMediaIdentity } from '../domain/media-identity.js';
 import type {
   TemporalEvidence,
+  ReferenceImageEvidence,
   TemporalMediaIdentity,
   TemporalValidator,
 } from '../domain/p4-qc-contracts.js';
@@ -55,6 +57,147 @@ export class OfflineTemporalValidator implements TemporalValidator {
     private readonly config: Config,
     private readonly runner: ProcessRunner = runProcess,
   ) {}
+  async verifyReferenceImage(
+    identity: Readonly<
+      Pick<TemporalMediaIdentity, 'mediaReference' | 'contentHash'>
+    >,
+  ): Promise<ReferenceImageEvidence> {
+    if (analysisActive) throw new Error('TEMPORAL_ANALYSIS_BUSY');
+    analysisActive = true;
+    let staging: string | undefined;
+    const p = TEMPORAL_ANALYSIS_POLICY,
+      signal = AbortSignal.timeout(p.timeoutMs),
+      started = performance.now();
+    const execute: ProcessRunner = (command, args, options) => {
+      signal.throwIfAborted();
+      const remaining = Math.floor(p.timeoutMs - (performance.now() - started));
+      if (remaining <= 0) throw new Error('TEMPORAL_ANALYSIS_TIMEOUT');
+      return this.runner(command, args, {
+        ...options,
+        signal,
+        timeoutMs: Math.min(remaining, options.timeoutMs),
+      });
+    };
+    try {
+      parseMediaIdentity(identity.mediaReference, {
+        expectedHash: identity.contentHash,
+      });
+      const bytes = new LocalEvidenceStorage(this.config.mediaRoot).read(
+        identity.contentHash,
+        'png',
+        p.maxInputBytes,
+      );
+      staging = await mkdtemp(join(tmpdir(), 'reference-analysis-'));
+      const input = join(staging, 'reference.png');
+      await writeFile(input, bytes, { flag: 'wx', signal });
+      const options = {
+        timeoutMs: p.timeoutMs,
+        maxLogBytes: 65536,
+        shell: false as const,
+        windowsHide: true as const,
+      };
+      const probe = await execute(
+        this.config.ffprobePath,
+        [
+          '-v',
+          'error',
+          '-max_alloc',
+          String(p.maxAllocationBytes),
+          '-threads',
+          '1',
+          '-protocol_whitelist',
+          'file',
+          '-show_entries',
+          'stream=codec_type,codec_name,width,height',
+          '-of',
+          'json',
+          input,
+        ],
+        options,
+      );
+      const streams = JSON.parse(probe.stdout).streams;
+      const image = streams?.[0];
+      if (
+        streams?.length !== 1 ||
+        image.codec_type !== 'video' ||
+        image.codec_name !== 'png' ||
+        ![image.width, image.height].every(
+          (n) => Number.isSafeInteger(n) && n > 0 && n <= p.maxDimension,
+        ) ||
+        image.width * image.height > p.maxPixels
+      )
+        fail();
+      const decoded = await execute(
+        this.config.ffmpegPath,
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          '-xerror',
+          '-max_alloc',
+          String(p.maxAllocationBytes),
+          '-timelimit',
+          String(p.cpuSeconds),
+          '-threads',
+          '1',
+          '-filter_threads',
+          '1',
+          '-protocol_whitelist',
+          'file',
+          '-i',
+          input,
+          '-map',
+          '0:v:0',
+          '-an',
+          '-sn',
+          '-dn',
+          '-frames:v',
+          '1',
+          '-c:v',
+          'rawvideo',
+          '-threads',
+          '1',
+          '-pix_fmt',
+          'rgb24',
+          '-f',
+          'framehash',
+          '-hash',
+          'sha256',
+          '-',
+        ],
+        options,
+      );
+      const lines = decoded.stdout
+        .split(/\r?\n/)
+        .filter((line) => line && !line.startsWith('#'));
+      const fields = lines[0]?.split(',').map((part) => part.trim());
+      if (
+        lines.length !== 1 ||
+        fields?.length !== 6 ||
+        Number(fields[4]) !== image.width * image.height * 3 ||
+        !/^[a-f0-9]{64}$/.test(fields[5])
+      )
+        fail();
+      signal.throwIfAborted();
+      if (performance.now() - started >= p.timeoutMs) fail();
+      return Object.freeze({
+        schemaVersion: 'reference-image-analysis/1.0.0',
+        validator: this.id,
+        version: this.version,
+        contentHash: identity.contentHash,
+        width: image.width,
+        height: image.height,
+        frameHash: fields![5],
+        policyHash: adaptationHash(p),
+      });
+    } finally {
+      try {
+        if (staging) await rm(staging, { recursive: true, force: true });
+      } finally {
+        analysisActive = false;
+      }
+    }
+  }
   async evaluate(
     identity: Readonly<TemporalMediaIdentity>,
   ): Promise<TemporalEvidence> {

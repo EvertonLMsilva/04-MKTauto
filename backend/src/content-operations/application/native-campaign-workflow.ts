@@ -73,7 +73,7 @@ export function campaignRequest(raw: unknown) {
     const video = document(r.videoProduction);
     if (
       Object.keys(video).join(',') !== 'mode' ||
-      video.mode !== 'OFFLINE' ||
+      !['OFFLINE', 'ASSISTED_LOCAL'].includes(String(video.mode)) ||
       r.mode !== 'LOCAL_VALIDATION' ||
       r.publication !== undefined
     )
@@ -156,6 +156,45 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       media: Pick<MediaService, 'get' | 'evaluateTemporalMedia'>;
     },
   ) {}
+  private requireSceneMedia(
+    id: string,
+    script: Record<string, unknown>,
+    runId: string,
+    position: number,
+  ) {
+    const asset = this.production?.media.get(id);
+    if (!asset) throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
+    if (
+      asset.assetType !== 'VIDEO' ||
+      asset.pipelineRunId !== runId ||
+      asset.scriptId !== script.scriptId ||
+      asset.scriptContentHash !== script.contentHash ||
+      asset.visualDirectionPosition !== position ||
+      asset.projectId !== script.projectId ||
+      asset.projectVersion !== script.projectVersion
+    )
+      throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+    if (!asset.rights.commercialUseAllowed)
+      throw new CampaignError('COMMERCIAL_MEDIA_RIGHTS_REQUIRED');
+    const rights = asset.rights.evidence?.filter(
+      (evidence) =>
+        evidence.kind === 'MEDIA_USAGE_RIGHT' &&
+        evidence.mediaAuthorization?.mediaRef === asset.mediaReference &&
+        evidence.mediaAuthorization.contentHash === asset.contentHash,
+    );
+    if (
+      !rights?.length ||
+      rights.some(
+        (evidence) =>
+          evidence.mediaAuthorization?.localProcessing !== true ||
+          evidence.mediaAuthorization?.processing !== 'GRANTED' ||
+          evidence.mediaAuthorization.commercialUse !== 'GRANTED',
+      )
+    )
+      throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
+
+    return asset;
+  }
   async validate(r: Record<string, unknown>) {
     const campaign = await this.affiliate.getCampaign(
       String(r.campaignId),
@@ -267,25 +306,53 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         throw new CampaignError('VIDEO_PRODUCTION_CONFIGURATION_REQUIRED');
       if (
         r.mode !== 'LOCAL_VALIDATION' ||
-        document(r.videoProduction).mode !== 'OFFLINE'
+        !['OFFLINE', 'ASSISTED_LOCAL'].includes(
+          String(document(r.videoProduction).mode),
+        )
       )
         throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
       if (step === 'SCENES') {
         // Re-read immutable Content/Affiliate revisions through the existing service.
         const directions = script.visualDirections as { position: number }[];
+        const assisted = document(r.videoProduction).mode === 'ASSISTED_LOCAL';
+        const ids = r.sceneMediaAssetIds as string[] | undefined;
+        if (assisted && (!ids?.length || ids.length !== directions.length))
+          throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
+        const selected = assisted
+          ? directions.map((direction, index) =>
+              this.requireSceneMedia(
+                ids![index],
+                script,
+                e.run_id,
+                direction.position,
+              ),
+            )
+          : [];
         return this.production.preparations.prepare({
           scriptId: script.scriptId,
           scriptContentHash: script.contentHash,
           scriptRevision: script.revision,
-          scenes: directions.map((direction) => ({
+          scenes: directions.map((direction, index) => ({
             visualDirectionPosition: direction.position,
-            sceneMediaType: 'GENERATED_VIDEO',
+            sceneMediaType:
+              assisted && selected[index].origin !== 'PROVIDER_GENERATED'
+                ? 'RECORDED_VIDEO'
+                : 'GENERATED_VIDEO',
             movementRequirement: 'REAL_MOTION_REQUIRED',
           })),
         });
       }
       const preparation = done.SCENES as VideoProductionPreparationV1;
       if (step === 'VIDEO_GENERATION') {
+        if (document(r.videoProduction).mode === 'ASSISTED_LOCAL')
+          return {
+            mode: 'ASSISTED_LOCAL',
+            generation: 'NOT_REQUESTED',
+            materialization: 'EXISTING_AUTHORIZED_MEDIA',
+            compositionReady: false,
+            preparationHash: preparation.contentHash,
+          };
+
         for (const scene of preparation.scenes) {
           const operationId =
             'simulation_' +
@@ -321,46 +388,45 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
       const reports = [];
       for (let i = 0; i < ids.length; i++) {
-        const asset = this.production.media.get(ids[i]);
-        if (!asset) throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
+        const asset = this.requireSceneMedia(
+          ids[i],
+          script,
+          e.run_id,
+          preparation.scenes[i].position,
+        );
         if (
-          asset.assetType !== 'VIDEO' ||
-          asset.pipelineRunId !== e.run_id ||
-          asset.scriptId !== script.scriptId ||
-          asset.scriptContentHash !== script.contentHash ||
-          asset.visualDirectionPosition !== preparation.scenes[i].position ||
-          asset.projectId !== preparation.projectId ||
-          asset.projectVersion !== preparation.projectVersion
+          document(r.videoProduction).mode === 'ASSISTED_LOCAL' &&
+          preparation.scenes[i].sceneMediaType !==
+            (asset.origin === 'PROVIDER_GENERATED'
+              ? 'GENERATED_VIDEO'
+              : 'RECORDED_VIDEO')
         )
           throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
-        if (!asset.rights.commercialUseAllowed)
-          throw new CampaignError('COMMERCIAL_MEDIA_RIGHTS_REQUIRED');
-        const rights = asset.rights.evidence?.filter(
-          (evidence) =>
-            evidence.kind === 'MEDIA_USAGE_RIGHT' &&
-            evidence.mediaAuthorization?.mediaRef === asset.mediaReference &&
-            evidence.mediaAuthorization.contentHash === asset.contentHash,
-        );
-        if (
-          !rights?.length ||
-          rights.some(
-            (evidence) =>
-              evidence.mediaAuthorization?.localProcessing !== true ||
-              evidence.mediaAuthorization?.processing !== 'GRANTED' ||
-              evidence.mediaAuthorization.commercialUse !== 'GRANTED',
+        let observed: unknown;
+        try {
+          observed = await this.production.media.evaluateTemporalMedia(
+            asset.mediaAssetId,
+          );
+        } catch (error) {
+          const code =
+            error && typeof error === 'object' && 'code' in error
+              ? String(error.code)
+              : '';
+          if (
+            /^(HUMAN_APPROVAL_REVIEW_(INVALID|STALE)|AUTHENTICATED_HUMAN_REVIEW_REQUIRED)$/.test(
+              code,
+            )
           )
-        )
-          throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
-        const report = validateTemporalReport(
-          await this.production.media.evaluateTemporalMedia(asset.mediaAssetId),
-          {
-            mediaAssetId: asset.mediaAssetId,
-            mediaReference: asset.mediaReference,
-            contentHash: asset.contentHash,
-            scriptContentHash: asset.scriptContentHash,
-            visualDirectionPosition: asset.visualDirectionPosition,
-          },
-        );
+            throw new CampaignError('AUTHENTICATED_MEDIA_REVIEW_REQUIRED');
+          throw error;
+        }
+        const report = validateTemporalReport(observed, {
+          mediaAssetId: asset.mediaAssetId,
+          mediaReference: asset.mediaReference,
+          contentHash: asset.contentHash,
+          scriptContentHash: asset.scriptContentHash,
+          visualDirectionPosition: asset.visualDirectionPosition,
+        });
         reports.push(report);
       }
       if (reports.some((report) => report.result !== 'PASS'))
@@ -561,7 +627,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (
       request.videoProduction &&
       request.mode === 'LOCAL_VALIDATION' &&
-      document(request.videoProduction).mode === 'OFFLINE' &&
+      ['OFFLINE', 'ASSISTED_LOCAL'].includes(
+        String(document(request.videoProduction).mode),
+      ) &&
       ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(
         String(last.evidence.step),
       )

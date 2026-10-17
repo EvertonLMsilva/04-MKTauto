@@ -1,3 +1,5 @@
+import { operationalQcIdentity } from '../../publishing/application/local-qc-identity.js';
+import { adaptationHash } from '../domain/media-hash.js';
 import type {
   MediaStore,
   MediaRepository,
@@ -10,6 +12,7 @@ import {
   VideoCompositionError,
 } from './video-composition.service.js';
 export class MediaService {
+  private readonly reviewRequests = new Map<string, Promise<unknown>>();
   constructor(
     private readonly store: MediaStore,
     private readonly composer?: VideoComposer,
@@ -131,6 +134,38 @@ export class MediaService {
   }
   report(id: string) {
     return this.quality((r) => r.getQualityControlReport(id));
+  }
+  async reviewTemporalMedia(id: string, input: unknown, principal: unknown) {
+    const reviewer = operationalQcIdentity.assertActive(principal);
+    const key = adaptationHash({
+      id,
+      input,
+      actor: reviewer.id,
+      credential: operationalQcIdentity.fingerprint(reviewer),
+    });
+    const prior = this.reviewRequests.get(key);
+    if (prior) return prior;
+    if (this.reviewRequests.size)
+      throw Object.assign(new Error('HUMAN_APPROVAL_REVIEW_BUSY'), {
+        code: 'HUMAN_APPROVAL_REVIEW_BUSY',
+        field: 'review',
+      });
+    const operation = (async () => {
+      const repository = this.store.openQuality(false);
+      try {
+        if (!repository.reviewTemporalMedia)
+          throw new Error('HUMAN_APPROVAL_REVIEW_UNAVAILABLE');
+        return await repository.reviewTemporalMedia(id, input, reviewer);
+      } finally {
+        repository.close();
+      }
+    })();
+    this.reviewRequests.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      this.reviewRequests.delete(key);
+    }
   }
   async evaluateTemporalMedia(id: string) {
     const repository = this.store.openQuality(false);

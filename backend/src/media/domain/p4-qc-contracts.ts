@@ -205,7 +205,22 @@ export interface TemporalMediaIdentity {
  * Implementations must independently verify the exact bytes and evaluation artifact.
  * No production temporal/semantic analyzer is configured by this contract.
  */
+export interface ReferenceImageEvidence {
+  schemaVersion: 'reference-image-analysis/1.0.0';
+  validator: string;
+  version: string;
+  contentHash: string;
+  width: number;
+  height: number;
+  frameHash: string;
+  policyHash: string;
+}
 export interface TemporalValidator {
+  verifyReferenceImage?(
+    identity: Readonly<
+      Pick<TemporalMediaIdentity, 'mediaReference' | 'contentHash'>
+    >,
+  ): Promise<ReferenceImageEvidence>;
   id: string;
   version: string;
   evaluate(identity: Readonly<TemporalMediaIdentity>): unknown;

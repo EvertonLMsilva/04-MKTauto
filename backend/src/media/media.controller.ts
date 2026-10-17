@@ -1,3 +1,9 @@
+import { QcIdentityError } from '../publishing/application/local-qc-identity.js';
+import { UseGuards, Req, HttpException } from '@nestjs/common';
+import {
+  LocalQcGuard,
+  QC_REVIEWER_CONTEXT,
+} from '../publishing/application/local-qc.guard.js';
 import {
   Body,
   Controller,
@@ -17,6 +23,36 @@ import { ContractValidationError } from '../project/domain/project.errors.js';
 @Controller('media')
 export class MediaController {
   constructor(@Inject(MediaService) private readonly media: MediaService) {}
+  @Post('assets/:id/temporal-analysis')
+  @UseGuards(LocalQcGuard)
+  async temporalAnalysis(@Param('id') id: string) {
+    try {
+      return await this.media.evaluateTemporalMedia(id);
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
+  }
+  @Post('assets/:id/temporal-reviews')
+  @UseGuards(LocalQcGuard)
+  async temporalReview(
+    @Param('id') id: string,
+    @Body() input: unknown,
+    @Req() request: any,
+  ) {
+    try {
+      return await this.media.reviewTemporalMedia(
+        id,
+        input,
+        request[QC_REVIEWER_CONTEXT],
+      );
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
+  }
   @Post('compositions') async compose(@Body() value: unknown) {
     try {
       return await this.media.compose(value);
@@ -94,6 +130,9 @@ export class MediaController {
     try {
       result = action();
     } catch (error) {
+      if (error instanceof HttpException) throw error;
+      if (error instanceof QcIdentityError)
+        throw new HttpException({ code: error.code }, error.status);
       if (error instanceof ContractValidationError)
         throw new BadRequestException({ code: error.code, field: error.path });
       if (error instanceof Error && 'code' in error && 'field' in error) {
