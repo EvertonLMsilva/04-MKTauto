@@ -169,6 +169,31 @@ export interface TemporalEvidence {
     parameters: Record<string, unknown>;
   };
 }
+/** Future trusted semantic evaluator boundary. Reference images must have their
+ * authorization checked by the existing media rights gate before invocation.
+ * Frame differences, timestamps and camera motion are never semantic evidence.
+ * No implementation is installed; the offline validator keeps fidelity unresolved.
+ */
+export interface FidelityEvaluationInput {
+  identity: Readonly<TemporalMediaIdentity>;
+  temporalEvidence: Readonly<TemporalEvidence>;
+  referenceImages: ReadonlyArray<
+    Readonly<Pick<TemporalEvidence, 'mediaReference' | 'contentHash'>>
+  >;
+}
+export type FidelityEvaluationOutput = Readonly<
+  Pick<
+    TemporalEvidence,
+    'mediaReference' | 'contentHash' | 'fidelity' | 'provenance'
+  >
+>;
+export interface FidelityEvaluator {
+  id: string;
+  version: string;
+  evaluateFidelity(
+    input: Readonly<FidelityEvaluationInput>,
+  ): Promise<FidelityEvaluationOutput>;
+}
 export interface TemporalMediaIdentity {
   mediaAssetId: string;
   mediaReference: string;

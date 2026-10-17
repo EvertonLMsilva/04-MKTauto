@@ -41,6 +41,8 @@ const filters = {
   zoom: "nullsrc=s=64x64:r=8:d=2,geq=lum='mod(X*7+Y*11,256)':cb=128:cr=128,zoompan=z='1+on*0.03':d=1:s=64x64:fps=8",
   freeze: 'testsrc2=s=64x64:r=8:d=1,tpad=stop_mode=clone:stop_duration=1',
   cut: 'color=black:s=64x64:r=8:d=1[a];color=white:s=64x64:r=8:d=1[b];[a][b]concat=n=2:v=1:a=0',
+  heldFrame: "testsrc2=s=64x64:r=8:d=2,setpts='PTS+if(gte(N,4),1,0)'",
+  transition: "nullsrc=s=64x64:r=8:d=2,geq=lum='16+N*10':cb=128:cr=128",
   short: 'color=blue:s=64x64:r=8:d=0.125',
 };
 beforeAll(async () => {
@@ -82,6 +84,8 @@ beforeAll(async () => {
         'ultrafast',
         '-crf',
         '0',
+        '-fps_mode',
+        'passthrough',
         '-pix_fmt',
         'yuv420p',
         path,
@@ -233,7 +237,9 @@ describe('real offline temporal measurements, without automatic semantic approva
           '-xerror',
         ]),
       );
-      expect(options).toMatchObject({ timeoutMs: 15000, shell: false });
+      expect(options.timeoutMs).toBeLessThanOrEqual(15000);
+      expect(options.signal).toBeInstanceOf(AbortSignal);
+      expect(options.shell).toBe(false);
       expect(options.maxOutputBytes).toBeLessThanOrEqual(1048576);
     }
   });
@@ -242,12 +248,18 @@ describe('real offline temporal measurements, without automatic semantic approva
     expect(evidence.motion).toBe('FAIL');
     expect(evidence.motionBasis).toBe('STILL');
     expect(record.measurements.uniqueDecodedFrames).toBe(1);
+    expect(record.measurements.freezeIntervals).toEqual([
+      { firstFrame: 0, lastFrame: 15, startSeconds: 0, endSeconds: 2 },
+    ]);
+    expect(record.resourceLimits.hardRssLimitGuaranteed).toBe(false);
+    expect(evidence.continuity).toBe('NOT_VALIDATED');
     expect(record.measurements.decodedFrames).toBe(16);
     expect(evidence.fidelity).toBe('NOT_VALIDATED');
   });
   it('records a frozen interval without inventing semantic continuity approval', async () => {
     const { evidence, record } = await audit('freeze');
     expect(record.measurements.longestIdenticalRun).toBeGreaterThan(2);
+    expect(record.measurements.freezeIntervals.length).toBeGreaterThan(0);
     expect(record.measurements.uniqueDecodedFrames).toBeGreaterThan(1);
     expect(evidence.motion).toBe('NOT_VALIDATED');
     expect(evidence.continuity).toBe('NOT_VALIDATED');
@@ -281,12 +293,114 @@ describe('real offline temporal measurements, without automatic semantic approva
     expect(
       record.measurements.samplePairs.some((p: any) => p.changedTiles === 16),
     ).toBe(true);
+    expect(record.measurements.globalChangeObservations.length).toBeGreaterThan(
+      0,
+    );
+    expect(
+      record.measurements.globalChangeObservations.every(
+        (item: any) =>
+          item.intent === 'UNKNOWN' && item.classification === 'NOT_VALIDATED',
+      ),
+    ).toBe(true);
     expect(evidence.continuity).toBe('NOT_VALIDATED');
     expect(evidence.motion).not.toBe('PASS');
+  });
+  it('keeps a deliberate gradual transition inconclusive without trusted edit evidence', async () => {
+    const { evidence, record } = await audit('transition');
+    expect(record.measurements.changedDecodedTransitions).toBeGreaterThan(0);
+    expect(evidence.continuity).toBe('NOT_VALIDATED');
+    expect(evidence.fidelity).toBe('NOT_VALIDATED');
+  });
+  it('does not mistake a real longer frame presentation for missing coverage', async () => {
+    const { evidence, record } = await audit('heldFrame');
+    expect(record.measurements.frameDurations).toContain(2);
+    expect(record.measurements.timestampGaps).toEqual([]);
+    expect(evidence.continuity).toBe('NOT_VALIDATED');
+  });
+  it('fails continuity when decoded evidence reports missing presentation coverage', async () => {
+    // Fault injection into successful decoder output, never a fabricated PASS.
+    const runner: ProcessRunner = async (command, args, options) => {
+      const result = await runProcess(command, args, options);
+      if (args.includes('framehash')) {
+        const text = await readFile(options.outputPath!, 'utf8');
+        await writeFile(
+          options.outputPath!,
+          text
+            .split('\n')
+            .filter((line) => {
+              if (!line || line.startsWith('#')) return true;
+              return Number(line.split(',')[2]) !== 4;
+            })
+            .join('\n'),
+        );
+      }
+      return result;
+    };
+    const evidence = await analyzer(runner).evaluate(clips.get('local')!);
+    expect(evidence.continuity).toBe('FAIL');
+    expect(evidence.fidelity).toBe('NOT_VALIDATED');
+    const record = JSON.parse(
+      new LocalEvidenceStorage(evidenceRoot)
+        .read(evidence.provenance!.contentHash, 'json')
+        .toString(),
+    );
+    expect(record.measurements.timestampGaps).toEqual([
+      { afterFrame: 3, startSeconds: 0.5, endSeconds: 0.625 },
+    ]);
   });
   it('does not classify clips with insufficient temporal coverage', async () => {
     const { evidence } = await audit('short');
     expect(evidence.motion).toBe('NOT_VALIDATED');
+  });
+  it('fails closed on concurrent analyses before spawning a second process', async () => {
+    let release!: () => void;
+    let entered!: () => void;
+    const ready = new Promise<void>((resolve) => {
+      entered = resolve;
+    });
+    const paused = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const runner: ProcessRunner = async (command, args, options) => {
+      entered();
+      await paused;
+      return runProcess(command, args, options);
+    };
+    const first = analyzer(runner).evaluate(clips.get('local')!);
+    await ready;
+    try {
+      await expect(analyzer().evaluate(clips.get('still')!)).rejects.toThrow(
+        'TEMPORAL_ANALYSIS_BUSY',
+      );
+    } finally {
+      release();
+      await first;
+    }
+  });
+  it('rejects regressing decoded timestamps without producing approval', async () => {
+    const runner: ProcessRunner = async (command, args, options) => {
+      const result = await runProcess(command, args, options);
+      if (args.includes('framehash')) {
+        const text = await readFile(options.outputPath!, 'utf8');
+        let index = 0;
+        await writeFile(
+          options.outputPath!,
+          text
+            .split('\n')
+            .map((line) => {
+              if (!line || line.startsWith('#')) return line;
+              const fields = line.split(',');
+              if (index++ === 1) fields[2] = '-1';
+              return fields.join(',');
+            })
+            .join('\n'),
+        );
+      }
+      return result;
+    };
+    await expect(
+      analyzer(runner).evaluate(clips.get('local')!),
+    ).rejects.toThrow('TEMPORAL_ANALYSIS_INVALID');
   });
   it('produces repeatable, file-bound audit evidence', async () => {
     const input = clips.get('local')!,
@@ -297,6 +411,44 @@ describe('real offline temporal measurements, without automatic semantic approva
     expect(a.provenance!.parameters).toMatchObject({
       policy: TEMPORAL_ANALYSIS_POLICY,
     });
+  });
+  it('shares one total deadline across all subprocesses', async () => {
+    let elapsed = 0;
+    const clock = vi
+      .spyOn(performance, 'now')
+      .mockImplementation(() => elapsed);
+    const runner: ProcessRunner = async (command, args, options) => {
+      const result = await runProcess(command, args, options);
+      elapsed += 6000;
+      return result;
+    };
+    try {
+      await expect(
+        analyzer(runner).evaluate(clips.get('local')!),
+      ).rejects.toThrow('TEMPORAL_ANALYSIS_TIMEOUT');
+    } finally {
+      clock.mockRestore();
+    }
+  });
+  it('rejects incomplete decoded coverage even when a subprocess returns success', async () => {
+    const runner: ProcessRunner = async (command, args, options) => {
+      const result = await runProcess(command, args, options);
+      if (args.includes('framehash')) {
+        let count = 0;
+        const text = await readFile(options.outputPath!, 'utf8');
+        await writeFile(
+          options.outputPath!,
+          text
+            .split('\n')
+            .filter((line) => line.startsWith('#') || (line && count++ < 4))
+            .join('\n'),
+        );
+      }
+      return result;
+    };
+    await expect(
+      analyzer(runner).evaluate(clips.get('local')!),
+    ).rejects.toThrow();
   });
   it('rejects divergent SHA-256 before executing any analyzer process', async () => {
     const runner = vi.fn(runProcess);
@@ -316,6 +468,27 @@ describe('real offline temporal measurements, without automatic semantic approva
     });
     await writeFile(
       join(mediaRoot, 'sha256', hash.slice(0, 2), `${hash}.mp4`),
+      bytes,
+    );
+    await expect(analyzer().evaluate(identity(hash))).rejects.toThrow();
+  });
+  it('rejects a genuinely truncated file with a matching SHA-256', async () => {
+    const original = clips.get('local')!;
+    const full = await readFile(
+      join(
+        mediaRoot,
+        'sha256',
+        original.contentHash.slice(0, 2),
+        original.contentHash + '.mp4',
+      ),
+    );
+    const bytes = full.subarray(0, Math.floor(full.length / 2));
+    const hash = createHash('sha256').update(bytes).digest('hex');
+    await mkdir(join(mediaRoot, 'sha256', hash.slice(0, 2)), {
+      recursive: true,
+    });
+    await writeFile(
+      join(mediaRoot, 'sha256', hash.slice(0, 2), hash + '.mp4'),
       bytes,
     );
     await expect(analyzer().evaluate(identity(hash))).rejects.toThrow();

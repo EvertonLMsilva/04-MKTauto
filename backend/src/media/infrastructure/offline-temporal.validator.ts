@@ -43,13 +43,14 @@ type Config = {
   mediaRoot: string;
   evidenceRoot: string;
 };
+let analysisActive = false;
 const fail = (): never => {
   throw new Error('TEMPORAL_ANALYSIS_INVALID');
 };
 
 export class OfflineTemporalValidator implements TemporalValidator {
   readonly id = 'offline-temporal-ffmpeg';
-  readonly version = '1.0.0';
+  readonly version = '1.1.0';
   constructor(
     private readonly config: Config,
     private readonly runner: ProcessRunner = runProcess,
@@ -57,6 +58,35 @@ export class OfflineTemporalValidator implements TemporalValidator {
   async evaluate(
     identity: Readonly<TemporalMediaIdentity>,
   ): Promise<TemporalEvidence> {
+    if (analysisActive) throw new Error('TEMPORAL_ANALYSIS_BUSY');
+    analysisActive = true;
+    try {
+      return await this.analyze(identity);
+    } finally {
+      analysisActive = false;
+    }
+  }
+  private async analyze(
+    identity: Readonly<TemporalMediaIdentity>,
+  ): Promise<TemporalEvidence> {
+    const signal = AbortSignal.timeout(TEMPORAL_ANALYSIS_POLICY.timeoutMs);
+    const started = performance.now();
+    const remainingBudget = () => {
+      signal.throwIfAborted();
+      const remaining = Math.floor(
+        TEMPORAL_ANALYSIS_POLICY.timeoutMs - (performance.now() - started),
+      );
+      if (remaining <= 0) throw new Error('TEMPORAL_ANALYSIS_TIMEOUT');
+      return remaining;
+    };
+    const execute: ProcessRunner = (command, args, options) => {
+      const remaining = remainingBudget();
+      return this.runner(command, args, {
+        ...options,
+        signal,
+        timeoutMs: Math.min(remaining, options.timeoutMs),
+      });
+    };
     identity = Object.freeze({ ...identity });
     parseMediaIdentity(identity.mediaReference, {
       expectedHash: identity.contentHash,
@@ -86,6 +116,7 @@ export class OfflineTemporalValidator implements TemporalValidator {
           },
         }),
         createWriteStream(input, { flags: 'wx' }),
+        { signal },
       );
       if (hash.digest('hex') !== identity.contentHash) fail();
       const options = {
@@ -94,7 +125,7 @@ export class OfflineTemporalValidator implements TemporalValidator {
         shell: false as const,
         windowsHide: true as const,
       };
-      const probe = await this.runner(
+      const probe = await execute(
         this.config.ffprobePath,
         [
           '-v',
@@ -135,10 +166,10 @@ export class OfflineTemporalValidator implements TemporalValidator {
         video.width * video.height > p.maxPixels
       )
         fail();
-      const tools = await Promise.all([
-        this.runner(this.config.ffmpegPath, ['-version'], options),
-        this.runner(this.config.ffprobePath, ['-version'], options),
-      ]);
+      const tools = [
+        await execute(this.config.ffmpegPath, ['-version'], options),
+        await execute(this.config.ffprobePath, ['-version'], options),
+      ];
       const base = [
         '-hide_banner',
         '-loglevel',
@@ -166,7 +197,7 @@ export class OfflineTemporalValidator implements TemporalValidator {
         '1',
       ];
       const framesPath = join(staging, 'frames.txt');
-      await this.runner(
+      await execute(
         this.config.ffmpegPath,
         [
           ...base,
@@ -191,14 +222,76 @@ export class OfflineTemporalValidator implements TemporalValidator {
         .toString('utf8')
         .split(/\r?\n/)
         .filter((line) => line && !line.startsWith('#'));
+      const timeBaseMatch = frameBytes
+        .toString('utf8')
+        .match(/^#tb 0: (\d+)\/(\d+)$/m);
+      if (!timeBaseMatch) return fail();
+      const timeBase = Number(timeBaseMatch[1]) / Number(timeBaseMatch[2]);
+      if (!Number.isFinite(timeBase) || timeBase <= 0) fail();
+      const timestamps: number[] = [],
+        frameDurations: number[] = [];
       const hashes = lines.map((line) => {
         const parts = line.split(',').map((x) => x.trim());
         if (parts.length !== 6 || !/^[a-f0-9]{64}$/.test(parts[5])) fail();
+        const pts = Number(parts[2]),
+          frameDuration = Number(parts[3]);
+        if (
+          parts[0] !== '0' ||
+          !Number.isSafeInteger(pts) ||
+          !Number.isSafeInteger(frameDuration) ||
+          Number(parts[4]) !== video.width * video.height * 3 ||
+          frameDuration <= 0 ||
+          (timestamps.length > 0 && pts <= timestamps[timestamps.length - 1])
+        )
+          fail();
+        timestamps.push(pts);
+        frameDurations.push(frameDuration);
         return parts[5];
       });
       if (!hashes.length || hashes.length > p.maxFrames) fail();
+      const decodedDuration =
+        (timestamps.at(-1)! + frameDurations.at(-1)! - timestamps[0]) *
+        timeBase;
+      if (
+        !Number.isFinite(decodedDuration) ||
+        decodedDuration <= 0 ||
+        decodedDuration > p.maxDurationSeconds
+      )
+        fail();
+      // Container and decoded presentation coverage may differ by one frame
+      // due to muxer rounding, but a partial successful decode is not evidence.
+      const coverageTolerance =
+        Math.max(...frameDurations) * timeBase + timeBase;
+      if (Math.abs(decodedDuration - duration) > coverageTolerance) fail();
+      const freezeIntervals = [];
+      for (let first = 0; first < hashes.length;) {
+        let last = first;
+        while (last + 1 < hashes.length && hashes[last + 1] === hashes[first])
+          last++;
+        if (last > first)
+          freezeIntervals.push({
+            firstFrame: first,
+            lastFrame: last,
+            startSeconds: timestamps[first] * timeBase,
+            endSeconds: (timestamps[last] + frameDurations[last]) * timeBase,
+          });
+        first = last + 1;
+      }
+      const timestampGaps = timestamps.flatMap((pts, index) =>
+        index > 0 && pts > timestamps[index - 1] + frameDurations[index - 1]
+          ? [
+              {
+                afterFrame: index - 1,
+                startSeconds:
+                  (timestamps[index - 1] + frameDurations[index - 1]) *
+                  timeBase,
+                endSeconds: pts * timeBase,
+              },
+            ]
+          : [],
+      );
       const samplesPath = join(staging, 'samples.raw');
-      await this.runner(
+      await execute(
         this.config.ffmpegPath,
         [
           ...base,
@@ -217,7 +310,7 @@ export class OfflineTemporalValidator implements TemporalValidator {
       const samples = await boundedRead(samplesPath, 1048576),
         frameSize = p.sampleWidth * p.sampleHeight,
         count = samples.length / frameSize;
-      if (!Number.isInteger(count) || count > p.maxSamples) fail();
+      if (!Number.isInteger(count) || count < 1 || count > p.maxSamples) fail();
       let longestIdenticalRun = 1,
         run = 1,
         changedDecodedTransitions = 0;
@@ -240,15 +333,35 @@ export class OfflineTemporalValidator implements TemporalValidator {
       const still =
         hashes.length >= 2 && count >= 2 && changedDecodedTransitions === 0;
       const parameters = { policy: p };
+      // Timestamp gaps are objective missing presentation coverage. Image changes,
+      // frozen intervals and global translation alone cannot prove perceptual failure.
+      const continuity = timestampGaps.length
+        ? ('FAIL' as const)
+        : ('NOT_VALIDATED' as const);
+      remainingBudget();
       const record = {
-        schemaVersion: 'offline-temporal-analysis/1.0.0',
+        schemaVersion: 'offline-temporal-analysis/1.1.0',
         identity,
         validator: this.id,
         version: this.version,
         parameters,
         tools: tools.map((tool) => tool.stdout.split(/\r?\n/)[0]),
         metadata: { width: video.width, height: video.height, duration, fps },
+        resourceLimits: {
+          maxConcurrentAnalysesPerProcess: 1,
+          maxConcurrentChildren: 1,
+          totalTimeoutMs: p.timeoutMs,
+          hardRssLimitGuaranteed: false,
+          memoryPolicy: 'BOUNDED_INPUT_OUTPUT_AND_SINGLE_ALLOCATION_ONLY',
+          approvalPolicy: 'NO_PASS_WITHOUT_SEMANTIC_EVIDENCE',
+        },
         measurements: {
+          decodedDuration,
+          timeBase,
+          timestamps,
+          frameDurations,
+          timestampGaps,
+          freezeIntervals,
           decodedFrames: hashes.length,
           uniqueDecodedFrames: new Set(hashes).size,
           changedDecodedTransitions,
@@ -258,13 +371,25 @@ export class OfflineTemporalValidator implements TemporalValidator {
           samplesDigest: digest(samples),
           sampleCount: count,
           samplePairs,
+          globalChangeObservations: samplePairs.flatMap((pair, index) =>
+            pair.changedTiles === 16
+              ? [
+                  {
+                    samplePairIndex: index,
+                    intent: 'UNKNOWN',
+                    classification: 'NOT_VALIDATED',
+                  },
+                ]
+              : [],
+          ),
         },
         conclusions: {
           motion: still ? 'FAIL' : 'NOT_VALIDATED',
-          continuity: 'NOT_VALIDATED',
+          continuity,
           fidelity: 'NOT_VALIDATED',
         },
       };
+      remainingBudget();
       const evidenceHash = new LocalEvidenceStorage(
         this.config.evidenceRoot,
       ).put(documentBytes(record), 'json');
@@ -273,7 +398,7 @@ export class OfflineTemporalValidator implements TemporalValidator {
         contentHash: identity.contentHash,
         motion: still ? 'FAIL' : 'NOT_VALIDATED',
         motionBasis: still ? 'STILL' : 'UNKNOWN',
-        continuity: 'NOT_VALIDATED',
+        continuity,
         fidelity: 'NOT_VALIDATED',
         provenance: {
           reference: `temporal-evidence:sha256_${evidenceHash}`,
