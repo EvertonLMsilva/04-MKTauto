@@ -210,6 +210,11 @@ describe('controlled fal financial boundary', () => {
     });
     for (const change of [
       { maximumEnforced: false },
+      {
+        maximumEnforced: false,
+        prepaidBalanceUsd: '0.50',
+        accountLockThresholdUsd: '0',
+      },
       { includesAllCharges: false },
       { webpSupported: false },
       { expiresAt: '2026-10-16T00:00:00Z' },

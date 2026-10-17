@@ -9,7 +9,13 @@ import {
   buildVideoProductionPreparation,
   preparationFail,
   validateVideoPreparationRequest,
+  requireGeneratedVideoScene,
 } from '../domain/video-production-preparation.js';
+import {
+  validateMediaAcquisitionRequest,
+  mediaAcquisitionRequestHash,
+} from '../domain/media-acquisition-contracts.js';
+import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
 
 // Read-only preparation. No acquisition, generation, composition or recovery writer.
 export class VideoProductionPreparationService {
@@ -24,6 +30,49 @@ export class VideoProductionPreparationService {
     >,
     private readonly affiliate: Pick<AffiliateService, 'resolveBriefingSource'>,
   ) {}
+  // Read-only request construction. Consent and financial dispatch remain separate.
+  async prepareFalRequest(
+    input: unknown,
+    options: {
+      scenePosition: number;
+      mediaAcquisitionRequestId: string;
+      requestedAt: string;
+      mediaRef: string;
+      imageHash: string;
+    },
+  ) {
+    const preparation = await this.prepare(input);
+    const scene = requireGeneratedVideoScene(
+      preparation,
+      options.scenePosition,
+    );
+    const briefing = this.operations.resolveAffiliateBriefing(
+      preparation.pipelineRunId,
+      preparation.commercial.briefingId,
+    );
+    if (!briefing || !briefing.mediaRefs.includes(options.mediaRef))
+      preparationFail('PROVIDER_IMAGE_NOT_AUTHORIZED', 'mediaRef');
+    assertMediaProcessingRights(
+      briefing.evidence,
+      { mediaRef: options.mediaRef, contentHash: options.imageHash },
+      'fal_ai',
+      options.mediaAcquisitionRequestId,
+    );
+    const body = {
+      schemaVersion: 'media-acquisition-request/1.0.0',
+      mediaAcquisitionRequestId: options.mediaAcquisitionRequestId,
+      scriptId: preparation.script.scriptId,
+      scriptContentHash: preparation.script.contentHash,
+      visualDirectionPosition: scene.position,
+      assetType: 'VIDEO',
+      requestedAt: options.requestedAt,
+    };
+    const request = validateMediaAcquisitionRequest({
+      ...body,
+      contentHash: mediaAcquisitionRequestHash(body),
+    });
+    return { preparation, scenePosition: scene.position, request };
+  }
   async prepare(input: unknown) {
     const request = validateVideoPreparationRequest(input);
     const stored = this.content.getScript(request.scriptId);

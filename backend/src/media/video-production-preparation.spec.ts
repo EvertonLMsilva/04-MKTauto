@@ -30,7 +30,17 @@ describe('offline video production preparation', () => {
     expectedPreparationHash?: string;
   };
   beforeEach(() => {
-    f = p2EditorialFixture();
+    f = p2EditorialFixture({
+      mediaAuthorization: {
+        mediaRef: 'authorized-image-001',
+        contentHash: 'c'.repeat(64),
+        commercialUse: 'GRANTED',
+        processing: 'GRANTED',
+        localProcessing: true,
+        externalProviders: ['fal_ai'],
+        operationScope: 'p77_first_live_i2v',
+      },
+    });
     provisionSchema(f.base.db, 42);
     const persistence = new SqliteAffiliatePersistence(f.database);
     const repo = persistence.open();
@@ -183,6 +193,66 @@ describe('offline video production preparation', () => {
   afterEach(() => {
     f.cleanup();
     vi.unstubAllGlobals();
+  });
+
+  it('derives the official fal request from pinned Content and briefing without consent or financial writes', async () => {
+    const options = {
+      scenePosition: 1,
+      mediaAcquisitionRequestId: 'p77_first_live_i2v',
+      requestedAt: '2026-10-17T12:00:00Z',
+      mediaRef: 'authorized-image-001',
+      imageHash: 'c'.repeat(64),
+    };
+    const before = f.base.db
+      .prepare('SELECT count(*) n FROM fal_generations')
+      .get()?.n;
+    const result = await service.prepareFalRequest(request, options);
+    expect(await service.prepareFalRequest(request, options)).toEqual(result);
+    expect(result.preparation.commercial).toMatchObject({
+      productId: 'prod_001',
+      productRevision: 1,
+      briefingId: 'brief_shopee',
+    });
+    expect(result.request).toMatchObject({
+      schemaVersion: 'media-acquisition-request/1.0.0',
+      mediaAcquisitionRequestId: options.mediaAcquisitionRequestId,
+      scriptId: request.scriptId,
+      scriptContentHash: request.scriptContentHash,
+      visualDirectionPosition: 1,
+      assetType: 'VIDEO',
+    });
+    expect(result).not.toHaveProperty('authorization');
+    expect(
+      f.base.db.prepare('SELECT count(*) n FROM fal_generations').get()?.n,
+    ).toBe(before);
+    expect(fetch).not.toHaveBeenCalled();
+    for (const change of [
+      { imageHash: 'd'.repeat(64) },
+      { mediaRef: 'other-image' },
+      { mediaAcquisitionRequestId: 'another_operation' },
+      { scenePosition: 2 },
+    ])
+      await expect(
+        service.prepareFalRequest(request, { ...options, ...change }),
+      ).rejects.toThrow();
+  });
+
+  it('keeps the briefing URL without inventing Shopee API provenance when no source exists', async () => {
+    vi.spyOn(catalog, 'resolveBriefingSource').mockResolvedValue(null);
+    const result = await service.prepareFalRequest(request, {
+      scenePosition: 1,
+      mediaAcquisitionRequestId: 'p77_first_live_i2v',
+      requestedAt: '2026-10-17T12:00:00Z',
+      mediaRef: 'authorized-image-001',
+      imageHash: 'c'.repeat(64),
+    });
+    expect(result.preparation.commercial.affiliateUrl).toBe(
+      'https://s.shopee.com.br/offline',
+    );
+    expect(result.preparation.shopeeSource).toBeNull();
+    expect(result.preparation.scenes[0].motionValidation).toBe('NOT_VALIDATED');
+    expect(result).not.toHaveProperty('authorization');
+    expect(fetch).not.toHaveBeenCalled();
   });
 
   it('preserves exact commercial lineage and Shopee provenance, without producing artifacts or writing state', async () => {
