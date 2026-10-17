@@ -1,10 +1,18 @@
+import type { AffiliateEvidence } from '../../affiliate/domain/affiliate-contracts.js';
+import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
+import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import { LocalEvidenceStorage } from './local-evidence-storage.js';
 import type { QualityControlReport } from '../domain/media.types.js';
 import {
   validateQualityControlReport,
   qualityControlReportIdentityHash,
 } from '../domain/quality-control-contracts.js';
 import { MediaDatabase } from './media-database.js';
-import { getP4, getTemporalQC } from './p4-qc.reader.js';
+import {
+  getP4,
+  getTemporalQC,
+  validateCurrentTemporalQC,
+} from './p4-qc.reader.js';
 import {
   mediaIdentityHash,
   p4Fail,
@@ -44,7 +52,127 @@ export class QualityControlRepository extends MediaAssetRepository {
     super(path, operations, content, options);
     this.temporalValidator = options.temporalValidator;
   }
-  async evaluateTemporalMedia(mediaAssetId: string) {
+  async reviewTemporalMedia(
+    mediaAssetId: string,
+    input: any,
+    principal: unknown,
+  ) {
+    const asset = this.getMediaAsset(mediaAssetId);
+    const reference =
+      input?.referenceImage &&
+      this.getMediaAsset(input.referenceImage.mediaAssetId);
+    if (
+      !asset ||
+      !reference ||
+      asset.assetType !== 'VIDEO' ||
+      reference.assetType !== 'IMAGE' ||
+      asset.technicalProperties.format !== 'mp4' ||
+      reference.technicalProperties.format !== 'png' ||
+      reference.scriptId !== asset.scriptId ||
+      reference.scriptContentHash !== asset.scriptContentHash
+    )
+      p4Fail('HUMAN_APPROVAL_REFERENCE_REQUIRED');
+    for (const candidate of [asset!, reference!]) {
+      if (!candidate.rights.commercialUseAllowed)
+        p4Fail('COMMERCIAL_USE_REQUIRED');
+      const matching = candidate.rights.evidence?.filter(
+        (e: AffiliateEvidence) =>
+          e.mediaAuthorization?.mediaRef === candidate.mediaReference &&
+          e.mediaAuthorization?.contentHash === candidate.contentHash,
+      );
+      if (
+        !matching?.length ||
+        matching.some(
+          (e: AffiliateEvidence) =>
+            e.mediaAuthorization?.localProcessing !== true ||
+            e.mediaAuthorization.processing !== 'GRANTED' ||
+            e.mediaAuthorization.commercialUse !== 'GRANTED',
+        )
+      )
+        p4Fail('MEDIA_PROCESSING_RIGHTS_REQUIRED');
+    }
+    // An image being public (including Shopee) never grants transfer to fal.ai.
+    assertMediaProcessingRights(
+      reference!.rights.evidence,
+      {
+        mediaRef: reference!.mediaReference,
+        contentHash: reference!.contentHash,
+      },
+      'fal_ai',
+    );
+    if (
+      !process.env.FFMPEG_MEDIA_ROOT ||
+      !process.env.LOCAL_MEDIA_EVIDENCE_ROOT
+    )
+      p4Fail('HUMAN_APPROVAL_TECHNICAL_REQUIRED');
+    new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).read(
+      reference!.contentHash,
+      'png',
+      33554432,
+    );
+    if (!this.temporalValidator?.verifyReferenceImage)
+      p4Fail('HUMAN_APPROVAL_TECHNICAL_REQUIRED');
+    const referenceTechnical = await this.temporalValidator!
+      .verifyReferenceImage!({
+      mediaReference: reference!.mediaReference,
+      contentHash: reference!.contentHash,
+    });
+    const automatic: any = await this.evaluateTemporalMedia(mediaAssetId, true);
+    if (!automatic.evidence.provenance)
+      p4Fail('HUMAN_APPROVAL_TECHNICAL_REQUIRED');
+    const technical = JSON.parse(
+      new LocalEvidenceStorage(process.env.LOCAL_MEDIA_EVIDENCE_ROOT!)
+        .read(automatic.evidence.provenance.contentHash, 'json')
+        .toString('utf8'),
+    );
+    const report = await HumanApprovalService.reviewTemporal({
+      input,
+      principal,
+      asset,
+      reference,
+      automatic,
+      technical,
+      referenceTechnical,
+    });
+    const audit = report.evidence.provenance.parameters.humanReview;
+    this.db.exec('BEGIN IMMEDIATE');
+    try {
+      const row = this.db
+        .prepare(
+          `SELECT artifact_id FROM p4_artifacts WHERE kind='qc_report'
+        AND json_extract(payload_json,'$.evidence.provenance.parameters.humanReview.decisionKey')=? LIMIT 1`,
+        )
+        .get(audit.decisionKey);
+      if (row) {
+        const prior = getP4(this, 'qc_report', row.artifact_id);
+        if (
+          prior.evidence.provenance.parameters.humanReview.requestHash !==
+          audit.requestHash
+        )
+          p4Fail('HUMAN_APPROVAL_DECISION_CONFLICT');
+        validateCurrentTemporalQC(this, prior, report.identity);
+        this.db.exec('COMMIT');
+        return prior;
+      }
+      this.db
+        .prepare(
+          'INSERT INTO p4_artifacts(kind,artifact_id,identity_hash,pipeline_run_id,payload_json) VALUES (?,?,?,?,?)',
+        )
+        .run(
+          'qc_report',
+          report.qualityControlReportId,
+          adaptationHash(report),
+          asset!.pipelineRunId,
+          JSON.stringify(report),
+        );
+      this.db.exec('COMMIT');
+      return report;
+    } catch (error) {
+      this.db.exec('ROLLBACK');
+      throw error;
+    }
+  }
+  async evaluateTemporalMedia(mediaAssetId: string, automaticOnly = false) {
     // Read via the existing Media validator, including persisted identity integrity.
     const asset = this.getMediaAsset(mediaAssetId);
     if (!asset || asset.assetType !== 'VIDEO')
@@ -101,7 +229,9 @@ export class QualityControlRepository extends MediaAssetRepository {
       validateTemporalReport(prior, identity);
       if (prior.contentHash !== report.contentHash)
         p4Fail('TEMPORAL_REPORT_CONFLICT');
-      return prior;
+      return !automaticOnly && validator?.id === 'offline-temporal-ffmpeg'
+        ? getTemporalQC(this, identity)
+        : prior;
     }
     this.db
       .prepare(

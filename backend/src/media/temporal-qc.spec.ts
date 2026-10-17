@@ -262,12 +262,14 @@ describe('temporal QC identity and independent evidence', () => {
       );
       f.value.segments[1].movementRequirement = 'REAL_MOTION_REQUIRED';
       f.value.contentHash = compositionPlanContentHash(f.value);
-      f.media.registerCompositionPlan(f.value);
+      expect(() => f.media.registerCompositionPlan(f.value)).toThrow(
+        'AUTHENTICATED_HUMAN_REVIEW_REQUIRED',
+      );
       assessment = evidence({ continuity: 'FAIL' });
       await q.evaluateTemporalMedia(f.assets[1].mediaAssetId);
-      expect(() =>
-        f.media.getCompositionPlan(f.value.compositionPlanId),
-      ).toThrow('TEMPORAL_QC_REQUIRED');
+      expect(() => f.media.registerCompositionPlan(f.value)).toThrow(
+        'TEMPORAL_QC_REQUIRED',
+      );
       expect(() =>
         q.db.exec(
           "UPDATE p4_artifacts SET identity_hash='bad' WHERE kind='qc_report'",
@@ -314,7 +316,7 @@ describe('temporal QC identity and independent evidence', () => {
       f.close();
     }
   });
-  it('persists independent QC, reopens and advances the same gate', async () => {
+  it('rejects an unsigned legacy test PASS through the composition gate', async () => {
     const f = fixture(true);
     const asset = f.assets[1];
     const q = quality(f, () => evidence());
@@ -326,7 +328,9 @@ describe('temporal QC identity and independent evidence', () => {
       f.value.segments[1].mediaAssetId = asset.mediaAssetId;
       f.value.segments[1].movementRequirement = 'REAL_MOTION_REQUIRED';
       f.value.contentHash = compositionPlanContentHash(f.value);
-      f.media.registerCompositionPlan(f.value);
+      expect(() => f.media.registerCompositionPlan(f.value)).toThrow(
+        'AUTHENTICATED_HUMAN_REVIEW_REQUIRED',
+      );
       const reopened = new CompositionPlanRepository(
         f.path,
         { get: (id) => f.repository.getRun(id)! },
@@ -334,9 +338,9 @@ describe('temporal QC identity and independent evidence', () => {
         { readOnly: true },
       );
       try {
-        expect(reopened.getCompositionPlan(f.value.compositionPlanId)).toEqual(
-          f.value,
-        );
+        expect(
+          reopened.getCompositionPlan(f.value.compositionPlanId),
+        ).toBeNull();
       } finally {
         reopened.close();
       }

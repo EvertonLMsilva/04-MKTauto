@@ -1,0 +1,420 @@
+import { execFileSync } from 'node:child_process';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
+import { tmpdir } from 'node:os';
+import { fixture } from '../../test/support/temporal-qc-fixture.js';
+import { MediaService } from './application/media.service.js';
+import { MediaPersistence } from './infrastructure/media.persistence.js';
+import { OfflineTemporalValidator } from './infrastructure/offline-temporal.validator.js';
+import { LocalEvidenceStorage } from './infrastructure/local-evidence-storage.js';
+import { runProcess } from './infrastructure/ffmpeg-process.js';
+import { compositionPlanContentHash } from './domain/composition-plan-contracts.js';
+import {
+  operationalQcIdentity,
+  provisionQcReviewer,
+} from '../publishing/application/local-qc-identity.js';
+
+// Isolated contract tests use real per-test credentials and real local test media.
+// Their decisions are not evidence of an operator reviewing a commercial product.
+let f: ReturnType<typeof fixture>,
+  root: string,
+  media: MediaService,
+  asset: any,
+  reference: any,
+  automatic: any,
+  principal: unknown,
+  input: any;
+beforeEach(async () => {
+  f = fixture();
+  root = await mkdtemp(join(tmpdir(), 'assisted-qc-'));
+  const binary = (name: string) =>
+    execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], {
+      encoding: 'utf8',
+      windowsHide: true,
+    })
+      .trim()
+      .split(/\r?\n/)[0];
+  const ffmpegPath = binary('ffmpeg'),
+    ffprobePath = binary('ffprobe');
+  const mediaRoot = join(root, 'media'),
+    evidenceRoot = join(root, 'evidence');
+  vi.stubEnv('FFMPEG_MEDIA_ROOT', mediaRoot);
+  vi.stubEnv('LOCAL_MEDIA_EVIDENCE_ROOT', evidenceRoot);
+  vi.stubEnv('QC_IDENTITIES_FILE', join(root, 'identities.json'));
+  const credentialFile = join(root, 'credential');
+  await provisionQcReviewer(
+    process.env.QC_IDENTITIES_FILE!,
+    'reviewer_integration',
+    credentialFile,
+  );
+  principal = await operationalQcIdentity.authenticate(
+    'Bearer ' + (await readFile(credentialFile, 'utf8')),
+    '127.0.0.1',
+  );
+  const video = join(root, 'subject.mp4'),
+    png = join(root, 'reference.png');
+  await runProcess(
+    ffmpegPath,
+    [
+      '-v',
+      'error',
+      '-nostdin',
+      '-f',
+      'lavfi',
+      '-i',
+      'testsrc2=s=64x64:r=8:d=6',
+      '-an',
+      '-c:v',
+      'libx264',
+      '-threads',
+      '1',
+      '-preset',
+      'ultrafast',
+      '-pix_fmt',
+      'yuv420p',
+      video,
+    ],
+    { timeoutMs: 15000, maxLogBytes: 8192 },
+  );
+  await runProcess(
+    ffmpegPath,
+    ['-v', 'error', '-nostdin', '-i', video, '-frames:v', '1', png],
+    { timeoutMs: 15000, maxLogBytes: 8192 },
+  );
+  const storage = new LocalEvidenceStorage(mediaRoot),
+    hash = storage.put(await readFile(video), 'mp4'),
+    refHash = storage.put(await readFile(png), 'png');
+  const rights = (contentHash: string, externalProviders = ['fal_ai']) => ({
+    usageBasis: 'OWNED',
+    commercialUseAllowed: true,
+    evidence: [
+      {
+        id: 'owned_fixture_right',
+        kind: 'MEDIA_USAGE_RIGHT',
+        sourceRef: 'fixture:locally-generated',
+        recordedAt: '2026-10-17T00:00:00Z',
+        mediaAuthorization: {
+          mediaRef: 'media:sha256_' + contentHash,
+          contentHash,
+          commercialUse: 'GRANTED',
+          processing: 'GRANTED',
+          localProcessing: true,
+          externalProviders,
+        },
+      },
+    ],
+  });
+  media = new MediaService(
+    new MediaPersistence(
+      f.path,
+      { get: (id) => f.repository.getRun(id)! },
+      { getScript: () => f.script as any },
+      null,
+      new OfflineTemporalValidator({
+        ffmpegPath,
+        ffprobePath,
+        mediaRoot,
+        evidenceRoot,
+      }),
+    ),
+  );
+  asset = media.register({
+    ...f.assets[1],
+    mediaAssetId: 'review_video',
+    contentHash: hash,
+    mediaReference: 'media:sha256_' + hash,
+    rights: rights(hash),
+    revision: 2,
+    supersedesMediaAssetId: f.assets[1].mediaAssetId,
+    technicalProperties: {
+      format: 'mp4',
+      widthPixels: 64,
+      heightPixels: 64,
+      durationMilliseconds: 6000,
+    },
+  });
+  reference = media.register({
+    ...f.assets[0],
+    mediaAssetId: 'review_reference',
+    contentHash: refHash,
+    mediaReference: 'media:sha256_' + refHash,
+    rights: rights(refHash),
+    revision: 2,
+    supersedesMediaAssetId: f.assets[0].mediaAssetId,
+    technicalProperties: {
+      format: 'png',
+      widthPixels: 64,
+      heightPixels: 64,
+      durationMilliseconds: null,
+    },
+  });
+  automatic = await media.evaluateTemporalMedia(asset.mediaAssetId);
+  const criterion = {
+    startSeconds: 0,
+    endSeconds: 6,
+    observation:
+      'Contract test attestation on the exact isolated technical fixture.',
+  };
+  input = {
+    schemaVersion: 'human-temporal-review-request/1.0.0',
+    mediaAssetId: asset.mediaAssetId,
+    mediaContentHash: hash,
+    mediaRevision: asset.revision,
+    automaticReportHash: automatic.contentHash,
+    referenceImage: {
+      mediaAssetId: reference.mediaAssetId,
+      contentHash: refHash,
+      revision: reference.revision,
+    },
+    decision: 'APPROVED',
+    criteria: { motion: criterion, continuity: criterion, fidelity: criterion },
+  };
+}, 30000);
+afterEach(async () => {
+  f?.close();
+  if (root) await rm(root, { recursive: true, force: true });
+  vi.unstubAllEnvs();
+});
+it('binds authorized review to automatic evidence and exact media, replays concurrently and unlocks V2 only afterward', async () => {
+  const plan = structuredClone(f.value);
+  plan.segments[0].mediaAssetId = reference.mediaAssetId;
+  plan.segments[0].mediaAssetContentHash = reference.contentHash;
+  plan.segments[1].mediaAssetId = asset.mediaAssetId;
+  plan.segments[1].mediaAssetContentHash = asset.contentHash;
+  plan.segments[1].movementRequirement = 'REAL_MOTION_REQUIRED';
+  plan.contentHash = compositionPlanContentHash(plan);
+  expect(() => media.registerCompositionPlan(plan)).toThrow(
+    'TEMPORAL_QC_REQUIRED',
+  );
+  const [a, b] = (await Promise.all([
+    media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+    media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+  ])) as any[];
+  expect(a).toEqual(b);
+  expect(a.result).toBe('PASS');
+  expect(a.evidence.provenance.parameters.humanReview.actor).toBe(
+    'reviewer_integration',
+  );
+  expect(await media.evaluateTemporalMedia(asset.mediaAssetId)).toEqual(a);
+  expect(media.registerCompositionPlan(plan)).toBeTruthy();
+});
+it('rejects missing authentication, client actor, wrong hash and stale revision', async () => {
+  await expect(
+    media.reviewTemporalMedia(asset.mediaAssetId, input, {
+      id: 'reviewer_integration',
+    }),
+  ).rejects.toThrow();
+  for (const patch of [
+    { actor: 'forged_actor' },
+    { mediaContentHash: 'a'.repeat(64) },
+    { mediaRevision: 99 },
+    { automaticReportHash: 'a'.repeat(64) },
+  ])
+    await expect(
+      media.reviewTemporalMedia(
+        asset.mediaAssetId,
+        { ...input, ...patch },
+        principal,
+      ),
+    ).rejects.toThrow();
+  expect(
+    ((await media.evaluateTemporalMedia(asset.mediaAssetId)) as any).result,
+  ).toBe('NOT_VALIDATED');
+});
+it('records rejection and refuses conflicting reuse, credential revocation and altered files', async () => {
+  const result = (await media.reviewTemporalMedia(
+    asset.mediaAssetId,
+    { ...input, decision: 'REJECTED' },
+    principal,
+  )) as any;
+  expect(result.result).toBe('FAIL');
+  await expect(
+    media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+  ).rejects.toThrow('HUMAN_APPROVAL_DECISION_CONFLICT');
+  const config = JSON.parse(
+    await readFile(process.env.QC_IDENTITIES_FILE!, 'utf8'),
+  );
+  config.identities[0].revoked = true;
+  await writeFile(process.env.QC_IDENTITIES_FILE!, JSON.stringify(config));
+  await expect(media.evaluateTemporalMedia(asset.mediaAssetId)).rejects.toThrow(
+    'HUMAN_APPROVAL_REVIEW_INVALID',
+  );
+});
+
+it('enforces real local credentials at HTTP boundaries and rejects actor forgery and repeated unauthenticated attempts', async () => {
+  const { Test } = await import('@nestjs/testing');
+  const { default: request } = await import('supertest');
+  const { MediaController } = await import('./media.controller.js');
+  const module = await Test.createTestingModule({
+    controllers: [MediaController],
+    providers: [{ provide: MediaService, useValue: media }],
+  }).compile();
+  const app = module.createNestApplication();
+  await app.init();
+  try {
+    const token = await readFile(join(root, 'credential'), 'utf8');
+    await request(app.getHttpServer())
+      .post('/media/assets/' + asset.mediaAssetId + '/temporal-analysis')
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/media/assets/' + asset.mediaAssetId + '/temporal-reviews')
+      .set('Authorization', 'Bearer ' + token)
+      .send({ ...input, actor: 'client_actor' })
+      .expect(400);
+    const response = await request(app.getHttpServer())
+      .post('/media/assets/' + asset.mediaAssetId + '/temporal-analysis')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(201);
+    expect(response.body.result).toBe('NOT_VALIDATED');
+    const reviewed = await request(app.getHttpServer())
+      .post('/media/assets/' + asset.mediaAssetId + '/temporal-reviews')
+      .set('Authorization', 'Bearer ' + token)
+      .send(input)
+      .expect(201);
+    expect(reviewed.body.evidence.provenance.parameters.humanReview.actor).toBe(
+      'reviewer_integration',
+    );
+    expect(reviewed.body.result).toBe('PASS');
+    for (let i = 0; i < 4; i++)
+      await request(app.getHttpServer())
+        .post('/media/assets/' + asset.mediaAssetId + '/temporal-analysis')
+        .expect(401);
+    await request(app.getHttpServer())
+      .post('/media/assets/' + asset.mediaAssetId + '/temporal-analysis')
+      .set('Authorization', 'Bearer ' + token)
+      .expect(429);
+  } finally {
+    await app.close();
+  }
+});
+it('refuses a real static-video technical FAIL even for an authenticated reviewer', async () => {
+  const binary = execFileSync(
+    process.platform === 'win32' ? 'where.exe' : 'which',
+    ['ffmpeg'],
+    { encoding: 'utf8', windowsHide: true },
+  )
+    .trim()
+    .split(/\r?\n/)[0];
+  const path = join(root, 'static.mp4');
+  await runProcess(
+    binary,
+    [
+      '-v',
+      'error',
+      '-f',
+      'lavfi',
+      '-i',
+      'color=blue:s=64x64:r=8:d=6',
+      '-an',
+      '-c:v',
+      'libx264',
+      '-threads',
+      '1',
+      '-preset',
+      'ultrafast',
+      path,
+    ],
+    { timeoutMs: 15000, maxLogBytes: 8192 },
+  );
+  const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
+    await readFile(path),
+    'mp4',
+  );
+  const rights = structuredClone(asset.rights);
+  rights.evidence[0].mediaAuthorization.contentHash = hash;
+  rights.evidence[0].mediaAuthorization.mediaRef = 'media:sha256_' + hash;
+  const still = media.register({
+    ...asset,
+    mediaAssetId: 'static_review',
+    revision: 3,
+    supersedesMediaAssetId: asset.mediaAssetId,
+    contentHash: hash,
+    mediaReference: 'media:sha256_' + hash,
+    rights,
+  });
+  const analysis: any = await media.evaluateTemporalMedia(still.mediaAssetId);
+  expect(analysis.evidence.motion).toBe('FAIL');
+  await expect(
+    media.reviewTemporalMedia(
+      still.mediaAssetId,
+      {
+        ...input,
+        mediaAssetId: still.mediaAssetId,
+        mediaContentHash: hash,
+        mediaRevision: 3,
+        automaticReportHash: analysis.contentHash,
+      },
+      principal,
+    ),
+  ).rejects.toThrow('HUMAN_APPROVAL_QC_FAILED');
+});
+it('does not interpret a public image or a generic commercial assertion as permission for external processing', async () => {
+  const missing = media.register({
+    ...reference,
+    mediaAssetId: 'public_reference',
+    revision: 3,
+    supersedesMediaAssetId: reference.mediaAssetId,
+    rights: { usageBasis: 'OWNED', commercialUseAllowed: true },
+  });
+  await expect(
+    media.reviewTemporalMedia(
+      asset.mediaAssetId,
+      {
+        ...input,
+        referenceImage: {
+          mediaAssetId: missing.mediaAssetId,
+          contentHash: missing.contentHash,
+          revision: missing.revision,
+        },
+      },
+      principal,
+    ),
+  ).rejects.toThrow('MEDIA_PROCESSING_RIGHTS_REQUIRED');
+});
+
+it('invalidates a signed decision if the exact reference bytes change', async () => {
+  await media.reviewTemporalMedia(asset.mediaAssetId, input, principal);
+  await writeFile(
+    new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).path(
+      reference.contentHash,
+      'png',
+    ),
+    'altered fixture bytes',
+  );
+  await expect(media.evaluateTemporalMedia(asset.mediaAssetId)).rejects.toThrow(
+    'LOCAL_FILE_HASH_MISMATCH',
+  );
+});
+
+it('rejects undecodable reference bytes even when their SHA-256 and declared rights match', async () => {
+  const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
+    Buffer.from('not a PNG image'),
+    'png',
+  );
+  const rights = structuredClone(reference.rights);
+  rights.evidence[0].mediaAuthorization.contentHash = hash;
+  rights.evidence[0].mediaAuthorization.mediaRef = 'media:sha256_' + hash;
+  const invalid = media.register({
+    ...reference,
+    mediaAssetId: 'invalid_reference',
+    revision: 3,
+    supersedesMediaAssetId: reference.mediaAssetId,
+    contentHash: hash,
+    mediaReference: 'media:sha256_' + hash,
+    rights,
+  });
+  await expect(
+    media.reviewTemporalMedia(
+      asset.mediaAssetId,
+      {
+        ...input,
+        referenceImage: {
+          mediaAssetId: invalid.mediaAssetId,
+          contentHash: hash,
+          revision: 3,
+        },
+      },
+      principal,
+    ),
+  ).rejects.toThrow();
+});

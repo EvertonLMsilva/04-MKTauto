@@ -19,6 +19,11 @@ export interface MediaRepository {
   getMediaSelection(id: string): SelectionReceipt | null;
 }
 export interface QualityRepository {
+  reviewTemporalMedia?(
+    id: string,
+    input: unknown,
+    principal: unknown,
+  ): Promise<unknown>;
   evaluateTemporalMedia?(id: string): Promise<unknown>;
   close(): void;
   getQualityControlReport(id: string): QualityControlReport | null;

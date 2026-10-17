@@ -1,3 +1,4 @@
+import { provisionQcReviewer } from '../publishing/application/local-qc-identity.js';
 import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -277,17 +278,33 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       network.mockRestore();
     }
   });
-  it('analyses exact real fixture bytes and blocks the full QC gate without inventing product fidelity', async () => {
+  it('selects authorized recorded fixtures without fake generation and preserves the complete QC gate', async () => {
     const e = await service.schedule({
       ...body,
-      videoProduction: { mode: 'OFFLINE' },
+      videoProduction: { mode: 'ASSISTED_LOCAL' },
     });
     await service.tick();
-    const scenes = service
+    const editorial = service
       .history(e.execution_id)
       .find(
-        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
       )!.evidence.result as any;
+    const script = editorial.script;
+    const scenes = {
+      pipelineRunId: script.pipelineRunId,
+      projectId: script.projectId,
+      projectVersion: script.projectVersion,
+      script,
+      scenes: script.visualDirections,
+    };
+    expect(JSON.stringify(service.history(e.execution_id))).toContain(
+      'REAL_VIDEO_MEDIA_REQUIRED',
+    );
+    expect(
+      service
+        .history(e.execution_id)
+        .some((h) => h.evidence.step === 'VIDEO_GENERATION'),
+    ).toBe(false);
     const file = join(dirname(f.database), 'technical-fixture.mp4');
     await runProcess(
       process.env.FFMPEG_PATH!,
@@ -398,6 +415,27 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     expect(JSON.stringify(service.history(e.execution_id))).toContain(
       'COMPLETE_TEMPORAL_QC_REQUIRED',
     );
+    const preparation = service
+      .history(e.execution_id)
+      .find(
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+      )!.evidence.result as any;
+    expect(
+      preparation.scenes.every(
+        (scene: any) =>
+          scene.sceneMediaType === 'RECORDED_VIDEO' &&
+          scene.movementRequirement === 'REAL_MOTION_REQUIRED',
+      ),
+    ).toBe(true);
+    const generation = service
+      .history(e.execution_id)
+      .find(
+        (h) =>
+          h.event_type === 'STEP_DONE' &&
+          h.evidence.step === 'VIDEO_GENERATION',
+      )!.evidence.result as any;
+    expect(generation.generation).toBe('NOT_REQUESTED');
+    expect(generation.materialization).toBe('EXISTING_AUTHORIZED_MEDIA');
     const asset = media.get(ids[0])!;
     const report = validateTemporalReport(
       await media.evaluateTemporalMedia(ids[0]),
@@ -427,7 +465,112 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
     await service.tick();
     expect(await media.evaluateTemporalMedia(ids[0])).toEqual(report);
-  });
+    const staleReview = vi
+      .spyOn(media, 'evaluateTemporalMedia')
+      .mockRejectedValueOnce(
+        Object.assign(new Error('HUMAN_APPROVAL_REVIEW_INVALID'), {
+          code: 'HUMAN_APPROVAL_REVIEW_INVALID',
+        }),
+      );
+    try {
+      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'AUTHENTICATED_MEDIA_REVIEW_REQUIRED',
+      );
+    } finally {
+      staleReview.mockRestore();
+    }
+    const configFile = join(dirname(f.database), 'qc-identities.json'),
+      secretFile = join(dirname(f.database), 'individual-reviewer');
+    await provisionQcReviewer(configFile, 'qc_operator_test', secretFile);
+    vi.stubEnv('QC_IDENTITIES_FILE', configFile);
+    const credential = readFileSync(secretFile, 'utf8');
+    const png = join(dirname(f.database), 'technical-reference.png');
+    await runProcess(
+      process.env.FFMPEG_PATH!,
+      ['-v', 'error', '-nostdin', '-i', file, '-frames:v', '1', png],
+      { timeoutMs: 15000, maxLogBytes: 8192 },
+    );
+    const refHash = new LocalEvidenceStorage(
+      process.env.FFMPEG_MEDIA_ROOT!,
+    ).put(readFileSync(png), 'png');
+    const referenceRights = structuredClone(asset.rights);
+    referenceRights.evidence![0].id = 'reference_fixture_right';
+    referenceRights.evidence![0].mediaAuthorization = {
+      mediaRef: 'media:sha256_' + refHash,
+      contentHash: refHash,
+      commercialUse: 'GRANTED',
+      processing: 'GRANTED',
+      localProcessing: true,
+      externalProviders: ['fal_ai'],
+    };
+    const reference = media.register({
+      ...asset,
+      mediaAssetId: 'assisted_reference',
+      revision: 1,
+      supersedesMediaAssetId: null,
+      assetType: 'IMAGE',
+      technicalProperties: {
+        format: 'png',
+        widthPixels: 64,
+        heightPixels: 64,
+        durationMilliseconds: null,
+      },
+      contentHash: refHash,
+      mediaReference: 'media:sha256_' + refHash,
+      rights: referenceRights,
+    });
+    for (const id of ids) {
+      const video = media.get(id)!,
+        auto: any = await media.evaluateTemporalMedia(id);
+      const criterion = {
+        startSeconds: 0,
+        endSeconds: 2,
+        observation:
+          'Isolated contract attestation for owned technical frames, without a commercial claim.',
+      };
+      const reviewed = await request(app.getHttpServer())
+        .post('/media/assets/' + id + '/temporal-reviews')
+        .set('Authorization', 'Bearer ' + credential)
+        .send({
+          schemaVersion: 'human-temporal-review-request/1.0.0',
+          mediaAssetId: id,
+          mediaContentHash: video.contentHash,
+          mediaRevision: video.revision,
+          automaticReportHash: auto.contentHash,
+          referenceImage: {
+            mediaAssetId: reference.mediaAssetId,
+            contentHash: refHash,
+            revision: reference.revision,
+          },
+          decision: 'APPROVED',
+          criteria: {
+            motion: criterion,
+            continuity: criterion,
+            fidelity: criterion,
+          },
+        })
+        .expect(201);
+      expect(
+        reviewed.body.evidence.provenance.parameters.humanReview.actor,
+      ).toBe('qc_operator_test');
+    }
+    await service.resume(e.execution_id);
+    await service.tick();
+    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    const finalHistory = service.history(e.execution_id);
+    expect(
+      finalHistory.some(
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'MEDIA_QC',
+      ),
+    ).toBe(true);
+    expect(JSON.stringify(finalHistory)).toContain('AUDIO_REQUIRED');
+    expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
+      false,
+    );
+  }, 30000);
   it('recovers an explicitly resumed failed simulation without materialization', async () => {
     const generation = app.get(VideoGenerationService);
     const failing = new VideoGenerationService(

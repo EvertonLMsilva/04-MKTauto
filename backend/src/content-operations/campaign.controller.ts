@@ -1,3 +1,9 @@
+import { Req, UseGuards } from '@nestjs/common';
+import {
+  LocalQcGuard,
+  QC_REVIEWER_CONTEXT,
+  serverApprovalRequest,
+} from '../publishing/application/local-qc.guard.js';
 import {
   Body,
   Controller,
@@ -49,10 +55,14 @@ export class CampaignController {
   @Post(':id/cancel') cancel(@Param('id') id: string) {
     return this.respond(() => this.campaigns.cancel(id));
   }
-  @Post(':id/approvals') approve(
+  @Post(':id/approvals')
+  @UseGuards(LocalQcGuard)
+  approve(
     @Param('id') id: string,
     @Body() value: unknown,
+    @Req() request: any,
   ) {
-    return this.respond(() => this.campaigns.approve(id, value));
+    const input = serverApprovalRequest(value, request[QC_REVIEWER_CONTEXT]);
+    return this.respond(() => this.campaigns.approve(id, input));
   }
 }
