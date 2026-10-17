@@ -28,6 +28,7 @@ import type {
 } from '../application/financial-readers.port.js';
 import type { CostLedgerRepository } from './cost-ledger.repository.js';
 import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
+import { validateFirstFalRiskProof } from '../domain/first-fal-risk.js';
 const GLOBAL_DEFAULTS = Object.freeze({
   dailyUsd: '1',
   monthlyUsd: '20',
@@ -303,8 +304,15 @@ export class FinanceGate {
         this.getTts(proof.sourceTtsId)?.state === 'SUBMITTING';
       if (proof.sourceTtsId && !manualTts)
         fail('GLOBAL_PRICE_UNPROVEN', 'sourceTtsId');
+      const firstFalRisk = proof.kind === 'FIRST_FAL_RISK_ACCEPTED';
+      if (firstFalRisk) {
+        if (authorizationMode !== 'FIRST_FAL_RISK_ACCEPTED')
+          fail('GLOBAL_PRICE_UNPROVEN', 'authorizationMode');
+        validateFirstFalRiskProof(proof, now);
+      }
       if (
         !manualTts &&
+        !firstFalRisk &&
         (proof.kind !== 'ENFORCED_MAXIMUM' ||
           proof.includesAllCharges !== true ||
           proof.currency !== 'USD' ||
@@ -315,7 +323,11 @@ export class FinanceGate {
         fail('GLOBAL_PRICE_UNPROVEN', 'ceiling');
       let amount;
       try {
-        amount = usdAmount(usdUnits(proof.maximumAmount));
+        amount = usdAmount(
+          usdUnits(
+            firstFalRisk ? proof.reservationAmount : proof.maximumAmount,
+          ),
+        );
       } catch {
         fail('GLOBAL_PRICE_UNPROVEN', 'maximumAmount');
       }

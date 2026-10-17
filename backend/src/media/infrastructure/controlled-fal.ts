@@ -13,6 +13,10 @@ import type {
   FalTransport,
 } from '../application/fal-acquisition.port.js';
 import { FalQueueClient } from './fal-queue.js';
+import {
+  validateFirstFalRisk,
+  firstFalRiskProof,
+} from '../../finance/domain/first-fal-risk.js';
 
 export const CONTROLLED_FAL_OPERATION = 'p77_first_live_i2v';
 export const CONTROLLED_FAL_IMAGE_HASH =
@@ -27,6 +31,23 @@ const decimal = (value: bigint) => {
   const raw = value.toString().padStart(19, '0');
   return `${raw.slice(0, -18)}.${raw.slice(-18)}`.replace(/\.?0+$/, '');
 };
+
+export function validateControlledRisk(plan: any) {
+  const risk = validateFirstFalRisk(plan.riskAuthorization);
+  validateFalVideoModel(plan.quote?.model);
+  if (
+    risk.imageHash !== plan.imageHash ||
+    risk.mediaRef !== plan.mediaRef ||
+    risk.requestHash !== plan.requestHash ||
+    risk.preparationHash !== plan.preparationHash ||
+    risk.operationId !== plan.operationId ||
+    risk.referenceBudgetUsd !== plan.maximumUsd ||
+    !plan.authorizedReviewers?.includes(risk.authorizedIdentity) ||
+    plan.quote?.webpSupported !== true
+  )
+    fail('FIRST_FAL_RISK_AUTHORIZATION_INVALID');
+  return risk;
+}
 
 // Trusted operator configuration, never an HTTP price assertion. A public list price
 // alone does not prove the enforceable maximum required by the existing Finance gate.
@@ -73,11 +94,20 @@ export function singleSubmissionQueue(
   return {
     async submit(parameters, options) {
       beforeSubmit();
-      finance.reserveGlobal({
-        ...proof,
-        operationId: CONTROLLED_FAL_OPERATION,
-        provider: 'fal_ai',
-      });
+      finance.reserveGlobal(
+        {
+          ...proof,
+          operationId: CONTROLLED_FAL_OPERATION,
+          provider: 'fal_ai',
+        },
+        undefined,
+        {
+          authorizationMode:
+            proof.kind === 'FIRST_FAL_RISK_ACCEPTED'
+              ? 'FIRST_FAL_RISK_ACCEPTED'
+              : 'AUTOMATIC',
+        },
+      );
       finance.dispatchGlobal(
         CONTROLLED_FAL_OPERATION,
         new Date().toISOString(),
@@ -148,7 +178,10 @@ export function createFalControl(
       const blockers: string[] = ['OPERATIONAL_CONFIRMATION_REQUIRED'];
       if (plan.enabled !== true) blockers.push('CONTROLLED_FAL_DISABLED');
       try {
-        validateControlledQuote(plan.quote);
+        if (plan.riskAuthorization) {
+          validateControlledRisk(plan);
+          blockers.push('FINANCIAL_RISK_CONFIRMATION_REQUIRED');
+        } else validateControlledQuote(plan.quote);
       } catch {
         blockers.push('CONTROLLED_FAL_PRICE_UNPROVEN');
       }
@@ -193,7 +226,21 @@ export function createFalControl(
         plan.preparationHash !== input.preparation.contentHash
       )
         fail('CONTROLLED_FAL_REQUEST_BINDING_REQUIRED');
-      const estimate = validateControlledQuote(plan.quote);
+      const risk = plan.riskAuthorization ? validateControlledRisk(plan) : null;
+      if (
+        risk &&
+        (principal.id !== risk.authorizedIdentity ||
+          confirmation.riskAcceptance?.accepted !== true ||
+          confirmation.riskAcceptance?.riskHash !== affiliateHash(risk))
+      )
+        fail('FIRST_FAL_RISK_CONFIRMATION_REQUIRED');
+      const estimate = risk
+        ? {
+            amount: risk.nominalUsd,
+            currency: 'USD',
+            source: 'operator:accepted-residual-risk',
+          }
+        : validateControlledQuote(plan.quote);
       if (!env.FAL_KEY) fail('PROVIDER_CREDENTIAL_REQUIRED');
       const bytes = image(plan);
       const configuration = {
@@ -214,27 +261,37 @@ export function createFalControl(
         modelHash: affiliateHash(FAL_VIDEO_MODEL),
         budgetHash: affiliateHash(configuration.budget),
       };
-      const proof = {
-        kind: 'ENFORCED_MAXIMUM',
-        includesAllCharges: true,
-        currency: 'USD',
-        maximumAmount: estimate.amount,
-        evidenceReference: estimate.source,
-        expiresAt: plan.quote.expiresAt,
-        requestHash: affiliateHash({
-          planHash: affiliateHash(plan),
-          requestHash: input.request.contentHash,
-          preparationHash: input.preparation.contentHash,
-          actor: principal.id,
-        }),
-        pipelineRunId: input.preparation.pipelineRunId,
-        actor: principal.id,
-        confirmation: {
-          statement: confirmation.statement,
-          planHash: confirmation.planHash,
-        },
-        imageHash: plan.imageHash,
-      };
+      const proof = risk
+        ? {
+            ...firstFalRiskProof(
+              risk,
+              principal.id,
+              affiliateHash(plan),
+              confirmation.statement,
+            ),
+            pipelineRunId: input.preparation.pipelineRunId,
+          }
+        : {
+            kind: 'ENFORCED_MAXIMUM',
+            includesAllCharges: true,
+            currency: 'USD',
+            maximumAmount: estimate.amount,
+            evidenceReference: estimate.source,
+            expiresAt: plan.quote.expiresAt,
+            requestHash: affiliateHash({
+              planHash: affiliateHash(plan),
+              requestHash: input.request.contentHash,
+              preparationHash: input.preparation.contentHash,
+              actor: principal.id,
+            }),
+            pipelineRunId: input.preparation.pipelineRunId,
+            actor: principal.id,
+            confirmation: {
+              statement: confirmation.statement,
+              planHash: confirmation.planHash,
+            },
+            imageHash: plan.imageHash,
+          };
       return {
         input: authorizedInput,
         configuration,

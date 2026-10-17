@@ -2,6 +2,8 @@ import {
   validateControlledQuote,
   singleSubmissionQueue,
   createFalControl,
+  validateControlledRisk,
+  CONTROLLED_FAL_IMAGE_HASH,
 } from './controlled-fal.js';
 import { FAL_VIDEO_MODEL } from '../domain/fal-model.js';
 import { mkdtempSync, rmSync, writeFileSync, realpathSync } from 'node:fs';
@@ -199,6 +201,82 @@ describe('controlled fal operator and private plan gates', () => {
       'CONTROLLED_FAL_IMAGE_HASH_MISMATCH',
     );
     expect(queue.submit).not.toHaveBeenCalled();
+  });
+  it('requires authenticated, hash-bound risk acceptance independently of ordinary consent', async () => {
+    plan.imageHash = CONTROLLED_FAL_IMAGE_HASH;
+    plan.quote = {
+      ...quote(),
+      maximumEnforced: false,
+      includesAllCharges: false,
+      additionalChargesUsd: null,
+    };
+    plan.riskAuthorization = {
+      schemaVersion: 'fal-first-live-risk/1.0.0',
+      operationId: plan.operationId,
+      model: FAL_VIDEO_MODEL,
+      mediaRef: plan.mediaRef,
+      imageHash: plan.imageHash,
+      requestHash: plan.requestHash,
+      preparationHash: plan.preparationHash,
+      authorizedIdentity: 'individual',
+      referenceBudgetUsd: '0.50',
+      nominalUsd: '0.13',
+      maximumCostGuaranteed: false,
+      residualOverrunAccepted: true,
+      maxSubmissions: 1,
+      retries: 0,
+      paidFallback: false,
+      publicationAllowed: false,
+      expiresAt: '2027-01-01T00:00:00Z',
+    };
+    save();
+    expect(validateControlledRisk(plan)).toEqual(plan.riskAuthorization);
+    for (const field of [
+      'requestHash',
+      'preparationHash',
+      'mediaRef',
+      'imageHash',
+    ])
+      expect(() =>
+        validateControlledRisk({ ...plan, [field]: 'changed' }),
+      ).toThrow();
+    for (const riskAcceptance of [
+      undefined,
+      { accepted: true, riskHash: 'd'.repeat(64) },
+      { accepted: false, riskHash: affiliateHash(plan.riskAuthorization) },
+    ])
+      await expect(
+        createFalControl(env, finance, transport()).authorize(input, {
+          principal,
+          confirmation: { ...confirmation(), riskAcceptance },
+        }),
+      ).rejects.toThrow('FIRST_FAL_RISK_CONFIRMATION_REQUIRED');
+    await expect(
+      createFalControl(env, finance, transport()).authorize(input, {
+        principal: { id: 'individual' },
+        confirmation: {
+          ...confirmation(),
+          riskAcceptance: {
+            accepted: true,
+            riskHash: affiliateHash(plan.riskAuthorization),
+          },
+        },
+      }),
+    ).rejects.toThrow();
+    // Correct authenticated consent reaches physical integrity verification; a
+    // synthetic fixture can never stand in for the authorized product bytes.
+    await expect(
+      createFalControl(env, finance, transport()).authorize(input, {
+        principal,
+        confirmation: {
+          ...confirmation(),
+          riskAcceptance: {
+            accepted: true,
+            riskHash: affiliateHash(plan.riskAuthorization),
+          },
+        },
+      }),
+    ).rejects.toThrow('CONTROLLED_FAL_IMAGE_HASH_MISMATCH');
   });
 });
 describe('controlled fal financial boundary', () => {
