@@ -1,3 +1,5 @@
+import { VideoProductionPreparationService } from '../media/application/video-production-preparation.service.js';
+import { VideoGenerationService } from '../media/application/video-generation.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { Module } from '@nestjs/common';
 import { ContentOperationsModule } from './content-operations.module.js';
@@ -64,6 +66,8 @@ import { CampaignController } from './campaign.controller.js';
         CONTENT_OPERATIONS,
         PublishingService,
         InstagramPublicationService,
+        VideoProductionPreparationService,
+        VideoGenerationService,
       ],
       useFactory: (
         a: AffiliateService,
@@ -78,8 +82,14 @@ import { CampaignController } from './campaign.controller.js';
         o: ContentOperationsService,
         h: PublishingService,
         instagram: InstagramPublicationService,
+        preparations: VideoProductionPreparationService,
+        generation: VideoGenerationService,
       ) =>
-        new NativeCampaignWorkflow(a, b, r, e, p, c, l, m, f, o, h, instagram),
+        new NativeCampaignWorkflow(a, b, r, e, p, c, l, m, f, o, h, instagram, {
+          preparations,
+          generation,
+          media: m,
+        }),
     },
     {
       provide: CampaignAdministration,

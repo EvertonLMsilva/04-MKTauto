@@ -113,6 +113,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         alignment: 'ALIGNMENT',
         composition: 'COMPOSITION',
         publication: 'PUBLICATION',
+        sceneMediaAssetIds: 'MEDIA_QC',
       };
       if (
         Object.keys(patch).some(
