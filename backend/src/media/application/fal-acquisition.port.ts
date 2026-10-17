@@ -1,5 +1,21 @@
 import type { MediaAsset, AcquisitionRequest } from '../domain/media.types.js';
 import type { FalFinanceService } from '../../finance/application/fal-finance.service.js';
+import type { VideoProductionPreparationService } from './video-production-preparation.service.js';
+import type { VideoProductionPreparationV1 } from '../domain/video-production-preparation.js';
+export interface PreparedFalRequest {
+  preparation: VideoProductionPreparationV1;
+  scenePosition: number;
+  request: AcquisitionRequest;
+  authorization: {
+    authorized: boolean;
+    actorId: string;
+    statement: string;
+    preparationHash: string;
+    requestHash: string;
+    modelHash: string;
+    budgetHash: string;
+  };
+}
 
 export interface FalTransport {
   submit(parameters: unknown, options?: { signal?: AbortSignal }): Promise<any>;
@@ -34,6 +50,7 @@ export interface FalMediaSession {
   close(): void;
 }
 export interface FalAcquisitionDependencies {
+  preparations?: Pick<VideoProductionPreparationService, 'prepare'>;
   store: { open(): FalMediaSession };
   finance: FalFinanceService;
   briefings: { resolveRunBriefing(id: string): any };
@@ -42,5 +59,9 @@ export interface FalAcquisitionDependencies {
   resolveImage(
     ref: string,
     options?: { signal?: AbortSignal },
-  ): Promise<{ url: string; contentHash: string }>;
+  ): Promise<{
+    url: string;
+    contentHash: string;
+    provenance?: { evidenceRef: string; sourceRef: string };
+  }>;
 }

@@ -4,7 +4,11 @@ import {
 } from '../domain/media-acquisition-contracts.js';
 import { falFailure } from '../../finance/domain/fal-errors.js';
 
-import { FAL_VIDEO_ENDPOINT } from '../domain/fal-model.js';
+import {
+  FAL_VIDEO_ENDPOINT,
+  FAL_VIDEO_MODEL,
+  validateFalVideoModel,
+} from '../domain/fal-model.js';
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
 export class FalVideoAdapter {
   repository: any;
@@ -14,10 +18,11 @@ export class FalVideoAdapter {
   affiliate: any;
   queue: any;
   storage: any;
+  prepared: any;
   constructor(
     repository: any,
     config: any,
-    { queue, storage, resolveImage, jobs, briefings }: any = {},
+    { queue, storage, resolveImage, jobs, briefings, prepared }: any = {},
   ) {
     if (
       config?.rights?.usageBasis !== 'PROVIDER_TERMS' ||
@@ -38,6 +43,7 @@ export class FalVideoAdapter {
     if (!queue || !storage || !jobs || !briefings)
       throw falFailure('PROVIDER_CONFIGURATION_INVALID');
     this.storage = storage;
+    this.prepared = prepared && structuredClone(prepared);
   }
   getGenerationState(acquisitionRequestId: any) {
     return this.jobs.getByAcquisitionRequest(acquisitionRequestId);
@@ -48,16 +54,78 @@ export class FalVideoAdapter {
     );
     const job = alias && this.jobs.get(alias.generation_key);
     const briefing = this.affiliate.resolveRunBriefing(asset.pipelineRunId);
+    const current = this.prepared
+      ? await this.resolveAuthorizedImage(
+          this.repository.getScript(asset.scriptId),
+          signal,
+        )
+      : null;
     if (
       !job?.output ||
       alias.request_hash !== request.contentHash ||
       job.output.contentHash !== asset.contentHash ||
       job.basis.briefingHash !== briefing?.contentHash ||
-      job.basis.mediaRef !== this.config.mediaRef
+      job.basis.mediaRef !== this.config.mediaRef ||
+      (this.prepared &&
+        (job.basis.preparation?.contentHash !==
+          this.prepared.preparation.contentHash ||
+          job.basis.imageHash !== current?.image.contentHash))
     )
       throw falFailure('PROVIDER_REQUEST_CONFLICT');
     if (!(await this.storage.verify(job.output, { signal })))
       throw falFailure('PROVIDER_ARTIFACT_UNAVAILABLE');
+  }
+  private async resolveAuthorizedImage(script: any, signal?: AbortSignal) {
+    const briefing = this.affiliate.resolveRunBriefing(script.pipelineRunId);
+    if (!briefing || !briefing.mediaRefs.includes(this.config.mediaRef))
+      throw falFailure('PROVIDER_IMAGE_NOT_AUTHORIZED');
+    if (
+      this.prepared &&
+      (this.prepared.preparation.script.contentHash !== script.contentHash ||
+        this.prepared.preparation.script.revision !== script.revision ||
+        this.prepared.preparation.commercial.briefingHash !==
+          briefing.contentHash ||
+        !this.prepared.preparation.commercial.authorizedMediaRefs.includes(
+          this.config.mediaRef,
+        ))
+    )
+      throw falFailure('PROVIDER_PREPARATION_CONFLICT');
+    if (signal?.aborted) throw falFailure('PROVIDER_CANCELLED');
+    const image = await this.resolveImage(this.config.mediaRef, { signal });
+    let url;
+    try {
+      url = new URL(image?.url);
+    } catch {
+      throw falFailure('PROVIDER_IMAGE_INVALID');
+    }
+    if (
+      url.protocol !== 'https:' ||
+      url.username ||
+      url.password ||
+      url.hash ||
+      typeof image.contentHash !== 'string' ||
+      image.contentHash.length !== 64 ||
+      !/^[a-f0-9]{64}$/.test(image.contentHash)
+    )
+      throw falFailure('PROVIDER_IMAGE_INVALID');
+    assertMediaProcessingRights(
+      briefing.evidence,
+      { mediaRef: this.config.mediaRef, contentHash: image.contentHash },
+      'fal_ai',
+    );
+    if (
+      this.prepared &&
+      !briefing.evidence.some(
+        (e: any) =>
+          e.kind === 'MEDIA_USAGE_RIGHT' &&
+          e.id === image.provenance?.evidenceRef &&
+          e.sourceRef === image.provenance?.sourceRef &&
+          e.mediaAuthorization?.mediaRef === this.config.mediaRef &&
+          e.mediaAuthorization?.contentHash === image.contentHash,
+      )
+    )
+      throw falFailure('PROVIDER_IMAGE_PROVENANCE_REQUIRED');
+    return { briefing, image, url };
   }
   findReusableAsset(request: any, output: any) {
     return (
@@ -92,39 +160,17 @@ export class FalVideoAdapter {
       input.visualDirection.description !== direction.description
     )
       throw falFailure('PROVIDER_INPUT_MISMATCH');
-    const briefing = this.affiliate.resolveRunBriefing(script.pipelineRunId);
-    if (!briefing || !briefing.mediaRefs.includes(this.config.mediaRef))
-      throw falFailure('PROVIDER_IMAGE_NOT_AUTHORIZED');
-    if (signal?.aborted) throw falFailure('PROVIDER_CANCELLED');
-    const image = await this.resolveImage(this.config.mediaRef, { signal });
-    let url;
-    try {
-      url = new URL(image?.url);
-    } catch {
-      throw falFailure('PROVIDER_IMAGE_INVALID');
-    }
-    if (
-      url.protocol !== 'https:' ||
-      url.username ||
-      url.password ||
-      !/^[a-f0-9]{64}$/.test(image.contentHash)
-    )
-      throw falFailure('PROVIDER_IMAGE_INVALID');
-    assertMediaProcessingRights(
-      briefing.evidence,
-      {
-        mediaRef: this.config.mediaRef,
-        contentHash: image.contentHash,
-      },
-      'fal_ai',
+    const { briefing, image, url } = await this.resolveAuthorizedImage(
+      script,
+      signal,
     );
+    const { endpoint: _endpoint, ...technical } = this.prepared
+      ? validateFalVideoModel(this.config.model)
+      : FAL_VIDEO_MODEL;
     const parameters = {
       prompt: direction.description,
       image_url: url.href,
-      duration: 5,
-      resolution: '768P',
-      prompt_expansion_mode: 'disabled',
-      enable_safety_checker: true,
+      ...technical,
     };
     // URL is transport only; stable image identity is the authorized reference plus physical hash.
     const basis = {
@@ -138,6 +184,8 @@ export class FalVideoAdapter {
       endpoint: FAL_VIDEO_ENDPOINT,
       parameters: { ...parameters, image_url: this.config.mediaRef },
       rights: this.config.rights,
+      // Request-specific consent is checked at entry. Keep content deduplication across request aliases.
+      ...(this.prepared ? { preparation: this.prepared.preparation } : {}),
     };
     let job = this.jobs.reserve({
       basis,

@@ -1,12 +1,10 @@
-import {
-  VIDEO_PRODUCTION_PREPARATION_VERSION,
-  validateVideoPreparationRequest,
-} from '../domain/video-production-preparation.js';
+import { requireGeneratedVideoScene } from '../domain/video-production-preparation.js';
 import type { VideoProductionPreparationV1 } from '../domain/video-production-preparation.js';
-import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { stageIdentifier } from '../../content-operations/domain/stage-contracts.js';
-import { FAL_VIDEO_ENDPOINT } from '../domain/fal-model.js';
+import { FAL_VIDEO_MODEL } from '../domain/fal-model.js';
 import type { FakeVideoGenerationPort } from './fake-video-generation.port.js';
+import type { FalAcquisitionService } from './fal-acquisition.service.js';
+import type { PreparedFalRequest } from './fal-acquisition.port.js';
 
 export interface VideoGenerationRequest {
   operationId: string;
@@ -18,45 +16,31 @@ export interface VideoGenerationRequest {
  * A fake completion authorizes neither generation, acquisition nor composition.
  */
 export class VideoGenerationService {
-  constructor(private readonly provider: FakeVideoGenerationPort) {}
+  constructor(
+    private readonly provider: FakeVideoGenerationPort,
+    private readonly acquisition?: Pick<
+      FalAcquisitionService,
+      'acquirePrepared'
+    >,
+  ) {}
+  async generatePrepared(
+    input: PreparedFalRequest,
+    config: unknown,
+    options: { signal?: AbortSignal } = {},
+  ) {
+    if (!this.acquisition) throw new Error('FAL_LIVE_DISABLED');
+    return this.acquisition.acquirePrepared(input, config, options);
+  }
   async submit(input: VideoGenerationRequest) {
     stageIdentifier(input.operationId, 'operationId', 200);
     const preparation = input.preparation;
-    const { preparationId, contentHash, ...body } = preparation;
-    if (
-      preparation.schemaVersion !== VIDEO_PRODUCTION_PREPARATION_VERSION ||
-      affiliateHash(body) !== contentHash ||
-      preparationId !== `video_preparation:${contentHash}`
-    )
-      throw new Error('VIDEO_GENERATION_PREPARATION_CONFLICT');
-    validateVideoPreparationRequest({
-      scriptId: preparation.script.scriptId,
-      scriptContentHash: preparation.script.contentHash,
-      scriptRevision: preparation.script.revision,
-      scenes: preparation.scenes.map((s) => ({
-        visualDirectionPosition: s.position,
-        sceneMediaType: s.sceneMediaType,
-        movementRequirement: s.movementRequirement,
-      })),
-    });
-    const scene = preparation.scenes.find(
-      (s) => s.position === input.scenePosition,
-    );
-    if (!scene) throw new Error('VIDEO_GENERATION_SCENE_NOT_FOUND');
-    if (scene.sceneMediaType === 'RECORDED_VIDEO')
-      throw new Error('RECORDED_VIDEO_ACQUISITION_REQUIRED');
-    if (scene.sceneMediaType !== 'GENERATED_VIDEO')
-      throw new Error('REAL_MOTION_INTENT_REQUIRED');
+    const scene = requireGeneratedVideoScene(preparation, input.scenePosition);
     return this.provider.submit({
       operationId: input.operationId,
       preparation,
       sceneId: scene.sceneId,
       prompt: scene.visualDirection.description,
-      endpoint: FAL_VIDEO_ENDPOINT,
-      duration: 5,
-      resolution: '768P',
-      prompt_expansion_mode: 'disabled',
-      enable_safety_checker: true,
+      ...FAL_VIDEO_MODEL,
     });
   }
   poll(operationId: string) {
