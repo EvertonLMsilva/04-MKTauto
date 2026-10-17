@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { createTemporalValidator } from './infrastructure/offline-temporal.validator.js';
 import { ContentModule } from '../content/content.module.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import { AffiliateService } from '../affiliate/application/affiliate.service.js';
@@ -139,8 +140,21 @@ import {
         path: string | null,
         operations: ContentOperationsService,
         content: ContentService,
-      ) => new MediaPersistence(path, operations, content),
-      inject: [MEDIA_DATABASE, CONTENT_OPERATIONS, ContentService],
+        runner: ProcessRunner,
+      ) =>
+        new MediaPersistence(
+          path,
+          operations,
+          content,
+          undefined,
+          createTemporalValidator(process.env, runner),
+        ),
+      inject: [
+        MEDIA_DATABASE,
+        CONTENT_OPERATIONS,
+        ContentService,
+        FFMPEG_PROCESS_RUNNER,
+      ],
     },
     {
       provide: MediaService,
