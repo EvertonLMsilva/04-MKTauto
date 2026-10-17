@@ -1,3 +1,13 @@
+import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
+import { MediaService } from '../media/application/media.service.js';
+import { VideoGenerationService } from '../media/application/video-generation.service.js';
+import { FakeVideoGenerationProvider } from '../media/infrastructure/fake-video-generation.provider.js';
+import { LocalEvidenceStorage } from '../media/infrastructure/local-evidence-storage.js';
+import { runProcess } from '../media/infrastructure/ffmpeg-process.js';
 import { CampaignRepository } from './infrastructure/campaign.repository.js';
 import { CampaignOrchestrator } from './application/campaign-orchestrator.js';
 import { CampaignError } from './domain/campaign.js';
@@ -42,6 +52,62 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     const db = new DatabaseSync(f.database);
     provisionSchema(db);
     db.close();
+    const catalog = new SqliteAffiliatePersistence(f.database).open();
+    try {
+      catalog.registerCampaign(
+        {
+          ...catalog.getCampaign('camp_001', 1)!,
+          revision: 2,
+          affiliateUrl: 'https://s.shopee.com.br/offline',
+        },
+        'campaign_shopee',
+        true,
+      );
+      catalog.associateCampaignSource(
+        {
+          schemaVersion: 'affiliate-campaign-source/1.0.0',
+          sourceId: 'p76_shopee',
+          revision: 1,
+          source: 'SHOPEE_AFFILIATE_API',
+          offer: {
+            offerId: 'fixture-offer',
+            productId: 'fixture-product',
+            shopId: null,
+            provenance: {
+              source: 'FAKE',
+              fixtureVersion: 'p76/offline/1',
+              observedAt: null,
+            },
+          },
+          campaignId: 'camp_001',
+          campaignRevision: 2,
+          productId: 'prod_001',
+          productRevision: 1,
+          briefingId: 'brief_shopee',
+          affiliateUrl: 'https://s.shopee.com.br/offline',
+        },
+        'source_shopee',
+        ['authorized-image-001'],
+      );
+    } finally {
+      catalog.close();
+    }
+    const binary = (name: string) =>
+      execFileSync(
+        process.platform === 'win32' ? 'where.exe' : 'which',
+        [name],
+        { encoding: 'utf8', windowsHide: true },
+      )
+        .trim()
+        .split(/\r?\n/)[0];
+    vi.stubEnv('TEMPORAL_QC_MODE', 'offline');
+    vi.stubEnv('FFMPEG_PATH', binary('ffmpeg'));
+    vi.stubEnv('FFPROBE_PATH', binary('ffprobe'));
+    vi.stubEnv('FFMPEG_MEDIA_ROOT', join(dirname(f.database), 'media'));
+    vi.stubEnv(
+      'LOCAL_MEDIA_EVIDENCE_ROOT',
+      join(dirname(f.database), 'evidence'),
+    );
     let builder = Test.createTestingModule({
       imports: [CampaignOrchestrationModule],
     });
@@ -66,10 +132,10 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     service = module.get(CampaignAdministration);
     body = {
       campaignId: 'camp_001',
-      campaignRevision: 1,
+      campaignRevision: 2,
       scheduledAt: '2026-10-14T12:00:00Z',
       runId: 'run_001',
-      briefingId: 'brief_001',
+      briefingId: 'brief_shopee',
       researchShortlistId: f.shortlist.artifactId,
       generationRequestId: 'p4_editorial_001',
       mode: 'LOCAL_VALIDATION',
@@ -78,6 +144,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
   afterEach(async () => {
     await app.close();
     f.cleanup();
+    vi.unstubAllEnvs();
   });
   const base = '/content-operations/campaign-executions';
   it('schedules, replays, persists real native editorial checkpoints and waits for audio', async () => {
@@ -141,6 +208,295 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       .post(base)
       .send({ ...body, paid: true })
       .expect(400);
+  });
+  it('runs native editorial, motion scene preparation and simulation, then waits for real media without spending', async () => {
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('NETWORK_FORBIDDEN'));
+    try {
+      const input = { ...body, videoProduction: { mode: 'OFFLINE' } };
+      const e = await service.schedule(input);
+      expect((await service.schedule(input)).execution_id).toBe(e.execution_id);
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      const history = service.history(e.execution_id);
+      const scenes = history.find(
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+      )!.evidence.result as any;
+      expect(scenes.shopeeSource.offer.provenance.source).toBe('FAKE');
+      expect(scenes.commercial.productId).toBe('prod_001');
+      expect(scenes.review.status).toBe('REQUIRED');
+      expect(scenes.scenes.length).toBeGreaterThan(0);
+      expect(
+        scenes.scenes.every(
+          (s: any) =>
+            s.sceneMediaType === 'GENERATED_VIDEO' &&
+            s.movementRequirement === 'REAL_MOTION_REQUIRED',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(history)).toContain('REAL_VIDEO_MEDIA_REQUIRED');
+      expect(JSON.stringify(history)).toContain('NOT_MATERIALIZED');
+      expect(history.some((h) => h.evidence.step === 'AUDIO')).toBe(false);
+      for (const step of ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC']) {
+        const started = history.find(
+          (event) =>
+            event.event_type === 'STEP_STARTED' && event.evidence.step === step,
+        )!;
+        expect(
+          await app.get(NativeCampaignWorkflow).reconcile(
+            service.get(e.execution_id),
+            history.filter((event) => event.sequence <= started.sequence),
+          ),
+        ).toEqual({
+          verified: true,
+          reason: 'OFFLINE_VIDEO_STAGE_REPLAY_SAFE',
+        });
+      }
+      expect(network).not.toHaveBeenCalled();
+      const db = new DatabaseSync(f.database, { readOnly: true });
+      try {
+        expect(db.prepare('SELECT COUNT(*) n FROM cost_events').get()?.n).toBe(
+          0,
+        );
+      } finally {
+        db.close();
+      }
+      await service.resume(e.execution_id);
+      await service.tick();
+      expect(
+        service
+          .history(e.execution_id)
+          .filter(
+            (h) =>
+              h.event_type === 'STEP_DONE' &&
+              h.evidence.step === 'VIDEO_GENERATION',
+          ),
+      ).toHaveLength(1);
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    } finally {
+      network.mockRestore();
+    }
+  });
+  it('analyses exact real fixture bytes and blocks the full QC gate without inventing product fidelity', async () => {
+    const e = await service.schedule({
+      ...body,
+      videoProduction: { mode: 'OFFLINE' },
+    });
+    await service.tick();
+    const scenes = service
+      .history(e.execution_id)
+      .find(
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+      )!.evidence.result as any;
+    const file = join(dirname(f.database), 'technical-fixture.mp4');
+    await runProcess(
+      process.env.FFMPEG_PATH!,
+      [
+        '-v',
+        'error',
+        '-nostdin',
+        '-f',
+        'lavfi',
+        '-i',
+        'testsrc2=s=64x64:r=8:d=2',
+        '-an',
+        '-c:v',
+        'libx264',
+        '-threads',
+        '1',
+        '-preset',
+        'ultrafast',
+        '-pix_fmt',
+        'yuv420p',
+        file,
+      ],
+      { timeoutMs: 15000, maxLogBytes: 8192 },
+    );
+    const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
+      readFileSync(file),
+      'mp4',
+    );
+    const ref = 'media:sha256_' + hash;
+    const media = app.get(MediaService);
+    const ids = scenes.scenes.map((scene: any) => {
+      const id = 'technical_fixture_' + scene.position;
+      media.register({
+        schemaVersion: 'media-asset/1.0.0',
+        mediaAssetId: id,
+        pipelineRunId: scenes.pipelineRunId,
+        projectId: scenes.projectId,
+        projectVersion: scenes.projectVersion,
+        scriptId: scenes.script.scriptId,
+        scriptContentHash: scenes.script.contentHash,
+        visualDirectionPosition: scene.position,
+        assetType: 'VIDEO',
+        technicalProperties: {
+          format: 'mp4',
+          widthPixels: 64,
+          heightPixels: 64,
+          durationMilliseconds: 2000,
+        },
+        contentHash: hash,
+        mediaReference: ref,
+        origin: 'OPERATOR_OWNED',
+        provider: null,
+        rights: {
+          usageBasis: 'OWNED',
+          commercialUseAllowed: true,
+          evidence: [
+            {
+              id: 'fixture_rights_' + scene.position,
+              kind: 'MEDIA_USAGE_RIGHT',
+              sourceRef: 'fixture:locally-generated-test-pattern',
+              recordedAt: '2026-10-14T12:00:00Z',
+              mediaAuthorization: {
+                mediaRef: ref,
+                contentHash: hash,
+                commercialUse: 'GRANTED',
+                processing: 'GRANTED',
+                localProcessing: true,
+                externalProviders: [],
+              },
+            },
+          ],
+        },
+        createdAt: '2026-10-14T12:00:00Z',
+        revision: 1,
+        supersedesMediaAssetId: null,
+      });
+      return id;
+    });
+    const realGet = media.get.bind(media);
+    const denied = vi.spyOn(media, 'get').mockImplementation((id: string) => {
+      const asset = realGet(id)!;
+      return {
+        ...asset,
+        rights: {
+          ...asset.rights,
+          evidence: asset.rights.evidence!.map((item) => ({
+            ...item,
+            mediaAuthorization: {
+              ...item.mediaAuthorization!,
+              localProcessing: false,
+            },
+          })),
+        },
+      };
+    });
+    try {
+      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+      await service.tick();
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'MEDIA_PROCESSING_RIGHTS_REQUIRED',
+      );
+    } finally {
+      denied.mockRestore();
+    }
+    await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+    await service.tick();
+    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    expect(JSON.stringify(service.history(e.execution_id))).toContain(
+      'COMPLETE_TEMPORAL_QC_REQUIRED',
+    );
+    const asset = media.get(ids[0])!;
+    const report = validateTemporalReport(
+      await media.evaluateTemporalMedia(ids[0]),
+      {
+        mediaAssetId: asset.mediaAssetId,
+        mediaReference: asset.mediaReference,
+        contentHash: asset.contentHash,
+        scriptContentHash: asset.scriptContentHash,
+        visualDirectionPosition: asset.visualDirectionPosition,
+      },
+    );
+    expect(report.identity.contentHash).toBe(hash);
+    expect(report.evidence.fidelity).toBe('NOT_VALIDATED');
+    expect(report.evidence.motion).toBe('NOT_VALIDATED');
+    expect(report.evidence.continuity).toBe('NOT_VALIDATED');
+    expect(report.result).toBe('NOT_VALIDATED');
+    expect(report.evidence.provenance?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+    expect(
+      service
+        .history(e.execution_id)
+        .some((h) =>
+          ['AUDIO', 'COMPOSITION', 'BURN', 'PUBLICATION'].includes(
+            String(h.evidence.step),
+          ),
+        ),
+    ).toBe(false);
+    await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+    await service.tick();
+    expect(await media.evaluateTemporalMedia(ids[0])).toEqual(report);
+  });
+  it('recovers an explicitly resumed failed simulation without materialization', async () => {
+    const generation = app.get(VideoGenerationService);
+    const failing = new VideoGenerationService(
+      new FakeVideoGenerationProvider('FAIL_ONCE'),
+    );
+    const spies = [
+      vi
+        .spyOn(generation, 'submit')
+        .mockImplementation(failing.submit.bind(failing)),
+      vi
+        .spyOn(generation, 'poll')
+        .mockImplementation(failing.poll.bind(failing)),
+      vi
+        .spyOn(generation, 'recover')
+        .mockImplementation(failing.recover.bind(failing)),
+    ];
+    try {
+      const e = await service.schedule({
+        ...body,
+        videoProduction: { mode: 'OFFLINE' },
+      });
+      await service.tick();
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'VIDEO_SIMULATION_RECOVERY_REQUIRED',
+      );
+      // One scene may fail once per resume; completed fake operations replay unchanged.
+      for (
+        let i = 0;
+        i < 30 &&
+        !JSON.stringify(service.history(e.execution_id)).includes(
+          'REAL_VIDEO_MEDIA_REQUIRED',
+        );
+        i++
+      ) {
+        await service.resume(e.execution_id);
+        await service.tick();
+      }
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'REAL_VIDEO_MEDIA_REQUIRED',
+      );
+      expect(spies[2]).toHaveBeenCalled();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  });
+  it('rejects invalid scene identities before scheduling any production effect', async () => {
+    await expect(
+      service.schedule({ ...body, sceneMediaAssetIds: ['asset_001'] }),
+    ).rejects.toThrow('INVALID_SCENE_MEDIA');
+    await expect(
+      service.schedule({
+        ...body,
+        videoProduction: { mode: 'OFFLINE' },
+        sceneMediaAssetIds: ['asset_001', 'asset_001'],
+      }),
+    ).rejects.toThrow('INVALID_SCENE_MEDIA');
+  });
+  it('rejects LIVE or production simulation without calling providers', async () => {
+    await expect(
+      service.schedule({ ...body, videoProduction: { mode: 'LIVE' } }),
+    ).rejects.toThrow('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+    await expect(
+      service.schedule({
+        ...body,
+        mode: 'PRODUCTION',
+        videoProduction: { mode: 'OFFLINE' },
+      }),
+    ).rejects.toThrow('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
   });
   it('blocks fake editorial in production', async () => {
     const e = await service.schedule({ ...body, mode: 'PRODUCTION' });

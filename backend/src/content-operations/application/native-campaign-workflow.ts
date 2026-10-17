@@ -1,3 +1,7 @@
+import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
+import type { VideoGenerationService } from '../../media/application/video-generation.service.js';
+import type { VideoProductionPreparationV1 } from '../../media/domain/video-production-preparation.js';
+import { validateTemporalReport } from '../../media/domain/p4-qc-contracts.js';
 import type { InstagramPublicationService } from '../../publishing/application/instagram-publication.service.js';
 import type { AffiliateService } from '../../affiliate/application/affiliate.service.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
@@ -42,6 +46,8 @@ export function campaignRequest(raw: unknown) {
     'composition',
     'mode',
     'publication',
+    'videoProduction',
+    'sceneMediaAssetIds',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
@@ -63,6 +69,26 @@ export function campaignRequest(raw: unknown) {
     throw new CampaignError('CAMPAIGN_MODE_REQUIRED');
   for (const k of ['scriptId', 'voiceTrackId', 'referenceInsightId'])
     if (r[k] != null) identifier(r[k]);
+  if (r.videoProduction !== undefined) {
+    const video = document(r.videoProduction);
+    if (
+      Object.keys(video).join(',') !== 'mode' ||
+      video.mode !== 'OFFLINE' ||
+      r.mode !== 'LOCAL_VALIDATION' ||
+      r.publication !== undefined
+    )
+      throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+  }
+  if (r.sceneMediaAssetIds !== undefined) {
+    if (
+      !r.videoProduction ||
+      !Array.isArray(r.sceneMediaAssetIds) ||
+      r.sceneMediaAssetIds.length > 300 ||
+      new Set(r.sceneMediaAssetIds).size !== r.sceneMediaAssetIds.length
+    )
+      throw new CampaignError('INVALID_SCENE_MEDIA');
+    r.sceneMediaAssetIds.forEach(identifier);
+  }
   if (r.publication !== undefined) {
     const publication = document(r.publication);
     if (
@@ -80,6 +106,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   readonly steps = [
     'CONTEXT',
     'EDITORIAL',
+    'SCENES',
+    'VIDEO_GENERATION',
+    'MEDIA_QC',
     'AUDIO',
     'ALIGNMENT',
     'SUBTITLES',
@@ -121,6 +150,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       InstagramPublicationService,
       'execute' | 'reconcile'
     >,
+    private readonly production?: {
+      preparations: Pick<VideoProductionPreparationService, 'prepare'>;
+      generation: Pick<VideoGenerationService, 'submit' | 'poll' | 'recover'>;
+      media: Pick<MediaService, 'get' | 'evaluateTemporalMedia'>;
+    },
   ) {}
   async validate(r: Record<string, unknown>) {
     const campaign = await this.affiliate.getCampaign(
@@ -165,7 +199,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return this.instagram.execute(e, r.publication, done.HANDOFF);
     }
     // No paid transport is reachable from this workflow. Unknown charges stay unknown.
-    this.financeGate(r, new Date().toISOString());
+    if (!(
+      r.videoProduction &&
+      ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(step)
+    ))
+      this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
       const campaign = await this.validate(r);
       if (!this.research.getShortlist(String(r.researchShortlistId)))
@@ -223,6 +261,112 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       });
     }
     const script = document(document(done.EDITORIAL).script);
+    if (['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(step)) {
+      if (!r.videoProduction) return { status: 'NOT_REQUESTED' };
+      if (!this.production)
+        throw new CampaignError('VIDEO_PRODUCTION_CONFIGURATION_REQUIRED');
+      if (
+        r.mode !== 'LOCAL_VALIDATION' ||
+        document(r.videoProduction).mode !== 'OFFLINE'
+      )
+        throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+      if (step === 'SCENES') {
+        // Re-read immutable Content/Affiliate revisions through the existing service.
+        const directions = script.visualDirections as { position: number }[];
+        return this.production.preparations.prepare({
+          scriptId: script.scriptId,
+          scriptContentHash: script.contentHash,
+          scriptRevision: script.revision,
+          scenes: directions.map((direction) => ({
+            visualDirectionPosition: direction.position,
+            sceneMediaType: 'GENERATED_VIDEO',
+            movementRequirement: 'REAL_MOTION_REQUIRED',
+          })),
+        });
+      }
+      const preparation = done.SCENES as VideoProductionPreparationV1;
+      if (step === 'VIDEO_GENERATION') {
+        for (const scene of preparation.scenes) {
+          const operationId =
+            'simulation_' +
+            adaptationHash({
+              executionId: e.execution_id,
+              preparationHash: preparation.contentHash,
+              position: scene.position,
+            });
+          const submitted = await this.production.generation.submit({
+            operationId,
+            preparation,
+            scenePosition: scene.position,
+          });
+          // A known failed simulation is recovered only after an explicit campaign resume.
+          if (submitted.state === 'FAILED')
+            this.production.generation.recover(operationId);
+          if (
+            this.production.generation.poll(operationId).state !== 'COMPLETED'
+          )
+            throw new CampaignError('VIDEO_SIMULATION_RECOVERY_REQUIRED');
+        }
+        // Persist only that the offline stage ran. Provider job state stays in memory.
+        return {
+          mode: 'OFFLINE',
+          materialization: 'NOT_MATERIALIZED',
+          compositionReady: false,
+          preparationHash: preparation.contentHash,
+          simulatedScenes: preparation.scenes.length,
+        };
+      }
+      const ids = r.sceneMediaAssetIds as string[] | undefined;
+      if (!ids?.length || ids.length !== preparation.scenes.length)
+        throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
+      const reports = [];
+      for (let i = 0; i < ids.length; i++) {
+        const asset = this.production.media.get(ids[i]);
+        if (!asset) throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
+        if (
+          asset.assetType !== 'VIDEO' ||
+          asset.pipelineRunId !== e.run_id ||
+          asset.scriptId !== script.scriptId ||
+          asset.scriptContentHash !== script.contentHash ||
+          asset.visualDirectionPosition !== preparation.scenes[i].position ||
+          asset.projectId !== preparation.projectId ||
+          asset.projectVersion !== preparation.projectVersion
+        )
+          throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+        if (!asset.rights.commercialUseAllowed)
+          throw new CampaignError('COMMERCIAL_MEDIA_RIGHTS_REQUIRED');
+        const rights = asset.rights.evidence?.filter(
+          (evidence) =>
+            evidence.kind === 'MEDIA_USAGE_RIGHT' &&
+            evidence.mediaAuthorization?.mediaRef === asset.mediaReference &&
+            evidence.mediaAuthorization.contentHash === asset.contentHash,
+        );
+        if (
+          !rights?.length ||
+          rights.some(
+            (evidence) =>
+              evidence.mediaAuthorization?.localProcessing !== true ||
+              evidence.mediaAuthorization?.processing !== 'GRANTED' ||
+              evidence.mediaAuthorization.commercialUse !== 'GRANTED',
+          )
+        )
+          throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
+        const report = validateTemporalReport(
+          await this.production.media.evaluateTemporalMedia(asset.mediaAssetId),
+          {
+            mediaAssetId: asset.mediaAssetId,
+            mediaReference: asset.mediaReference,
+            contentHash: asset.contentHash,
+            scriptContentHash: asset.scriptContentHash,
+            visualDirectionPosition: asset.visualDirectionPosition,
+          },
+        );
+        reports.push(report);
+      }
+      if (reports.some((report) => report.result !== 'PASS'))
+        throw new CampaignError('COMPLETE_TEMPORAL_QC_REQUIRED');
+      return { preparationHash: preparation.contentHash, reports };
+    }
     if (step === 'AUDIO') {
       if (!r.voiceTrackId) throw new CampaignError('AUDIO_REQUIRED');
       if (r.audio) {
@@ -270,6 +414,27 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         document(plan).voiceTrackId !== r.voiceTrackId
       )
         throw new CampaignError('CAMPAIGN_COMPOSITION_MISMATCH');
+      if (r.videoProduction) {
+        const value = document(plan),
+          segments = value.segments as Record<string, unknown>[];
+        const reports = document(done.MEDIA_QC).reports as {
+          identity: { mediaAssetId: string; contentHash: string };
+        }[];
+        if (
+          value.schemaVersion !== 'composition-plan/2.0.0' ||
+          !Array.isArray(segments) ||
+          segments.some(
+            (segment) =>
+              segment.movementRequirement !== 'REAL_MOTION_REQUIRED' ||
+              !reports.some(
+                (report) =>
+                  report.identity.mediaAssetId === segment.mediaAssetId &&
+                  report.identity.contentHash === segment.mediaAssetContentHash,
+              ),
+          )
+        )
+          throw new CampaignError('MOTION_COMPOSITION_V2_REQUIRED');
+      }
       return this.local.compose(request);
     }
     if (step === 'BURN')
@@ -393,6 +558,18 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     for (const event of history)
       if (event.event_type === 'STEP_DONE')
         completed[String(event.evidence.step)] = event.evidence.result;
+    if (
+      request.videoProduction &&
+      request.mode === 'LOCAL_VALIDATION' &&
+      document(request.videoProduction).mode === 'OFFLINE' &&
+      ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(
+        String(last.evidence.step),
+      )
+    ) {
+      // Preparation is read-only, simulation has no external effect, and temporal
+      // QC stores immutable hash-bound evidence. Re-execution uses existing IDs.
+      return { verified: true, reason: 'OFFLINE_VIDEO_STAGE_REPLAY_SAFE' };
+    }
     if (last.evidence.step === 'CONTEXT') {
       const run = this.operations.get(e.run_id);
       const binding = this.binding.getRunBinding(e.run_id);
