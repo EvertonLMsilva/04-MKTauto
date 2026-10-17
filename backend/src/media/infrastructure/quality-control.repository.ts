@@ -86,7 +86,8 @@ export class QualityControlRepository extends MediaAssetRepository {
           (e: AffiliateEvidence) =>
             e.mediaAuthorization?.localProcessing !== true ||
             e.mediaAuthorization.processing !== 'GRANTED' ||
-            e.mediaAuthorization.commercialUse !== 'GRANTED',
+            e.mediaAuthorization.commercialUse !== 'GRANTED' ||
+            e.mediaAuthorization.operationScope !== undefined,
         )
       )
         p4Fail('MEDIA_PROCESSING_RIGHTS_REQUIRED');

@@ -20,6 +20,8 @@ export interface MediaAuthorization {
   localProcessing: boolean;
   // Exact provider identities. Local permission never implies third-party transfer.
   externalProviders: string[];
+  // A test-specific permission cannot authorize another operation or final production.
+  operationScope?: string;
 }
 export interface AffiliateAttribute {
   name: string;
@@ -372,6 +374,7 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
             'processing',
             'localProcessing',
             'externalProviders',
+            ...(Object.hasOwn(a ?? {}, 'operationScope') ? ['operationScope'] : []),
           ],
           'mediaAuthorization',
         );
@@ -390,6 +393,8 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
         a.externalProviders.forEach((provider) =>
           affiliateIdentifier(provider, 'externalProviders'),
         );
+        if (a.operationScope !== undefined)
+          affiliateIdentifier(a.operationScope, 'operationScope');
       });
     entryCheck(() => {
       if (

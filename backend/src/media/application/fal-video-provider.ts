@@ -10,6 +10,7 @@ import {
   validateFalVideoModel,
 } from '../domain/fal-model.js';
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import { createHash } from 'node:crypto';
 export class FalVideoAdapter {
   repository: any;
   config: any;
@@ -98,8 +99,21 @@ export class FalVideoAdapter {
     } catch {
       throw falFailure('PROVIDER_IMAGE_INVALID');
     }
+    const inline =
+      /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/]+={0,2})$/.exec(
+        image?.url ?? '',
+      );
     if (
-      url.protocol !== 'https:' ||
+      inline &&
+      (Buffer.byteLength(inline[2], 'base64') > 33554432 ||
+        Buffer.from(inline[2], 'base64').toString('base64') !== inline[2] ||
+        createHash('sha256')
+          .update(Buffer.from(inline[2], 'base64'))
+          .digest('hex') !== image.contentHash)
+    )
+      throw falFailure('PROVIDER_IMAGE_INVALID');
+    if (
+      (url.protocol !== 'https:' && !inline) ||
       url.username ||
       url.password ||
       url.hash ||
@@ -112,6 +126,7 @@ export class FalVideoAdapter {
       briefing.evidence,
       { mediaRef: this.config.mediaRef, contentHash: image.contentHash },
       'fal_ai',
+      this.config.operationId,
     );
     if (
       this.prepared &&

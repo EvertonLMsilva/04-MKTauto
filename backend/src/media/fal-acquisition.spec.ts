@@ -325,6 +325,7 @@ describe('NestJS fal acquisition boundary', () => {
     'provenanceMissing',
     'hashMismatch',
     'invalidHash',
+    'inlineHashMismatch',
     'credentials',
     'fragment',
     'missingAuthorization',
@@ -346,6 +347,10 @@ describe('NestJS fal acquisition boundary', () => {
       if (kind === 'provenanceMissing') delete image.provenance;
       if (kind === 'hashMismatch') image.contentHash = 'd'.repeat(64);
       if (kind === 'invalidHash') image.contentHash = 'not-a-hash';
+      if (kind === 'inlineHashMismatch')
+        image.url =
+          'data:image/webp;base64,' +
+          Buffer.from('different-bytes').toString('base64');
       if (kind === 'credentials')
         image.url = 'https://user:secret@example.com/authorized.png';
       if (kind === 'fragment') image.url += '#untrusted';
@@ -741,6 +746,27 @@ describe('NestJS fal acquisition boundary', () => {
     await expect(
       Test.createTestingModule({ imports: [MediaModule] }).compile(),
     ).rejects.toThrow('FAL_LIVE_DISABLED');
+  });
+  it('composes the controlled transport without enabling it or opening Finance', async () => {
+    vi.stubEnv('FAL_GENERATION_MODE', 'controlled');
+    vi.stubEnv('FAL_CONTROLLED_PLAN_FILE', '');
+    const module = await Test.createTestingModule({
+      imports: [MediaModule],
+    }).compile();
+    try {
+      const service = module.get(FalAcquisitionService);
+      expect(() => service.controlledReadiness()).toThrow(
+        'CONTROLLED_FAL_PLAN_REQUIRED',
+      );
+      await expect(service.acquire({}, {})).rejects.toThrow(
+        'FAL_PREPARED_EXECUTION_REQUIRED',
+      );
+      await expect(service.acquirePrepared({} as any, {})).rejects.toThrow(
+        'CONTROLLED_FAL_PLAN_REQUIRED',
+      );
+    } finally {
+      await module.close();
+    }
   });
   it('recovers in native Media/Finance repositories, preserves audio and never resubmits after reopening', async () => {
     const f = await nativeFixture();

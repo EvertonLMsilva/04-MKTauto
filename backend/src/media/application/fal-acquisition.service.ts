@@ -4,6 +4,7 @@ import { validateMediaAsset } from '../domain/media-asset-contracts.js';
 import type {
   FalAcquisitionDependencies,
   PreparedFalRequest,
+  FalExecutionOptions,
 } from './fal-acquisition.port.js';
 import { falFailure } from '../../finance/domain/fal-errors.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
@@ -15,12 +16,23 @@ export class FalAcquisitionService {
   constructor(
     private readonly dependencies: FalAcquisitionDependencies | null,
   ) {}
+  controlledReadiness() {
+    if (!this.dependencies?.control) throw falFailure('FAL_LIVE_DISABLED');
+    return this.dependencies.control.readiness();
+  }
   async acquirePrepared(
     value: PreparedFalRequest,
     configuration: unknown,
-    options: { signal?: AbortSignal } = {},
+    options: FalExecutionOptions = {},
   ) {
     if (!this.dependencies) throw falFailure('FAL_LIVE_DISABLED');
+    const grant = this.dependencies.control
+      ? await this.dependencies.control.authorize(value, options)
+      : null;
+    if (grant) {
+      value = grant.input;
+      configuration = grant.configuration;
+    }
     if (!this.dependencies.preparations)
       throw falFailure('VIDEO_PREPARATION_RESOLVER_REQUIRED');
     const input = structuredClone(value),
@@ -74,9 +86,17 @@ export class FalAcquisitionService {
     });
     if (preparation.contentHash !== input.preparation.contentHash)
       throw falFailure('VIDEO_GENERATION_PREPARATION_CONFLICT');
-    const mediaAsset = await this.perform(request, config, options, {
-      preparation,
-    });
+    const mediaAsset = await this.perform(
+      request,
+      config,
+      options,
+      {
+        preparation,
+      },
+      grant
+        ? { queue: grant.queue, resolveImage: grant.resolveImage }
+        : undefined,
+    );
     const job = this.dependencies.finance.getByAcquisitionRequest(
       request.mediaAcquisitionRequestId,
     );
@@ -100,6 +120,8 @@ export class FalAcquisitionService {
     config: unknown,
     options: { signal?: AbortSignal } = {},
   ) {
+    if (this.dependencies?.control)
+      throw falFailure('FAL_PREPARED_EXECUTION_REQUIRED');
     return this.perform(input, config, options);
   }
   private async perform(
@@ -107,6 +129,7 @@ export class FalAcquisitionService {
     config: unknown,
     options: { signal?: AbortSignal },
     prepared?: { preparation: PreparedFalRequest['preparation'] },
+    overrides?: Pick<FalAcquisitionDependencies, 'queue' | 'resolveImage'>,
   ) {
     if (!this.dependencies) throw falFailure('FAL_LIVE_DISABLED');
     const request = validateMediaAcquisitionRequest(input);
@@ -129,6 +152,7 @@ export class FalAcquisitionService {
       if (!direction) throw falFailure('PROVIDER_INPUT_MISMATCH');
       const adapter = new FalVideoAdapter(repository, config, {
         ...this.dependencies,
+        ...overrides,
         jobs: this.dependencies.finance,
         prepared,
       });

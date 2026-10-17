@@ -41,6 +41,8 @@ test('official submit handle is used for authenticated GET; media download has n
   assert.equal(calls[0].url, `https://queue.fal.run/${FAL_VIDEO_ENDPOINT}`);
   assert.equal(calls[0].options.method, 'POST');
   assert.equal(calls[0].options.headers.authorization, 'Key secret');
+  assert.equal(calls[0].options.headers['X-Fal-No-Retry'], '1');
+  assert.equal(calls[0].options.headers['x-app-fal-disable-fallback'], '1');
   assert.equal(
     (await queue.status(id, { url: handle.statusUrl })).status,
     'IN_PROGRESS',
