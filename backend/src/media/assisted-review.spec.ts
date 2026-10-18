@@ -1,3 +1,5 @@
+import { Script, createContext } from 'node:vm';
+import { operationsScript } from '../operations/operations-page.js';
 import { execFileSync } from 'node:child_process';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
@@ -672,3 +674,77 @@ it('rejects undecodable reference bytes even when their SHA-256 and declared rig
     ),
   ).rejects.toThrow();
 });
+
+it.each(['APPROVED', 'REJECTED'])(
+  'submits browser textarea observations through HTTP and reconsults persisted %s',
+  async (decision) => {
+    const { Test } = await import('@nestjs/testing');
+    const { default: request } = await import('supertest');
+    const { MediaController } = await import('./media.controller.js');
+    const module = await Test.createTestingModule({
+      controllers: [MediaController],
+      providers: [{ provide: MediaService, useValue: media }],
+    }).compile();
+    const app = module.createNestApplication();
+    await app.init();
+    try {
+      const token = await readFile(join(root, 'credential'), 'utf8');
+      const url = '/media/assets/' + asset.mediaAssetId + '/temporal-reviews';
+      const observation =
+        '  Movimento observado.\nContinuidade verificada.\t  ';
+      const raw = structuredClone(input);
+      raw.decision = decision;
+      for (const criterion of Object.values(raw.criteria) as any[])
+        criterion.observation = observation;
+      const rejected = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send(raw)
+        .expect(400);
+      expect(rejected.body).toMatchObject({
+        code: 'HUMAN_APPROVAL_REQUEST_INVALID',
+        field: 'observation',
+      });
+      const sandbox: any = {};
+      const context = createContext(sandbox);
+      const start = operationsScript.indexOf('  function buildReviewCriteria('),
+        end = operationsScript.indexOf(
+          '  $("review-form").addEventListener("submit"',
+          start,
+        );
+      new Script(
+        operationsScript.slice(start, end) +
+          ';globalThis.build=buildReviewCriteria;',
+      ).runInContext(context);
+      raw.criteria = sandbox.build(
+        { asset: { durationMilliseconds: 6000 } },
+        new Map(
+          ['motion', 'continuity', 'fidelity'].map((k) => [k, observation]),
+        ),
+      );
+      const reviewed = await request(app.getHttpServer())
+        .post(url)
+        .set('Authorization', 'Bearer ' + token)
+        .send(raw)
+        .expect(201);
+      expect(reviewed.body.result).toBe(
+        decision === 'APPROVED' ? 'PASS' : 'FAIL',
+      );
+      const reconsulted = await request(app.getHttpServer())
+        .get(url)
+        .set('Authorization', 'Bearer ' + token)
+        .expect(200);
+      expect(reconsulted.body).toEqual(reviewed.body);
+      expect(
+        reconsulted.body.evidence.provenance.parameters.humanReview.criteria
+          .continuity,
+      ).toEqual({
+        startSeconds: 0,
+        endSeconds: 6,
+        observation: 'Movimento observado. Continuidade verificada.',
+      });
+    } finally {
+      await app.close();
+    }
+  },
+);
