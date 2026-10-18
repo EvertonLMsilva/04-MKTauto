@@ -29,6 +29,7 @@ import type {
 import type { CostLedgerRepository } from './cost-ledger.repository.js';
 import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
 import { validateFirstFalRiskProof } from '../domain/first-fal-risk.js';
+import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 const GLOBAL_DEFAULTS = Object.freeze({
   dailyUsd: '1',
   monthlyUsd: '20',
@@ -165,9 +166,11 @@ export class FinanceGate {
           accounted.add(cost.costEventId);
         }
       }
+      const settled = this.settledFirstFal(row, JSON.parse(row.proof_json));
+      if (settled) for (const id of settled) accounted.add(id);
       add(
         row.created_at,
-        actual > maximum ? actual : maximum,
+        settled ? actual : actual > maximum ? actual : maximum,
         ['RESERVED', 'SUBMITTING', 'UNKNOWN'].includes(row.state),
       );
       if (actual > maximum)
@@ -251,6 +254,48 @@ export class FinanceGate {
   }
   getGlobalUsage(now: string = new Date().toISOString()): GlobalUsage {
     return this.#transaction((): any => this.#globalUsage(now));
+  }
+  private settledFirstFal(row: any, proof: any): string[] | null {
+    if (
+      row.provider !== 'fal_ai' ||
+      proof.kind !== 'FIRST_FAL_RISK_ACCEPTED' ||
+      row.state !== 'COMPLETED' ||
+      row.actual_usd === null ||
+      !row.billing_reference ||
+      !proof.pipelineRunId ||
+      !proof.risk ||
+      affiliateHash(proof.risk) !== proof.riskHash
+    )
+      return null;
+    const { campaignId: _campaignId, ...authorization } = proof;
+    validateFirstFalRiskProof(authorization, proof.acceptedAt);
+    const settlement = this.attribution.falSettlement?.(
+      proof.pipelineRunId,
+      proof.risk.requestHash,
+    );
+    if (
+      !settlement ||
+      settlement.imageHash !== proof.risk.imageHash ||
+      settlement.endpoint !== proof.risk.model.endpoint ||
+      usdUnits(settlement.finalAmount) !== usdUnits(row.actual_usd)
+    )
+      return null;
+    let total = 0n;
+    for (const id of settlement.costEventIds) {
+      const cost = this.repository.getCostEvent(id);
+      if (
+        !cost ||
+        cost.pipelineRunId !== proof.pipelineRunId ||
+        cost.currency !== 'USD' ||
+        cost.origin !== settlement.source ||
+        cost.category !== 'media_cost'
+      )
+        return null;
+      total += usdUnits(cost.amount);
+    }
+    return total === usdUnits(settlement.finalAmount)
+      ? settlement.costEventIds
+      : null;
   }
   assertGlobalAvailable(amount: unknown, now: string): GlobalUsage {
     const usage = this.#globalUsage(now),
@@ -599,7 +644,9 @@ export class FinanceGate {
             accountedCostIds.add(cost.costEventId);
           }
         }
-        total += actual > reserved ? actual : reserved;
+        const settled = this.settledFirstFal(row, proof);
+        if (settled) for (const id of settled) accountedCostIds.add(id);
+        total += settled ? actual : actual > reserved ? actual : reserved;
         if (['SUBMITTING', 'UNKNOWN'].includes(row.state)) hasUnknown = true;
         if (actual > reserved) hasCeilingBreach = true;
       }
