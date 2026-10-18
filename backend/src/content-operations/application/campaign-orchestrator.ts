@@ -121,7 +121,7 @@ export class CampaignOrchestrator {
     try {
       const history = this.repository.history(id),
         request = executionRequest(history);
-      const completed: Record<string, unknown> = {};
+      const completed: Record<string, unknown> = recoveredContext(history);
       for (const event of history)
         if (event.event_type === 'STEP_DONE')
           completed[String(event.evidence.step)] = event.evidence.result;
@@ -130,7 +130,14 @@ export class CampaignOrchestrator {
           completed.APPROVAL = event.evidence;
       for (const step of this.workflow.steps) {
         if (renewalFailure) throw renewalFailure;
-        if (Object.hasOwn(completed, step)) continue;
+        if (
+          Object.hasOwn(completed, step) ||
+          (request.legacyRecovery &&
+            ['CONTEXT', 'EDITORIAL', 'SCENES', 'VIDEO_GENERATION'].includes(
+              step,
+            ))
+        )
+          continue;
         let attempts = this.repository
           .history(id)
           .filter(
@@ -240,4 +247,14 @@ export function executionRequest(
     if (event.event_type === 'INPUT_SUPPLIED')
       Object.assign(request, event.evidence);
   return request;
+}
+
+/** Read-only context from a recovery event, never a completed editorial stage. */
+export function recoveredContext(
+  history: CampaignEvent[],
+): Record<string, unknown> {
+  const event = history[0];
+  if (event?.event_type !== 'LEGACY_RECOVERY') return {};
+  const recovery = event.evidence.legacyRecovery as { script: unknown };
+  return { EDITORIAL: { script: recovery.script } };
 }

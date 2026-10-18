@@ -15,7 +15,7 @@ import type { FinanceService } from '../../finance/application/finance.service.j
 import type { PublishingService } from '../../publishing/application/publishing.service.js';
 import type { ContentOperationsService } from './content-operations.service.js';
 import type { CampaignWorkflow } from './campaign-orchestrator.js';
-import { executionRequest } from './campaign-orchestrator.js';
+import { executionRequest, recoveredContext } from './campaign-orchestrator.js';
 import type { CampaignEvent, CampaignExecution } from '../domain/campaign.js';
 import { CampaignError, identifier, instant } from '../domain/campaign.js';
 import { usdUnits } from '../../finance/domain/video-financial-contracts.js';
@@ -50,6 +50,7 @@ export function campaignRequest(raw: unknown) {
     'publication',
     'videoProduction',
     'sceneMediaAssetIds',
+    'legacyRecovery',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
@@ -57,8 +58,7 @@ export function campaignRequest(raw: unknown) {
     'campaignId',
     'runId',
     'briefingId',
-    'researchShortlistId',
-    'generationRequestId',
+    ...(r.legacyRecovery ? [] : ['researchShortlistId', 'generationRequestId']),
   ])
     identifier(r[k]);
   instant(r.scheduledAt);
@@ -158,10 +158,134 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       generation: Pick<VideoGenerationService, 'submit' | 'poll' | 'recover'>;
       media: Pick<MediaService, 'get' | 'evaluateTemporalMedia'> &
         Partial<
-          Pick<MediaService, 'listScript' | 'acquisition' | 'temporalReview'>
+          Pick<
+            MediaService,
+            'listScript' | 'acquisition' | 'temporalReview' | 'reviewMediaBytes'
+          >
         >;
     },
   ) {}
+  /** Imports persisted context only; it never replays editorial or generation. */
+  async recoverLegacy(value: unknown): Promise<Record<string, unknown>> {
+    const input = document(value);
+    if (
+      Object.keys(input).sort().join(',') !== 'campaignId,media,runId' ||
+      !Array.isArray(input.media) ||
+      !input.media.length ||
+      input.media.length > 300
+    )
+      throw new CampaignError('INVALID_LEGACY_RECOVERY');
+    const campaignId = identifier(input.campaignId),
+      runId = identifier(input.runId);
+    const run = this.operations.get(runId);
+    const brief = this.binding.resolveRunBriefing(runId);
+    if (!brief) throw new CampaignError('LEGACY_BRIEFING_REQUIRED');
+    const campaign = await this.affiliate.getCampaign(
+      campaignId,
+      brief.campaignRevision,
+    );
+    if (
+      !campaign ||
+      brief.campaignId !== campaignId ||
+      run.pipelineRunId !== runId ||
+      campaign.projectId !== run.projectId ||
+      run.state !== 'RUNNING'
+    )
+      throw new CampaignError('LEGACY_CAMPAIGN_RUN_MISMATCH');
+    const first = document(input.media[0]);
+    const original = this.production?.media.get(identifier(first.mediaAssetId));
+    const script = original && this.content.getScript(original.scriptId);
+    if (
+      !script ||
+      script.pipelineRunId !== runId ||
+      script.projectId !== run.projectId ||
+      script.projectVersion !== run.projectVersion ||
+      script.contentHash !== original!.scriptContentHash ||
+      script.visualDirections.length !== input.media.length
+    )
+      throw new CampaignError('LEGACY_SCRIPT_MISMATCH');
+    const ids: string[] = [];
+    const evidence = [];
+    const financialOperationIds = new Set<string>();
+    for (let i = 0; i < input.media.length; i++) {
+      const item = document(input.media[i]);
+      if (
+        Object.keys(item).sort().join(',') !==
+          'contentHash,mediaAssetId,referenceId' ||
+        typeof item.contentHash !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(item.contentHash)
+      )
+        throw new CampaignError('INVALID_LEGACY_RECOVERY');
+      const id = identifier(item.mediaAssetId),
+        referenceId = identifier(item.referenceId);
+      const asset = this.requireSceneMedia(
+        id,
+        script as unknown as Record<string, unknown>,
+        runId,
+        script.visualDirections[i].position,
+        campaignId,
+      );
+      if (asset.contentHash !== item.contentHash || ids.includes(id))
+        throw new CampaignError('LEGACY_MEDIA_HASH_MISMATCH');
+      if (
+        !asset.rights.evidence?.some(
+          (e) => e.mediaAuthorization?.operationScope,
+        )
+      )
+        throw new CampaignError('LEGACY_ACQUISITION_REQUIRED');
+      if (!this.production!.media.reviewMediaBytes)
+        throw new CampaignError('LEGACY_INTEGRITY_VERIFIER_REQUIRED');
+      for (const right of asset.rights.evidence ?? []) {
+        const operation = right.mediaAuthorization?.operationScope;
+        if (operation) {
+          if (this.finance.getGlobalOperation(operation)?.state !== 'COMPLETED')
+            throw new CampaignError('LEGACY_FINANCE_COMPLETION_REQUIRED');
+          financialOperationIds.add(operation);
+        }
+      }
+      const bytes = await this.production!.media.reviewMediaBytes!(
+        id,
+        referenceId,
+        'video',
+      );
+      await this.production!.media.reviewMediaBytes!(
+        id,
+        referenceId,
+        'reference',
+      );
+      if (createHash('sha256').update(bytes).digest('hex') !== item.contentHash)
+        throw new CampaignError('LEGACY_MEDIA_HASH_MISMATCH');
+      ids.push(id);
+      evidence.push({
+        mediaAssetId: id,
+        contentHash: asset.contentHash,
+        referenceId,
+      });
+    }
+    return {
+      campaignId,
+      campaignRevision: campaign.revision,
+      runId,
+      scheduledAt: instant(run.startedAt),
+      mode: 'LOCAL_VALIDATION',
+      briefingId: brief.briefingId,
+      scriptId: script.scriptId,
+      videoProduction: { mode: 'ASSISTED_LOCAL' },
+      sceneMediaAssetIds: ids,
+      legacyRecovery: {
+        provenance: 'LEGACY_RECOVERY',
+        media: evidence,
+        script,
+        financialOperationIds: [...financialOperationIds].sort(),
+        notExecutedByCurrentOrchestrator: [
+          'CONTEXT',
+          'EDITORIAL',
+          'SCENES',
+          'VIDEO_GENERATION',
+        ],
+      },
+    };
+  }
   private requireSceneMedia(
     id: string,
     script: Record<string, unknown>,
@@ -439,8 +563,15 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     return campaign;
   }
   private financeGate(r: Record<string, unknown>, at: string) {
-    const op = this.finance.getGlobalOperation(String(r.generationRequestId));
-    if (op?.state === 'UNKNOWN') throw new CampaignError('FINANCE_UNKNOWN');
+    const operationIds = r.legacyRecovery
+      ? (document(r.legacyRecovery).financialOperationIds as string[])
+      : [String(r.generationRequestId)];
+    for (const id of operationIds) {
+      const op = this.finance.getGlobalOperation(id);
+      if (op?.state === 'UNKNOWN') throw new CampaignError('FINANCE_UNKNOWN');
+      if (r.legacyRecovery && op?.state !== 'COMPLETED')
+        throw new CampaignError('LEGACY_FINANCE_COMPLETION_REQUIRED');
+    }
     const usage = this.finance.getGlobalUsage(at);
     if (
       usage.policy.time_zone !== 'America/Sao_Paulo' ||
@@ -528,6 +659,18 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       });
     }
     const script = document(document(done.EDITORIAL).script);
+    if (r.legacyRecovery && step === 'MEDIA_QC') {
+      const verified = await this.recoverLegacy({
+        campaignId: e.campaign_id,
+        runId: e.run_id,
+        media: document(r.legacyRecovery).media,
+      });
+      if (
+        document(document(verified.legacyRecovery).script).contentHash !==
+        script.contentHash
+      )
+        throw new CampaignError('LEGACY_SCRIPT_MISMATCH');
+    }
     if (['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(step)) {
       if (!r.videoProduction) return { status: 'NOT_REQUESTED' };
       if (!this.production)
@@ -614,8 +757,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           simulatedScenes: preparation.scenes.length,
         };
       }
+      // Recovered scene metadata is context, not a fabricated preparation artifact.
+      const qcScenes = r.legacyRecovery
+        ? (script.visualDirections as { position: number }[]).map(
+            (direction, i) => ({
+              position: direction.position,
+              sceneMediaType:
+                this.production!.media.get(
+                  (r.sceneMediaAssetIds as string[])[i],
+                )!.origin === 'PROVIDER_GENERATED'
+                  ? 'GENERATED_VIDEO'
+                  : 'RECORDED_VIDEO',
+            }),
+          )
+        : preparation.scenes;
       const ids = this.sceneIds(r, script, e.run_id);
-      if (!ids?.length || ids.length !== preparation.scenes.length)
+      if (!ids?.length || ids.length !== qcScenes.length)
         throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
       const reports = [];
       for (let i = 0; i < ids.length; i++) {
@@ -623,12 +780,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           ids[i],
           script,
           e.run_id,
-          preparation.scenes[i].position,
+          qcScenes[i].position,
           e.campaign_id,
         );
         if (
           document(r.videoProduction).mode === 'ASSISTED_LOCAL' &&
-          preparation.scenes[i].sceneMediaType !==
+          qcScenes[i].sceneMediaType !==
             (asset.origin === 'PROVIDER_GENERATED'
               ? 'GENERATED_VIDEO'
               : 'RECORDED_VIDEO')
@@ -673,7 +830,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         throw new CampaignError('MEDIA_QC_FAILED');
       if (reports.some((report) => report.result !== 'PASS'))
         throw new CampaignError('COMPLETE_TEMPORAL_QC_REQUIRED');
-      return { preparationHash: preparation.contentHash, reports };
+      return { preparationHash: preparation?.contentHash ?? null, reports };
     }
     if (step === 'AUDIO') {
       if (!r.voiceTrackId) {
@@ -878,7 +1035,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const r = executionRequest(history);
     if (!r.videoProduction || r.mode !== 'LOCAL_VALIDATION' || r.publication)
       return false;
-    const done: Record<string, unknown> = {};
+    const done: Record<string, unknown> = recoveredContext(history);
     for (const event of history)
       if (event.event_type === 'STEP_DONE')
         done[String(event.evidence.step)] = event.evidence.result;
@@ -963,7 +1120,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       )
     )
       return { verified: true, reason: 'NO_IN_FLIGHT_STAGE' };
-    const completed: Record<string, unknown> = {};
+    const completed: Record<string, unknown> = recoveredContext(history);
     for (const event of history)
       if (event.event_type === 'STEP_DONE')
         completed[String(event.evidence.step)] = event.evidence.result;
