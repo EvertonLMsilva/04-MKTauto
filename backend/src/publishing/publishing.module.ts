@@ -6,6 +6,7 @@ const PUBLISHING_EVIDENCE = Symbol('PUBLISHING_EVIDENCE');
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
 import { InstagramPublicationService } from './application/instagram-publication.service.js';
 import { InstagramConnectionService } from './application/instagram-connection.service.js';
+import { instagramAccountId } from './infrastructure/instagram-environment.js';
 import {
   INSTAGRAM_PUBLICATION_PORTS,
   type InstagramPublicationPorts,
@@ -53,7 +54,7 @@ import { PublishingController } from './publishing.controller.js';
           ? deterministicInstagramPorts(
               publishing,
               media,
-              process.env.INSTAGRAM_ACCOUNT_ID ?? '',
+              instagramAccountId(process.env),
               process.env.INSTAGRAM_API_VERSION ?? '',
             )
           : null,
