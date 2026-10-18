@@ -156,6 +156,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     await app.init();
     service = module.get(CampaignAdministration);
     body = {
+      audioMode: 'RECORDING',
       campaignId: 'camp_001',
       campaignRevision: 2,
       scheduledAt: '2026-10-14T12:00:00Z',

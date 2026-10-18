@@ -1,4 +1,31 @@
 import { OperationsService } from './operations.service.js';
+test('audio source selection is explicit, validated and cannot replace completed narration', async () => {
+  const context: any = {
+    execution: { status: 'WAITING_INPUT' },
+    completed: {},
+  };
+  const campaigns = {
+    finalizationContext: () => context,
+    resume: vi.fn(async () => {}),
+    get: () => ({}),
+  };
+  const service = new OperationsService(campaigns as any, {} as any, {} as any);
+  await expect(
+    service.audioMode('execution_001', { mode: 'PAID' }),
+  ).rejects.toThrow('INVALID_AUDIO_MODE');
+  await expect(
+    service.audioMode('execution_001', { mode: 'AUTOMATIC', license: true }),
+  ).rejects.toThrow('INVALID_AUDIO_MODE');
+  await service.audioMode('execution_001', { mode: 'RECORDING' });
+  expect(campaigns.resume).toHaveBeenCalledWith('execution_001', {
+    audioMode: 'RECORDING',
+  });
+  context.completed.AUDIO = { voiceTrackId: 'existing' };
+  await expect(
+    service.audioMode('execution_001', { mode: 'AUTOMATIC' }),
+  ).rejects.toThrow('AUDIO_INPUT_CONFLICT');
+  expect(campaigns.resume).toHaveBeenCalledTimes(1);
+});
 
 test('connection diagnostics are independent of campaign state and reject browser-supplied credentials', async () => {
   const connection = {

@@ -48,6 +48,7 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     detail: vi.fn(() => ({ execution, media: [], script: null })),
     advance: vi.fn(async () => execution),
     retry: vi.fn(async () => execution),
+    audioMode: vi.fn(async () => execution),
     instagramConnection: vi.fn(() => ({
       connection: 'NOT_CONFIGURED',
       missingPermissions: null,
@@ -78,6 +79,9 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     expect(() => new Script(script.text)).not.toThrow();
     await browser.get('/operations/executions').expect(401);
     await browser.get('/operations/instagram/connection').expect(401);
+    await origin(browser.post('/operations/executions/execution_ui/audio-mode'))
+      .send({ mode: 'RECORDING' })
+      .expect(401);
     await origin(browser.post('/operations/instagram/connection/check'))
       .send({})
       .expect(401);
@@ -123,6 +127,14 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
         }),
       );
     expect(mock.checkInstagramConnection).toHaveBeenCalledTimes(1);
+    await origin(browser.post('/operations/executions/execution_ui/audio-mode'))
+      .send({ mode: 'RECORDING' })
+      .expect(403);
+    await origin(browser.post('/operations/executions/execution_ui/audio-mode'))
+      .set('x-qc-csrf', login.body.csrfToken)
+      .send({ mode: 'RECORDING' })
+      .expect(201);
+    expect(mock.audioMode).toHaveBeenCalledTimes(1);
     await browser
       .get('/operations/executions')
       .set('Host', 'localhost:3000')

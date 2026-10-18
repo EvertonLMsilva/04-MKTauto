@@ -43,6 +43,7 @@ export function campaignRequest(raw: unknown) {
     'generationRequestId',
     'scriptId',
     'voiceTrackId',
+    'audioMode',
     'audio',
     'alignment',
     'composition',
@@ -69,6 +70,12 @@ export function campaignRequest(raw: unknown) {
     throw new CampaignError('INVALID_CAMPAIGN_REVISION');
   if (!['LOCAL_VALIDATION', 'PRODUCTION'].includes(String(r.mode)))
     throw new CampaignError('CAMPAIGN_MODE_REQUIRED');
+  if (
+    r.audioMode !== undefined &&
+    (typeof r.audioMode !== 'string' ||
+      !['AUTOMATIC', 'RECORDING'].includes(r.audioMode))
+  )
+    throw new CampaignError('INVALID_AUDIO_MODE');
   for (const k of ['scriptId', 'voiceTrackId', 'referenceInsightId'])
     if (r[k] != null) identifier(r[k]);
   if (r.videoProduction !== undefined) {
@@ -835,11 +842,57 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (step === 'AUDIO') {
       if (!r.voiceTrackId) {
         if (!r.videoProduction) throw new CampaignError('AUDIO_REQUIRED');
-        const voice = this.local.authorizedAudio(
+        let voice = this.local.authorizedAudio(
           e.run_id,
           String(script.scriptId),
           String(script.contentHash),
+          undefined,
+          r.audioMode === 'RECORDING' ? 'RECORDING' : undefined,
         );
+        if (!voice && r.audioMode !== 'RECORDING') {
+          if (!done.MEDIA_QC)
+            throw new CampaignError('AUTHENTICATED_MEDIA_REVIEW_REQUIRED');
+          const ids = this.sceneIds(r, script, e.run_id);
+          const durations = ids.map((id, index) => {
+            const asset = this.requireSceneMedia(
+              id,
+              script,
+              e.run_id,
+              (script.visualDirections as { position: number }[])[index]
+                .position,
+              e.campaign_id,
+            );
+            const review = this.production?.media.temporalReview?.(id) as {
+              result?: string;
+              evidence?: {
+                provenance?: {
+                  parameters?: { humanReview?: { decision?: string } };
+                };
+              };
+            } | null;
+            if (
+              review?.result !== 'PASS' ||
+              review.evidence?.provenance?.parameters?.humanReview?.decision !==
+                'APPROVED'
+            )
+              throw new CampaignError('AUTHENTICATED_MEDIA_REVIEW_REQUIRED');
+            return Number(asset.technicalProperties.durationMilliseconds);
+          });
+          if (
+            !durations.length ||
+            durations.some((d) => !Number.isSafeInteger(d) || d < 1)
+          )
+            throw new CampaignError('AUDIO_VIDEO_DURATION_REQUIRED');
+          voice = await this.local.automaticAudio(
+            {
+              pipelineRunId: e.run_id,
+              scriptId: String(script.scriptId),
+              scriptContentHash: String(script.contentHash),
+              createdAt: e.scheduled_at,
+            },
+            durations.reduce((a, b) => a + b, 0),
+          );
+        }
         if (!voice) throw new CampaignError('AUDIO_REQUIRED');
         return {
           voiceTrackId: voice.voiceTrackId,
@@ -865,6 +918,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           String(script.scriptId),
           String(script.contentHash),
           String(r.voiceTrackId),
+          r.audioMode === 'RECORDING' ? 'RECORDING' : undefined,
         );
         if (!voice) throw new CampaignError('AUDIO_REQUIRED');
         return {
@@ -1044,7 +1098,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     try {
       if (
         paused?.evidence.step === 'AUDIO' &&
-        paused.evidence.code === 'AUDIO_REQUIRED'
+        [
+          'AUDIO_REQUIRED',
+          'LOCAL_TTS_CONFIGURATION_REQUIRED',
+          'LOCAL_TTS_LICENSE_REQUIRED',
+          'ALIGNMENT_CONFIGURATION_REQUIRED',
+        ].includes(String(paused.evidence.code))
       )
         return (
           this.local.authorizedAudio(
@@ -1052,7 +1111,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
             String(script.scriptId),
             String(script.contentHash),
             r.voiceTrackId ? String(r.voiceTrackId) : undefined,
-          ) !== null
+            r.audioMode === 'RECORDING' ? 'RECORDING' : undefined,
+          ) !== null ||
+          (r.audioMode !== 'RECORDING' && this.local.automaticAudioReady())
         );
       if (
         ['MEDIA_QC', 'SCENES'].includes(String(paused?.evidence.step)) &&

@@ -120,6 +120,11 @@ export class OperationsController {
   @Get('executions') @UseGuards(LocalQcGuard) list() {
     return this.respond(() => this.operations.list());
   }
+  @Post('executions/:id/audio-mode')
+  @UseGuards(LocalQcGuard)
+  audioMode(@Param('id') id: string, @Body() value: unknown) {
+    return this.respond(() => this.operations.audioMode(id, value));
+  }
   @Get('executions/:id') @UseGuards(LocalQcGuard) detail(
     @Param('id') id: string,
   ) {

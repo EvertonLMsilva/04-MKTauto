@@ -4,6 +4,16 @@ export interface AuthorizedLocalAudio {
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  automaticAudioReady?(): boolean;
+  automaticAudio?(
+    scope: {
+      pipelineRunId: string;
+      scriptId: string;
+      scriptContentHash: string;
+      createdAt: string;
+    },
+    durationMs: number,
+  ): Promise<AuthorizedLocalAudio>;
   publicationEvidence?(qcId: string): unknown;
   ingestRecording?(
     scope: {
@@ -25,6 +35,7 @@ export interface LocalAudiovisualPort {
     scriptId: string,
     scriptHash: string,
     voiceTrackId?: string,
+    source?: 'RECORDING',
   ): AuthorizedLocalAudio | null;
   ingest(value: unknown): Promise<unknown>;
   acceptAlignment(value: unknown): Promise<unknown>;

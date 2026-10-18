@@ -143,6 +143,16 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         'O limite mensal do Finance foi atingido. Aguarde a renovação da janela mensal (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
       AUDIO_REQUIRED:
         'Disponibilize uma gravação autorizada vinculada ao roteiro.',
+      LOCAL_TTS_CONFIGURATION_REQUIRED:
+        'Configure um modelo TTS local com manifesto de licença e hashes aprovados, ou escolha gravação própria.',
+      LOCAL_TTS_LICENSE_REQUIRED:
+        'A licença ou identidade do TTS local não está comprovada. Revise o manifesto autorizado ou escolha gravação própria.',
+      LOCAL_TTS_EXECUTION_REQUIRED:
+        'A síntese local falhou. Verifique os recursos locais ou escolha gravação própria.',
+      LOCAL_TTS_BUSY_REQUIRED:
+        'Outra execução está produzindo esta narração. Aguarde a conclusão; uma trava abandonada exige verificação operacional.',
+      NARRATION_DURATION_REQUIRED:
+        'O conteúdo aprovado não cabe no vídeo em fala natural. A remoção de repetições não foi suficiente; revise o roteiro ou forneça gravação válida. Nenhuma palavra foi cortada.',
       LOCAL_AUDIO_SELECTION_REQUIRED:
         'Selecione uma das gravações autorizadas para este roteiro.',
       ALIGNMENT_CONFIGURATION_REQUIRED:
@@ -272,6 +282,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         history = store.history(id);
       const stages: Record<string, string> = {
         voiceTrackId: 'AUDIO',
+        audioMode: 'AUDIO',
         audio: 'AUDIO',
         alignment: 'ALIGNMENT',
         composition: 'COMPOSITION',
