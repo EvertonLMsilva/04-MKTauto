@@ -28,6 +28,11 @@ import { inspectMvpWav } from './physical-media-inspection.js';
 import { LocalVideoStorage, hashFile } from './local-video-storage.js';
 import { runProcess, type ProcessRunner } from './ffmpeg-process.js';
 import type { LocalAudiovisualPort } from '../application/local-flow.port.js';
+import {
+  LocalPiperTts,
+  adaptLocalNarration,
+  type LocalSpeechEvidence,
+} from './local-piper-tts.js';
 type SubtitleDocument = {
   subtitleId: string;
   alignmentId: string;
@@ -39,6 +44,147 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  automaticAudioReady() {
+    return new LocalPiperTts(this.env, this.runner).ready();
+  }
+  async automaticAudio(
+    scope: Parameters<NonNullable<LocalAudiovisualPort['automaticAudio']>>[0],
+    durationMs: number,
+  ) {
+    const existing = () =>
+      this.authorizedAudio(
+        scope.pipelineRunId,
+        scope.scriptId,
+        scope.scriptContentHash,
+      );
+    const previous = existing();
+    if (previous) return previous;
+    const tts = new LocalPiperTts(this.env, this.runner),
+      config = tts.configuration();
+    const key = adaptationHash({
+      scope,
+      durationMs,
+      configurationHash: config.configurationHash,
+    });
+    const pending = this.inFlight.get(key);
+    if (pending) return pending;
+    const operation = (async () => {
+      const lock = join(this.files().root, `tts_${key}.lock`);
+      try {
+        await mkdir(lock);
+      } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'EEXIST')
+          localFail('LOCAL_TTS_BUSY_REQUIRED');
+        throw error;
+      }
+      try {
+        const replay = existing();
+        if (replay) return replay;
+        const script = this.session((r) => r.getScript(scope.scriptId));
+        if (
+          !script ||
+          script.contentHash !== scope.scriptContentHash ||
+          script.pipelineRunId !== scope.pipelineRunId ||
+          script.language !== 'pt-BR'
+        )
+          localFail('LOCAL_SCRIPT_BINDING_INVALID');
+        const { bytes, evidence } = await tts.synthesize(
+          script.fullNarration,
+          durationMs,
+        );
+        const hash = digest(bytes);
+        const voice = validateVoiceTrack({
+          schemaVersion: 'voice-track/1.0.0',
+          voiceTrackId: `voice_tts:${key}`,
+          pipelineRunId: scope.pipelineRunId,
+          projectId: script.projectId,
+          projectVersion: script.projectVersion,
+          scriptId: scope.scriptId,
+          scriptContentHash: scope.scriptContentHash,
+          language: script.language,
+          voiceStyle: 'informative',
+          durationMilliseconds: durationMs,
+          audioFormat: 'wav',
+          contentHash: hash,
+          storageReference: `object:voice/sha256/${hash}`,
+          origin: 'SYNTHETIC_TTS',
+          provider: 'local_piper',
+          rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
+          createdAt: scope.createdAt,
+          revision: 1,
+          supersedesVoiceTrackId: null,
+        });
+        const authorization = {
+          actorId: evidence.approvedBy,
+          statement: `Local synthetic speech authorized by pinned license evidence ${evidence.licenseEvidenceSha256}; ${evidence.license}; ${evidence.attribution}`,
+        };
+        const documentHash = this.files().put(
+          documentBytes({
+            voice,
+            authorization,
+            synthesis: evidence,
+            audioSha256: hash,
+            cost: { status: 'UNKNOWN', amount: null },
+          }),
+          'json',
+        );
+        this.voiceFiles().put(bytes, 'wav');
+        this.session((r) =>
+          r.transaction(() => {
+            if (
+              r.getScript(scope.scriptId)?.contentHash !==
+              scope.scriptContentHash
+            )
+              localFail('LOCAL_SCRIPT_BINDING_INVALID');
+            return r.registerLocalVoice(
+              voice,
+              documentHash,
+              adaptationHash({ authorization, synthesis: evidence }),
+            );
+          }),
+        );
+        return existing()!;
+      } finally {
+        await rmdir(lock);
+      }
+    })();
+    this.inFlight.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+  private narration(r: LocalFlowRepository, voice: any, script: any): string {
+    if (voice.origin !== 'SYNTHETIC_TTS' || voice.provider !== 'local_piper')
+      return script.fullNarration;
+    if (voice.rights.usageBasis !== 'LICENSED')
+      localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+    const doc = r.document<{ synthesis: LocalSpeechEvidence }>(
+      voice.voiceTrackId,
+      'voice_track',
+      this.files(),
+    );
+    const evidence = doc.synthesis,
+      config = new LocalPiperTts(this.env, this.runner).configuration();
+    if (
+      !evidence ||
+      evidence.schemaVersion !== 'local-tts-evidence/1' ||
+      evidence.configurationHash !== config.configurationHash ||
+      evidence.modelSha256 !== config.modelSha256 ||
+      evidence.licenseEvidenceSha256 !== config.licenseEvidenceSha256 ||
+      evidence.modelId !== config.modelId ||
+      evidence.modelVersion !== config.modelVersion ||
+      evidence.license !== config.license ||
+      evidence.targetDurationMs !== voice.durationMilliseconds ||
+      evidence.speechDurationMs > evidence.targetDurationMs ||
+      evidence.adaptation !== 'literal-deduplication/1' ||
+      evidence.narration !==
+        adaptLocalNarration(script.fullNarration, voice.durationMilliseconds)
+    )
+      localFail('LOCAL_TTS_LICENSE_REQUIRED');
+    return evidence.narration;
+  }
   async ingestRecording(
     scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],
     input: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[1],
@@ -108,11 +254,17 @@ export class LocalFlowRuntime {
     scriptId: string,
     scriptHash: string,
     voiceTrackId?: string,
+    source?: 'RECORDING',
   ) {
     return this.session((r) => {
       const ids = r
         .localVoiceIds(runId, scriptId, scriptHash)
-        .filter((id) => !voiceTrackId || id === voiceTrackId);
+        .filter((id) => !voiceTrackId || id === voiceTrackId)
+        .filter(
+          (id) =>
+            source !== 'RECORDING' ||
+            r.getVoiceTrack(id)?.origin !== 'SYNTHETIC_TTS',
+        );
       if (!ids.length) return null;
       if (ids.length !== 1) localFail('LOCAL_AUDIO_SELECTION_REQUIRED');
       const voice = validateVoiceTrack(r.getVoiceTrack(ids[0]));
@@ -128,9 +280,15 @@ export class LocalFlowRuntime {
         voice.pipelineRunId !== runId ||
         voice.scriptId !== scriptId ||
         voice.scriptContentHash !== scriptHash ||
-        voice.provider !== null ||
+        (voice.origin === 'SYNTHETIC_TTS'
+          ? voice.provider !== 'local_piper'
+          : voice.provider !== null) ||
         !['OWNED', 'LICENSED'].includes(voice.rights.usageBasis) ||
-        !['AUTHORIZED_RECORDING', 'OPERATOR_RECORDING'].includes(voice.origin)
+        ![
+          'AUTHORIZED_RECORDING',
+          'OPERATOR_RECORDING',
+          'SYNTHETIC_TTS',
+        ].includes(voice.origin)
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
       const doc = r.document<{
@@ -146,6 +304,7 @@ export class LocalFlowRuntime {
       )
         localFail('LOCAL_RIGHTS_EVIDENCE_REQUIRED');
       const bytes = this.voiceFiles().read(voice.contentHash, 'wav', 20971520);
+      this.narration(r, voice, script);
       if (
         voice.audioFormat !== 'wav' ||
         voice.storageReference !== `object:voice/sha256/${voice.contentHash}` ||
@@ -287,7 +446,7 @@ export class LocalFlowRuntime {
       voice.contentHash !== evidence.input.audioSha256 ||
       voice.durationMilliseconds !== evidence.input.durationMs ||
       script.revision !== evidence.input.scriptVersion ||
-      script.fullNarration !== evidence.input.canonicalText
+      this.narration(r, voice, script) !== evidence.input.canonicalText
     )
       localFail('ALIGNMENT_CURRENT_BINDING_INVALID');
     const audio = this.voiceFiles().read(voice.contentHash, 'wav', 20971520);
@@ -332,9 +491,13 @@ export class LocalFlowRuntime {
       if (!script) localFail('LOCAL_SCRIPT_NOT_FOUND');
       // Only explicitly authorized, ingested local audio may be aligned.
       if (
-        !['AUTHORIZED_RECORDING', 'OPERATOR_RECORDING'].includes(
-          voice.origin,
-        ) ||
+        ![
+          'AUTHORIZED_RECORDING',
+          'OPERATOR_RECORDING',
+          'SYNTHETIC_TTS',
+        ].includes(voice.origin) ||
+        (voice.origin === 'SYNTHETIC_TTS' &&
+          voice.provider !== 'local_piper') ||
         !r.getArtifact(id)?.generationMetadata
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
@@ -350,9 +513,9 @@ export class LocalFlowRuntime {
         audioSha256: voice.contentHash,
         scriptId: script.scriptId,
         scriptVersion: script.revision,
-        scriptTextSha256: alignmentHash(script.fullNarration),
+        scriptTextSha256: alignmentHash(this.narration(r, voice, script)),
         durationMs: voice.durationMilliseconds,
-        canonicalText: script.fullNarration,
+        canonicalText: this.narration(r, voice, script),
       };
     });
     const alignmentId =

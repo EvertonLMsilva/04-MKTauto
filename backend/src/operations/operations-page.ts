@@ -13,7 +13,7 @@ export const operationsPage = `<!doctype html>
 <div id="reference-choice" hidden><label>Imagem original de referência<select id="reference-select"></select></label><button id="load-reference" class="quiet">Usar esta referência</button></div>
 <div id="review-content" hidden><div class="media-grid"><div><video id="source-video" controls preload="metadata" aria-label="Vídeo para revisão"></video><p class="muted">Vídeo gerado / recuperado</p></div><div><img id="source-image" alt="Imagem original de referência autorizada"><p class="muted">Referência original</p></div></div><div id="technical" class="technical"></div><p id="decision-audit" class="audit"></p>
 <form id="review-form"><p>Registre sua observação para cada critério ao longo do vídeo. Uma falha técnica não pode ser substituída por aprovação.</p><label>Movimento real<textarea name="motion" minlength="10" maxlength="1000" required placeholder="Descreva o movimento observado."></textarea></label><label>Continuidade<textarea name="continuity" minlength="10" maxlength="1000" required placeholder="Descreva a continuidade do vídeo completo."></textarea></label><label>Fidelidade à referência<textarea name="fidelity" minlength="10" maxlength="1000" required placeholder="Compare o produto e seus detalhes com a referência."></textarea></label><label class="check"><input type="checkbox" name="watched" required>Assisti ao vídeo completo e comparei com a imagem de referência.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar mídia</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar mídia</button></div></form></div></section>
-<section id="audio-panel" class="card" hidden><h2>02 / Narração autorizada</h2><p>Envie uma gravação própria ou licenciada que corresponda ao roteiro. WAV PCM, 24 kHz, mono, 16 bits; até 20 MB. Nenhum TTS pago será acionado.</p><details><summary>Ver roteiro da narração</summary><pre id="narration"></pre></details><form id="audio-form"><label>Arquivo WAV<input type="file" name="audio" accept=".wav,audio/wav" required></label><label>Direito de uso<select name="usageBasis"><option value="OWNED">Gravação própria</option><option value="LICENSED">Gravação licenciada</option></select></label><label>Evidência de autorização<textarea name="statement" required minlength="15" maxlength="2000" placeholder="Informe a origem e a autorização de uso desta gravação."></textarea></label><label class="check"><input type="checkbox" name="commercialUseAllowed" required>Confirmo autorização para processamento local e uso comercial nesta campanha.</label><button type="submit">Enviar gravação e continuar</button></form></section>
+<section id="audio-panel" class="card" hidden><h2>02 / Narração autorizada</h2><label>Fonte da voz<select id="audio-mode"><option value="AUTOMATIC">Voz automática local</option><option value="RECORDING">Gravação própria ou licenciada</option></select></label><p id="audio-mode-description">A voz automática exige modelo local, licença comercial comprovada e alinhador configurados. Nenhum serviço pago será acionado. A fala não será acelerada ou cortada.</p><details><summary>Ver roteiro da narração</summary><pre id="narration"></pre></details><form id="audio-form" hidden><p>WAV PCM, 24 kHz, mono, 16 bits; até 20 MB.</p><label>Arquivo WAV<input type="file" name="audio" accept=".wav,audio/wav" required></label><label>Direito de uso<select name="usageBasis"><option value="OWNED">Gravação própria</option><option value="LICENSED">Gravação licenciada</option></select></label><label>Evidência de autorização<textarea name="statement" required minlength="15" maxlength="2000" placeholder="Informe a origem e a autorização de uso desta gravação."></textarea></label><label class="check"><input type="checkbox" name="commercialUseAllowed" required>Confirmo autorização para processamento local e uso comercial nesta campanha.</label><button type="submit">Enviar gravação e continuar</button></form></section>
 <section id="final-panel" class="card" hidden><div class="title-row"><h2>03 / Seu vídeo final</h2><a id="download" class="button" download="video-final.mp4">Baixar MP4</a></div><video id="final-video" controls preload="metadata" aria-label="Vídeo final com narração e legendas"></video><p class="muted">MP4 com QC técnico validado. Custo computacional local não medido; nenhum custo pago é presumido como zero.</p><form id="final-form" hidden><h3>Aprovação da versão final</h3><p>Esta decisão é independente da revisão da mídia e libera somente a entrega manual.</p><label>Observação / motivo da rejeição<textarea name="justification" maxlength="2000"></textarea></label><label class="check"><input type="checkbox" required>Revisei esta versão final exata, incluindo narração e legendas.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar versão final</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar versão final</button></div></form></section><section id="instagram-panel" class="card" hidden><h2>05 / Instagram</h2><p id="instagram-mode"></p><p id="instagram-state" role="status"></p><a id="instagram-url" target="_blank" rel="noopener noreferrer" hidden>Ver publicação</a>
 <form id="instagram-package-form"><label>Texto da postagem<textarea name="caption" required maxlength="5000"></textarea></label><button>Preparar pacote para revisão</button></form>
 <pre id="instagram-package-preview"></pre>
@@ -642,12 +642,9 @@ export const operationsScript = String.raw`
     if (data.media.some((m) => m.mediaAssetId === current))
       $("media-select").value = current;
     $("load-review").disabled = !data.media.length;
-    $("audio-panel").hidden = !(
-      pending &&
-      ["AUDIO_REQUIRED", "LOCAL_AUDIO_SELECTION_REQUIRED"].includes(
-        pending.code,
-      )
-    );
+    $("audio-panel").hidden = finalization.completedSteps.includes("AUDIO") || execution.status!=="WAITING_INPUT";
+    $("audio-mode").value = data.audioMode || "AUTOMATIC";
+    $("audio-form").hidden = $("audio-mode").value!=="RECORDING";
     $("narration").textContent =
       data.script?.fullNarration || "O roteiro ainda não está disponível.";
     const ready = finalization.completedSteps.includes("PREVIEW");
@@ -888,6 +885,12 @@ export const operationsScript = String.raw`
     } finally {
       buttons.forEach((button) => (button.disabled = false));
     }
+  });
+  $("audio-mode").addEventListener("change",async(event)=>{
+    event.target.disabled=true;
+    try{await post(base()+"/audio-mode",{mode:event.target.value});await advance(selected);}
+    catch(error){fail(error);}
+    finally{event.target.disabled=false;}
   });
   $("audio-form").addEventListener("submit", async (event) => {
     event.preventDefault();

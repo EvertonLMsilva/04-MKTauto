@@ -1,6 +1,19 @@
 import type { LocalAudiovisualPort } from './local-flow.port.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
+  automaticAudioReady() {
+    return this.runtime.automaticAudioReady?.() ?? false;
+  }
+  automaticAudio(
+    scope: Parameters<NonNullable<LocalAudiovisualPort['automaticAudio']>>[0],
+    durationMs: number,
+  ) {
+    if (!this.runtime.automaticAudio)
+      throw Object.assign(new Error('LOCAL_TTS_CONFIGURATION_REQUIRED'), {
+        code: 'LOCAL_TTS_CONFIGURATION_REQUIRED',
+      });
+    return this.runtime.automaticAudio(scope, durationMs);
+  }
   publicationEvidence(qcId: string) {
     if (!this.runtime.publicationEvidence)
       throw Object.assign(new Error('PUBLICATION_EVIDENCE_REQUIRED'), {
@@ -24,6 +37,7 @@ export class LocalFlowService {
     scriptId: string,
     scriptHash: string,
     voiceTrackId?: string,
+    source?: 'RECORDING',
   ) {
     return (
       this.runtime.authorizedAudio?.(
@@ -31,6 +45,7 @@ export class LocalFlowService {
         scriptId,
         scriptHash,
         voiceTrackId,
+        source,
       ) ?? null
     );
   }

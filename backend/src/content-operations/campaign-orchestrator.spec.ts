@@ -337,6 +337,10 @@ describe('offline automatic finalization', () => {
       compositionReceipt: vi.fn(),
     };
     const local = {
+      automaticAudioReady: vi.fn(() => false),
+      automaticAudio: vi.fn(async () => {
+        throw new CampaignError('LOCAL_TTS_CONFIGURATION_REQUIRED');
+      }),
       authorizedAudio: vi.fn(() => ({
         voiceTrackId: 'voice_001',
         contentHash: hash,
@@ -410,8 +414,95 @@ describe('offline automatic finalization', () => {
       },
     };
     asset.origin = 'PROVIDER_GENERATED';
-    return { workflow, execution, request, done, media, local, asset, report };
+    return {
+      workflow,
+      execution,
+      request,
+      done,
+      media,
+      local,
+      asset,
+      report,
+      finance,
+    };
   }
+  it('generates local speech only after QC and preserves automatic downstream steps', async () => {
+    const f = setup();
+    f.local.authorizedAudio.mockReturnValue(null as any);
+    f.local.automaticAudio.mockResolvedValue({
+      voiceTrackId: 'voice_001',
+      contentHash: hash,
+      durationMilliseconds: 10000,
+    } as never);
+    await expect(
+      f.workflow.execute('AUDIO', f.execution, f.request, f.done),
+    ).rejects.toThrow('AUTHENTICATED_MEDIA_REVIEW_REQUIRED');
+    expect(f.local.automaticAudio).not.toHaveBeenCalled();
+    f.media.temporalReview.mockReturnValue(f.report('APPROVED'));
+    f.done.MEDIA_QC = await f.workflow.execute(
+      'MEDIA_QC',
+      f.execution,
+      f.request,
+      f.done,
+    );
+    f.done.AUDIO = await f.workflow.execute(
+      'AUDIO',
+      f.execution,
+      f.request,
+      f.done,
+    );
+    expect(f.local.automaticAudio).toHaveBeenCalledWith(
+      expect.objectContaining({ pipelineRunId: 'run_001' }),
+      10000,
+    );
+    // The persisted authorized audio is used by the existing composition gate.
+    f.local.authorizedAudio.mockReturnValue({
+      voiceTrackId: 'voice_001',
+      contentHash: hash,
+      durationMilliseconds: 10000,
+    });
+    f.done.ALIGNMENT = await f.workflow.execute(
+      'ALIGNMENT',
+      f.execution,
+      f.request,
+      f.done,
+    );
+    f.done.SUBTITLES = await f.workflow.execute(
+      'SUBTITLES',
+      f.execution,
+      f.request,
+      f.done,
+    );
+    await f.workflow.execute('COMPOSITION', f.execution, f.request, f.done);
+    expect(f.local.alignAudio).toHaveBeenCalledWith('voice_001');
+    expect(f.local.subtitles).toHaveBeenCalled();
+    expect(f.local.compose).toHaveBeenCalled();
+  });
+  it('manual selection and Finance exhaustion cannot dispatch local synthesis', async () => {
+    const f = setup();
+    f.local.authorizedAudio.mockReturnValue(null as any);
+    await expect(
+      f.workflow.execute(
+        'AUDIO',
+        f.execution,
+        { ...f.request, audioMode: 'RECORDING' },
+        f.done,
+      ),
+    ).rejects.toThrow('AUDIO_REQUIRED');
+    f.finance.getGlobalUsage = () => ({
+      dailyUsd: '1',
+      monthlyUsd: '1',
+      policy: {
+        time_zone: 'America/Sao_Paulo',
+        daily_usd: '1',
+        monthly_usd: '20',
+      },
+    });
+    await expect(
+      f.workflow.execute('AUDIO', f.execution, f.request, f.done),
+    ).rejects.toThrow('GLOBAL_DAILY_BUDGET_EXCEEDED');
+    expect(f.local.automaticAudio).not.toHaveBeenCalled();
+  });
   it('discovers persisted media, audio and generates a deterministic V2 request', async () => {
     const f = setup();
     f.done.MEDIA_QC = await f.workflow.execute(
@@ -452,7 +543,12 @@ describe('offline automatic finalization', () => {
     const f = setup();
     f.local.authorizedAudio.mockReturnValue(null as any);
     await expect(
-      f.workflow.execute('AUDIO', f.execution, f.request, f.done),
+      f.workflow.execute(
+        'AUDIO',
+        f.execution,
+        { ...f.request, audioMode: 'RECORDING' },
+        f.done,
+      ),
     ).rejects.toThrow('AUDIO_REQUIRED');
   });
   it('does not expand review-only campaign rights into composition', async () => {

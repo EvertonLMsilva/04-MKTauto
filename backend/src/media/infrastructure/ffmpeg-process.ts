@@ -8,6 +8,7 @@ export const FFMPEG_PROCESS_RUNNER = Symbol('FFMPEG_PROCESS_RUNNER');
 const CONTROL_BYTES = /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g;
 
 export interface ProcessOptions {
+  stdin?: string;
   cwd?: string;
   signal?: AbortSignal;
   timeoutMs: number;
@@ -25,6 +26,18 @@ export type ProcessRunner = (
 
 // Settle only after close, so staging cleanup never races a live writer.
 export const runProcess: ProcessRunner = (command, args, options) => {
+  if (
+    options.stdin !== undefined &&
+    (typeof options.stdin !== 'string' ||
+      Buffer.byteLength(options.stdin) > 65536)
+  )
+    return Promise.reject(
+      ffmpegFailure(
+        'FFMPEG_CONFIGURATION_INVALID',
+        'stdin',
+        'entrada inválida',
+      ),
+    );
   if (options.signal?.aborted)
     return Promise.reject(
       ffmpegFailure('COMPOSER_CANCELLED', 'signal', 'operação cancelada'),
@@ -76,12 +89,22 @@ export const runProcess: ProcessRunner = (command, args, options) => {
         cwd: options.cwd,
         shell: false,
         windowsHide: true,
-        stdio: ['ignore', 'pipe', 'pipe'],
+        stdio: [
+          options.stdin === undefined ? 'ignore' : 'pipe',
+          'pipe',
+          'pipe',
+        ],
       });
     } catch (caught) {
       cleanup();
       reject(caught);
       return;
+    }
+    if (options.stdin !== undefined) {
+      child.stdin?.on('error', (caught) => {
+        processError = caught;
+      });
+      child.stdin?.end(options.stdin);
     }
     options.signal?.addEventListener('abort', cancel, { once: true });
     if (options.signal?.aborted) cancel();

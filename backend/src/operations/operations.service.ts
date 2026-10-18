@@ -79,6 +79,7 @@ export class OperationsService {
           revision: asset.revision,
         })),
       scheduler: 'OFFLINE_FINALIZATION',
+      audioMode: context.request?.audioMode ?? 'AUTOMATIC',
       cost: { status: 'UNKNOWN', amount: null },
     };
   }
@@ -146,6 +147,19 @@ export class OperationsService {
       voiceTrackId: voice.voiceTrackId,
       audio: null,
     });
+    return this.campaigns.get(id);
+  }
+  async audioMode(id: string, value: unknown) {
+    const input = document(value),
+      context = this.campaigns.finalizationContext(id);
+    if (
+      Object.keys(input).join(',') !== 'mode' ||
+      !['AUTOMATIC', 'RECORDING'].includes(String(input.mode))
+    )
+      fail('INVALID_AUDIO_MODE');
+    if (context.execution.status !== 'WAITING_INPUT' || context.completed.AUDIO)
+      fail('AUDIO_INPUT_CONFLICT');
+    await this.campaigns.resume(id, { audioMode: input.mode });
     return this.campaigns.get(id);
   }
   async finalDecision(id: string, value: unknown, principal: unknown) {
