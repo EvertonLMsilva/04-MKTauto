@@ -18,5 +18,13 @@ describe('AppController', () => {
     it('should return "Hello World!"', () => {
       expect(appController.getHello()).toBe('Hello World!');
     });
+    it('opens the operations interface for a browser request', () => {
+      const response = { redirect: vi.fn() };
+      appController.getHello(
+        { headers: { accept: 'text/html' } } as any,
+        response as any,
+      );
+      expect(response.redirect).toHaveBeenCalledWith('/operations');
+    });
   });
 });

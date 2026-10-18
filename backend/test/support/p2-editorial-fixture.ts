@@ -38,12 +38,14 @@ export function p2EditorialFixture({
   briefingId = 'brief_001',
   references = false,
   mediaAuthorization,
+  productionProfile,
 }: {
   pipelineRunId?: string;
   projectId?: string;
   briefingId?: string;
   references?: boolean;
   mediaAuthorization?: MediaAuthorization;
+  productionProfile?: 'STATIC_IMAGE_V1' | 'MIXED_MEDIA_V2';
 } = {}) {
   const directory = mkdtempSync(join(tmpdir(), 'mktauto-p2-native-'));
   const database = join(directory, 'catalog.sqlite');
@@ -65,6 +67,7 @@ export function p2EditorialFixture({
         audience: { profile: 'Adultos', language: 'pt-BR' },
         references: [],
         channel: {
+          ...(productionProfile ? { productionProfile } : {}),
           publishing: {
             contentsPerDay: 1,
             networks: ['instagram'],

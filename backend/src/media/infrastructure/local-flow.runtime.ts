@@ -26,6 +26,7 @@ import {
 import { inspectMvpWav } from './physical-media-inspection.js';
 import { LocalVideoStorage, hashFile } from './local-video-storage.js';
 import { runProcess, type ProcessRunner } from './ffmpeg-process.js';
+import type { LocalAudiovisualPort } from '../application/local-flow.port.js';
 type SubtitleDocument = {
   subtitleId: string;
   alignmentId: string;
@@ -37,6 +38,70 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  async ingestRecording(
+    scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],
+    input: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[1],
+    actorId: string,
+  ) {
+    if (
+      !input ||
+      Object.keys(input).sort().join(',') !==
+        'audioBase64,commercialUseAllowed,statement,usageBasis' ||
+      !['OWNED', 'LICENSED'].includes(input.usageBasis) ||
+      input.commercialUseAllowed !== true
+    )
+      localFail('LOCAL_RIGHTS_EVIDENCE_REQUIRED');
+    if (
+      typeof input.audioBase64 !== 'string' ||
+      input.audioBase64.length > 28000000 ||
+      !/^[A-Za-z0-9+/]+={0,2}$/.test(input.audioBase64)
+    )
+      localFail('LOCAL_AUDIO_INVALID');
+    const bytes = Buffer.from(input.audioBase64, 'base64');
+    if (
+      bytes.length > 20971520 ||
+      bytes.toString('base64') !== input.audioBase64
+    )
+      localFail('LOCAL_AUDIO_INVALID');
+    const facts = inspectMvpWav(bytes),
+      hash = digest(bytes);
+    const script = this.session((r) => r.getScript(scope.scriptId));
+    if (
+      !script ||
+      script.pipelineRunId !== scope.pipelineRunId ||
+      script.contentHash !== scope.scriptContentHash
+    )
+      localFail('LOCAL_SCRIPT_BINDING_INVALID');
+    const voice = {
+      schemaVersion: 'voice-track/1.0.0',
+      voiceTrackId: `voice_local:${adaptationHash({ scope, hash, actorId, usageBasis: input.usageBasis, statement: input.statement })}`,
+      pipelineRunId: scope.pipelineRunId,
+      projectId: script!.projectId,
+      projectVersion: script!.projectVersion,
+      scriptId: scope.scriptId,
+      scriptContentHash: scope.scriptContentHash,
+      language: script!.language,
+      voiceStyle: 'informative',
+      durationMilliseconds: facts.durationMilliseconds,
+      audioFormat: 'wav',
+      contentHash: hash,
+      storageReference: `object:voice/sha256/${hash}`,
+      origin:
+        input.usageBasis === 'OWNED'
+          ? 'OPERATOR_RECORDING'
+          : 'AUTHORIZED_RECORDING',
+      provider: null,
+      rights: { usageBasis: input.usageBasis, commercialUseAllowed: true },
+      createdAt: scope.createdAt,
+      revision: 1,
+      supersedesVoiceTrackId: null,
+    };
+    return this.ingest({
+      voiceTrack: voice,
+      audioBase64: input.audioBase64,
+      authorization: { actorId, statement: input.statement },
+    });
+  }
   authorizedAudio(
     runId: string,
     scriptId: string,

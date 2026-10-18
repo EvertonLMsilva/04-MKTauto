@@ -25,9 +25,10 @@ export class CampaignOrchestrator {
     private readonly now = () => new Date().toISOString(),
     private readonly ttl = 60_000,
   ) {}
-  async tick() {
-    this.repository.recover(this.now());
+  async tick(executionId?: string) {
+    this.repository.recover(this.now(), executionId);
     for (const e of this.repository.pendingFinalization()) {
+      if (executionId && e.execution_id !== executionId) continue;
       const history = this.repository.history(e.execution_id);
       try {
         if (e.status === 'WAITING_INPUT') {
@@ -76,6 +77,7 @@ export class CampaignOrchestrator {
       }
     }
     for (const e of this.repository.pendingPublicationPolls(this.now())) {
+      if (executionId) continue;
       try {
         this.repository.resume(e.execution_id, this.now(), e.version);
       } catch (error) {
@@ -86,7 +88,8 @@ export class CampaignOrchestrator {
           throw error;
       }
     }
-    for (const e of this.repository.due(this.now())) {
+    for (const e of this.repository.due(this.now(), executionId)) {
+      if (executionId && e.execution_id !== executionId) continue;
       const claimed = this.repository.claim(
         e.execution_id,
         this.now(),

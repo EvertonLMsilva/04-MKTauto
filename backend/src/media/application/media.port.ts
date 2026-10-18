@@ -20,6 +20,12 @@ export interface MediaRepository {
   getMediaSelection(id: string): SelectionReceipt | null;
 }
 export interface QualityRepository {
+  prepareTemporalReview?(id: string, referenceId?: string): Promise<unknown>;
+  reviewMediaBytes?(
+    id: string,
+    referenceId: string,
+    kind: 'video' | 'reference',
+  ): Promise<Buffer>;
   getTemporalMediaQC?(identity: TemporalMediaIdentity): unknown;
   reviewTemporalMedia?(
     id: string,

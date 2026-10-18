@@ -149,6 +149,34 @@ export class MediaService {
         }) ?? null,
     );
   }
+  async prepareTemporalReview(id: string, referenceId?: string) {
+    const repository = this.store.openQuality(false);
+    try {
+      if (!repository.prepareTemporalReview)
+        throw Object.assign(new Error('HUMAN_APPROVAL_REVIEW_UNAVAILABLE'), {
+          code: 'HUMAN_APPROVAL_REVIEW_UNAVAILABLE',
+        });
+      return await repository.prepareTemporalReview(id, referenceId);
+    } finally {
+      repository.close();
+    }
+  }
+  async reviewMediaBytes(
+    id: string,
+    referenceId: string,
+    kind: 'video' | 'reference',
+  ) {
+    const repository = this.store.openQuality(true);
+    try {
+      if (!repository.reviewMediaBytes)
+        throw Object.assign(new Error('HUMAN_APPROVAL_REVIEW_UNAVAILABLE'), {
+          code: 'HUMAN_APPROVAL_REVIEW_UNAVAILABLE',
+        });
+      return await repository.reviewMediaBytes(id, referenceId, kind);
+    } finally {
+      repository.close();
+    }
+  }
   async reviewTemporalMedia(id: string, input: unknown, principal: unknown) {
     const reviewer = operationalQcIdentity.assertActive(principal);
     const key = adaptationHash({

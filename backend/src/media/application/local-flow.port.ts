@@ -4,6 +4,21 @@ export interface AuthorizedLocalAudio {
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  ingestRecording?(
+    scope: {
+      pipelineRunId: string;
+      scriptId: string;
+      scriptContentHash: string;
+      createdAt: string;
+    },
+    input: {
+      audioBase64: string;
+      usageBasis: string;
+      commercialUseAllowed: boolean;
+      statement: string;
+    },
+    actorId: string,
+  ): Promise<unknown>;
   authorizedAudio?(
     runId: string,
     scriptId: string,

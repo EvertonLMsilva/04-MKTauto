@@ -47,6 +47,23 @@ describe('campaign orchestration', () => {
     await new CampaignOrchestrator(r, workflow, () => at).tick();
     expect(workflow.execute).toHaveBeenCalledTimes(3);
   });
+  it('advances only the selected execution without claiming other queued campaigns', async () => {
+    const first = schedule();
+    const other = r.schedule(
+      {
+        campaignId: 'campaign_002',
+        campaignRevision: 1,
+        scheduledAt: at,
+        runId: 'run_002',
+      },
+      {},
+      at,
+    );
+    await service.tick(first.execution_id);
+    expect(r.get(first.execution_id).status).toBe('SUCCEEDED');
+    expect(r.get(other.execution_id).status).toBe('SCHEDULED');
+    expect(workflow.execute).toHaveBeenCalledTimes(3);
+  });
   it('automatically resumes a verified review after restart without replaying completed work', async () => {
     const e = schedule();
     let ready = false;
@@ -230,6 +247,7 @@ describe('offline automatic finalization', () => {
       visualDirections: [{ position: 1 }],
     };
     const asset: any = {
+      schemaVersion: 'media-asset/2.0.0',
       mediaAssetId: 'media_001',
       contentHash: hash,
       mediaReference: `media:sha256_${hash}`,
@@ -240,7 +258,10 @@ describe('offline automatic finalization', () => {
       scriptId: 'script_001',
       scriptContentHash: hash,
       visualDirectionPosition: 1,
-      technicalProperties: { durationMilliseconds: 10000 },
+      technicalProperties: {
+        durationMilliseconds: 10000,
+        mimeType: 'video/mp4',
+      },
       rights: {
         commercialUseAllowed: true,
         evidence: [
