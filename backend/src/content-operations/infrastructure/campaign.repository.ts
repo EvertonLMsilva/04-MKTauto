@@ -126,6 +126,15 @@ export class CampaignRepository {
       )
       .all(instant(now)) as unknown as CampaignExecution[];
   }
+  pendingFinalization() {
+    return this.db
+      .prepare(
+        `SELECT * FROM campaign_executions
+       WHERE status IN ('WAITING_INPUT','WAITING_RECONCILIATION')
+       ORDER BY updated_at,execution_id`,
+      )
+      .all() as unknown as CampaignExecution[];
+  }
   pendingPublicationPolls(now: string) {
     // Only resume the explicit, persisted read-only processing wait. Unknown effects,
     // missing approvals, revocations and auth/rate-limit errors never enter this path.

@@ -91,6 +91,11 @@ export class MediaController {
       });
     }
   }
+  @Get('assets/:id/temporal-reviews')
+  @UseGuards(LocalQcGuard)
+  temporalReviewStatus(@Param('id') id: string) {
+    return this.respond(() => this.media.temporalReview(id));
+  }
   @Post('compositions') async compose(@Body() value: unknown) {
     try {
       return await this.media.compose(value);

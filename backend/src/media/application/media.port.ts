@@ -6,6 +6,7 @@ import type {
 } from '../domain/media.types.js';
 import type { VideoRender } from '../domain/render.types.js';
 import type { InitialRenderRepository } from './video-composition.port.js';
+import type { TemporalMediaIdentity } from '../domain/p4-qc-contracts.js';
 export interface MediaRepository {
   close(): void;
   registerMediaAsset(value: unknown): MediaAsset;
@@ -19,6 +20,7 @@ export interface MediaRepository {
   getMediaSelection(id: string): SelectionReceipt | null;
 }
 export interface QualityRepository {
+  getTemporalMediaQC?(identity: TemporalMediaIdentity): unknown;
   reviewTemporalMedia?(
     id: string,
     input: unknown,

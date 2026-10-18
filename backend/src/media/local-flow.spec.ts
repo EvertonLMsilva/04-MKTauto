@@ -1,12 +1,142 @@
 import { localFixture } from '../../test/support/local-flow-fixture.js';
 import { LocalFlowRuntime } from './infrastructure/local-flow.runtime.js';
 import { alignmentHash } from './domain/alignment-contracts.js';
-import { digest } from './infrastructure/local-evidence-storage.js';
+import {
+  digest,
+  LocalEvidenceStorage,
+  documentBytes,
+} from './infrastructure/local-evidence-storage.js';
+import { LocalFlowRepository } from './infrastructure/local-flow.repository.js';
+import { MediaService } from './application/media.service.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { DatabaseSync } from 'node:sqlite';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 const { wav } = await import(
   new URL('../../../test-support/physical-fixtures.js', import.meta.url).href
 );
+
+test('discovers only a unique authorized local recording and verifies its bytes after restart', () => {
+  const root = mkdtempSync(join(tmpdir(), 'mkt-audio-discovery-'));
+  try {
+    const files = new LocalEvidenceStorage(root),
+      bytes = wav({ durationMilliseconds: 1000 });
+    const contentHash = files.put(bytes, 'wav');
+    const voice = {
+      schemaVersion: 'voice-track/1.0.0',
+      voiceTrackId: 'voice_local_001',
+      pipelineRunId: 'run_001',
+      projectId: 'project_001',
+      projectVersion: 1,
+      scriptId: 'script_001',
+      scriptContentHash: 'a'.repeat(64),
+      language: 'pt-BR',
+      voiceStyle: 'informative',
+      durationMilliseconds: 1000,
+      audioFormat: 'wav',
+      contentHash,
+      storageReference: `object:voice/sha256/${contentHash}`,
+      origin: 'AUTHORIZED_RECORDING',
+      provider: null,
+      rights: { usageBasis: 'OWNED', commercialUseAllowed: true },
+      createdAt: '2026-10-18T00:00:00Z',
+      revision: 1,
+      supersedesVoiceTrackId: null,
+    };
+    const doc = {
+      voice,
+      authorization: {
+        actorId: 'operator_001',
+        statement: 'Gravação própria autorizada para uso comercial.',
+      },
+      audioSha256: contentHash,
+    };
+    files.put(documentBytes(doc), 'json');
+    const repository = {
+      localVoiceIds: vi.fn(() => [voice.voiceTrackId]),
+      getVoiceTrack: () => voice,
+      getScript: () => ({ ...voice, contentHash: voice.scriptContentHash }),
+      getRun: () => voice,
+      document: () => doc,
+      close: vi.fn(),
+    };
+    const env = { LOCAL_MEDIA_EVIDENCE_ROOT: root, FFMPEG_VOICE_ROOT: root };
+    const open = () => repository as unknown as LocalFlowRepository;
+    const flow = new LocalFlowRuntime(open, {} as MediaService, env);
+    expect(
+      flow.authorizedAudio('run_001', 'script_001', voice.scriptContentHash),
+    ).toEqual({
+      voiceTrackId: voice.voiceTrackId,
+      contentHash,
+      durationMilliseconds: 1000,
+    });
+    expect(
+      new LocalFlowRuntime(open, {} as MediaService, env).authorizedAudio(
+        'run_001',
+        'script_001',
+        voice.scriptContentHash,
+      ),
+    ).toBeTruthy();
+    expect(() =>
+      flow.authorizedAudio('other_run', 'script_001', voice.scriptContentHash),
+    ).toThrow('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+    repository.localVoiceIds.mockReturnValue([
+      voice.voiceTrackId,
+      'voice_other',
+    ]);
+    expect(() =>
+      flow.authorizedAudio('run_001', 'script_001', voice.scriptContentHash),
+    ).toThrow('LOCAL_AUDIO_SELECTION_REQUIRED');
+    repository.localVoiceIds.mockReturnValue([]);
+    expect(
+      flow.authorizedAudio('run_001', 'script_001', voice.scriptContentHash),
+    ).toBeNull();
+    repository.localVoiceIds.mockReturnValue([voice.voiceTrackId]);
+    writeFileSync(files.path(contentHash, 'wav'), 'modified');
+    expect(() =>
+      flow.authorizedAudio('run_001', 'script_001', voice.scriptContentHash),
+    ).toThrow();
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('audio discovery SQL excludes other scripts, synthetic, unproved and superseded recordings', () => {
+  const db = new DatabaseSync(':memory:');
+  try {
+    db.exec(`CREATE TABLE voice_tracks(voice_track_id TEXT,pipeline_run_id TEXT,script_id TEXT,script_content_hash TEXT,origin TEXT,provider TEXT,commercial_use_allowed INTEGER,supersedes_voice_track_id TEXT);
+      CREATE TABLE artifact_lineage(artifact_id TEXT,artifact_type TEXT,generation_metadata_json TEXT);`);
+    const insert = db.prepare(
+      'INSERT INTO voice_tracks VALUES(?,?,?,?,?,?,?,?)',
+    );
+    for (const [id, run, origin, prior] of [
+      ['old', 'run_001', 'AUTHORIZED_RECORDING', null],
+      ['current', 'run_001', 'AUTHORIZED_RECORDING', 'old'],
+      ['other', 'other_run', 'AUTHORIZED_RECORDING', null],
+      ['tts', 'run_001', 'SYNTHETIC_TTS', null],
+      ['unproved', 'run_001', 'AUTHORIZED_RECORDING', null],
+    ]) {
+      insert.run(id, run, 'script_001', 'hash', origin, null, 1, prior);
+      if (id !== 'unproved')
+        db.prepare('INSERT INTO artifact_lineage VALUES(?,?,?)').run(
+          id,
+          'voice_track',
+          '{}',
+        );
+    }
+    expect(
+      LocalFlowRepository.prototype.localVoiceIds.call(
+        { db } as unknown as LocalFlowRepository,
+        'run_001',
+        'script_001',
+        'hash',
+      ),
+    ).toEqual(['current']);
+  } finally {
+    db.close();
+  }
+});
 test('ingests authorized WAV, verifies hashes and preserves replay', async () => {
   const f = await localFixture();
   try {

@@ -1,6 +1,21 @@
 import type { LocalAudiovisualPort } from './local-flow.port.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
+  authorizedAudio(
+    runId: string,
+    scriptId: string,
+    scriptHash: string,
+    voiceTrackId?: string,
+  ) {
+    return (
+      this.runtime.authorizedAudio?.(
+        runId,
+        scriptId,
+        scriptHash,
+        voiceTrackId,
+      ) ?? null
+    );
+  }
   ingest(value: unknown) {
     return this.runtime.ingest(value);
   }

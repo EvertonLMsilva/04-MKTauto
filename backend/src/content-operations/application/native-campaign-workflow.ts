@@ -21,6 +21,8 @@ import { CampaignError, identifier, instant } from '../domain/campaign.js';
 import { usdUnits } from '../../finance/domain/video-financial-contracts.js';
 import { createHash } from 'node:crypto';
 import { adaptationHash } from '../../media/domain/media-hash.js';
+import { compositionPlanContentHash } from '../../media/domain/composition-plan-contracts.js';
+import { videoCompositionRequestHash } from '../../media/domain/video-composition-contracts.js';
 
 export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -136,7 +138,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       | 'getVideoRender'
       | 'verifyMedia'
       | 'compositionReceipt'
-    >,
+    > &
+      Partial<Pick<MediaService, 'registerCompositionPlan'>>,
     private readonly finance: Pick<
       FinanceService,
       'getGlobalUsage' | 'getGlobalOperation'
@@ -153,7 +156,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     private readonly production?: {
       preparations: Pick<VideoProductionPreparationService, 'prepare'>;
       generation: Pick<VideoGenerationService, 'submit' | 'poll' | 'recover'>;
-      media: Pick<MediaService, 'get' | 'evaluateTemporalMedia'>;
+      media: Pick<MediaService, 'get' | 'evaluateTemporalMedia'> &
+        Partial<
+          Pick<MediaService, 'listScript' | 'acquisition' | 'temporalReview'>
+        >;
     },
   ) {}
   private requireSceneMedia(
@@ -161,6 +167,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     script: Record<string, unknown>,
     runId: string,
     position: number,
+    campaignId?: string,
   ) {
     const asset = this.production?.media.get(id);
     if (!asset) throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
@@ -188,13 +195,228 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         (evidence) =>
           evidence.mediaAuthorization?.localProcessing !== true ||
           evidence.mediaAuthorization?.processing !== 'GRANTED' ||
-          evidence.mediaAuthorization.commercialUse !== 'GRANTED' ||
-          evidence.mediaAuthorization.operationScope !== undefined,
+          evidence.mediaAuthorization.commercialUse !== 'GRANTED',
       )
     )
       throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
-
+    for (const evidence of rights!) {
+      const scope = evidence.mediaAuthorization!;
+      if (
+        scope.campaignId !== undefined &&
+        (scope.campaignId !== campaignId || scope.purpose !== 'HUMAN_QC_REVIEW')
+      )
+        throw new CampaignError('CAMPAIGN_MEDIA_RIGHTS_MISMATCH');
+      if (scope.operationScope !== undefined) {
+        const acquired = this.production?.media.acquisition?.(
+          scope.operationScope,
+        )?.mediaAsset;
+        if (
+          !scope.campaignId ||
+          !acquired ||
+          (
+            [
+              'pipelineRunId',
+              'projectId',
+              'projectVersion',
+              'scriptId',
+              'scriptContentHash',
+              'visualDirectionPosition',
+              'contentHash',
+            ] as const
+          ).some((key) => acquired[key] !== asset[key])
+        )
+          throw new CampaignError('MEDIA_PROCESSING_RIGHTS_REQUIRED');
+        let ancestor = asset;
+        const seen = new Set<string>();
+        while (ancestor.mediaAssetId !== acquired.mediaAssetId) {
+          if (
+            !ancestor.supersedesMediaAssetId ||
+            seen.has(ancestor.mediaAssetId)
+          )
+            throw new CampaignError('CAMPAIGN_MEDIA_RIGHTS_MISMATCH');
+          seen.add(ancestor.mediaAssetId);
+          const prior = this.production?.media.get(
+            ancestor.supersedesMediaAssetId,
+          );
+          if (!prior) throw new CampaignError('CAMPAIGN_MEDIA_RIGHTS_MISMATCH');
+          ancestor = prior;
+        }
+      }
+    }
     return asset;
+  }
+  private sceneIds(
+    r: Record<string, unknown>,
+    script: Record<string, unknown>,
+    runId: string,
+  ): string[] {
+    if (r.sceneMediaAssetIds) return r.sceneMediaAssetIds as string[];
+    const assets =
+      this.production?.media.listScript?.(String(script.scriptId)) ?? [];
+    const superseded = new Set(
+      assets.map((asset) => asset.supersedesMediaAssetId),
+    );
+    return (script.visualDirections as { position: number }[]).map(
+      ({ position }) => {
+        const candidates = assets.filter(
+          (asset) =>
+            asset.assetType === 'VIDEO' &&
+            asset.pipelineRunId === runId &&
+            asset.scriptContentHash === script.contentHash &&
+            asset.projectId === script.projectId &&
+            asset.projectVersion === script.projectVersion &&
+            asset.visualDirectionPosition === position &&
+            !superseded.has(asset.mediaAssetId),
+        );
+        if (candidates.length !== 1)
+          throw new CampaignError(
+            candidates.length
+              ? 'MEDIA_SELECTION_REQUIRED'
+              : 'REAL_VIDEO_MEDIA_REQUIRED',
+          );
+        return candidates[0].mediaAssetId;
+      },
+    );
+  }
+  private automaticComposition(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    done: Record<string, unknown>,
+    script: Record<string, unknown>,
+  ) {
+    if (!r.videoProduction || !this.media.registerCompositionPlan)
+      throw new CampaignError('COMPOSITION_REQUIRED');
+    const audio = document(done.AUDIO);
+    const voice = this.local.authorizedAudio(
+      e.run_id,
+      String(script.scriptId),
+      String(script.contentHash),
+      String(audio.voiceTrackId),
+    );
+    if (!voice) throw new CampaignError('AUDIO_REQUIRED');
+    if (
+      audio.voiceTrackContentHash &&
+      audio.voiceTrackContentHash !== voice.contentHash
+    )
+      throw new CampaignError('CAMPAIGN_AUDIO_MISMATCH');
+    const reports = document(done.MEDIA_QC).reports as {
+      identity: { mediaAssetId: string; contentHash: string };
+    }[];
+    const assets = reports.map(({ identity }) => {
+      this.compositionRights(
+        this.production?.media.get(identity.mediaAssetId) ?? null,
+      );
+      const asset = this.requireSceneMedia(
+        identity.mediaAssetId,
+        script,
+        e.run_id,
+        Number(
+          this.production?.media.get(identity.mediaAssetId)
+            ?.visualDirectionPosition,
+        ),
+        e.campaign_id,
+      );
+      if (asset.contentHash !== identity.contentHash)
+        throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+      this.compositionRights(asset);
+      return asset;
+    });
+    const durations = assets.map((a) =>
+      Number(a.technicalProperties.durationMilliseconds),
+    );
+    const total = durations.reduce((sum, value) => sum + value, 0);
+    if (
+      !assets.length ||
+      durations.some((d) => !Number.isSafeInteger(d) || d < 1) ||
+      voice.durationMilliseconds > total ||
+      voice.durationMilliseconds < assets.length
+    )
+      throw new CampaignError('AUDIO_VIDEO_DURATION_REQUIRED');
+    let cursor = 0,
+      sourceCursor = 0;
+    const segments = assets.map((asset, index) => {
+      sourceCursor += durations[index];
+      const end =
+        index === assets.length - 1
+          ? voice.durationMilliseconds
+          : Math.floor((voice.durationMilliseconds * sourceCursor) / total);
+      if (end <= cursor || end - cursor > durations[index])
+        throw new CampaignError('AUDIO_VIDEO_DURATION_REQUIRED');
+      const segment = {
+        position: index + 1,
+        visualDirectionPosition: asset.visualDirectionPosition,
+        mediaAssetId: asset.mediaAssetId,
+        mediaAssetContentHash: asset.contentHash,
+        startMilliseconds: cursor,
+        endMilliseconds: end,
+        mediaType: 'VIDEO',
+        sourceStartMilliseconds: 0,
+        playbackMode: 'TRIM',
+        originalAudioMuted: true,
+        framingStrategy: 'COVER_CROP_9_16',
+        movementRequirement: 'REAL_MOTION_REQUIRED',
+        transition: {
+          policyVersion: 'composition-transition/1.0.0',
+          type: 'CUT',
+          durationMilliseconds: 0,
+        },
+      };
+      cursor = end;
+      return segment;
+    });
+    const key = adaptationHash({
+      executionId: e.execution_id,
+      scriptHash: script.contentHash,
+      voice,
+      segments,
+    });
+    const plan = {
+      schemaVersion: 'composition-plan/2.0.0',
+      compositionPlanId: `plan_auto:${key}`,
+      pipelineRunId: e.run_id,
+      projectId: script.projectId,
+      projectVersion: script.projectVersion,
+      scriptId: script.scriptId,
+      scriptContentHash: script.contentHash,
+      voiceTrackId: voice.voiceTrackId,
+      voiceTrackContentHash: voice.contentHash,
+      outputAspectRatio: '9:16',
+      timelineUnit: 'MILLISECOND',
+      continuityMode: 'CONTIGUOUS',
+      durationMilliseconds: voice.durationMilliseconds,
+      segments,
+      createdAt: e.scheduled_at,
+      revision: 1,
+      supersedesCompositionPlanId: null,
+      productionProfile: 'MIXED_MEDIA_V2',
+      compositionPolicyVersion: 'mixed-media-composition-policy/2.0.0',
+      contentHash: '',
+    };
+    plan.contentHash = compositionPlanContentHash(plan);
+    this.media.registerCompositionPlan(plan);
+    const request = {
+      schemaVersion: 'video-composition-request/1.0.0',
+      videoCompositionRequestId: `compose_auto:${key}`,
+      compositionPlanId: plan.compositionPlanId,
+      compositionPlanContentHash: plan.contentHash,
+      containerFormat: 'mp4',
+      widthPixels: 1080,
+      heightPixels: 1920,
+      requestedAt: e.scheduled_at,
+      contentHash: '',
+    };
+    request.contentHash = videoCompositionRequestHash(request);
+    return { request, plan };
+  }
+  private compositionRights(asset: ReturnType<MediaService['get']>) {
+    if (
+      asset?.rights.evidence?.some(
+        (evidence) =>
+          evidence.mediaAuthorization?.campaignId !== undefined ||
+          evidence.mediaAuthorization?.operationScope !== undefined,
+      )
+    )
+      throw new CampaignError('COMPOSITION_RIGHTS_REQUIRED');
   }
   async validate(r: Record<string, unknown>) {
     const campaign = await this.affiliate.getCampaign(
@@ -316,7 +538,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         // Re-read immutable Content/Affiliate revisions through the existing service.
         const directions = script.visualDirections as { position: number }[];
         const assisted = document(r.videoProduction).mode === 'ASSISTED_LOCAL';
-        const ids = r.sceneMediaAssetIds as string[] | undefined;
+        const ids = assisted
+          ? this.sceneIds(r, script, e.run_id)
+          : (r.sceneMediaAssetIds as string[] | undefined);
         if (assisted && (!ids?.length || ids.length !== directions.length))
           throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
         const selected = assisted
@@ -326,6 +550,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
                 script,
                 e.run_id,
                 direction.position,
+                e.campaign_id,
               ),
             )
           : [];
@@ -384,7 +609,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           simulatedScenes: preparation.scenes.length,
         };
       }
-      const ids = r.sceneMediaAssetIds as string[] | undefined;
+      const ids = this.sceneIds(r, script, e.run_id);
       if (!ids?.length || ids.length !== preparation.scenes.length)
         throw new CampaignError('REAL_VIDEO_MEDIA_REQUIRED');
       const reports = [];
@@ -394,6 +619,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           script,
           e.run_id,
           preparation.scenes[i].position,
+          e.campaign_id,
         );
         if (
           document(r.videoProduction).mode === 'ASSISTED_LOCAL' &&
@@ -430,12 +656,36 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         });
         reports.push(report);
       }
+      if (
+        reports.some(
+          (report) =>
+            report.evidence.provenance?.parameters.humanReview?.decision ===
+            'REJECTED',
+        )
+      )
+        throw new CampaignError('MEDIA_REVIEW_REJECTED');
+      if (reports.some((report) => report.result === 'FAIL'))
+        throw new CampaignError('MEDIA_QC_FAILED');
       if (reports.some((report) => report.result !== 'PASS'))
         throw new CampaignError('COMPLETE_TEMPORAL_QC_REQUIRED');
       return { preparationHash: preparation.contentHash, reports };
     }
     if (step === 'AUDIO') {
-      if (!r.voiceTrackId) throw new CampaignError('AUDIO_REQUIRED');
+      if (!r.voiceTrackId) {
+        if (!r.videoProduction) throw new CampaignError('AUDIO_REQUIRED');
+        const voice = this.local.authorizedAudio(
+          e.run_id,
+          String(script.scriptId),
+          String(script.contentHash),
+        );
+        if (!voice) throw new CampaignError('AUDIO_REQUIRED');
+        return {
+          voiceTrackId: voice.voiceTrackId,
+          voiceTrackContentHash: voice.contentHash,
+          durationMilliseconds: voice.durationMilliseconds,
+          cost: { status: 'UNKNOWN', amount: null },
+        };
+      }
       if (r.audio) {
         const audio = document(r.audio),
           voice = document(audio.voiceTrack);
@@ -447,21 +697,39 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           throw new CampaignError('CAMPAIGN_AUDIO_MISMATCH');
         await this.local.ingest(audio);
       }
+      if (r.videoProduction) {
+        const voice = this.local.authorizedAudio(
+          e.run_id,
+          String(script.scriptId),
+          String(script.contentHash),
+          String(r.voiceTrackId),
+        );
+        if (!voice) throw new CampaignError('AUDIO_REQUIRED');
+        return {
+          voiceTrackId: voice.voiceTrackId,
+          voiceTrackContentHash: voice.contentHash,
+          durationMilliseconds: voice.durationMilliseconds,
+          cost: { status: 'UNKNOWN', amount: null },
+        };
+      }
       return {
         voiceTrackId: r.voiceTrackId,
         cost: { status: 'UNKNOWN', amount: null },
       };
     }
     if (step === 'ALIGNMENT') {
+      const voiceTrackId = done.AUDIO
+        ? document(done.AUDIO).voiceTrackId
+        : r.voiceTrackId;
       const result = document(
         r.alignment
           ? await this.local.acceptAlignment(r.alignment)
-          : await this.local.alignAudio(String(r.voiceTrackId)),
+          : await this.local.alignAudio(String(voiceTrackId)),
       );
       const input = document(result.input);
       if (
         input.scriptId !== script.scriptId ||
-        input.audioAssetId !== r.voiceTrackId
+        input.audioAssetId !== voiceTrackId
       )
         throw new CampaignError('CAMPAIGN_ALIGNMENT_MISMATCH');
       return result;
@@ -471,14 +739,19 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         String(document(document(done.ALIGNMENT).output).alignmentId),
       );
     if (step === 'COMPOSITION') {
-      if (!r.composition) throw new CampaignError('COMPOSITION_REQUIRED');
-      const request = document(r.composition),
-        plan = this.media.getCompositionPlan(String(request.compositionPlanId));
+      const automatic = !r.composition
+        ? this.automaticComposition(e, r, done, script)
+        : null;
+      const request = automatic?.request ?? document(r.composition),
+        plan =
+          automatic?.plan ??
+          this.media.getCompositionPlan(String(request.compositionPlanId));
       if (!plan) throw new CampaignError('COMPOSITION_PLAN_REQUIRED');
       if (
         document(plan).pipelineRunId !== e.run_id ||
         document(plan).scriptId !== script.scriptId ||
-        document(plan).voiceTrackId !== r.voiceTrackId
+        document(plan).voiceTrackId !==
+          (done.AUDIO ? document(done.AUDIO).voiceTrackId : r.voiceTrackId)
       )
         throw new CampaignError('CAMPAIGN_COMPOSITION_MISMATCH');
       if (r.videoProduction) {
@@ -501,6 +774,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           )
         )
           throw new CampaignError('MOTION_COMPOSITION_V2_REQUIRED');
+        for (const segment of segments)
+          this.compositionRights(
+            this.production?.media.get(String(segment.mediaAssetId)) ?? null,
+          );
       }
       return this.local.compose(request);
     }
@@ -591,6 +868,66 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       },
     };
   }
+  async readyToResume(e: CampaignExecution, history: CampaignEvent[]) {
+    const paused = history.filter((h) => h.event_type === 'PAUSED').at(-1);
+    const r = executionRequest(history);
+    if (!r.videoProduction || r.mode !== 'LOCAL_VALIDATION' || r.publication)
+      return false;
+    const done: Record<string, unknown> = {};
+    for (const event of history)
+      if (event.event_type === 'STEP_DONE')
+        done[String(event.evidence.step)] = event.evidence.result;
+    if (!done.EDITORIAL) return false;
+    const script = document(document(done.EDITORIAL).script);
+    try {
+      if (
+        paused?.evidence.step === 'AUDIO' &&
+        paused.evidence.code === 'AUDIO_REQUIRED'
+      )
+        return (
+          this.local.authorizedAudio(
+            e.run_id,
+            String(script.scriptId),
+            String(script.contentHash),
+            r.voiceTrackId ? String(r.voiceTrackId) : undefined,
+          ) !== null
+        );
+      if (
+        ['MEDIA_QC', 'SCENES'].includes(String(paused?.evidence.step)) &&
+        [
+          'REAL_VIDEO_MEDIA_REQUIRED',
+          'AUTHENTICATED_MEDIA_REVIEW_REQUIRED',
+          'COMPLETE_TEMPORAL_QC_REQUIRED',
+        ].includes(String(paused?.evidence.code))
+      ) {
+        const ids = this.sceneIds(r, script, e.run_id);
+        for (let i = 0; i < ids.length; i++)
+          this.requireSceneMedia(
+            ids[i],
+            script,
+            e.run_id,
+            (script.visualDirections as { position: number }[])[i].position,
+            e.campaign_id,
+          );
+        if (paused?.evidence.code === 'REAL_VIDEO_MEDIA_REQUIRED') return true;
+        const reports = ids.map(
+          (id) =>
+            this.production?.media.temporalReview?.(id) as {
+              result?: string;
+            } | null,
+        );
+        return (
+          reports.some((report) => report?.result === 'FAIL') ||
+          reports.every((report) => report?.result === 'PASS')
+        );
+      }
+      return false;
+    } catch (error) {
+      // A changed/revoked artifact must not release a wait. The stored pause remains authoritative.
+      if (error && typeof error === 'object' && 'code' in error) return false;
+      throw error;
+    }
+  }
   async reconcile(e: CampaignExecution, history: CampaignEvent[]) {
     const publication = history
       .filter((h) => h.event_type === 'STEP_STARTED')
@@ -626,6 +963,26 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       if (event.event_type === 'STEP_DONE')
         completed[String(event.evidence.step)] = event.evidence.result;
     if (
+      ['AUDIO', 'ALIGNMENT', 'SUBTITLES', 'QC', 'PREVIEW'].includes(
+        String(last.evidence.step),
+      )
+    ) {
+      // These local operations persist immutable evidence and use stable artifact identities.
+      // Re-enter through the ordinary gates; never treat an absent requirement as success.
+      try {
+        const result = await this.execute(
+          String(last.evidence.step),
+          e,
+          request,
+          completed,
+        );
+        return { verified: true, step: last.evidence.step, result };
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) return null;
+        throw error;
+      }
+    }
+    if (
       request.videoProduction &&
       request.mode === 'LOCAL_VALIDATION' &&
       ['OFFLINE', 'ASSISTED_LOCAL'].includes(
@@ -656,11 +1013,26 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         },
       };
     }
-    if (last.evidence.step === 'COMPOSITION' && request.composition) {
-      const composition = document(request.composition);
+    if (last.evidence.step === 'COMPOSITION') {
+      let composition: Record<string, unknown>;
+      try {
+        composition = request.composition
+          ? document(request.composition)
+          : this.automaticComposition(
+              e,
+              request,
+              completed,
+              document(document(completed.EDITORIAL).script),
+            ).request;
+      } catch (error) {
+        if (error && typeof error === 'object' && 'code' in error) return null;
+        throw error;
+      }
       const receipt = this.media.compositionReceipt(
         String(composition.videoCompositionRequestId),
       );
+      if (!receipt && !request.composition)
+        return { verified: true, reason: 'LOCAL_COMPOSITION_REPLAY_SAFE' };
       if (!receipt || receipt.requestHash !== composition.contentHash)
         return null;
       const render = receipt.videoRender;
@@ -681,6 +1053,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       const render = this.media.getVideoRender(
         `video_render:local:${adaptationHash({ videoId, subtitleId })}`,
       );
+      if (!render && request.videoProduction)
+        return { verified: true, reason: 'LOCAL_BURN_REPLAY_SAFE' };
       if (
         !render ||
         render.pipelineRunId !== e.run_id ||
