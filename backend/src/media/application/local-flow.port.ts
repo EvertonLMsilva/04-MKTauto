@@ -1,4 +1,15 @@
+export interface AuthorizedLocalAudio {
+  voiceTrackId: string;
+  contentHash: string;
+  durationMilliseconds: number;
+}
 export interface LocalAudiovisualPort {
+  authorizedAudio?(
+    runId: string,
+    scriptId: string,
+    scriptHash: string,
+    voiceTrackId?: string,
+  ): AuthorizedLocalAudio | null;
   ingest(value: unknown): Promise<unknown>;
   acceptAlignment(value: unknown): Promise<unknown>;
   alignAudio(id: string): Promise<unknown>;

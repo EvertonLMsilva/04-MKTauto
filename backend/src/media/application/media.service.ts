@@ -135,6 +135,20 @@ export class MediaService {
   report(id: string) {
     return this.quality((r) => r.getQualityControlReport(id));
   }
+  temporalReview(id: string) {
+    const asset = this.get(id);
+    if (!asset || asset.assetType !== 'VIDEO') return null;
+    return this.quality(
+      (r) =>
+        r.getTemporalMediaQC?.({
+          mediaAssetId: asset.mediaAssetId,
+          mediaReference: asset.mediaReference,
+          contentHash: asset.contentHash,
+          scriptContentHash: asset.scriptContentHash,
+          visualDirectionPosition: asset.visualDirectionPosition,
+        }) ?? null,
+    );
+  }
   async reviewTemporalMedia(id: string, input: unknown, principal: unknown) {
     const reviewer = operationalQcIdentity.assertActive(principal);
     const key = adaptationHash({

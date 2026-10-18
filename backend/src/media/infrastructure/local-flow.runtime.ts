@@ -37,6 +37,62 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  authorizedAudio(
+    runId: string,
+    scriptId: string,
+    scriptHash: string,
+    voiceTrackId?: string,
+  ) {
+    return this.session((r) => {
+      const ids = r
+        .localVoiceIds(runId, scriptId, scriptHash)
+        .filter((id) => !voiceTrackId || id === voiceTrackId);
+      if (!ids.length) return null;
+      if (ids.length !== 1) localFail('LOCAL_AUDIO_SELECTION_REQUIRED');
+      const voice = validateVoiceTrack(r.getVoiceTrack(ids[0]));
+      const script = r.getScript(scriptId),
+        run = r.getRun(runId);
+      if (
+        !script ||
+        !run ||
+        script.contentHash !== scriptHash ||
+        (['pipelineRunId', 'projectId', 'projectVersion'] as const).some(
+          (key) => script[key] !== voice[key] || run[key] !== voice[key],
+        ) ||
+        voice.pipelineRunId !== runId ||
+        voice.scriptId !== scriptId ||
+        voice.scriptContentHash !== scriptHash ||
+        voice.provider !== null ||
+        !['OWNED', 'LICENSED'].includes(voice.rights.usageBasis) ||
+        !['AUTHORIZED_RECORDING', 'OPERATOR_RECORDING'].includes(voice.origin)
+      )
+        localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      const doc = r.document<{
+        voice: unknown;
+        authorization: { actorId: string; statement: string };
+        audioSha256: string;
+      }>(voice.voiceTrackId, 'voice_track', this.files());
+      if (
+        adaptationHash(doc.voice) !== adaptationHash(voice) ||
+        doc.audioSha256 !== voice.contentHash ||
+        !doc.authorization?.actorId ||
+        !doc.authorization.statement?.trim()
+      )
+        localFail('LOCAL_RIGHTS_EVIDENCE_REQUIRED');
+      const bytes = this.voiceFiles().read(voice.contentHash, 'wav', 20971520);
+      if (
+        voice.audioFormat !== 'wav' ||
+        voice.storageReference !== `object:voice/sha256/${voice.contentHash}` ||
+        inspectMvpWav(bytes).durationMilliseconds !== voice.durationMilliseconds
+      )
+        localFail('LOCAL_AUDIO_FORMAT_MISMATCH');
+      return {
+        voiceTrackId: voice.voiceTrackId as string,
+        contentHash: voice.contentHash as string,
+        durationMilliseconds: voice.durationMilliseconds as number,
+      };
+    });
+  }
   private readonly inFlight = new Map<string, Promise<any>>();
   constructor(
     private readonly open: () => LocalFlowRepository,

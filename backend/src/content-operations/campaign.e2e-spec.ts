@@ -556,8 +556,16 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       expect(
         reviewed.body.evidence.provenance.parameters.humanReview.actor,
       ).toBe('qc_operator_test');
+      await request(app.getHttpServer())
+        .get('/media/assets/' + id + '/temporal-reviews')
+        .expect(401);
+      await request(app.getHttpServer())
+        .get('/media/assets/' + id + '/temporal-reviews')
+        .set('Authorization', 'Bearer ' + credential)
+        .expect(200)
+        .expect((response) => expect(response.body).toEqual(reviewed.body));
     }
-    await service.resume(e.execution_id);
+    // The persisted authenticated decision is sufficient; no manual resume command.
     await service.tick();
     expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
     const finalHistory = service.history(e.execution_id);
@@ -567,6 +575,20 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       ),
     ).toBe(true);
     expect(JSON.stringify(finalHistory)).toContain('AUDIO_REQUIRED');
+    await request(app.getHttpServer())
+      .get(`/content-operations/campaign-executions/${e.execution_id}`)
+      .expect(200)
+      .expect((response) => {
+        expect(response.body.finalization.pending).toMatchObject({
+          code: 'AUDIO_REQUIRED',
+        });
+        expect(response.body.finalization.pending.message).toContain(
+          'gravação autorizada',
+        );
+        expect(response.body.finalization.availableActions).toContain(
+          'SUPPLY_INPUT',
+        );
+      });
     expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
       false,
     );

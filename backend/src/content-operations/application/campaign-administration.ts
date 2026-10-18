@@ -89,7 +89,80 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   get(id: string) {
-    return this.open().get(id);
+    const store = this.open(),
+      execution = store.get(id),
+      history = store.history(id);
+    const last = history
+      .filter((event) =>
+        ['PAUSED', 'STEP_STARTED', 'STEP_DONE', 'COMPLETED'].includes(
+          event.event_type,
+        ),
+      )
+      .at(-1);
+    const done: Record<string, unknown> = {};
+    for (const event of history)
+      if (event.event_type === 'STEP_DONE')
+        done[String(event.evidence.step)] = event.evidence.result;
+    const code =
+      execution.status === 'WAITING_INPUT' ||
+      execution.status === 'FAILED' ||
+      execution.status === 'WAITING_RECONCILIATION'
+        ? String(history.at(-1)?.evidence.code ?? last?.evidence.code ?? '')
+        : null;
+    const messages: Record<string, string> = {
+      REAL_VIDEO_MEDIA_REQUIRED: 'Associe um vídeo autorizado para cada cena.',
+      MEDIA_SELECTION_REQUIRED:
+        'Selecione a versão do vídeo que deve ser utilizada.',
+      AUTHENTICATED_MEDIA_REVIEW_REQUIRED:
+        'Revise o vídeo e a imagem de referência com uma identidade QC_REVIEWER.',
+      COMPLETE_TEMPORAL_QC_REQUIRED:
+        'Conclua a revisão autenticada das mídias.',
+      MEDIA_REVIEW_REJECTED:
+        'A revisão humana rejeitou esta mídia. A composição foi interrompida.',
+      MEDIA_QC_FAILED:
+        'O vídeo falhou na verificação técnica. Forneça uma mídia válida antes de retomar.',
+      AUDIO_REQUIRED:
+        'Disponibilize uma gravação autorizada vinculada ao roteiro.',
+      LOCAL_AUDIO_SELECTION_REQUIRED:
+        'Selecione uma das gravações autorizadas para este roteiro.',
+      ALIGNMENT_CONFIGURATION_REQUIRED:
+        'O alinhamento local exige um modelo e ambiente já instalados e configurados.',
+      COMPOSITION_RIGHTS_REQUIRED:
+        'Os direitos atuais permitem somente a revisão. A composição exige autorização própria.',
+      AUDIO_VIDEO_DURATION_REQUIRED:
+        'A duração do áudio não cabe nos vídeos disponíveis. Forneça uma gravação ou mídia compatível.',
+      EXACT_HUMAN_APPROVAL_REQUIRED:
+        'Revise e aprove a versão final exata para liberar o handoff manual.',
+      INTERRUPTED_EFFECT_REQUIRES_VERIFICATION:
+        'O processamento foi interrompido. Os artefatos persistidos precisam ser verificados antes da retomada.',
+    };
+    return {
+      ...execution,
+      finalization: {
+        step: last?.evidence.step ?? null,
+        completedSteps: Object.keys(done),
+        pending: code
+          ? {
+              code,
+              message:
+                messages[code] ??
+                'Há uma pendência técnica ou de autorização. Consulte o histórico da execução.',
+            }
+          : null,
+        preview: done.PREVIEW ?? null,
+        availableActions:
+          execution.status === 'WAITING_INPUT'
+            ? code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
+              ? ['REVIEW_FINAL', 'RESUME', 'CANCEL']
+              : code === 'AUTHENTICATED_MEDIA_REVIEW_REQUIRED' ||
+                  code === 'COMPLETE_TEMPORAL_QC_REQUIRED'
+                ? ['REVIEW_MEDIA', 'CANCEL']
+                : ['SUPPLY_INPUT', 'RESUME', 'CANCEL']
+            : execution.status === 'WAITING_RECONCILIATION'
+              ? ['RECONCILE', 'CANCEL']
+              : [],
+      },
+    };
   }
   history(id: string) {
     return this.open().history(id);

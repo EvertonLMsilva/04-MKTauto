@@ -2,6 +2,10 @@ import type { CampaignRepository } from '../infrastructure/campaign.repository.j
 import { CampaignError } from '../domain/campaign.js';
 import type { CampaignExecution, CampaignEvent } from '../domain/campaign.js';
 export interface CampaignWorkflow {
+  readyToResume?: (
+    execution: CampaignExecution,
+    history: CampaignEvent[],
+  ) => Promise<boolean>;
   readonly steps: readonly string[];
   execute: (
     step: string,
@@ -23,6 +27,54 @@ export class CampaignOrchestrator {
   ) {}
   async tick() {
     this.repository.recover(this.now());
+    for (const e of this.repository.pendingFinalization()) {
+      const history = this.repository.history(e.execution_id);
+      try {
+        if (e.status === 'WAITING_INPUT') {
+          if (await this.workflow.readyToResume?.(e, history))
+            this.repository.resume(e.execution_id, this.now(), e.version);
+        } else {
+          const request = executionRequest(history);
+          if (
+            !request.videoProduction ||
+            request.mode !== 'LOCAL_VALIDATION' ||
+            request.publication
+          )
+            continue;
+          const last = history
+            .filter((h) => h.event_type === 'STEP_STARTED')
+            .at(-1);
+          if (
+            !last ||
+            ![
+              'MEDIA_QC',
+              'AUDIO',
+              'ALIGNMENT',
+              'SUBTITLES',
+              'COMPOSITION',
+              'BURN',
+              'QC',
+              'PREVIEW',
+            ].includes(String(last.evidence.step))
+          )
+            continue;
+          const proof = await this.workflow.reconcile(e, history);
+          if (proof?.verified === true)
+            this.repository.resume(
+              e.execution_id,
+              this.now(),
+              e.version,
+              proof,
+            );
+        }
+      } catch (error) {
+        if (!(
+          error instanceof CampaignError &&
+          error.code === 'EXECUTION_VERSION_CONFLICT'
+        ))
+          throw error;
+      }
+    }
     for (const e of this.repository.pendingPublicationPolls(this.now())) {
       try {
         this.repository.resume(e.execution_id, this.now(), e.version);
