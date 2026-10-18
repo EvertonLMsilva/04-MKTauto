@@ -1,3 +1,4 @@
+import { instagramAccountId } from '../infrastructure/instagram-environment.js';
 // Facebook Login only, matching InstagramGraphAdapter. No publishing capability,
 // persistence or automatic probes: credentials remain private and checks use GET.
 const requiredPermissions = [
@@ -21,7 +22,7 @@ export class InstagramConnectionService {
     fetch: typeof globalThis.fetch,
     now = () => new Date().toISOString(),
   ) {
-    this.#env = env;
+    this.#env = { ...env, INSTAGRAM_ACCOUNT_ID: instagramAccountId(env) };
     this.#fetch = fetch;
     this.#now = now;
   }
