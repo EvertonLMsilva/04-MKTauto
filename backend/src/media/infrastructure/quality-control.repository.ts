@@ -1,6 +1,5 @@
-import type { AffiliateEvidence } from '../../affiliate/domain/affiliate-contracts.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
-import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import { campaignReviewRights } from './campaign-review-rights.js';
 import { LocalEvidenceStorage } from './local-evidence-storage.js';
 import type { QualityControlReport } from '../domain/media.types.js';
 import {
@@ -72,35 +71,7 @@ export class QualityControlRepository extends MediaAssetRepository {
       reference.scriptContentHash !== asset.scriptContentHash
     )
       p4Fail('HUMAN_APPROVAL_REFERENCE_REQUIRED');
-    for (const candidate of [asset!, reference!]) {
-      if (!candidate.rights.commercialUseAllowed)
-        p4Fail('COMMERCIAL_USE_REQUIRED');
-      const matching = candidate.rights.evidence?.filter(
-        (e: AffiliateEvidence) =>
-          e.mediaAuthorization?.mediaRef === candidate.mediaReference &&
-          e.mediaAuthorization?.contentHash === candidate.contentHash,
-      );
-      if (
-        !matching?.length ||
-        matching.some(
-          (e: AffiliateEvidence) =>
-            e.mediaAuthorization?.localProcessing !== true ||
-            e.mediaAuthorization.processing !== 'GRANTED' ||
-            e.mediaAuthorization.commercialUse !== 'GRANTED' ||
-            e.mediaAuthorization.operationScope !== undefined,
-        )
-      )
-        p4Fail('MEDIA_PROCESSING_RIGHTS_REQUIRED');
-    }
-    // An image being public (including Shopee) never grants transfer to fal.ai.
-    assertMediaProcessingRights(
-      reference!.rights.evidence,
-      {
-        mediaRef: reference!.mediaReference,
-        contentHash: reference!.contentHash,
-      },
-      'fal_ai',
-    );
+    const rightsScope = campaignReviewRights(this, asset, reference);
     if (
       !process.env.FFMPEG_MEDIA_ROOT ||
       !process.env.LOCAL_MEDIA_EVIDENCE_ROOT
@@ -134,10 +105,12 @@ export class QualityControlRepository extends MediaAssetRepository {
       automatic,
       technical,
       referenceTechnical,
+      rightsScope,
     });
     const audit = report.evidence.provenance.parameters.humanReview;
     this.db.exec('BEGIN IMMEDIATE');
     try {
+      validateCurrentTemporalQC(this, report, report.identity);
       const row = this.db
         .prepare(
           `SELECT artifact_id FROM p4_artifacts WHERE kind='qc_report'
