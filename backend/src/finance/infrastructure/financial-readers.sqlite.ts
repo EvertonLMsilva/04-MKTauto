@@ -371,6 +371,39 @@ export class SqliteCampaignReferenceReader implements CampaignReferenceReader {
 }
 export class SqliteFinancialAttributionReader implements FinancialAttributionReader {
   constructor(private readonly db: FinancialDatabase) {}
+  falSettlement(runId: string, requestHash: string) {
+    const rows = this.db
+      .prepare(
+        `SELECT DISTINCT g.generation_key,g.basis_json,s.final_amount,s.source
+      FROM fal_generations g JOIN fal_generation_requests r ON r.generation_key=g.generation_key
+      JOIN fal_financial_settlements s ON s.generation_key=g.generation_key
+      WHERE g.pipeline_run_id=? AND r.request_hash=? AND g.state='COMPLETED'`,
+      )
+      .all(runId, requestHash);
+    if (rows.length !== 1) return null;
+    const row = rows[0],
+      basis = JSON.parse(row.basis_json);
+    if (
+      affiliateHash(basis) !== row.generation_key ||
+      basis.pipelineRunId !== runId
+    )
+      throw failure('INVALID_PERSISTED_FAL_SETTLEMENT', 'generationKey');
+    const prefix = `cost:fal:${row.generation_key}`;
+    const costEventIds = this.db
+      .prepare(
+        `SELECT cost_event_id FROM cost_events
+      WHERE pipeline_run_id=? AND (cost_event_id=? OR cost_event_id LIKE ?)`,
+      )
+      .all(runId, prefix, `${prefix}:%`)
+      .map((row) => String(row.cost_event_id));
+    return {
+      imageHash: basis.imageHash,
+      endpoint: basis.endpoint,
+      finalAmount: row.final_amount,
+      source: row.source,
+      costEventIds,
+    };
+  }
   costEvents(provider: string, inputHash: string, occurredAt: string | null) {
     return this.db
       .prepare(

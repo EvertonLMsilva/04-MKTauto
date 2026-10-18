@@ -35,6 +35,16 @@ export interface TtsFinancialSourceReader {
   ): { state: string; requestHash: string; request: any; result: any } | null;
 }
 export interface FinancialAttributionReader {
+  falSettlement?(
+    runId: string,
+    requestHash: string,
+  ): {
+    imageHash: string;
+    endpoint: string;
+    finalAmount: string;
+    source: string;
+    costEventIds: string[];
+  } | null;
   costEvents(
     provider: string,
     inputHash: string,
