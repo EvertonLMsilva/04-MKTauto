@@ -4,7 +4,7 @@ export const operationsPage = `<!doctype html>
 <main><section id="login-panel" class="login card"><p class="eyebrow">ACESSO DO OPERADOR</p><h1>Da revisão ao vídeo final.</h1><p>Revise as mídias autorizadas. O sistema cuida da finalização disponível e mostra o que ainda falta.</p>
 <form id="login-form"><label>Operador<input name="operatorId" autocomplete="username" required pattern="[a-z][a-z0-9_]{2,63}" placeholder="Seu identificador individual"></label><label>Credencial pessoal<input name="secret" type="password" autocomplete="current-password" required maxlength="128"></label><button type="submit">Entrar com segurança</button></form><p class="muted">Use sua identidade QC_REVIEWER já cadastrada. A credencial não é exibida nem salva na página. Se o cadastro não estiver configurado, solicite sua habilitação ao responsável pelo ambiente.</p></section>
 <div id="notice" role="status" aria-live="polite" hidden></div>
-<div id="workspace" class="workspace" hidden><aside><p class="eyebrow">FILA DE PRODUÇÃO</p><h1>Seus vídeos</h1><button id="refresh-list" class="quiet">Atualizar fila</button><div id="execution-list"></div><p class="muted">Somente recursos locais. Publicação permanece manual.</p></aside>
+<div id="workspace" class="workspace" hidden><aside><p class="eyebrow">FILA DE PRODUÇÃO</p><h1>Seus vídeos</h1><button id="refresh-list" class="quiet">Atualizar fila</button><div id="execution-list"></div><p class="muted">Finalização local. Publicação simulada exige autorização própria.</p></aside>
 <section id="empty" class="card empty"><p class="eyebrow">COMECE PELA FILA</p><h2>Selecione uma campanha</h2><p>Acompanhe a revisão, as dependências e o resultado em um só lugar.</p></section>
 <article id="detail" hidden><div class="title-row"><div><p class="eyebrow">FINALIZAÇÃO DO VÍDEO</p><h1 id="campaign-title"></h1></div><span id="execution-status" class="badge"></span></div><ol id="progress" class="progress" aria-label="Etapas de finalização"></ol>
 <section id="dependency" class="dependency" hidden><p class="eyebrow">AÇÃO NECESSÁRIA</p><h2 id="dependency-title"></h2><p id="dependency-message"></p><button id="retry" class="quiet">Verificar novamente</button></section>
@@ -13,7 +13,12 @@ export const operationsPage = `<!doctype html>
 <div id="review-content" hidden><div class="media-grid"><div><video id="source-video" controls preload="metadata" aria-label="Vídeo para revisão"></video><p class="muted">Vídeo gerado / recuperado</p></div><div><img id="source-image" alt="Imagem original de referência autorizada"><p class="muted">Referência original</p></div></div><div id="technical" class="technical"></div><p id="decision-audit" class="audit"></p>
 <form id="review-form"><p>Registre sua observação para cada critério ao longo do vídeo. Uma falha técnica não pode ser substituída por aprovação.</p><label>Movimento real<textarea name="motion" minlength="10" maxlength="1000" required placeholder="Descreva o movimento observado."></textarea></label><label>Continuidade<textarea name="continuity" minlength="10" maxlength="1000" required placeholder="Descreva a continuidade do vídeo completo."></textarea></label><label>Fidelidade à referência<textarea name="fidelity" minlength="10" maxlength="1000" required placeholder="Compare o produto e seus detalhes com a referência."></textarea></label><label class="check"><input type="checkbox" name="watched" required>Assisti ao vídeo completo e comparei com a imagem de referência.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar mídia</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar mídia</button></div></form></div></section>
 <section id="audio-panel" class="card" hidden><h2>02 / Narração autorizada</h2><p>Envie uma gravação própria ou licenciada que corresponda ao roteiro. WAV PCM, 24 kHz, mono, 16 bits; até 20 MB. Nenhum TTS pago será acionado.</p><details><summary>Ver roteiro da narração</summary><pre id="narration"></pre></details><form id="audio-form"><label>Arquivo WAV<input type="file" name="audio" accept=".wav,audio/wav" required></label><label>Direito de uso<select name="usageBasis"><option value="OWNED">Gravação própria</option><option value="LICENSED">Gravação licenciada</option></select></label><label>Evidência de autorização<textarea name="statement" required minlength="15" maxlength="2000" placeholder="Informe a origem e a autorização de uso desta gravação."></textarea></label><label class="check"><input type="checkbox" name="commercialUseAllowed" required>Confirmo autorização para processamento local e uso comercial nesta campanha.</label><button type="submit">Enviar gravação e continuar</button></form></section>
-<section id="final-panel" class="card" hidden><div class="title-row"><h2>03 / Seu vídeo final</h2><a id="download" class="button" download="video-final.mp4">Baixar MP4</a></div><video id="final-video" controls preload="metadata" aria-label="Vídeo final com narração e legendas"></video><p class="muted">MP4 com QC técnico validado. Custo computacional local não medido; nenhum custo pago é presumido como zero.</p><form id="final-form" hidden><h3>Aprovação da versão final</h3><p>Esta decisão é independente da revisão da mídia e libera somente a entrega manual.</p><label>Observação / motivo da rejeição<textarea name="justification" maxlength="2000"></textarea></label><label class="check"><input type="checkbox" required>Revisei esta versão final exata, incluindo narração e legendas.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar versão final</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar versão final</button></div></form></section></article></div></main><footer>Controle humano em cada aprovação. Direitos e proveniência preservados.</footer></body></html>`;
+<section id="final-panel" class="card" hidden><div class="title-row"><h2>03 / Seu vídeo final</h2><a id="download" class="button" download="video-final.mp4">Baixar MP4</a></div><video id="final-video" controls preload="metadata" aria-label="Vídeo final com narração e legendas"></video><p class="muted">MP4 com QC técnico validado. Custo computacional local não medido; nenhum custo pago é presumido como zero.</p><form id="final-form" hidden><h3>Aprovação da versão final</h3><p>Esta decisão é independente da revisão da mídia e libera somente a entrega manual.</p><label>Observação / motivo da rejeição<textarea name="justification" maxlength="2000"></textarea></label><label class="check"><input type="checkbox" required>Revisei esta versão final exata, incluindo narração e legendas.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar versão final</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar versão final</button></div></form></section><section id="instagram-panel" class="card" hidden><h2>05 / Instagram</h2><p id="instagram-mode"></p><p id="instagram-state" role="status"></p><a id="instagram-url" target="_blank" rel="noopener noreferrer" hidden>Ver publicação</a>
+<form id="instagram-package-form"><label>Texto da postagem<textarea name="caption" required maxlength="5000"></textarea></label><button>Preparar pacote para revisão</button></form>
+<pre id="instagram-package-preview"></pre>
+<form id="instagram-schedule-form" hidden><label>Data e hora local<input name="scheduledAt" type="datetime-local" required></label><label class="check"><input name="confirm" type="checkbox" required>Revisei o MP4 final e o pacote acima e autorizo esta publicação simulada nesta conta e horário.</label><button>Autorizar e agendar simulação</button></form>
+<button id="instagram-refresh" class="quiet">Verificar publicação</button><button id="instagram-cancel" class="quiet" hidden>Cancelar agendamento</button></section>
+</article></div></main><footer>Controle humano em cada aprovação. Direitos e proveniência preservados.</footer></body></html>`;
 
 export const operationsStyles = `
 :root {
@@ -389,6 +394,7 @@ export const operationsScript = String.raw`
     timer = null,
     generation = 0;
   const advancing = new Set();
+  let instagramPackageHash = "";
   const statusNames = {
     SCHEDULED: "Na fila",
     RUNNING: "Em processamento",
@@ -410,6 +416,16 @@ export const operationsScript = String.raw`
     ["HANDOFF", "Aprovação final"],
   ];
   const errors = {
+    SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED: "Configure a conta e o provedor Instagram fake no ambiente. Nenhuma publicação real está habilitada.",
+    SOCIAL_SCHEDULER_CONFIGURATION_REQUIRED: "O armazenamento do agendador precisa ser provisionado pelo responsável pelo ambiente. Nenhum envio foi iniciado.",
+    SOCIAL_HANDOFF_REQUIRED: "Conclua a aprovação final independente do MP4 antes de preparar a publicação.",
+    SOCIAL_LIVE_POST_BLOCKED: "Publicação LIVE bloqueada. Este painel autoriza somente simulações offline.",
+    SOCIAL_SCHEDULE_CONFLICT: "Já existe outro agendamento para este vídeo. Consulte o registro existente.",
+    SOCIAL_CANCELLATION_RECONCILIATION_REQUIRED: "O envio já foi iniciado. É necessário reconciliar o resultado antes de qualquer nova ação.",
+    PUBLICATION_RIGHTS_REQUIRED: "As fontes possuem direitos insuficientes ou restritos à revisão. A publicação exige autorização comercial aplicável.",
+    PUBLICATION_SOURCE_QC_REQUIRED: "O QC autenticado das fontes precisa continuar válido para publicar.",
+    PUBLICATION_QC_REQUIRED: "O QC técnico do MP4 final está ausente, mudou ou não foi aprovado.",
+    SOCIAL_ELIGIBILITY_REQUIRED: "Não foi possível comprovar a elegibilidade do MP4 final para publicação.",
     QC_AUTHENTICATION_REQUIRED:
       "Operador ou credencial inválidos. Use seu cadastro individual.",
     QC_REVIEWER_REQUIRED:
@@ -541,9 +557,33 @@ export const operationsScript = String.raw`
       $("execution-list").append(button);
     }
   }
+  async function instagramStatus() {
+    const data=await api(base()+"/instagram");
+    $("instagram-mode").textContent=data.configuration.mode==="fake"
+      ? "Simulação offline. Nenhuma publicação real será enviada. Conta: "+data.configuration.accountId
+      : "Instagram indisponível. Configure o provedor fake e o agendador; LIVE exige autorização e integração próprias.";
+    const schedule=data.schedule,operation=data.operation;
+    const states={SCHEDULED:"Agendado",RUNNING:"Em processamento",WAITING_RECONCILIATION:"Resultado incerto: reconciliação necessária; nenhum novo envio será feito",COMPLETED:"Simulação concluída",FAILED:"Falha: verifique a pendência",CANCELLED:"Cancelado",PUBLISHED:"Publicado na simulação",UNCERTAIN:"Resultado remoto incerto",PROCESSING:"Processando no provedor",PREPARED:"Preparado",READY:"Pronto"};
+    const problem=schedule?.result_json?JSON.parse(schedule.result_json).code:null;
+    $("instagram-state").textContent=schedule
+      ? (states[schedule.status]||schedule.status)+" · "+new Date(schedule.scheduled_at).toLocaleString("pt-BR")+
+        (operation?" · "+(states[operation.state]||operation.state):"")+
+        (operation?.mediaId?" · ID: "+operation.mediaId:"")+
+        (problem?" · "+(errors[problem]||"Pendência de publicação: "+problem):"")
+      : "Nenhuma publicação autorizada.";
+    $("instagram-package-form").hidden=data.configuration.mode!=="fake" || !!schedule;
+    $("instagram-cancel").hidden=!schedule || schedule.status!=="SCHEDULED" || !!operation;
+    const url=operation?.remoteReceipt?.permalink;
+    const safeUrl=typeof url==="string" && /^https:\/\/(www\.)?instagram\.com\//.test(url);
+    $("instagram-url").hidden=!safeUrl;
+    if(safeUrl)$("instagram-url").href=url;
+    if(schedule)$("instagram-schedule-form").hidden=true;
+  }
   function render(data) {
     const execution = data.execution,
       finalization = execution.finalization;
+    $("instagram-panel").hidden=execution.status!=="SUCCEEDED";
+    if(execution.status==="SUCCEEDED")void instagramStatus().catch(fail);
     $("campaign-title").textContent = execution.campaign_id;
     $("execution-status").textContent =
       (statusNames[execution.status] || execution.status) +
@@ -642,6 +682,9 @@ export const operationsScript = String.raw`
     generation++;
     clearTimeout(timer);
     selected = id;
+    instagramPackageHash="";
+    $("instagram-package-preview").textContent="";
+    $("instagram-schedule-form").hidden=true;
     context = null;
     $("review-content").hidden = true;
     $("reference-choice").hidden = true;
@@ -876,6 +919,20 @@ export const operationsScript = String.raw`
       fail(error);
     }
   });
+  $("instagram-package-form").addEventListener("submit",async(event)=>{
+    event.preventDefault();try{const form=new FormData(event.target),pkg=await post(base()+"/instagram/package",{caption:form.get("caption")});
+      instagramPackageHash=pkg.contentHash;
+      $("instagram-package-preview").textContent=["Conta: "+pkg.account,"MP4: "+pkg.identity.videoRenderContentHash,pkg.caption,pkg.cta,pkg.disclosure,pkg.link,"Pacote: "+pkg.contentHash].join("\n\n");
+      $("instagram-schedule-form").hidden=false;
+    }catch(error){fail(error);}
+  });
+  $("instagram-schedule-form").addEventListener("submit",async(event)=>{
+    event.preventDefault();try{const form=new FormData(event.target);if(!instagramPackageHash||!form.get("confirm"))return;
+      await post(base()+"/instagram/schedule",{packageHash:instagramPackageHash,scheduledAt:new Date(form.get("scheduledAt")).toISOString(),confirm:true});await instagramStatus();
+    }catch(error){fail(error);}
+  });
+  $("instagram-refresh").addEventListener("click",async()=>{try{await post(base()+"/instagram/refresh",{});await instagramStatus();}catch(error){fail(error);}});
+  $("instagram-cancel").addEventListener("click",async()=>{try{await post(base()+"/instagram/cancel",{});await instagramStatus();}catch(error){fail(error);}});
   api("/operations/session")
     .then(start)
     .catch((error) => {

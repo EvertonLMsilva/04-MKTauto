@@ -49,6 +49,11 @@ const provenanceSql: any = `CREATE TRIGGER IF NOT EXISTS social_operation_mode_i
  WHEN json_extract(NEW.payload_json,'$.executionMode') IS NOT (SELECT execution_mode FROM social_publication_context WHERE singleton=1)
   OR json_extract(NEW.payload_json,'$.databaseId') IS NOT (SELECT database_id FROM social_publication_context WHERE singleton=1)
  BEGIN SELECT RAISE(ABORT,'SOCIAL_EXECUTION_MODE_MISMATCH'); END;`;
+const scheduleTriggers = `CREATE TRIGGER IF NOT EXISTS instagram_schedule_identity BEFORE UPDATE ON instagram_publication_schedules
+ WHEN NEW.execution_id IS NOT OLD.execution_id OR NEW.request_json IS NOT OLD.request_json OR NEW.scheduled_at IS NOT OLD.scheduled_at
+ BEGIN SELECT RAISE(ABORT,'IMMUTABLE_INSTAGRAM_SCHEDULE'); END;
+ CREATE TRIGGER IF NOT EXISTS instagram_schedule_no_delete BEFORE DELETE ON instagram_publication_schedules
+ BEGIN SELECT RAISE(ABORT,'IMMUTABLE_INSTAGRAM_SCHEDULE'); END;`;
 const normalizeSql: any = (sql: any): any =>
   sql
     .replace(/\bIF NOT EXISTS\b/gi, '')
@@ -56,7 +61,7 @@ const normalizeSql: any = (sql: any): any =>
     .trim()
     .replace(/;$/, '');
 export function verifySocialContextProtections(db: any): any {
-  for (const expected of `${contextSql}\n${provenanceSql}`.match(
+  for (const expected of `${contextSql}\n${provenanceSql}\n${scheduleTriggers}`.match(
     /CREATE TRIGGER[\s\S]*?END;/g,
   )!) {
     const name: any = /CREATE TRIGGER IF NOT EXISTS (\w+)/.exec(expected)![1];
@@ -437,6 +442,12 @@ function sameFile(a: any, b: any): any {
 
 // Administrative provisioning only. Application constructors remain read-only with respect to schema.
 export function provisionSocialContext(db: any) {
+  db.exec(`CREATE TABLE IF NOT EXISTS instagram_publication_schedules (
+    execution_id TEXT PRIMARY KEY REFERENCES campaign_executions(execution_id),
+    request_json TEXT NOT NULL CHECK(json_valid(request_json)), scheduled_at TEXT NOT NULL,
+    status TEXT NOT NULL CHECK(status IN ('SCHEDULED','RUNNING','WAITING_RECONCILIATION','COMPLETED','FAILED','CANCELLED')),
+    claim_token TEXT,claim_expires_at TEXT, updated_at TEXT NOT NULL,next_poll_at TEXT,result_json TEXT
+  );`);
   db.exec(contextSql);
   const row = db
     .prepare('SELECT * FROM social_publication_context WHERE singleton=1')
@@ -450,5 +461,6 @@ export function provisionSocialContext(db: any) {
     );
   }
   db.exec(provenanceSql);
+  db.exec(scheduleTriggers);
   verifySocialContextProtections(db);
 }

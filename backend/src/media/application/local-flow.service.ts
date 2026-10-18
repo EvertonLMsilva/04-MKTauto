@@ -1,6 +1,13 @@
 import type { LocalAudiovisualPort } from './local-flow.port.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
+  publicationEvidence(qcId: string) {
+    if (!this.runtime.publicationEvidence)
+      throw Object.assign(new Error('PUBLICATION_EVIDENCE_REQUIRED'), {
+        code: 'PUBLICATION_EVIDENCE_REQUIRED',
+      });
+    return this.runtime.publicationEvidence(qcId);
+  }
   ingestRecording(
     scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],
     input: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[1],

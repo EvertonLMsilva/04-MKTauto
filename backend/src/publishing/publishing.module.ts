@@ -1,3 +1,8 @@
+import { FinanceModule } from '../finance/finance.module.js';
+import { FinanceService } from '../finance/application/finance.service.js';
+import { LocalFlowService } from '../media/application/local-flow.service.js';
+import { publishingEvidence } from './application/publication-eligibility.js';
+const PUBLISHING_EVIDENCE = Symbol('PUBLISHING_EVIDENCE');
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
 import { InstagramPublicationService } from './application/instagram-publication.service.js';
 import {
@@ -21,10 +26,15 @@ import { PublishingService } from './application/publishing.service.js';
 import { PublishingController } from './publishing.controller.js';
 
 @Module({
-  imports: [MediaModule, AffiliateModule],
+  imports: [MediaModule, AffiliateModule, FinanceModule],
   controllers: [PublishingController],
   exports: [PublishingService, InstagramPublicationService],
   providers: [
+    {
+      provide: PUBLISHING_EVIDENCE,
+      inject: [MediaService, LocalFlowService],
+      useFactory: publishingEvidence,
+    },
     {
       provide: INSTAGRAM_PUBLICATION_PORTS,
       inject: [PublishingService, MediaService],
@@ -40,11 +50,24 @@ import { PublishingController } from './publishing.controller.js';
     },
     {
       provide: InstagramPublicationService,
-      inject: [PublishingPersistence, INSTAGRAM_PUBLICATION_PORTS],
+      inject: [
+        PublishingPersistence,
+        INSTAGRAM_PUBLICATION_PORTS,
+        FinanceService,
+      ],
       useFactory: (
         store: PublishingPersistence,
         ports: InstagramPublicationPorts | null,
-      ) => new InstagramPublicationService(store, ports),
+        finance: FinanceService,
+      ) =>
+        new InstagramPublicationService(
+          store,
+          ports,
+          undefined,
+          process.env.INSTAGRAM_PUBLICATION_MODE === 'fake' &&
+            process.env.INSTAGRAM_SCHEDULER_ENABLED !== 'false',
+          finance,
+        ),
     },
     {
       provide: PUBLISHING_DATABASE,
@@ -67,7 +90,7 @@ import { PublishingController } from './publishing.controller.js';
         PUBLISHING_DATABASE,
         AFFILIATE_REPOSITORY,
         AFFILIATE_RUN_CONTEXT,
-        MediaService,
+        PUBLISHING_EVIDENCE,
         SOCIAL_HISTORY_DATABASE,
       ],
     },
@@ -75,7 +98,7 @@ import { PublishingController } from './publishing.controller.js';
       provide: PublishingService,
       useFactory: (store: PublishingPersistence, media: MediaService) =>
         new PublishingService(store, media),
-      inject: [PublishingPersistence, MediaService],
+      inject: [PublishingPersistence, PUBLISHING_EVIDENCE],
     },
   ],
 })

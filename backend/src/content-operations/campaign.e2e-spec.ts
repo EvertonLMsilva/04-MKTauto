@@ -129,6 +129,10 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       process.env.LOCAL_MEDIA_EVIDENCE_ROOT!,
     ])
       mkdirSync(path, { recursive: true });
+    vi.stubEnv('INSTAGRAM_PUBLICATION_MODE', 'fake');
+    vi.stubEnv('INSTAGRAM_ACCOUNT_ID', '123456789');
+    vi.stubEnv('INSTAGRAM_API_VERSION', 'v25.0');
+    vi.stubEnv('INSTAGRAM_SCHEDULER_ENABLED', 'false');
     let builder = Test.createTestingModule({
       imports: [OperationsModule],
     });
@@ -310,12 +314,21 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     }
   });
   it.each([
-    { mediaDecision: 'APPROVED', finalDecision: 'APPROVED' },
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: false,
+    },
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: true,
+    },
     { mediaDecision: 'REJECTED', finalDecision: 'APPROVED' },
     { mediaDecision: 'APPROVED', finalDecision: 'REJECTED' },
   ])(
     'browser QC, offline finalization and independent handoff: %j',
-    async ({ mediaDecision, finalDecision }) => {
+    async ({ mediaDecision, finalDecision, simulateTimeout }) => {
       const e = await service.schedule({
         ...body,
         videoProduction: { mode: 'ASSISTED_LOCAL' },
@@ -868,6 +881,138 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             .find((event) => event.event_type === 'HUMAN_APPROVAL')?.evidence
             .actor,
         ).toBe('qc_operator_test');
+        if (finalDecision === 'APPROVED') {
+          const prefix = `/operations/executions/${e.execution_id}/instagram`;
+          const prepare = await browser
+            .post(prefix + '/package')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({
+              caption:
+                'Owned offline fixture video, explicitly authorized for a simulated post.',
+            });
+          expect(prepare.status, JSON.stringify(prepare.body)).toBe(201);
+          const scheduleAt = new Date(Date.now() + 60000).toISOString();
+          const input = {
+            packageHash: prepare.body.contentHash,
+            scheduledAt: scheduleAt,
+            confirm: true,
+          };
+          await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({ ...input, confirm: false })
+            .expect(400);
+          const getAsset = media.get.bind(media);
+          const deniedRights = vi
+            .spyOn(media, 'get')
+            .mockImplementation((mediaId: string) => {
+              const asset = getAsset(mediaId);
+              return asset
+                ? {
+                    ...asset,
+                    rights: { ...asset.rights, commercialUseAllowed: false },
+                  }
+                : asset;
+            });
+          try {
+            const denied = await browser
+              .post(prefix + '/schedule')
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send(input);
+            expect(denied.status).toBe(400);
+            expect(denied.body.code).toBe('PUBLICATION_RIGHTS_REQUIRED');
+          } finally {
+            deniedRights.mockRestore();
+          }
+          const scheduledResponse = await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send(input);
+          expect(
+            scheduledResponse.status,
+            JSON.stringify(scheduledResponse.body),
+          ).toBe(201);
+          await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send(input)
+            .expect(201);
+          const { InstagramPublicationService } =
+            await import('../publishing/application/instagram-publication.service.js');
+          const { PublishingPersistence } =
+            await import('../publishing/infrastructure/publishing.persistence.js');
+          const { INSTAGRAM_PUBLICATION_PORTS } =
+            await import('../publishing/application/ports/instagram-publication.port.js');
+          const instance = app.get(InstagramPublicationService);
+          await instance.tick();
+          expect((await instance.status(e.execution_id)).schedule.status).toBe(
+            'SCHEDULED',
+          );
+          const afterRestart = new InstagramPublicationService(
+            app.get(PublishingPersistence),
+            app.get(INSTAGRAM_PUBLICATION_PORTS),
+            () => new Date(Date.parse(scheduleAt) + 1000).toISOString(),
+            false,
+            app.get(FinanceService),
+          );
+          const ports = app.get<any>(INSTAGRAM_PUBLICATION_PORTS);
+          const publish = vi.spyOn(ports.publisher, 'publish');
+          if (simulateTimeout) {
+            publish.mockImplementationOnce(async () => {
+              throw Object.assign(new Error(), {
+                code: 'SOCIAL_NETWORK_UNCERTAIN',
+              });
+            });
+          }
+          try {
+            await Promise.all([afterRestart.tick(), afterRestart.tick()]);
+            const status = await afterRestart.status(e.execution_id);
+            if (simulateTimeout) {
+              expect(status.schedule.status, JSON.stringify(status)).toBe(
+                'WAITING_RECONCILIATION',
+              );
+              const recovered = new InstagramPublicationService(
+                app.get(PublishingPersistence),
+                ports,
+                () => new Date(Date.parse(scheduleAt) + 120000).toISOString(),
+                false,
+                app.get(FinanceService),
+              );
+              await recovered.tick();
+              expect(publish).toHaveBeenCalledTimes(1);
+              expect(
+                (await recovered.status(e.execution_id)).operation.state,
+              ).toBe('UNCERTAIN');
+            } else {
+              expect(status.schedule.status, JSON.stringify(status)).toBe(
+                'COMPLETED',
+              );
+              expect(status.operation.state).toBe('PUBLISHED');
+              expect(status.operation.remoteReceipt.permalink).toContain(
+                'instagram.com',
+              );
+              await afterRestart.tick();
+              expect(
+                (await afterRestart.status(e.execution_id)).operation
+                  .contentHash,
+              ).toBe(status.operation.contentHash);
+              expect(publish).toHaveBeenCalledTimes(1);
+            }
+          } finally {
+            publish.mockRestore();
+          }
+          expect(service.get(e.execution_id).status).toBe('SUCCEEDED');
+        }
         expect(aligner.align).toHaveBeenCalledTimes(1);
       } finally {
         spy.mockRestore();
