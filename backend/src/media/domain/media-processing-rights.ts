@@ -27,8 +27,9 @@ export function validateMediaRightsEvidence(
 export function assertMediaProcessingRights(
   evidence: unknown,
   identity: { mediaRef: string; contentHash: string },
-  provider: string,
+  provider: string | null,
   operationScope?: string,
+  context?: { campaignId: string; purpose: string },
 ): void {
   if (!Array.isArray(evidence))
     throw falFailure('MEDIA_PROCESSING_RIGHTS_UNCONFIRMED');
@@ -50,7 +51,12 @@ export function assertMediaProcessingRights(
         a.processing !== 'GRANTED' ||
         (a.operationScope !== undefined &&
           a.operationScope !== operationScope) ||
-        !a.externalProviders.includes(provider),
+        (a.campaignId !== undefined &&
+          (a.campaignId !== context?.campaignId ||
+            a.purpose !== context?.purpose)) ||
+        (provider === null
+          ? a.localProcessing !== true
+          : !a.externalProviders.includes(provider)),
     )
   )
     throw falFailure('MEDIA_PROCESSING_RIGHTS_UNCONFIRMED');

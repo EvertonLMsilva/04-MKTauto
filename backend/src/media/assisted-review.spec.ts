@@ -9,6 +9,11 @@ import { OfflineTemporalValidator } from './infrastructure/offline-temporal.vali
 import { LocalEvidenceStorage } from './infrastructure/local-evidence-storage.js';
 import { runProcess } from './infrastructure/ffmpeg-process.js';
 import { compositionPlanContentHash } from './domain/composition-plan-contracts.js';
+import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
+import { SqliteAffiliateRunContextRepository } from '../affiliate/infrastructure/sqlite-affiliate-run-context.repository.js';
+import { SqliteAffiliateRepository } from '../affiliate/infrastructure/sqlite-affiliate.repository.js';
+import { SqliteOperationsRepository } from '../content-operations/infrastructure/sqlite-operations.repository.js';
 import {
   operationalQcIdentity,
   provisionQcReviewer,
@@ -25,7 +30,6 @@ let f: ReturnType<typeof fixture>,
   principal: unknown,
   input: any;
 beforeEach(async () => {
-  f = fixture();
   root = await mkdtemp(join(tmpdir(), 'assisted-qc-'));
   const binary = (name: string) =>
     execFileSync(process.platform === 'win32' ? 'where.exe' : 'which', [name], {
@@ -84,6 +88,87 @@ beforeEach(async () => {
   const storage = new LocalEvidenceStorage(mediaRoot),
     hash = storage.put(await readFile(video), 'mp4'),
     refHash = storage.put(await readFile(png), 'png');
+  f = fixture(
+    true,
+    ({ database, projectId, pipelineRunId }) => {
+      const catalog = new SqliteAffiliateRepository(database);
+      const product = {
+        schemaVersion: 'affiliate-product/1.0.0',
+        productId: 'campaign_product',
+        revision: 1,
+        name: 'Isolated test product',
+        brand: 'Test',
+        attributes: [
+          { name: 'shape', value: 'Test pattern', evidenceRef: 'spec' },
+        ],
+        media: [{ mediaRef: 'test-reference', evidenceRef: 'rights' }],
+        evidence: [
+          {
+            id: 'spec',
+            kind: 'PRODUCT_SPECIFICATION',
+            sourceRef: 'fixture:spec',
+            recordedAt: '2026-10-17T00:00:00Z',
+          },
+          {
+            id: 'rights',
+            kind: 'MEDIA_USAGE_RIGHT',
+            sourceRef: 'fixture:rights',
+            recordedAt: '2026-10-17T00:00:00Z',
+          },
+        ],
+      };
+      try {
+        catalog.registerProduct(product, 'seed_product');
+        catalog.registerCampaign(
+          {
+            schemaVersion: 'affiliate-campaign/1.0.0',
+            campaignId: 'campaign_rights_test',
+            revision: 1,
+            projectId,
+            productId: product.productId,
+            productRevision: 1,
+            affiliateUrl: 'https://example.com/test-product',
+            cta: 'Contract test',
+            disclosure: 'Isolated fixture',
+          },
+          'seed_campaign',
+          true,
+        );
+        const briefing = catalog.createBriefing(
+          {
+            briefingId: 'campaign_seed_briefing',
+            campaignId: 'campaign_rights_test',
+            campaignRevision: 1,
+          },
+          'seed_briefing',
+          true,
+        );
+        const bindings = new SqliteAffiliateRunContextRepository(database);
+        try {
+          bindings.insertRunBinding({
+            pipelineRunId,
+            briefingId: briefing.briefingId,
+            briefingHash: briefing.contentHash,
+            campaignId: briefing.campaignId,
+            campaignRevision: 1,
+            productId: product.productId,
+            productRevision: 1,
+          });
+        } finally {
+          bindings.close();
+        }
+      } finally {
+        catalog.close();
+      }
+    },
+    {
+      operationId: 'campaign_review_operation',
+      contentHash: hash,
+      width: 64,
+      height: 64,
+    },
+  );
+
   const rights = (contentHash: string, externalProviders = ['fal_ai']) => ({
     usageBasis: 'OWNED',
     commercialUseAllowed: true,
@@ -175,6 +260,175 @@ afterEach(async () => {
   if (root) await rm(root, { recursive: true, force: true });
   vi.unstubAllEnvs();
 });
+
+async function campaignReview(change: Record<string, unknown> = {}) {
+  const campaignId = 'campaign_rights_test',
+    operationScope = 'campaign_review_operation';
+  const scopedRights = (candidate: any, id: string) => {
+    const rights = structuredClone(candidate.rights);
+    rights.evidence[0].id = id;
+    Object.assign(rights.evidence[0].mediaAuthorization, {
+      campaignId,
+      operationScope,
+      purpose: 'HUMAN_QC_REVIEW',
+      ...change,
+    });
+    return rights;
+  };
+  const videoRights = scopedRights(asset, 'campaign_video_right');
+  const referenceRights = scopedRights(reference, 'campaign_reference_right');
+  const catalog = new AffiliateService(new SqliteAffiliatePersistence(f.path), {
+    get: async (id: string) => {
+      const r = new SqliteOperationsRepository(f.path);
+      try {
+        return r.get(id);
+      } finally {
+        r.close();
+      }
+    },
+  });
+  const product = {
+    schemaVersion: 'affiliate-product/1.0.0',
+    productId: 'campaign_product',
+    revision: 2,
+    name: 'Contract test product',
+    brand: 'Test',
+    attributes: [{ name: 'shape', value: 'Test pattern', evidenceRef: 'spec' }],
+    media: [
+      {
+        mediaRef: reference.mediaReference,
+        evidenceRef: 'campaign_reference_right',
+      },
+    ],
+    evidence: [
+      {
+        id: 'spec',
+        kind: 'PRODUCT_SPECIFICATION',
+        sourceRef: 'fixture:spec',
+        recordedAt: '2026-10-17T00:00:00Z',
+      },
+      ...videoRights.evidence,
+      ...referenceRights.evidence,
+    ],
+  };
+  expect(
+    await catalog.registerProduct({
+      idempotencyKey: 'scoped_product',
+      product,
+    }),
+  ).toEqual(
+    await catalog.registerProduct({
+      idempotencyKey: 'scoped_product',
+      product,
+    }),
+  );
+  await catalog.registerCampaign({
+    idempotencyKey: 'scoped_campaign',
+    campaign: {
+      schemaVersion: 'affiliate-campaign/1.0.0',
+      campaignId,
+      revision: 2,
+      projectId: f.script.projectId,
+      productId: product.productId,
+      productRevision: 2,
+      affiliateUrl: 'https://example.com/test-product',
+      cta: 'Contract test',
+      disclosure: 'Isolated fixture',
+    },
+  });
+  await catalog.createBriefing({
+    idempotencyKey: 'scoped_briefing',
+    briefingId: 'campaign_review_briefing',
+    campaignId,
+    campaignRevision: 2,
+  });
+  asset = media.register({
+    ...asset,
+    mediaAssetId: 'campaign_review_video',
+    rights: videoRights,
+    revision: 3,
+    supersedesMediaAssetId: asset.mediaAssetId,
+  });
+  reference = media.register({
+    ...reference,
+    mediaAssetId: 'campaign_reference',
+    rights: referenceRights,
+    revision: 3,
+    supersedesMediaAssetId: reference.mediaAssetId,
+  });
+  automatic = await media.evaluateTemporalMedia(asset.mediaAssetId);
+  input = {
+    ...input,
+    mediaAssetId: asset.mediaAssetId,
+    mediaRevision: asset.revision,
+    automaticReportHash: automatic.contentHash,
+    referenceImage: {
+      mediaAssetId: reference.mediaAssetId,
+      contentHash: reference.contentHash,
+      revision: reference.revision,
+    },
+  };
+  return { campaignId, operationScope, catalog, product };
+}
+
+it('accepts campaign rights through AffiliateService and binds concurrent review replay to authoritative scope', async () => {
+  const scope = await campaignReview();
+  expect(
+    (await scope.catalog.getProduct('campaign_product', 1))!.evidence.every(
+      (e) => e.mediaAuthorization?.campaignId === undefined,
+    ),
+  ).toBe(true);
+  await expect(
+    media.reviewTemporalMedia(
+      asset.mediaAssetId,
+      { ...input, campaignId: 'client_selected_campaign' },
+      principal,
+    ),
+  ).rejects.toThrow('HUMAN_APPROVAL_REVIEW_INVALID');
+  const [a, b] = (await Promise.all([
+    media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+    media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+  ])) as any[];
+  expect(a).toEqual(b);
+  expect(a.evidence.provenance.parameters.humanReview.rightsScope).toEqual({
+    campaignId: scope.campaignId,
+    operationScope: scope.operationScope,
+    purpose: 'HUMAN_QC_REVIEW',
+  });
+  expect(await media.evaluateTemporalMedia(asset.mediaAssetId)).toEqual(a);
+  const denial = structuredClone(reference.rights);
+  denial.evidence[0].mediaAuthorization.processing = 'DENIED';
+  media.register({
+    ...reference,
+    mediaAssetId: 'revoked_campaign_reference',
+    rights: denial,
+    revision: 4,
+    supersedesMediaAssetId: reference.mediaAssetId,
+  });
+  await expect(media.evaluateTemporalMedia(asset.mediaAssetId)).rejects.toThrow(
+    'HUMAN_APPROVAL_REVIEW_STALE',
+  );
+});
+
+it.each([
+  { campaignId: 'another_campaign' },
+  { operationScope: 'another_operation' },
+  { processing: 'DENIED' },
+  { commercialUse: 'DENIED' },
+  { localProcessing: false },
+  { externalProviders: [] },
+])(
+  'rejects mismatched or denied campaign authorization: %j',
+  async (change) => {
+    await campaignReview(change);
+    await expect(
+      media.reviewTemporalMedia(asset.mediaAssetId, input, principal),
+    ).rejects.toThrow();
+    expect(
+      ((await media.evaluateTemporalMedia(asset.mediaAssetId)) as any).result,
+    ).toBe('NOT_VALIDATED');
+  },
+);
 it('binds authorized review to automatic evidence and exact media, replays concurrently and unlocks V2 only afterward', async () => {
   const plan = structuredClone(f.value);
   plan.segments[0].mediaAssetId = reference.mediaAssetId;

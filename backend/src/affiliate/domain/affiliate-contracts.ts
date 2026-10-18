@@ -22,6 +22,9 @@ export interface MediaAuthorization {
   externalProviders: string[];
   // A test-specific permission cannot authorize another operation or final production.
   operationScope?: string;
+  // Campaign-restricted grants are usable only for the exact reviewed acquisition.
+  campaignId?: string;
+  purpose?: 'HUMAN_QC_REVIEW';
 }
 export interface AffiliateAttribute {
   name: string;
@@ -374,7 +377,11 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
             'processing',
             'localProcessing',
             'externalProviders',
-            ...(Object.hasOwn(a ?? {}, 'operationScope') ? ['operationScope'] : []),
+            ...(Object.hasOwn(a ?? {}, 'operationScope')
+              ? ['operationScope']
+              : []),
+            ...(Object.hasOwn(a ?? {}, 'campaignId') ? ['campaignId'] : []),
+            ...(Object.hasOwn(a ?? {}, 'purpose') ? ['purpose'] : []),
           ],
           'mediaAuthorization',
         );
@@ -395,6 +402,12 @@ function validateEvidence(value: unknown, check: Check = strictCheck) {
         );
         if (a.operationScope !== undefined)
           affiliateIdentifier(a.operationScope, 'operationScope');
+        if (Object.hasOwn(a, 'campaignId') || Object.hasOwn(a, 'purpose')) {
+          affiliateIdentifier(a.campaignId, 'campaignId');
+          affiliateIdentifier(a.operationScope, 'operationScope');
+          if (a.purpose !== 'HUMAN_QC_REVIEW')
+            fail('INVALID_MEDIA_AUTHORIZATION', 'purpose');
+        }
       });
     entryCheck(() => {
       if (

@@ -6,9 +6,23 @@ import { compositionPlanContentHash } from '../../src/media/domain/composition-p
 import { voiceTrackIdentityHash } from '../../src/media/domain/voice-track-contracts.js';
 import { createHash } from 'node:crypto';
 import { validateArtifactLineage } from '../../src/content/domain/artifact-lineage-contracts.js';
+import { mediaAcquisitionRequestHash } from '../../src/media/domain/media-acquisition-contracts.js';
 
 // Synthetic metadata only, seeded into the real schema. No physical media or analyzer.
-export function fixture(_mixed = true) {
+export function fixture(
+  _mixed = true,
+  beforeContent?: (context: {
+    database: string;
+    projectId: string;
+    pipelineRunId: string;
+  }) => void,
+  acquiredVideo?: {
+    operationId: string;
+    contentHash: string;
+    width: number;
+    height: number;
+  },
+) {
   const f = falFixture();
   const time = '2026-10-16T12:00:00Z';
   const snapshot = f.base.create({
@@ -37,6 +51,11 @@ export function fixture(_mixed = true) {
       startedAt: time,
     },
     projectSnapshot: snapshot,
+  });
+  beforeContent?.({
+    database: f.database,
+    projectId: snapshot.project.id,
+    pipelineRunId: 'temporal_run',
   });
   const scope = {
     pipelineRunId: 'temporal_run',
@@ -146,7 +165,10 @@ export function fixture(_mixed = true) {
   );
   const assets = [0, 1].map((index) => ({
     schemaVersion: 'media-asset/1.0.0',
-    mediaAssetId: `temporal_asset_${index}`,
+    mediaAssetId:
+      index && acquiredVideo
+        ? `media_asset:${acquiredVideo.operationId}`
+        : `temporal_asset_${index}`,
     ...scope,
     scriptId: script.scriptId,
     scriptContentHash: script.contentHash,
@@ -154,12 +176,15 @@ export function fixture(_mixed = true) {
     assetType: index ? 'VIDEO' : 'IMAGE',
     technicalProperties: {
       format: index ? 'mp4' : 'png',
-      widthPixels: 1080,
-      heightPixels: 1920,
+      widthPixels: index && acquiredVideo ? acquiredVideo.width : 1080,
+      heightPixels: index && acquiredVideo ? acquiredVideo.height : 1920,
       durationMilliseconds: index ? 6000 : null,
     },
-    contentHash: (index ? 'e' : 'd').repeat(64),
-    mediaReference: `media:sha256_${(index ? 'e' : 'd').repeat(64)}`,
+    contentHash:
+      index && acquiredVideo
+        ? acquiredVideo.contentHash
+        : (index ? 'e' : 'd').repeat(64),
+    mediaReference: `media:sha256_${index && acquiredVideo ? acquiredVideo.contentHash : (index ? 'e' : 'd').repeat(64)}`,
     origin: 'OPERATOR_OWNED',
     provider: null,
     rights: { usageBasis: 'OWNED', commercialUseAllowed: true },
@@ -167,7 +192,23 @@ export function fixture(_mixed = true) {
     revision: 1,
     supersedesMediaAssetId: null,
   }));
-  assets.forEach((asset) => repository.registerMediaAsset(asset));
+  assets.forEach((asset) => {
+    if (asset.assetType === 'VIDEO' && acquiredVideo) {
+      const body = {
+        schemaVersion: 'media-acquisition-request/1.0.0',
+        mediaAcquisitionRequestId: acquiredVideo.operationId,
+        scriptId: script.scriptId,
+        scriptContentHash: script.contentHash,
+        visualDirectionPosition: asset.visualDirectionPosition,
+        assetType: 'VIDEO',
+        requestedAt: asset.createdAt,
+      };
+      repository.registerAcquiredMediaAsset({
+        request: { ...body, contentHash: mediaAcquisitionRequestHash(body) },
+        mediaAsset: asset,
+      });
+    } else repository.registerMediaAsset(asset);
+  });
   const value: any = {
     schemaVersion: 'composition-plan/2.0.0',
     compositionPlanId: 'temporal_plan',

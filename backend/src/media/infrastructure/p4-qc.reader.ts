@@ -1,4 +1,5 @@
 import { TEMPORAL_ANALYSIS_POLICY } from './offline-temporal.validator.js';
+import { campaignReviewRights } from './campaign-review-rights.js';
 import { operationalQcIdentity } from '../../publishing/application/local-qc-identity.js';
 import { LocalEvidenceStorage } from './local-evidence-storage.js';
 import { adaptationHash } from '../domain/media-hash.js';
@@ -107,6 +108,12 @@ export function validateCurrentTemporalQC(
       reference.revision !== audit.referenceImage.revision ||
       reference.contentHash !== audit.referenceImage.contentHash ||
       adaptationHash(reference.rights) !== audit.referenceRightsHash
+    )
+      p4Fail('HUMAN_APPROVAL_REVIEW_STALE');
+    const currentScope = campaignReviewRights(repository, asset, reference);
+    if (
+      adaptationHash({ scope: currentScope }) !==
+      adaptationHash({ scope: audit.rightsScope ?? null })
     )
       p4Fail('HUMAN_APPROVAL_REVIEW_STALE');
     if (!process.env.FFMPEG_MEDIA_ROOT)

@@ -51,6 +51,11 @@ export class HumanApprovalService {
     reference: any;
     technical: any;
     referenceTechnical: any;
+    rightsScope?: {
+      campaignId: string;
+      operationScope: string;
+      purpose: string;
+    } | null;
   }) {
     const reviewer = assertQcReviewer(context.principal);
     operationalQcIdentity.assertActive(reviewer);
@@ -197,6 +202,7 @@ export class HumanApprovalService {
       referenceTechnical,
       decisionKey,
       requestHash,
+      ...(context.rightsScope ? { rightsScope: context.rightsScope } : {}),
     };
     const signature = operationalQcIdentity.signReview(
       reviewer,
