@@ -217,6 +217,41 @@ export class OperationsController {
       this.operations.finalDecision(id, input, request[QC_REVIEWER_CONTEXT]),
     );
   }
+  @Get('executions/:id/instagram')
+  @UseGuards(LocalQcGuard)
+  instagramStatus(@Param('id') id: string) {
+    return this.respond(() => this.operations.instagramStatus(id));
+  }
+  @Post('executions/:id/instagram/package')
+  @UseGuards(LocalQcGuard)
+  instagramPackage(@Param('id') id: string, @Body() value: unknown) {
+    return this.respond(() => this.operations.prepareInstagram(id, value));
+  }
+  @Post('executions/:id/instagram/schedule')
+  @UseGuards(LocalQcGuard)
+  instagramSchedule(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.scheduleInstagram(
+        id,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      ),
+    );
+  }
+  @Post('executions/:id/instagram/cancel')
+  @UseGuards(LocalQcGuard)
+  instagramCancel(@Param('id') id: string) {
+    return this.respond(() => this.operations.cancelInstagram(id));
+  }
+  @Post('executions/:id/instagram/refresh')
+  @UseGuards(LocalQcGuard)
+  instagramRefresh(@Param('id') id: string) {
+    return this.respond(() => this.operations.refreshInstagram(id));
+  }
   @Get('executions/:id/final.mp4') @UseGuards(LocalQcGuard) final(
     @Param('id') id: string,
     @Query('download') download: string,

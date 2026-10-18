@@ -1,3 +1,4 @@
+import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
 import { writeFileSync } from 'node:fs';
 import { mkdir, rmdir } from 'node:fs/promises';
 import { join, resolve } from 'node:path';
@@ -637,6 +638,100 @@ export class LocalFlowRuntime {
       within(videos[0].duration) &&
       within(audios[0].duration)
     );
+  }
+  publicationEvidence(qcId: string) {
+    return this.session((r) => {
+      const qc: any = r.document(qcId, 'local_qc', this.files());
+      const render = r.getVideoRender(qc.videoRenderId) as any;
+      if (
+        !render ||
+        render.revision !== 2 ||
+        qc.result !== 'PASS' ||
+        qc.approvalBlocked !== false ||
+        qc.videoRenderContentHash !== render.contentHash ||
+        !Array.isArray(qc.findings) ||
+        qc.findings.some((f: any) => f.status !== 'PASS') ||
+        [
+          'PHYSICAL_HASH',
+          'VERIFIED_SUBTITLES_LINEAGE',
+          'STREAMS_FORMAT_DURATION',
+          'FULL_DECODE',
+        ].some((c) => !qc.findings.some((f: any) => f.code === c))
+      )
+        localFail('PUBLICATION_QC_REQUIRED');
+      this.renderFiles().read(render.contentHash, 'mp4');
+      const subtitleId = r.getArtifact(render.videoRenderId)?.inputs[2]
+        ?.inputId;
+      if (!subtitleId) localFail('LOCAL_SUBTITLES_REQUIRED');
+      this.subtitle(r, subtitleId!);
+      const plan = r.getCompositionPlan(render.compositionPlanId) as any;
+      if (!plan || plan.schemaVersion !== 'composition-plan/2.0.0')
+        localFail('PUBLICATION_LINEAGE_REQUIRED');
+      const audio = this.authorizedAudio(
+        render.pipelineRunId,
+        plan.scriptId,
+        plan.scriptContentHash,
+        plan.voiceTrackId,
+      );
+      if (!audio || audio.contentHash !== plan.voiceTrackContentHash)
+        localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      const assets = plan.segments.map((segment: any) => {
+        const asset = this.media.get(segment.mediaAssetId);
+        if (
+          !asset ||
+          asset.pipelineRunId !== render.pipelineRunId ||
+          asset.scriptId !== plan.scriptId ||
+          asset.contentHash !== segment.mediaAssetContentHash ||
+          !asset.rights.commercialUseAllowed
+        )
+          localFail('PUBLICATION_RIGHTS_REQUIRED');
+        // Existing composition-only/review-only scopes are never widened for publishing.
+        if (
+          asset!.rights.evidence?.some(
+            (e) =>
+              e.mediaAuthorization?.campaignId !== undefined ||
+              e.mediaAuthorization?.operationScope !== undefined,
+          )
+        )
+          localFail('PUBLICATION_RIGHTS_REQUIRED');
+        assertMediaProcessingRights(
+          asset!.rights.evidence,
+          { mediaRef: asset!.mediaReference, contentHash: asset!.contentHash },
+          null,
+        );
+        const review: any = this.media.temporalReview(asset!.mediaAssetId);
+        if (review?.result !== 'PASS')
+          localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+        new LocalEvidenceStorage(resolve(this.env.FFMPEG_MEDIA_ROOT!)).read(
+          asset!.contentHash,
+          asset!.technicalProperties.format,
+          33554432,
+        );
+        return {
+          id: asset!.mediaAssetId,
+          contentHash: asset!.contentHash,
+          rightsHash: adaptationHash(asset!.rights),
+          reviewHash: review.contentHash,
+        };
+      });
+      const voice = r.getVoiceTrack(audio.voiceTrackId) as any;
+      const authorization = r.document<any>(
+        audio.voiceTrackId,
+        'voice_track',
+        this.files(),
+      ).authorization;
+      return {
+        qc,
+        render,
+        planHash: plan.contentHash,
+        audio: {
+          ...audio,
+          rightsHash: adaptationHash(voice.rights),
+          authorizationHash: adaptationHash(authorization),
+        },
+        assets,
+      };
+    });
   }
   async qc(videoId: string) {
     const render = this.session((r) => r.getVideoRender(videoId));

@@ -4,6 +4,7 @@ export interface AuthorizedLocalAudio {
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  publicationEvidence?(qcId: string): unknown;
   ingestRecording?(
     scope: {
       pipelineRunId: string;

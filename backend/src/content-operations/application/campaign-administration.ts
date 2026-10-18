@@ -221,6 +221,22 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         completed[String(event.evidence.step)] = event.evidence.result;
     return { execution, history, request, completed };
   }
+  publicationContext(id: string) {
+    const c = this.finalizationContext(id),
+      handoff = c.completed.HANDOFF ? document(c.completed.HANDOFF) : null;
+    if (
+      c.execution.status !== 'SUCCEEDED' ||
+      !handoff ||
+      !handoff.approvalId ||
+      !c.completed.BURN ||
+      !c.completed.QC ||
+      document(c.completed.QC).result !== 'PASS' ||
+      handoff.videoRenderId !== document(c.completed.BURN).videoRenderId ||
+      handoff.contentHash !== document(c.completed.BURN).contentHash
+    )
+      throw new CampaignError('SOCIAL_HANDOFF_REQUIRED');
+    return { ...c, handoff };
+  }
   async finalReviewContext(id: string) {
     const { execution, completed } = this.finalizationContext(id);
     return this.workflow.approvalEvidence(execution, completed);
