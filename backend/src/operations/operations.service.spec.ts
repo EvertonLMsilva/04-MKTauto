@@ -1,5 +1,37 @@
 import { OperationsService } from './operations.service.js';
 
+test('connection diagnostics are independent of campaign state and reject browser-supplied credentials', async () => {
+  const connection = {
+    status: vi.fn(() => ({ connection: 'NOT_CHECKED' })),
+    check: vi.fn(async () => ({ connection: 'READY' })),
+  };
+  const service = new OperationsService(
+    {} as any,
+    {} as any,
+    {} as any,
+    undefined,
+    undefined,
+    connection as any,
+  );
+  expect(service.instagramConnection()).toEqual({ connection: 'NOT_CHECKED' });
+  expect(connection.check).not.toHaveBeenCalled();
+  for (const value of [
+    null,
+    [],
+    { token: 'PRIVATE' },
+    { accountId: '123456789' },
+  ]) {
+    expect(() => service.checkInstagramConnection(value)).toThrow(
+      'INVALID_CONNECTION_REQUEST',
+    );
+  }
+  expect(connection.check).not.toHaveBeenCalled();
+  await expect(service.checkInstagramConnection({})).resolves.toEqual({
+    connection: 'READY',
+  });
+  expect(connection.check).toHaveBeenCalledTimes(1);
+});
+
 test('a review cannot attach another script from the same run to an execution', () => {
   const context = {
     execution: { run_id: 'run_001' },

@@ -109,6 +109,14 @@ export class OperationsController {
       return { loggedOut: true };
     });
   }
+  @Get('instagram/connection') @UseGuards(LocalQcGuard) instagramConnection() {
+    return this.respond(() => this.operations.instagramConnection());
+  }
+  @Post('instagram/connection/check')
+  @UseGuards(LocalQcGuard)
+  checkInstagramConnection(@Body() value: unknown) {
+    return this.respond(() => this.operations.checkInstagramConnection(value));
+  }
   @Get('executions') @UseGuards(LocalQcGuard) list() {
     return this.respond(() => this.operations.list());
   }
