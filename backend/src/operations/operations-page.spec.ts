@@ -42,7 +42,7 @@ function browserReviewHarness() {
   new Script(
     operationsScript.replace(
       /\}\)\(\);\s*$/,
-      'globalThis.reviewTest = { buildReviewCriteria, fail };})();',
+      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation };})();',
     ),
   ).runInContext(context);
   return { api: sandbox.reviewTest, node };
@@ -84,11 +84,60 @@ test('review contract errors identify the invalid field without reflecting respo
   expect(node('notice').textContent).toContain('versão');
 });
 
-test('normalization does not accept empty observations or disclose arbitrary backend messages',()=>{
-  const {api,node}=browserReviewHarness();
-  expect(()=>api.buildReviewCriteria({asset:{durationMilliseconds:5184}},new Map([['motion','  \n  ']]))).toThrow();
-  api.fail({code:'invalid private details',message:'private details'});
+test('normalization does not accept empty observations or disclose arbitrary backend messages', () => {
+  const { api, node } = browserReviewHarness();
+  expect(() =>
+    api.buildReviewCriteria(
+      { asset: { durationMilliseconds: 5184 } },
+      new Map([['motion', '  \n  ']]),
+    ),
+  ).toThrow();
+  api.fail({ code: 'invalid private details', message: 'private details' });
   expect(node('notice').textContent).not.toContain('private details');
-  api.fail({code:'MEDIA_UNAVAILABLE'});
+  api.fail({ code: 'MEDIA_UNAVAILABLE' });
   expect(node('notice').textContent).toContain('MEDIA_UNAVAILABLE');
+});
+
+test('criteria reflect the authoritative authenticated review, preserving the automatic assessment separately', () => {
+  const { api } = browserReviewHarness();
+  const automatic = {
+    evidence: {
+      motion: 'NOT_VALIDATED',
+      continuity: 'NOT_VALIDATED',
+      fidelity: 'NOT_VALIDATED',
+    },
+  };
+  const audit = { actor: 'reviewer_fixture', decision: 'APPROVED' };
+  const evidence = {
+    motion: 'PASS',
+    continuity: 'PASS',
+    fidelity: 'PASS',
+    provenance: {
+      validator: 'authenticated-human-qc',
+      parameters: { humanReview: audit },
+    },
+  };
+  expect(api.reviewPresentation({ automatic, review: { evidence } })).toEqual({
+    evidence,
+    audit,
+  });
+  expect(api.reviewPresentation({ automatic, review: null })).toEqual({
+    evidence: automatic.evidence,
+    audit: null,
+  });
+  expect(automatic.evidence.motion).toBe('NOT_VALIDATED');
+  const rejected = {
+    ...evidence,
+    motion: 'FAIL',
+    continuity: 'FAIL',
+    fidelity: 'FAIL',
+    provenance: {
+      validator: 'authenticated-human-qc',
+      parameters: { humanReview: { ...audit, decision: 'REJECTED' } },
+    },
+  };
+  expect(
+    api.reviewPresentation({ automatic, review: { evidence: rejected } })
+      .evidence.motion,
+  ).toBe('FAIL');
 });

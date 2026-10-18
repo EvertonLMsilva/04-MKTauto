@@ -137,6 +137,10 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         'A revisão humana rejeitou esta mídia. A composição foi interrompida.',
       MEDIA_QC_FAILED:
         'O vídeo falhou na verificação técnica. Forneça uma mídia válida antes de retomar.',
+      GLOBAL_DAILY_BUDGET_EXCEEDED:
+        'O limite diário do Finance foi atingido. Aguarde a renovação da janela diária (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
+      GLOBAL_MONTHLY_BUDGET_EXCEEDED:
+        'O limite mensal do Finance foi atingido. Aguarde a renovação da janela mensal (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
       AUDIO_REQUIRED:
         'Disponibilize uma gravação autorizada vinculada ao roteiro.',
       LOCAL_AUDIO_SELECTION_REQUIRED:
@@ -178,12 +182,17 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         preview: done.PREVIEW ?? null,
         availableActions:
           execution.status === 'WAITING_INPUT'
-            ? code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
-              ? ['REVIEW_FINAL', 'RESUME', 'CANCEL']
-              : code === 'AUTHENTICATED_MEDIA_REVIEW_REQUIRED' ||
-                  code === 'COMPLETE_TEMPORAL_QC_REQUIRED'
-                ? ['REVIEW_MEDIA', 'CANCEL']
-                : ['SUPPLY_INPUT', 'RESUME', 'CANCEL']
+            ? [
+                'GLOBAL_DAILY_BUDGET_EXCEEDED',
+                'GLOBAL_MONTHLY_BUDGET_EXCEEDED',
+              ].includes(code ?? '')
+              ? ['WAIT_BUDGET_WINDOW', 'RESUME', 'CANCEL']
+              : code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
+                ? ['REVIEW_FINAL', 'RESUME', 'CANCEL']
+                : code === 'AUTHENTICATED_MEDIA_REVIEW_REQUIRED' ||
+                    code === 'COMPLETE_TEMPORAL_QC_REQUIRED'
+                  ? ['REVIEW_MEDIA', 'CANCEL']
+                  : ['SUPPLY_INPUT', 'RESUME', 'CANCEL']
             : execution.status === 'WAITING_RECONCILIATION'
               ? ['RECONCILE', 'CANCEL']
               : [],
