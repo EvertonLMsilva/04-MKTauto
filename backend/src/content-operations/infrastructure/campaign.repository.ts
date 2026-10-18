@@ -51,6 +51,13 @@ export class CampaignRepository {
           }) as unknown as CampaignEvent,
       );
   }
+  listRecent(): CampaignExecution[] {
+    return this.db
+      .prepare(
+        'SELECT * FROM campaign_executions ORDER BY updated_at DESC,execution_id LIMIT 100',
+      )
+      .all() as unknown as CampaignExecution[];
+  }
   private event(
     id: string,
     type: string,
@@ -119,12 +126,16 @@ export class CampaignRepository {
       return this.get(id);
     });
   }
-  due(now: string) {
+  due(now: string, id?: string) {
     return this.db
       .prepare(
-        "SELECT * FROM campaign_executions WHERE status='SCHEDULED' AND scheduled_at<=? ORDER BY scheduled_at LIMIT 20",
+        "SELECT * FROM campaign_executions WHERE status='SCHEDULED' AND scheduled_at<=? AND (? IS NULL OR execution_id=?) ORDER BY scheduled_at LIMIT 20",
       )
-      .all(instant(now)) as unknown as CampaignExecution[];
+      .all(
+        instant(now),
+        id ?? null,
+        id ?? null,
+      ) as unknown as CampaignExecution[];
   }
   pendingFinalization() {
     return this.db
@@ -219,14 +230,14 @@ export class CampaignRepository {
       return this.get(id);
     });
   }
-  recover(now: string) {
+  recover(now: string, id?: string) {
     now = instant(now);
     this.tx(() => {
       const expired = this.db
         .prepare(
-          "SELECT execution_id FROM campaign_executions WHERE status='RUNNING' AND claim_expires_at<=?",
+          "SELECT execution_id FROM campaign_executions WHERE status='RUNNING' AND claim_expires_at<=? AND (? IS NULL OR execution_id=?)",
         )
-        .all(now);
+        .all(now, id ?? null, id ?? null);
       for (const row of expired) {
         const id = String(row.execution_id);
         this.db

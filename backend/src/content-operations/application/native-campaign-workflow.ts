@@ -319,6 +319,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       if (asset.contentHash !== identity.contentHash)
         throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
       this.compositionRights(asset);
+      if (
+        asset.schemaVersion !== 'media-asset/2.0.0' ||
+        asset.technicalProperties.mimeType !== 'video/mp4'
+      )
+        throw new CampaignError('COMPOSITION_MEDIA_PROFILE_REQUIRED');
       return asset;
     });
     const durations = assets.map((a) =>

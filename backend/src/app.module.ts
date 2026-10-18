@@ -10,6 +10,7 @@ import { FinanceModule } from './finance/finance.module.js';
 import { PublishingModule } from './publishing/publishing.module.js';
 import { ResearchModule } from './research/research.module.js';
 import { CampaignOrchestrationModule } from './content-operations/campaign-orchestration.module.js';
+import { OperationsModule } from './operations/operations.module.js';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { CampaignOrchestrationModule } from './content-operations/campaign-orche
     PublishingModule,
     ResearchModule,
     CampaignOrchestrationModule,
+    OperationsModule,
   ],
   controllers: [AppController],
   providers: [AppService],

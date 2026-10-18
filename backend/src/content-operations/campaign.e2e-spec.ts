@@ -1,7 +1,7 @@
 import { provisionQcReviewer } from '../publishing/application/local-qc-identity.js';
 import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { readFileSync, mkdirSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
 import { MediaService } from '../media/application/media.service.js';
@@ -23,6 +23,16 @@ import {
 } from '../../test/support/p2-editorial-fixture.js';
 import { provisionSchema } from '../administration/schema-provisioner.js';
 import { CampaignOrchestrationModule } from './campaign-orchestration.module.js';
+import { OperationsModule } from '../operations/operations.module.js';
+import { LocalFlowService } from '../media/application/local-flow.service.js';
+import { LocalFlowRuntime } from '../media/infrastructure/local-flow.runtime.js';
+import { LocalFlowRepository } from '../media/infrastructure/local-flow.repository.js';
+import { ContentService } from '../content/application/content.service.js';
+import { CONTENT_OPERATIONS } from './application/ports/operations.port.js';
+import {
+  alignmentHash,
+  type AlignmentEvidence,
+} from '../media/domain/alignment-contracts.js';
 import {
   CampaignAdministration,
   CAMPAIGN_DATABASE,
@@ -49,7 +59,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
   const provider = new FakeEditorialProvider();
   let body: Record<string, unknown>;
   beforeEach(async () => {
-    f = p2EditorialFixture();
+    f = p2EditorialFixture({ productionProfile: 'MIXED_MEDIA_V2' });
     const db = new DatabaseSync(f.database);
     provisionSchema(db);
     db.close();
@@ -105,12 +115,22 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     vi.stubEnv('FFMPEG_PATH', binary('ffmpeg'));
     vi.stubEnv('FFPROBE_PATH', binary('ffprobe'));
     vi.stubEnv('FFMPEG_MEDIA_ROOT', join(dirname(f.database), 'media'));
+    vi.stubEnv('FFMPEG_VOICE_ROOT', join(dirname(f.database), 'voice'));
+    vi.stubEnv('FFMPEG_RENDER_ROOT', join(dirname(f.database), 'render'));
+    vi.stubEnv('PUBLISHING_RENDER_ROOT', process.env.FFMPEG_RENDER_ROOT!);
     vi.stubEnv(
       'LOCAL_MEDIA_EVIDENCE_ROOT',
       join(dirname(f.database), 'evidence'),
     );
+    for (const path of [
+      process.env.FFMPEG_MEDIA_ROOT!,
+      process.env.FFMPEG_VOICE_ROOT!,
+      process.env.FFMPEG_RENDER_ROOT!,
+      process.env.LOCAL_MEDIA_EVIDENCE_ROOT!,
+    ])
+      mkdirSync(path, { recursive: true });
     let builder = Test.createTestingModule({
-      imports: [CampaignOrchestrationModule],
+      imports: [OperationsModule],
     });
     for (const token of [
       CAMPAIGN_DATABASE,
@@ -278,321 +298,572 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       network.mockRestore();
     }
   });
-  it('selects authorized recorded fixtures without fake generation and preserves the complete QC gate', async () => {
-    const e = await service.schedule({
-      ...body,
-      videoProduction: { mode: 'ASSISTED_LOCAL' },
-    });
-    await service.tick();
-    const editorial = service
-      .history(e.execution_id)
-      .find(
-        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
-      )!.evidence.result as any;
-    const script = editorial.script;
-    const scenes = {
-      pipelineRunId: script.pipelineRunId,
-      projectId: script.projectId,
-      projectVersion: script.projectVersion,
-      script,
-      scenes: script.visualDirections,
-    };
-    expect(JSON.stringify(service.history(e.execution_id))).toContain(
-      'REAL_VIDEO_MEDIA_REQUIRED',
-    );
-    expect(
-      service
-        .history(e.execution_id)
-        .some((h) => h.evidence.step === 'VIDEO_GENERATION'),
-    ).toBe(false);
-    const file = join(dirname(f.database), 'technical-fixture.mp4');
-    await runProcess(
-      process.env.FFMPEG_PATH!,
-      [
-        '-v',
-        'error',
-        '-nostdin',
-        '-f',
-        'lavfi',
-        '-i',
-        'testsrc2=s=64x64:r=8:d=2',
-        '-an',
-        '-c:v',
-        'libx264',
-        '-threads',
-        '1',
-        '-preset',
-        'ultrafast',
-        '-pix_fmt',
-        'yuv420p',
-        file,
-      ],
-      { timeoutMs: 15000, maxLogBytes: 8192 },
-    );
-    const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
-      readFileSync(file),
-      'mp4',
-    );
-    const ref = 'media:sha256_' + hash;
-    const media = app.get(MediaService);
-    const ids = scenes.scenes.map((scene: any) => {
-      const id = 'technical_fixture_' + scene.position;
-      media.register({
-        schemaVersion: 'media-asset/1.0.0',
-        mediaAssetId: id,
-        pipelineRunId: scenes.pipelineRunId,
-        projectId: scenes.projectId,
-        projectVersion: scenes.projectVersion,
-        scriptId: scenes.script.scriptId,
-        scriptContentHash: scenes.script.contentHash,
-        visualDirectionPosition: scene.position,
-        assetType: 'VIDEO',
-        technicalProperties: {
-          format: 'mp4',
-          widthPixels: 64,
-          heightPixels: 64,
-          durationMilliseconds: 2000,
-        },
-        contentHash: hash,
-        mediaReference: ref,
-        origin: 'OPERATOR_OWNED',
-        provider: null,
-        rights: {
-          usageBasis: 'OWNED',
-          commercialUseAllowed: true,
-          evidence: [
-            {
-              id: 'fixture_rights_' + scene.position,
-              kind: 'MEDIA_USAGE_RIGHT',
-              sourceRef: 'fixture:locally-generated-test-pattern',
-              recordedAt: '2026-10-14T12:00:00Z',
-              mediaAuthorization: {
-                mediaRef: ref,
-                contentHash: hash,
-                commercialUse: 'GRANTED',
-                processing: 'GRANTED',
-                localProcessing: true,
-                externalProviders: [],
-              },
-            },
-          ],
-        },
-        createdAt: '2026-10-14T12:00:00Z',
-        revision: 1,
-        supersedesMediaAssetId: null,
+  it.each([
+    { mediaDecision: 'APPROVED', finalDecision: 'APPROVED' },
+    { mediaDecision: 'REJECTED', finalDecision: 'APPROVED' },
+    { mediaDecision: 'APPROVED', finalDecision: 'REJECTED' },
+  ])(
+    'browser QC, offline finalization and independent handoff: %j',
+    async ({ mediaDecision, finalDecision }) => {
+      const e = await service.schedule({
+        ...body,
+        videoProduction: { mode: 'ASSISTED_LOCAL' },
       });
-      return id;
-    });
-    const realGet = media.get.bind(media);
-    const denied = vi.spyOn(media, 'get').mockImplementation((id: string) => {
-      const asset = realGet(id)!;
-      return {
-        ...asset,
-        rights: {
-          ...asset.rights,
-          evidence: asset.rights.evidence!.map((item) => ({
-            ...item,
-            mediaAuthorization: {
-              ...item.mediaAuthorization!,
-              localProcessing: false,
-            },
-          })),
-        },
-      };
-    });
-    try {
-      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
       await service.tick();
-      expect(JSON.stringify(service.history(e.execution_id))).toContain(
-        'MEDIA_PROCESSING_RIGHTS_REQUIRED',
-      );
-    } finally {
-      denied.mockRestore();
-    }
-    await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
-    await service.tick();
-    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
-    expect(JSON.stringify(service.history(e.execution_id))).toContain(
-      'COMPLETE_TEMPORAL_QC_REQUIRED',
-    );
-    const preparation = service
-      .history(e.execution_id)
-      .find(
-        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
-      )!.evidence.result as any;
-    expect(
-      preparation.scenes.every(
-        (scene: any) =>
-          scene.sceneMediaType === 'RECORDED_VIDEO' &&
-          scene.movementRequirement === 'REAL_MOTION_REQUIRED',
-      ),
-    ).toBe(true);
-    const generation = service
-      .history(e.execution_id)
-      .find(
-        (h) =>
-          h.event_type === 'STEP_DONE' &&
-          h.evidence.step === 'VIDEO_GENERATION',
-      )!.evidence.result as any;
-    expect(generation.generation).toBe('NOT_REQUESTED');
-    expect(generation.materialization).toBe('EXISTING_AUTHORIZED_MEDIA');
-    const asset = media.get(ids[0])!;
-    const report = validateTemporalReport(
-      await media.evaluateTemporalMedia(ids[0]),
-      {
-        mediaAssetId: asset.mediaAssetId,
-        mediaReference: asset.mediaReference,
-        contentHash: asset.contentHash,
-        scriptContentHash: asset.scriptContentHash,
-        visualDirectionPosition: asset.visualDirectionPosition,
-      },
-    );
-    expect(report.identity.contentHash).toBe(hash);
-    expect(report.evidence.fidelity).toBe('NOT_VALIDATED');
-    expect(report.evidence.motion).toBe('NOT_VALIDATED');
-    expect(report.evidence.continuity).toBe('NOT_VALIDATED');
-    expect(report.result).toBe('NOT_VALIDATED');
-    expect(report.evidence.provenance?.contentHash).toMatch(/^[a-f0-9]{64}$/);
-    expect(
-      service
+      const editorial = service
         .history(e.execution_id)
-        .some((h) =>
-          ['AUDIO', 'COMPOSITION', 'BURN', 'PUBLICATION'].includes(
-            String(h.evidence.step),
-          ),
-        ),
-    ).toBe(false);
-    await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
-    await service.tick();
-    expect(await media.evaluateTemporalMedia(ids[0])).toEqual(report);
-    const staleReview = vi
-      .spyOn(media, 'evaluateTemporalMedia')
-      .mockRejectedValueOnce(
-        Object.assign(new Error('HUMAN_APPROVAL_REVIEW_INVALID'), {
-          code: 'HUMAN_APPROVAL_REVIEW_INVALID',
-        }),
+        .find(
+          (h) =>
+            h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+        )!.evidence.result as any;
+      const script = editorial.script;
+      const scenes = {
+        pipelineRunId: script.pipelineRunId,
+        projectId: script.projectId,
+        projectVersion: script.projectVersion,
+        script,
+        scenes: script.visualDirections,
+      };
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'REAL_VIDEO_MEDIA_REQUIRED',
       );
-    try {
+      expect(
+        service
+          .history(e.execution_id)
+          .some((h) => h.evidence.step === 'VIDEO_GENERATION'),
+      ).toBe(false);
+      const file = join(dirname(f.database), 'technical-fixture.mp4');
+      await runProcess(
+        process.env.FFMPEG_PATH!,
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc2=s=64x64:r=8:d=2',
+          '-an',
+          '-c:v',
+          'libx264',
+          '-threads',
+          '1',
+          '-preset',
+          'ultrafast',
+          '-pix_fmt',
+          'yuv420p',
+          file,
+        ],
+        { timeoutMs: 15000, maxLogBytes: 8192 },
+      );
+      const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
+        readFileSync(file),
+        'mp4',
+      );
+      const ref = 'media:sha256_' + hash;
+      const media = app.get(MediaService);
+      const ids = scenes.scenes.map((scene: any) => {
+        const id = 'technical_fixture_' + scene.position;
+        media.register({
+          schemaVersion: 'media-asset/2.0.0',
+          source: null,
+          mediaAssetId: id,
+          pipelineRunId: scenes.pipelineRunId,
+          projectId: scenes.projectId,
+          projectVersion: scenes.projectVersion,
+          scriptId: scenes.script.scriptId,
+          scriptContentHash: scenes.script.contentHash,
+          visualDirectionPosition: scene.position,
+          assetType: 'VIDEO',
+          technicalProperties: {
+            format: 'mp4',
+            widthPixels: 64,
+            heightPixels: 64,
+            durationMilliseconds: 2000,
+            mimeType: 'video/mp4',
+            hasAudio: false,
+          },
+          contentHash: hash,
+          mediaReference: ref,
+          origin: 'OPERATOR_OWNED',
+          provider: null,
+          rights: {
+            usageBasis: 'OWNED',
+            commercialUseAllowed: true,
+            evidence: [
+              {
+                id: 'fixture_rights_' + scene.position,
+                kind: 'MEDIA_USAGE_RIGHT',
+                sourceRef: 'fixture:locally-generated-test-pattern',
+                recordedAt: '2026-10-14T12:00:00Z',
+                mediaAuthorization: {
+                  mediaRef: ref,
+                  contentHash: hash,
+                  commercialUse: 'GRANTED',
+                  processing: 'GRANTED',
+                  localProcessing: true,
+                  externalProviders: [],
+                },
+              },
+            ],
+          },
+          createdAt: '2026-10-14T12:00:00Z',
+          revision: 1,
+          supersedesMediaAssetId: null,
+        });
+        return id;
+      });
+      const realGet = media.get.bind(media);
+      const denied = vi.spyOn(media, 'get').mockImplementation((id: string) => {
+        const asset = realGet(id)!;
+        return {
+          ...asset,
+          rights: {
+            ...asset.rights,
+            evidence: asset.rights.evidence!.map((item) => ({
+              ...item,
+              mediaAuthorization: {
+                ...item.mediaAuthorization!,
+                localProcessing: false,
+              },
+            })),
+          },
+        };
+      });
+      try {
+        await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+        await service.tick();
+        expect(JSON.stringify(service.history(e.execution_id))).toContain(
+          'MEDIA_PROCESSING_RIGHTS_REQUIRED',
+        );
+      } finally {
+        denied.mockRestore();
+      }
       await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
       await service.tick();
       expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
       expect(JSON.stringify(service.history(e.execution_id))).toContain(
-        'AUTHENTICATED_MEDIA_REVIEW_REQUIRED',
+        'COMPLETE_TEMPORAL_QC_REQUIRED',
       );
-    } finally {
-      staleReview.mockRestore();
-    }
-    const configFile = join(dirname(f.database), 'qc-identities.json'),
-      secretFile = join(dirname(f.database), 'individual-reviewer');
-    await provisionQcReviewer(configFile, 'qc_operator_test', secretFile);
-    vi.stubEnv('QC_IDENTITIES_FILE', configFile);
-    const credential = readFileSync(secretFile, 'utf8');
-    const png = join(dirname(f.database), 'technical-reference.png');
-    await runProcess(
-      process.env.FFMPEG_PATH!,
-      ['-v', 'error', '-nostdin', '-i', file, '-frames:v', '1', png],
-      { timeoutMs: 15000, maxLogBytes: 8192 },
-    );
-    const refHash = new LocalEvidenceStorage(
-      process.env.FFMPEG_MEDIA_ROOT!,
-    ).put(readFileSync(png), 'png');
-    const referenceRights = structuredClone(asset.rights);
-    referenceRights.evidence![0].id = 'reference_fixture_right';
-    referenceRights.evidence![0].mediaAuthorization = {
-      mediaRef: 'media:sha256_' + refHash,
-      contentHash: refHash,
-      commercialUse: 'GRANTED',
-      processing: 'GRANTED',
-      localProcessing: true,
-      externalProviders: ['fal_ai'],
-    };
-    const reference = media.register({
-      ...asset,
-      mediaAssetId: 'assisted_reference',
-      revision: 1,
-      supersedesMediaAssetId: null,
-      assetType: 'IMAGE',
-      technicalProperties: {
-        format: 'png',
-        widthPixels: 64,
-        heightPixels: 64,
-        durationMilliseconds: null,
-      },
-      contentHash: refHash,
-      mediaReference: 'media:sha256_' + refHash,
-      rights: referenceRights,
-    });
-    for (const id of ids) {
-      const video = media.get(id)!,
-        auto: any = await media.evaluateTemporalMedia(id);
-      const criterion = {
-        startSeconds: 0,
-        endSeconds: 2,
-        observation:
-          'Isolated contract attestation for owned technical frames, without a commercial claim.',
+      const preparation = service
+        .history(e.execution_id)
+        .find(
+          (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+        )!.evidence.result as any;
+      expect(
+        preparation.scenes.every(
+          (scene: any) =>
+            scene.sceneMediaType === 'RECORDED_VIDEO' &&
+            scene.movementRequirement === 'REAL_MOTION_REQUIRED',
+        ),
+      ).toBe(true);
+      const generation = service
+        .history(e.execution_id)
+        .find(
+          (h) =>
+            h.event_type === 'STEP_DONE' &&
+            h.evidence.step === 'VIDEO_GENERATION',
+        )!.evidence.result as any;
+      expect(generation.generation).toBe('NOT_REQUESTED');
+      expect(generation.materialization).toBe('EXISTING_AUTHORIZED_MEDIA');
+      const asset = media.get(ids[0])!;
+      const report = validateTemporalReport(
+        await media.evaluateTemporalMedia(ids[0]),
+        {
+          mediaAssetId: asset.mediaAssetId,
+          mediaReference: asset.mediaReference,
+          contentHash: asset.contentHash,
+          scriptContentHash: asset.scriptContentHash,
+          visualDirectionPosition: asset.visualDirectionPosition,
+        },
+      );
+      expect(report.identity.contentHash).toBe(hash);
+      expect(report.evidence.fidelity).toBe('NOT_VALIDATED');
+      expect(report.evidence.motion).toBe('NOT_VALIDATED');
+      expect(report.evidence.continuity).toBe('NOT_VALIDATED');
+      expect(report.result).toBe('NOT_VALIDATED');
+      expect(report.evidence.provenance?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(
+        service
+          .history(e.execution_id)
+          .some((h) =>
+            ['AUDIO', 'COMPOSITION', 'BURN', 'PUBLICATION'].includes(
+              String(h.evidence.step),
+            ),
+          ),
+      ).toBe(false);
+      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+      await service.tick();
+      expect(await media.evaluateTemporalMedia(ids[0])).toEqual(report);
+      const staleReview = vi
+        .spyOn(media, 'evaluateTemporalMedia')
+        .mockRejectedValueOnce(
+          Object.assign(new Error('HUMAN_APPROVAL_REVIEW_INVALID'), {
+            code: 'HUMAN_APPROVAL_REVIEW_INVALID',
+          }),
+        );
+      try {
+        await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+        await service.tick();
+        expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+        expect(JSON.stringify(service.history(e.execution_id))).toContain(
+          'AUTHENTICATED_MEDIA_REVIEW_REQUIRED',
+        );
+      } finally {
+        staleReview.mockRestore();
+      }
+      const configFile = join(dirname(f.database), 'qc-identities.json'),
+        secretFile = join(dirname(f.database), 'individual-reviewer');
+      await provisionQcReviewer(configFile, 'qc_operator_test', secretFile);
+      vi.stubEnv('QC_IDENTITIES_FILE', configFile);
+      const credential = readFileSync(secretFile, 'utf8');
+      const browser = request.agent(app.getHttpServer());
+      const [operatorId, secret] = credential.trim().split('.');
+      await browser
+        .get('/operations')
+        .expect(200)
+        .expect('Content-Type', /html/)
+        .expect((response) => {
+          expect(response.text).toContain('Aprovar mídia');
+          expect(response.headers['content-security-policy']).toContain(
+            "frame-ancestors 'none'",
+          );
+        });
+      const session = await browser
+        .post('/operations/session')
+        .set('Host', 'localhost:3000')
+        .set('Origin', 'http://localhost:3000')
+        .send({ operatorId, secret })
+        .expect(201);
+      expect(session.headers['set-cookie'][0]).toContain('HttpOnly');
+      expect(JSON.stringify(session.body)).not.toContain(secret);
+      await browser
+        .get('/operations/executions')
+        .set('Host', 'localhost:3000')
+        .expect(200)
+        .expect((response) =>
+          expect(
+            response.body.some(
+              (row: any) => row.execution_id === e.execution_id,
+            ),
+          ).toBe(true),
+        );
+      const png = join(dirname(f.database), 'technical-reference.png');
+      await runProcess(
+        process.env.FFMPEG_PATH!,
+        ['-v', 'error', '-nostdin', '-i', file, '-frames:v', '1', png],
+        { timeoutMs: 15000, maxLogBytes: 8192 },
+      );
+      const refHash = new LocalEvidenceStorage(
+        process.env.FFMPEG_MEDIA_ROOT!,
+      ).put(readFileSync(png), 'png');
+      const referenceRights = structuredClone(asset.rights);
+      referenceRights.evidence![0].id = 'reference_fixture_right';
+      referenceRights.evidence![0].mediaAuthorization = {
+        mediaRef: 'media:sha256_' + refHash,
+        contentHash: refHash,
+        commercialUse: 'GRANTED',
+        processing: 'GRANTED',
+        localProcessing: true,
+        externalProviders: ['fal_ai'],
       };
-      const reviewed = await request(app.getHttpServer())
-        .post('/media/assets/' + id + '/temporal-reviews')
-        .set('Authorization', 'Bearer ' + credential)
-        .send({
-          schemaVersion: 'human-temporal-review-request/1.0.0',
-          mediaAssetId: id,
-          mediaContentHash: video.contentHash,
-          mediaRevision: video.revision,
-          automaticReportHash: auto.contentHash,
-          referenceImage: {
-            mediaAssetId: reference.mediaAssetId,
-            contentHash: refHash,
-            revision: reference.revision,
-          },
-          decision: 'APPROVED',
-          criteria: {
-            motion: criterion,
-            continuity: criterion,
-            fidelity: criterion,
-          },
+      const reference = media.register({
+        ...asset,
+        mediaAssetId: 'assisted_reference',
+        revision: 1,
+        supersedesMediaAssetId: null,
+        assetType: 'IMAGE',
+        technicalProperties: {
+          format: 'png',
+          widthPixels: 64,
+          heightPixels: 64,
+          durationMilliseconds: null,
+          mimeType: 'image/png',
+          hasAudio: null,
+        },
+        contentHash: refHash,
+        mediaReference: 'media:sha256_' + refHash,
+        rights: referenceRights,
+      });
+      for (const id of ids) {
+        const video = media.get(id)!,
+          auto: any = await media.evaluateTemporalMedia(id);
+        const criterion = {
+          startSeconds: 0,
+          endSeconds: 2,
+          observation:
+            'Isolated contract attestation for owned technical frames, without a commercial claim.',
+        };
+        const prepared = await browser
+          .post(`/operations/executions/${e.execution_id}/media/${id}/context`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({ referenceId: reference.mediaAssetId })
+          .expect(201);
+        expect(prepared.body.automatic.contentHash).toBe(auto.contentHash);
+        await browser
+          .get(
+            `/operations/executions/${e.execution_id}/media/${id}/${reference.mediaAssetId}/file?kind=reference`,
+          )
+          .set('Host', 'localhost:3000')
+          .expect(200)
+          .expect('Content-Type', /image\/png/);
+        await browser
+          .post('/media/assets/' + id + '/temporal-reviews')
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .send({})
+          .expect(403);
+        const reviewed = await browser
+          .post('/media/assets/' + id + '/temporal-reviews')
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({
+            schemaVersion: 'human-temporal-review-request/1.0.0',
+            mediaAssetId: id,
+            mediaContentHash: video.contentHash,
+            mediaRevision: video.revision,
+            automaticReportHash: auto.contentHash,
+            referenceImage: {
+              mediaAssetId: reference.mediaAssetId,
+              contentHash: refHash,
+              revision: reference.revision,
+            },
+            decision: mediaDecision,
+            criteria: {
+              motion: criterion,
+              continuity: criterion,
+              fidelity: criterion,
+            },
+          })
+          .expect(201);
+        expect(
+          reviewed.body.evidence.provenance.parameters.humanReview.actor,
+        ).toBe('qc_operator_test');
+        await request(app.getHttpServer())
+          .get('/media/assets/' + id + '/temporal-reviews')
+          .expect(401);
+        await request(app.getHttpServer())
+          .get('/media/assets/' + id + '/temporal-reviews')
+          .set('Authorization', 'Bearer ' + credential)
+          .expect(200)
+          .expect((response) => expect(response.body).toEqual(reviewed.body));
+      }
+      if (mediaDecision === 'REJECTED') {
+        await browser
+          .post(`/operations/executions/${e.execution_id}/advance`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({})
+          .expect(201);
+        expect(service.get(e.execution_id).status).toBe('FAILED');
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'MEDIA_REVIEW_REJECTED',
+        );
+        expect(
+          service
+            .history(e.execution_id)
+            .some((event) => event.evidence.step === 'COMPOSITION'),
+        ).toBe(false);
+        return;
+      }
+      // The persisted authenticated decision is sufficient; no manual resume command.
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      const finalHistory = service.history(e.execution_id);
+      expect(
+        finalHistory.some(
+          (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'MEDIA_QC',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(finalHistory)).toContain('AUDIO_REQUIRED');
+      await browser
+        .post(`/operations/executions/${e.execution_id}/advance`)
+        .set('Host', 'localhost:3000')
+        .set('Origin', 'http://localhost:3000')
+        .set('x-qc-csrf', session.body.csrfToken)
+        .send({})
+        .expect(201);
+      await request(app.getHttpServer())
+        .get(`/content-operations/campaign-executions/${e.execution_id}`)
+        .expect(200)
+        .expect((response) => {
+          expect(response.body.finalization.pending).toMatchObject({
+            code: 'AUDIO_REQUIRED',
+          });
+          expect(response.body.finalization.pending.message).toContain(
+            'gravação autorizada',
+          );
+          expect(response.body.finalization.availableActions).toContain(
+            'SUPPLY_INPUT',
+          );
+        });
+      expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
+        false,
+      );
+      const { wav } = await import(
+        new URL('../../../test-support/physical-fixtures.js', import.meta.url)
+          .href
+      );
+      const audio = wav({ durationMilliseconds: 2000 });
+      const upload = () =>
+        browser
+          .post(`/operations/executions/${e.execution_id}/audio`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken);
+      await upload()
+        .field('usageBasis', 'OWNED')
+        .field('commercialUseAllowed', 'false')
+        .field(
+          'statement',
+          'Isolated owned recording fixture, authorized for this test only.',
+        )
+        .attach('audio', audio, {
+          filename: 'recording.wav',
+          contentType: 'audio/wav',
+        })
+        .expect(400);
+      await upload()
+        .field('usageBasis', 'OWNED')
+        .field('commercialUseAllowed', 'true')
+        .field(
+          'statement',
+          'Isolated owned recording fixture, authorized for this test only.',
+        )
+        .attach('audio', audio, {
+          filename: 'recording.wav',
+          contentType: 'audio/wav',
         })
         .expect(201);
-      expect(
-        reviewed.body.evidence.provenance.parameters.humanReview.actor,
-      ).toBe('qc_operator_test');
-      await request(app.getHttpServer())
-        .get('/media/assets/' + id + '/temporal-reviews')
-        .expect(401);
-      await request(app.getHttpServer())
-        .get('/media/assets/' + id + '/temporal-reviews')
-        .set('Authorization', 'Bearer ' + credential)
-        .expect(200)
-        .expect((response) => expect(response.body).toEqual(reviewed.body));
-    }
-    // The persisted authenticated decision is sufficient; no manual resume command.
-    await service.tick();
-    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
-    const finalHistory = service.history(e.execution_id);
-    expect(
-      finalHistory.some(
-        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'MEDIA_QC',
-      ),
-    ).toBe(true);
-    expect(JSON.stringify(finalHistory)).toContain('AUDIO_REQUIRED');
-    await request(app.getHttpServer())
-      .get(`/content-operations/campaign-executions/${e.execution_id}`)
-      .expect(200)
-      .expect((response) => {
-        expect(response.body.finalization.pending).toMatchObject({
-          code: 'AUDIO_REQUIRED',
-        });
-        expect(response.body.finalization.pending.message).toContain(
-          'gravação autorizada',
+      vi.stubEnv('LOCAL_ALIGNMENT_PYTHON', '');
+      vi.stubEnv('LOCAL_ALIGNMENT_MODEL_ROOT', '');
+      const advance = () =>
+        browser
+          .post(`/operations/executions/${e.execution_id}/advance`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({});
+      await advance().expect(201);
+      expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+        'ALIGNMENT_CONFIGURATION_REQUIRED',
+      );
+      // The unavailable model is replaced only in this isolated test by a deterministic offline aligner.
+      const aligner = {
+        identity: 'closure-fixture/1',
+        align: vi.fn(async (input: any) => {
+          const chunks = [...input.canonicalText.matchAll(/[^\n]+/g)];
+          const evidence: AlignmentEvidence = {
+            input,
+            parameters: { fixture: true },
+            provenance: 'FORCED_ALIGNMENT',
+            output: {
+              alignmentId:
+                'align_' +
+                alignmentHash({ input, configuration: 'closure-fixture/1' }),
+              provider: 'offline-fixture',
+              modelVersion: 'fixture/1',
+              audioSha256: input.audioSha256,
+              scriptTextSha256: input.scriptTextSha256,
+              status: 'VERIFIED',
+              evidenceHash: '',
+              segments: chunks.map((match: any, index: number) => ({
+                startMs: Math.floor((index * input.durationMs) / chunks.length),
+                endMs: Math.floor(
+                  ((index + 1) * input.durationMs) / chunks.length,
+                ),
+                text: match[0],
+                textStartOffset: match.index,
+                textEndOffset: match.index + match[0].length,
+              })),
+            },
+          };
+          evidence.output.evidenceHash = alignmentHash(evidence);
+          return evidence;
+        }),
+      };
+      const local = app.get(LocalFlowService);
+      const runtime = new LocalFlowRuntime(
+        () =>
+          new LocalFlowRepository(
+            f.database,
+            app.get(CONTENT_OPERATIONS),
+            app.get(ContentService),
+          ),
+        media,
+        process.env,
+        { verify: async () => true },
+        runProcess,
+        aligner,
+      );
+      const spy = vi
+        .spyOn(local, 'alignAudio')
+        .mockImplementation((id: string) => runtime.alignAudio(id));
+      try {
+        await browser
+          .post(`/operations/executions/${e.execution_id}/retry`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({})
+          .expect(201);
+        await advance().expect(201);
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'EXACT_HUMAN_APPROVAL_REQUIRED',
         );
-        expect(response.body.finalization.availableActions).toContain(
-          'SUPPLY_INPUT',
+        await browser
+          .get(`/operations/executions/${e.execution_id}/final.mp4?download=1`)
+          .set('Host', 'localhost:3000')
+          .expect(200)
+          .expect('Content-Type', /video\/mp4/)
+          .expect('Content-Disposition', /attachment/)
+          .expect((response) =>
+            expect(response.body.includes(Buffer.from('ftyp'))).toBe(true),
+          );
+        await advance().expect(201);
+        expect(
+          service
+            .history(e.execution_id)
+            .filter(
+              (event) =>
+                event.event_type === 'STEP_STARTED' &&
+                event.evidence.step === 'COMPOSITION',
+            ),
+        ).toHaveLength(1);
+        await browser
+          .post(`/operations/executions/${e.execution_id}/final-review`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({
+            decision: finalDecision,
+            justification:
+              finalDecision === 'REJECTED'
+                ? 'Fixture final rejected by its test operator.'
+                : null,
+          })
+          .expect(201);
+        await advance().expect(201);
+        expect(service.get(e.execution_id).status).toBe(
+          finalDecision === 'APPROVED' ? 'SUCCEEDED' : 'CANCELLED',
         );
-      });
-    expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
-      false,
-    );
-  }, 30000);
+        expect(
+          service
+            .history(e.execution_id)
+            .find((event) => event.event_type === 'HUMAN_APPROVAL')?.evidence
+            .actor,
+        ).toBe('qc_operator_test');
+        expect(aligner.align).toHaveBeenCalledTimes(1);
+      } finally {
+        spy.mockRestore();
+      }
+    },
+    60000,
+  );
   it('recovers an explicitly resumed failed simulation without materialization', async () => {
     const generation = app.get(VideoGenerationService);
     const failing = new VideoGenerationService(

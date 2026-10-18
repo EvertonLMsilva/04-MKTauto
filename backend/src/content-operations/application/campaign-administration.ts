@@ -129,6 +129,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         'O alinhamento local exige um modelo e ambiente já instalados e configurados.',
       COMPOSITION_RIGHTS_REQUIRED:
         'Os direitos atuais permitem somente a revisão. A composição exige autorização própria.',
+      COMPOSITION_MEDIA_PROFILE_REQUIRED:
+        'A mídia precisa de metadados V2 verificados para composição. Solicite uma revisão de cadastro compatível, preservando os direitos e a origem.',
+      PRODUCTION_PROFILE_MISMATCH:
+        'A execução foi criada com outro perfil de produção. A composição V2 exige uma execução com perfil de mídia mista.',
+      COMPOSER_UNAVAILABLE:
+        'Os binários locais FFmpeg/FFprobe e os diretórios de mídia precisam estar configurados no ambiente.',
       AUDIO_VIDEO_DURATION_REQUIRED:
         'A duração do áudio não cabe nos vídeos disponíveis. Forneça uma gravação ou mídia compatível.',
       EXACT_HUMAN_APPROVAL_REQUIRED:
@@ -163,6 +169,45 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
               : [],
       },
     };
+  }
+  list() {
+    return this.open()
+      .listRecent()
+      .map((execution) => this.get(execution.execution_id));
+  }
+  finalizationContext(id: string) {
+    const store = this.open(),
+      execution = store.get(id),
+      history = store.history(id),
+      request = executionRequest(history);
+    if (
+      !request.videoProduction ||
+      request.mode !== 'LOCAL_VALIDATION' ||
+      request.publication
+    )
+      throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+    const completed: Record<string, unknown> = {};
+    for (const event of history)
+      if (event.event_type === 'STEP_DONE')
+        completed[String(event.evidence.step)] = event.evidence.result;
+    return { execution, history, request, completed };
+  }
+  async finalReviewContext(id: string) {
+    const { execution, completed } = this.finalizationContext(id);
+    return this.workflow.approvalEvidence(execution, completed);
+  }
+  private readonly advancing = new Map<string, Promise<void>>();
+  async advanceFinalization(id: string) {
+    const active = this.advancing.get(id);
+    if (active) return active;
+    this.finalizationContext(id);
+    const pending = this.runner!.tick(id);
+    this.advancing.set(id, pending);
+    try {
+      await pending;
+    } finally {
+      this.advancing.delete(id);
+    }
   }
   history(id: string) {
     return this.open().history(id);
