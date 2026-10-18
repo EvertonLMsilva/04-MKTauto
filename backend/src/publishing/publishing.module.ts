@@ -5,6 +5,7 @@ import { publishingEvidence } from './application/publication-eligibility.js';
 const PUBLISHING_EVIDENCE = Symbol('PUBLISHING_EVIDENCE');
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
 import { InstagramPublicationService } from './application/instagram-publication.service.js';
+import { InstagramConnectionService } from './application/instagram-connection.service.js';
 import {
   INSTAGRAM_PUBLICATION_PORTS,
   type InstagramPublicationPorts,
@@ -28,8 +29,17 @@ import { PublishingController } from './publishing.controller.js';
 @Module({
   imports: [MediaModule, AffiliateModule, FinanceModule],
   controllers: [PublishingController],
-  exports: [PublishingService, InstagramPublicationService],
+  exports: [
+    PublishingService,
+    InstagramPublicationService,
+    InstagramConnectionService,
+  ],
   providers: [
+    {
+      provide: InstagramConnectionService,
+      useFactory: () =>
+        new InstagramConnectionService(process.env, globalThis.fetch),
+    },
     {
       provide: PUBLISHING_EVIDENCE,
       inject: [MediaService, LocalFlowService],

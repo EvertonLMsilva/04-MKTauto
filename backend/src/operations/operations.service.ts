@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { PublishingService } from '../publishing/application/publishing.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
+import { InstagramConnectionService } from '../publishing/application/instagram-connection.service.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { CampaignAdministration } from '../content-operations/application/campaign-administration.js';
 import { MediaService } from '../media/application/media.service.js';
@@ -27,7 +28,25 @@ export class OperationsService {
     @Optional()
     @Inject(InstagramPublicationService)
     private readonly instagram?: InstagramPublicationService,
+    @Optional()
+    @Inject(InstagramConnectionService)
+    private readonly connection?: InstagramConnectionService,
   ) {}
+  instagramConnection() {
+    if (!this.connection) fail('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+    return this.connection!.status();
+  }
+  checkInstagramConnection(value: unknown) {
+    if (
+      !value ||
+      typeof value !== 'object' ||
+      Array.isArray(value) ||
+      Object.keys(value).length
+    )
+      fail('INVALID_CONNECTION_REQUEST');
+    if (!this.connection) fail('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+    return this.connection!.check();
+  }
   list() {
     return this.campaigns.list();
   }

@@ -48,6 +48,16 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     detail: vi.fn(() => ({ execution, media: [], script: null })),
     advance: vi.fn(async () => execution),
     retry: vi.fn(async () => execution),
+    instagramConnection: vi.fn(() => ({
+      connection: 'NOT_CONFIGURED',
+      missingPermissions: null,
+      livePublication: { eligible: false },
+    })),
+    checkInstagramConnection: vi.fn(async () => ({
+      connection: 'READY',
+      missingPermissions: [],
+      livePublication: { eligible: false },
+    })),
   };
   const module = await Test.createTestingModule({
     controllers: [OperationsController],
@@ -67,6 +77,10 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     const script = await browser.get('/operations/app.js').expect(200);
     expect(() => new Script(script.text)).not.toThrow();
     await browser.get('/operations/executions').expect(401);
+    await browser.get('/operations/instagram/connection').expect(401);
+    await origin(browser.post('/operations/instagram/connection/check'))
+      .send({})
+      .expect(401);
     await browser
       .post('/operations/session')
       .set('Host', 'evil.example')
@@ -81,6 +95,34 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
       operatorId: record.id,
       csrfToken: expect.any(String),
     });
+    await browser
+      .get('/operations/instagram/connection')
+      .set('Host', 'localhost:3000')
+      .expect(200)
+      .expect('Cache-Control', 'no-store')
+      .expect(({ body }) => expect(body.connection).toBe('NOT_CONFIGURED'));
+    expect(mock.checkInstagramConnection).not.toHaveBeenCalled();
+    await origin(browser.post('/operations/instagram/connection/check'))
+      .send({})
+      .expect(403);
+    await browser
+      .post('/operations/instagram/connection/check')
+      .set('Host', 'localhost:3000')
+      .set('Origin', 'http://attacker.example')
+      .set('x-qc-csrf', login.body.csrfToken)
+      .send({})
+      .expect(403);
+    await origin(browser.post('/operations/instagram/connection/check'))
+      .set('x-qc-csrf', login.body.csrfToken)
+      .send({})
+      .expect(201)
+      .expect(({ body }) =>
+        expect(body).toMatchObject({
+          connection: 'READY',
+          livePublication: { eligible: false },
+        }),
+      );
+    expect(mock.checkInstagramConnection).toHaveBeenCalledTimes(1);
     await browser
       .get('/operations/executions')
       .set('Host', 'localhost:3000')

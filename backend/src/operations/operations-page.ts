@@ -5,6 +5,7 @@ export const operationsPage = `<!doctype html>
 <form id="login-form"><label>Operador<input name="operatorId" autocomplete="username" required pattern="[a-z][a-z0-9_]{2,63}" placeholder="Seu identificador individual"></label><label>Credencial pessoal<input name="secret" type="password" autocomplete="current-password" required maxlength="128"></label><button type="submit">Entrar com segurança</button></form><p class="muted">Use sua identidade QC_REVIEWER já cadastrada. A credencial não é exibida nem salva na página. Se o cadastro não estiver configurado, solicite sua habilitação ao responsável pelo ambiente.</p></section>
 <div id="notice" role="status" aria-live="polite" hidden></div>
 <div id="workspace" class="workspace" hidden><aside><p class="eyebrow">FILA DE PRODUÇÃO</p><h1>Seus vídeos</h1><button id="refresh-list" class="quiet">Atualizar fila</button><div id="execution-list"></div><p class="muted">Finalização local. Publicação simulada exige autorização própria.</p></aside>
+<div><section id="instagram-connection" class="card"><h2>Conexão Instagram</h2><p>Facebook Login · conta profissional vinculada a uma Página. Credenciais são configuradas somente no servidor.</p><p id="instagram-connection-status" role="status">Conexão ainda não verificada. Publicação LIVE bloqueada.</p><button id="instagram-connection-check" class="quiet">Verificar conexão com a Meta</button><p class="muted">Consulta somente leitura, sob demanda. A verificação não publica nem autoriza postagem. Hospedagem LIVE confiável, acesso do app e aprovação da versão exata continuam necessários.</p></section>
 <section id="empty" class="card empty"><p class="eyebrow">COMECE PELA FILA</p><h2>Selecione uma campanha</h2><p>Acompanhe a revisão, as dependências e o resultado em um só lugar.</p></section>
 <article id="detail" hidden><div class="title-row"><div><p class="eyebrow">FINALIZAÇÃO DO VÍDEO</p><h1 id="campaign-title"></h1></div><span id="execution-status" class="badge"></span></div><ol id="progress" class="progress" aria-label="Etapas de finalização"></ol>
 <section id="dependency" class="dependency" hidden><p class="eyebrow">AÇÃO NECESSÁRIA</p><h2 id="dependency-title"></h2><p id="dependency-message"></p><button id="retry" class="quiet">Verificar novamente</button></section>
@@ -18,7 +19,7 @@ export const operationsPage = `<!doctype html>
 <pre id="instagram-package-preview"></pre>
 <form id="instagram-schedule-form" hidden><label>Data e hora local<input name="scheduledAt" type="datetime-local" required></label><label class="check"><input name="confirm" type="checkbox" required>Revisei o MP4 final e o pacote acima e autorizo esta publicação simulada nesta conta e horário.</label><button>Autorizar e agendar simulação</button></form>
 <button id="instagram-refresh" class="quiet">Verificar publicação</button><button id="instagram-cancel" class="quiet" hidden>Cancelar agendamento</button></section>
-</article></div></main><footer>Controle humano em cada aprovação. Direitos e proveniência preservados.</footer></body></html>`;
+</article></div></div></main><footer>Controle humano em cada aprovação. Direitos e proveniência preservados.</footer></body></html>`;
 
 export const operationsStyles = `
 :root {
@@ -115,6 +116,10 @@ p {
   display: grid;
   grid-template-columns: 255px minmax(0, 1fr);
   gap: 36px;
+}
+#instagram-connection-status {
+  white-space: pre-line;
+  overflow-wrap: anywhere;
 }
 aside h1 {
   font-size: 26px;
@@ -557,6 +562,19 @@ export const operationsScript = String.raw`
       $("execution-list").append(button);
     }
   }
+  function renderInstagramConnection(data) {
+    const state = {READY:"Conexão pronta",NOT_CONFIGURED:"Configuração pendente",NOT_CHECKED:"Conexão ainda não verificada",BLOCKED:"Conexão bloqueada",UNAVAILABLE:"Conexão indisponível"};
+    const reasons = {CONFIGURATION_REQUIRED:"Preencha a configuração privada no servidor.",CONNECTION_CHECK_REQUIRED:"Execute a verificação de conexão.",TOKEN_INVALID:"Token da Página inválido ou revogado.",TOKEN_EXPIRED:"Token ou acesso aos dados expirado.",TOKEN_APP_MISMATCH:"Token pertence a outro app Meta.",PAGE_TOKEN_REQUIRED:"É necessário um token de acesso da Página.",TOKEN_RESPONSE_INVALID:"A Meta não retornou evidência válida do token.",TOKEN_TARGET_MISMATCH:"Permissões não abrangem o destino configurado.",PAGE_TOKEN_MISMATCH:"Token pertence a outra Página.",PROFESSIONAL_ACCOUNT_LINK_REQUIRED:"Vincule a conta profissional à Página.",INSTAGRAM_ACCOUNT_MISMATCH:"A conta vinculada difere do destino configurado.",APP_AUTH_REQUIRED:"Credencial do app Meta inválida ou indisponível.",META_PERMISSION_REQUIRED:"A Meta não confirmou as permissões necessárias.",META_RATE_LIMIT:"Limite de consultas da Meta atingido. Tente mais tarde.",META_UNAVAILABLE:"A Meta não confirmou a conexão. Tente mais tarde."};
+    const tokenStates = {VALID:"válido",INVALID:"inválido",EXPIRED:"expirado",NOT_CHECKED:"não verificado"};
+    const lines = [state[data.connection] || "Conexão indisponível", "Publicação LIVE bloqueada."];
+    if(data.missingConfiguration.length)lines.push("Configuração no servidor: " + data.missingConfiguration.join(", "));
+    lines.push(data.missingPermissions===null ? "Permissões ainda não verificadas." : data.missingPermissions.length ? "Permissões faltantes: " + data.missingPermissions.join(", ") : "Permissões exigidas verificadas.");
+    if(data.requiredPermissions?.length)lines.push("Permissões exigidas: " + data.requiredPermissions.join(", "));
+    lines.push("Token: " + (tokenStates[data.token.status] || "não verificado") + (data.token.expiresAt ? " · acesso expira em " + data.token.expiresAt : ""));
+    if(data.blockers.length)lines.push("Pendências: " + data.blockers.map(code=>reasons[code] || "Conexão não confirmada.").join(" "));
+    if(data.checkedAt)lines.push("Verificado em: " + data.checkedAt);
+    $("instagram-connection-status").textContent=lines.join("\n");
+  }
   async function instagramStatus() {
     const data=await api(base()+"/instagram");
     $("instagram-mode").textContent=data.configuration.mode==="fake"
@@ -775,7 +793,7 @@ export const operationsScript = String.raw`
     $("login-panel").hidden = true;
     $("workspace").hidden = false;
     notice("");
-    await list();
+    await Promise.all([api("/operations/instagram/connection").then(renderInstagramConnection).catch(fail), list()]);
   }
   $("login-form").addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -802,6 +820,13 @@ export const operationsScript = String.raw`
     } catch (error) {
       fail(error);
     }
+  });
+  $("instagram-connection-check").addEventListener("click",async()=>{
+    const button=$("instagram-connection-check");button.disabled=true;
+    $("instagram-connection-status").textContent="Verificando conexão. Publicação LIVE bloqueada.";
+    try{renderInstagramConnection(await post("/operations/instagram/connection/check",{}));}
+    catch(error){$("instagram-connection-status").textContent="Conexão não verificada. Publicação LIVE bloqueada.";fail(error);}
+    finally{button.disabled=false;}
   });
   $("refresh-list").addEventListener("click", () => list().catch(fail));
   $("load-review").addEventListener("click", () => loadReview().catch(fail));

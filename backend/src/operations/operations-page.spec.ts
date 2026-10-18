@@ -42,11 +42,57 @@ function browserReviewHarness() {
   new Script(
     operationsScript.replace(
       /\}\)\(\);\s*$/,
-      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation };})();',
+      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection };})();',
     ),
   ).runInContext(context);
   return { api: sandbox.reviewTest, node };
 }
+
+test('connection readiness is visible without selecting a completed campaign and keeps LIVE blocked', () => {
+  expect(operationsPage).toContain('id="instagram-connection-check"');
+  const { api, node } = browserReviewHarness();
+  api.renderInstagramConnection({
+    connection: 'READY',
+    missingConfiguration: [],
+    requiredPermissions: ['instagram_basic'],
+    missingPermissions: [],
+    token: { status: 'VALID', expiresAt: null },
+    blockers: [],
+    livePublication: { eligible: false },
+    checkedAt: '2026-10-18T12:00:00Z',
+  });
+  expect(node('instagram-connection-status').textContent).toContain(
+    'Conexão pronta',
+  );
+  expect(node('instagram-connection-status').textContent).toContain(
+    'LIVE bloqueada',
+  );
+  api.renderInstagramConnection({
+    connection: 'BLOCKED',
+    missingConfiguration: [],
+    missingPermissions: ['instagram_content_publish'],
+    token: { status: 'VALID' },
+    blockers: ['META_PERMISSION_REQUIRED'],
+    livePublication: { eligible: false },
+  });
+  expect(node('instagram-connection-status').textContent).toContain(
+    'instagram_content_publish',
+  );
+  expect(node('instagram-connection-status').textContent).not.toContain(
+    'Conexão pronta',
+  );
+  api.renderInstagramConnection({
+    connection: 'UNAVAILABLE',
+    missingConfiguration: [],
+    missingPermissions: null,
+    token: { status: 'NOT_CHECKED' },
+    blockers: ['META_UNAVAILABLE'],
+    livePublication: { eligible: false },
+  });
+  expect(node('instagram-connection-status').textContent).toContain(
+    'Permissões ainda não verificadas',
+  );
+});
 test('textarea whitespace is submitted as valid public text, preserving exact full-video intervals', () => {
   const { api } = browserReviewHarness();
   const fields = new Map(
