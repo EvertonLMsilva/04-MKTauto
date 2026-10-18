@@ -435,6 +435,14 @@ export const operationsScript = String.raw`
       "A verificação técnica local e seus recursos precisam estar disponíveis.",
     HUMAN_APPROVAL_QC_FAILED:
       "Há uma falha técnica que impede a aprovação. Substitua a mídia por uma versão válida.",
+    HUMAN_APPROVAL_REQUEST_INVALID:
+      "Os dados da revisão são inválidos. Recarregue a revisão e confira os campos antes de decidir.",
+    HUMAN_APPROVAL_VIDEO_BINDING_MISMATCH:
+      "A revisão não corresponde à versão exata do vídeo, da referência ou do QC técnico. Recarregue a revisão antes de decidir.",
+    HUMAN_APPROVAL_REVIEW_BUSY:
+      "Outra revisão está sendo processada. Aguarde e consulte a decisão registrada antes de tentar novamente.",
+    HUMAN_APPROVAL_REVIEW_UNAVAILABLE:
+      "O serviço de revisão está indisponível. Solicite a verificação do backend.",
     HUMAN_APPROVAL_REVIEW_INVALID:
       "Confira as observações de todos os critérios e atualize a revisão.",
     HUMAN_APPROVAL_DECISION_CONFLICT:
@@ -458,8 +466,13 @@ export const operationsScript = String.raw`
   }
   function fail(error) {
     notice(
-      errors[error.code] ||
-        "Não foi possível concluir a ação. Atualize a execução e confira suas pendências.",
+      (error.code === "HUMAN_APPROVAL_REQUEST_INVALID" && error.field === "observation"
+        ? "Confira as observações: use texto de 10 a 1000 caracteres, sem credenciais, caminhos privados ou caracteres de controle."
+        : errors[error.code]) ||
+        ("Não foi possível concluir a ação." +
+          (/^[A-Z][A-Z0-9_]{2,79}$/.test(error.code || "")
+            ? " Código: " + error.code + "."
+            : "") + " Atualize a execução e confira suas pendências."),
     );
     if (error.status === 401) {
       generation++;
@@ -491,6 +504,7 @@ export const operationsScript = String.raw`
       throw {
         code: body.code || "OPERATIONS_UNAVAILABLE",
         status: response.status,
+        field: body.field,
       };
     return body;
   }
@@ -746,6 +760,19 @@ export const operationsScript = String.raw`
     $("review-content").hidden = true;
     $("reference-choice").hidden = true;
   });
+  function buildReviewCriteria(review, form) {
+    const duration = review.asset.durationMilliseconds / 1000;
+    if (!Number.isFinite(duration) || duration <= 0)
+      throw {code:"HUMAN_APPROVAL_REVIEW_INVALID",field:"criteria"};
+    const criteria = {};
+    for (const key of ["motion", "continuity", "fidelity"]) {
+      const observation = String(form.get(key) || "").replace(/[ \t\r\n]+/g, " ").trim();
+      if (observation.length < 10 || observation.length > 1000)
+        throw {code:"HUMAN_APPROVAL_REQUEST_INVALID",field:"observation"};
+      criteria[key] = {startSeconds:0,endSeconds:duration,observation};
+    }
+    return criteria;
+  }
   $("review-form").addEventListener("submit", async (event) => {
     event.preventDefault();
     if (!context) return;
@@ -756,14 +783,7 @@ export const operationsScript = String.raw`
     buttons.forEach((button) => (button.disabled = true));
     try {
       const form = new FormData(event.target),
-        duration = review.asset.durationMilliseconds / 1000,
-        criteria = {};
-      for (const key of ["motion", "continuity", "fidelity"])
-        criteria[key] = {
-          startSeconds: 0,
-          endSeconds: duration,
-          observation: form.get(key),
-        };
+        criteria = buildReviewCriteria(review, form);
       await post(
         "/media/assets/" +
           encodeURIComponent(review.mediaId) +
