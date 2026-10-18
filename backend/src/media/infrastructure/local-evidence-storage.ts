@@ -5,7 +5,7 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
-import { isAbsolute, join, sep } from 'node:path';
+import { isAbsolute, join, sep, resolve } from 'node:path';
 import { localFail } from '../domain/alignment-contracts.js';
 import { createHash } from 'node:crypto';
 // Hash-addressed, append-only files. Failed DB commits may leave reusable orphans.
@@ -13,8 +13,13 @@ export class LocalEvidenceStorage {
   constructor(readonly root: string) {
     if (!isAbsolute(root)) localFail('LOCAL_ROOT_INVALID');
     mkdirSync(root, { recursive: true });
-    if (realpathSync(root) !== root || lstatSync(root).isSymbolicLink())
+    const canonicalRoot = resolve(root);
+    if (
+      realpathSync(root) !== canonicalRoot ||
+      lstatSync(root).isSymbolicLink()
+    )
       localFail('LOCAL_ROOT_INVALID');
+    this.root = canonicalRoot;
   }
   path(hash: string, extension: string) {
     if (

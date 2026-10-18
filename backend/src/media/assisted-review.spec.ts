@@ -748,3 +748,25 @@ it.each(['APPROVED', 'REJECTED'])(
     }
   },
 );
+
+it.each(['APPROVED', 'REJECTED'])(
+  'persists and reconsults %s using absolute roots with alternate separators',
+  async (decision) => {
+    for (const key of ['FFMPEG_MEDIA_ROOT', 'LOCAL_MEDIA_EVIDENCE_ROOT']) {
+      const configured = process.env[key]!;
+      vi.stubEnv(
+        key,
+        (process.platform === 'win32'
+          ? configured.replace(/\\/g, '/')
+          : configured) + '/',
+      );
+    }
+    const reviewed: any = await media.reviewTemporalMedia(
+      asset.mediaAssetId,
+      { ...input, decision },
+      principal,
+    );
+    expect(reviewed.result).toBe(decision === 'APPROVED' ? 'PASS' : 'FAIL');
+    expect(media.temporalReview(asset.mediaAssetId)).toEqual(reviewed);
+  },
+);

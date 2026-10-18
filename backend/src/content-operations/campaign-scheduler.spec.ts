@@ -39,3 +39,30 @@ test('enabled scheduler dispatches due work automatically and stops on shutdown'
     f.cleanup();
   }
 });
+
+test.each(['GLOBAL_DAILY_BUDGET_EXCEEDED', 'GLOBAL_MONTHLY_BUDGET_EXCEEDED'])(
+  'exposes the actual narration wait and action for %s without changing Finance',
+  (code) => {
+    const service = new CampaignAdministration(
+      null,
+      {} as NativeCampaignWorkflow,
+    );
+    const history = [
+      { event_type: 'SCHEDULED', evidence: {} },
+      { event_type: 'PAUSED', evidence: { step: 'AUDIO', code } },
+    ];
+    (service as any).store = {
+      get: () => ({ execution_id: 'fixture_exec', status: 'WAITING_INPUT' }),
+      history: () => history,
+    };
+    const result = service.get('fixture_exec');
+    expect(result.finalization.pending).toMatchObject({ code });
+    expect(result.finalization.pending?.message).toContain('Finance');
+    expect(result.finalization.pending?.message).toContain('Retomar');
+    expect(result.finalization.availableActions).toEqual([
+      'WAIT_BUDGET_WINDOW',
+      'RESUME',
+      'CANCEL',
+    ]);
+  },
+);

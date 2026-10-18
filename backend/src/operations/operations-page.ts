@@ -651,6 +651,14 @@ export const operationsScript = String.raw`
     await poll(generation);
     await list();
   }
+  function reviewPresentation(data) {
+    const evidence = data.review?.evidence;
+    const audit = evidence?.provenance?.validator === "authenticated-human-qc"
+      ? evidence.provenance.parameters?.humanReview : null;
+    return audit && ["APPROVED", "REJECTED"].includes(audit.decision)
+      ? {evidence, audit}
+      : {evidence:data.automatic.evidence, audit:null};
+  }
   async function loadReview(referenceId) {
     const version = generation,
       mediaId = $("media-select").value;
@@ -685,6 +693,7 @@ export const operationsScript = String.raw`
     $("source-video").src = file + "?kind=video";
     $("source-image").src = file + "?kind=reference";
     $("technical").replaceChildren();
+    const presentation = reviewPresentation(data);
     const labels = {
         motion: "Movimento",
         continuity: "Continuidade",
@@ -699,10 +708,11 @@ export const operationsScript = String.raw`
       $("technical").append(
         text(
           "span",
-          labels[key] + ": " + results[data.automatic.evidence[key]],
+          labels[key] + ": " + results[presentation.evidence[key]] +
+            (presentation.audit ? " · revisão humana" : " · análise automática"),
         ),
       );
-    const audit = data.review?.evidence?.provenance?.parameters?.humanReview;
+    const audit = presentation.audit;
     $("decision-audit").textContent = audit
       ? (audit.decision === "APPROVED" ? "Aprovado" : "Rejeitado") +
         " por " +
