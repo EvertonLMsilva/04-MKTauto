@@ -532,7 +532,10 @@ export const operationsScript = String.raw`
       finalization = execution.finalization;
     $("campaign-title").textContent = execution.campaign_id;
     $("execution-status").textContent =
-      statusNames[execution.status] || execution.status;
+      (statusNames[execution.status] || execution.status) +
+      (execution.provenance?.provenance === "LEGACY_RECOVERY"
+        ? " · Run recuperado. Contexto, roteiro, cenas e geração não foram executados por este orquestrador."
+        : "");
     $("progress").replaceChildren();
     for (const [key, label] of steps) {
       const li = text("li", label);

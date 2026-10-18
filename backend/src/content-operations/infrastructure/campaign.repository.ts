@@ -122,7 +122,16 @@ export class CampaignRepository {
           now,
           now,
         );
-      this.event(id, 'SCHEDULED', null, 'SCHEDULED', now, request);
+      this.event(
+        id,
+        (request as Record<string, unknown>).legacyRecovery
+          ? 'LEGACY_RECOVERY'
+          : 'SCHEDULED',
+        null,
+        'SCHEDULED',
+        now,
+        request,
+      );
       return this.get(id);
     });
   }

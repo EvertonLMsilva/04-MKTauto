@@ -162,6 +162,17 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       mode: 'LOCAL_VALIDATION',
     };
   });
+  it('requires QC_REVIEWER authentication on legacy recovery and forbids provenance injection through schedule', async () => {
+    await request(app.getHttpServer())
+      .post('/content-operations/campaign-executions/legacy-recovery')
+      .send({ campaignId: 'camp_001', runId: 'run_001', media: [] })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/content-operations/campaign-executions')
+      .send({ ...body, legacyRecovery: { provenance: 'LEGACY_RECOVERY' } })
+      .expect(400);
+    expect(service.list()).toHaveLength(0);
+  });
   afterEach(async () => {
     await app.close();
     f.cleanup();

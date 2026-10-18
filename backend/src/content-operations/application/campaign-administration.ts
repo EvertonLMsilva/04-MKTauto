@@ -6,6 +6,7 @@ import { CampaignRepository } from '../infrastructure/campaign.repository.js';
 import {
   CampaignOrchestrator,
   executionRequest,
+  recoveredContext,
 } from './campaign-orchestrator.js';
 import {
   NativeCampaignWorkflow,
@@ -75,6 +76,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     this.db?.close();
   }
   async schedule(value: unknown) {
+    if (document(value).legacyRecovery)
+      throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
     const r = campaignRequest(value);
     await this.workflow.validate(r);
     return this.open().schedule(
@@ -85,6 +88,19 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         runId: String(r.runId),
       },
       r,
+      new Date().toISOString(),
+    );
+  }
+  async recoverLegacy(value: unknown) {
+    const request = await this.workflow.recoverLegacy(value);
+    return this.open().schedule(
+      {
+        campaignId: String(request.campaignId),
+        campaignRevision: Number(request.campaignRevision),
+        runId: String(request.runId),
+        scheduledAt: String(request.scheduledAt),
+      },
+      request,
       new Date().toISOString(),
     );
   }
@@ -144,6 +160,10 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     };
     return {
       ...execution,
+      provenance:
+        history[0].event_type === 'LEGACY_RECOVERY'
+          ? history[0].evidence.legacyRecovery
+          : null,
       finalization: {
         step: last?.evidence.step ?? null,
         completedSteps: Object.keys(done),
@@ -186,7 +206,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       request.publication
     )
       throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
-    const completed: Record<string, unknown> = {};
+    const completed: Record<string, unknown> = recoveredContext(history);
     for (const event of history)
       if (event.event_type === 'STEP_DONE')
         completed[String(event.evidence.step)] = event.evidence.result;
@@ -244,7 +264,10 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         )
       )
         throw new CampaignError('COMPLETED_INPUT_CONFLICT');
-      campaignRequest({ ...executionRequest(history), ...patch });
+      const request = executionRequest(history);
+      if (request.legacyRecovery && patch.sceneMediaAssetIds !== undefined)
+        throw new CampaignError('LEGACY_MEDIA_IDENTITY_CONFLICT');
+      campaignRequest({ ...request, ...patch });
       store.administrativeEvent(
         id,
         e.version,
