@@ -42,11 +42,48 @@ function browserReviewHarness() {
   new Script(
     operationsScript.replace(
       /\}\)\(\);\s*$/,
-      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection, renderTts };})();',
+      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection, renderTts, renderNextAction };})();',
     ),
   ).runInContext(context);
   return { api: sandbox.reviewTest, node };
 }
+test('current v2 narration shows TTS consent and hides unrelated script revision and recording actions', () => {
+  const { api, node } = browserReviewHarness();
+  const data = {
+    nextAction: { code: 'TTS_AUTHORIZATION_REQUIRED' },
+    tts: {
+      requestHash: 'a'.repeat(64),
+      model: 'gpt-4o-mini-tts',
+      voice: 'marin',
+      text: 'Veja os detalhes do produto.',
+      estimatedUsd: '0.00306',
+      reservationUsd: '0.01',
+      policyVersion: 'tts-risk-reservation/2.0.0',
+      state: 'NOT_SUBMITTED',
+      liveEnabled: false,
+    },
+    execution: {
+      status: 'WAITING_INPUT',
+      finalization: { completedSteps: ['EDITORIAL', 'MEDIA_QC'] },
+    },
+  };
+  api.renderNextAction(data);
+  expect(node('script-revision-panel').hidden).toBe(true);
+  expect(node('audio-panel').hidden).toBe(true);
+  expect(node('tts-panel').hidden).toBe(false);
+  expect(node('tts-model').textContent).toContain('marin');
+  expect(node('tts-text').textContent).toBe(data.tts.text);
+  expect(node('tts-price').textContent).toContain('0.00306');
+  expect(node('tts-price').textContent).toContain('0.01');
+  expect(node('tts-price').textContent).toContain('tts-risk-reservation/2.0.0');
+  expect(node('tts-generate').disabled).toBe(true);
+  api.renderNextAction({
+    ...data,
+    nextAction: { code: 'SCRIPT_REVISION_REQUIRED' },
+  });
+  expect(node('script-revision-panel').hidden).toBe(false);
+  expect(node('tts-panel').hidden).toBe(true);
+});
 test('TTS risk consent uses the prepared narration and cannot resend an uncertain operation', () => {
   expect(operationsPage).toContain('id="tts-accept-risk"');
   const { api, node } = browserReviewHarness();

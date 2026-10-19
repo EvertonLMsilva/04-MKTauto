@@ -95,7 +95,11 @@ test('a recovered execution exposes its persisted script and original video for 
       execution: { run_id: 'legacy_run' },
       completed: { EDITORIAL: { script } },
     }),
-    get: () => ({ provenance: { provenance: 'LEGACY_RECOVERY' } }),
+    get: () => ({
+      status: 'WAITING_INPUT',
+      finalization: { completedSteps: ['EDITORIAL'], pending: null },
+      provenance: { provenance: 'LEGACY_RECOVERY' },
+    }),
     scriptRevisions: vi.fn(() => []),
   };
   const media: any = {
