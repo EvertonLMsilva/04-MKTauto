@@ -51,6 +51,7 @@ import {
   UnavailableEditorialProvider,
 } from '../content/infrastructure/fake-editorial.provider.js';
 import { FinanceService } from '../finance/application/finance.service.js';
+import { scriptContentHash } from '../content/domain/script-contracts.js';
 
 describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', () => {
   let f: ReturnType<typeof p2EditorialFixture>,
@@ -729,6 +730,56 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
         false,
       );
+      if (finalDecision === 'APPROVED' && simulateTimeout === false) {
+        const revision = {
+          ...script,
+          scriptId: `${script.scriptId}:revision_2`,
+          revision: 2,
+          supersedesScriptId: script.scriptId,
+          origin: 'OPERATOR',
+          hook: 'Conheça os detalhes deste produto autorizado.',
+          createdAt: new Date().toISOString(),
+          contentHash: '',
+        };
+        revision.fullNarration = [
+          revision.hook,
+          ...revision.narrativeBlocks.map((b: any) => b.narration),
+          revision.cta,
+        ]
+          .filter((p) => p !== null)
+          .join('\n\n');
+        revision.contentHash = scriptContentHash(revision);
+        app.get(ContentService).registerScript(revision);
+        const revise = () =>
+          browser
+            .post(`/operations/executions/${e.execution_id}/script-revision`)
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({
+              scriptId: revision.scriptId,
+              previousScriptContentHash: script.contentHash,
+              reason:
+                'Revisão de narração na fixture isolada; visuais preservados.',
+            });
+        await revise().expect(201);
+        await revise().expect(201);
+        const context = service.finalizationContext(e.execution_id);
+        expect((context.completed.EDITORIAL as any).script.scriptId).toBe(
+          revision.scriptId,
+        );
+        expect(context.completed.MEDIA_QC).toBeDefined();
+        expect(
+          service
+            .history(e.execution_id)
+            .filter((h) => h.event_type === 'SCRIPT_REVISED'),
+        ).toHaveLength(1);
+        const response = await browser
+          .get(`/operations/executions/${e.execution_id}`)
+          .set('Host', 'localhost:3000')
+          .expect(200);
+        expect(response.body.media.length).toBeGreaterThan(0);
+      }
       const { wav } = await import(
         new URL('../../../test-support/physical-fixtures.js', import.meta.url)
           .href
@@ -763,7 +814,9 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           filename: 'recording.wav',
           contentType: 'audio/wav',
         })
-        .expect(201);
+        .expect((response) =>
+          expect(response.status, JSON.stringify(response.body)).toBe(201),
+        );
       vi.stubEnv('LOCAL_ALIGNMENT_PYTHON', '');
       vi.stubEnv('LOCAL_ALIGNMENT_MODEL_ROOT', '');
       const advance = () =>
@@ -882,7 +935,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             .find((event) => event.event_type === 'HUMAN_APPROVAL')?.evidence
             .actor,
         ).toBe('qc_operator_test');
-        if (finalDecision === 'APPROVED') {
+        if (finalDecision === 'APPROVED' && simulateTimeout !== false) {
           const prefix = `/operations/executions/${e.execution_id}/instagram`;
           const prepare = await browser
             .post(prefix + '/package')

@@ -125,6 +125,17 @@ export class OperationsController {
   audioMode(@Param('id') id: string, @Body() value: unknown) {
     return this.respond(() => this.operations.audioMode(id, value));
   }
+  @Post('executions/:id/script-revision')
+  @UseGuards(LocalQcGuard)
+  reviseScript(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.reviseScript(id, value, request[QC_REVIEWER_CONTEXT]),
+    );
+  }
   @Get('executions/:id') @UseGuards(LocalQcGuard) detail(
     @Param('id') id: string,
   ) {

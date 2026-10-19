@@ -15,7 +15,7 @@ import type { FinanceService } from '../../finance/application/finance.service.j
 import type { PublishingService } from '../../publishing/application/publishing.service.js';
 import type { ContentOperationsService } from './content-operations.service.js';
 import type { CampaignWorkflow } from './campaign-orchestrator.js';
-import { executionRequest, recoveredContext } from './campaign-orchestrator.js';
+import { executionRequest, completedContext } from './campaign-orchestrator.js';
 import type { CampaignEvent, CampaignExecution } from '../domain/campaign.js';
 import { CampaignError, identifier, instant } from '../domain/campaign.js';
 import { usdUnits } from '../../finance/domain/video-financial-contracts.js';
@@ -23,6 +23,7 @@ import { createHash } from 'node:crypto';
 import { adaptationHash } from '../../media/domain/media-hash.js';
 import { compositionPlanContentHash } from '../../media/domain/composition-plan-contracts.js';
 import { videoCompositionRequestHash } from '../../media/domain/video-composition-contracts.js';
+import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
 
 export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -172,6 +173,27 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         >;
     },
   ) {}
+  revisedScript(
+    e: CampaignExecution,
+    previous: Record<string, unknown>,
+    scriptId: string,
+  ) {
+    const script = this.content.getScript(identifier(scriptId));
+    if (
+      !script ||
+      script.pipelineRunId !== e.run_id ||
+      script.supersedesScriptId !== previous.scriptId ||
+      script.revision !== Number(previous.revision) + 1 ||
+      !visualScriptMatches(
+        script,
+        String(previous.scriptId),
+        String(previous.contentHash),
+        (id) => this.content.getScript(id),
+      )
+    )
+      throw new CampaignError('SCRIPT_REVISION_SCOPE_MISMATCH');
+    return script;
+  }
   /** Imports persisted context only; it never replays editorial or generation. */
   async recoverLegacy(value: unknown): Promise<Record<string, unknown>> {
     const input = document(value);
@@ -305,8 +327,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (
       asset.assetType !== 'VIDEO' ||
       asset.pipelineRunId !== runId ||
-      asset.scriptId !== script.scriptId ||
-      asset.scriptContentHash !== script.contentHash ||
+      !visualScriptMatches(
+        script,
+        asset.scriptId,
+        asset.scriptContentHash,
+        (id) => this.content.getScript(id),
+      ) ||
       asset.visualDirectionPosition !== position ||
       asset.projectId !== script.projectId ||
       asset.projectVersion !== script.projectVersion
@@ -382,8 +408,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     runId: string,
   ): string[] {
     if (r.sceneMediaAssetIds) return r.sceneMediaAssetIds as string[];
-    const assets =
-      this.production?.media.listScript?.(String(script.scriptId)) ?? [];
+    const assets = [] as NonNullable<
+      ReturnType<
+        NonNullable<NonNullable<typeof this.production>['media']['listScript']>
+      >
+    >;
+    let version: Record<string, any> | null = script;
+    const seen = new Set<string>();
+    while (version && !seen.has(version.scriptId) && seen.size < 100) {
+      seen.add(version.scriptId);
+      assets.push(
+        ...(this.production?.media.listScript?.(version.scriptId) ?? []),
+      );
+      version = version.supersedesScriptId
+        ? this.content.getScript(version.supersedesScriptId)
+        : null;
+    }
     const superseded = new Set(
       assets.map((asset) => asset.supersedesMediaAssetId),
     );
@@ -393,7 +433,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           (asset) =>
             asset.assetType === 'VIDEO' &&
             asset.pipelineRunId === runId &&
-            asset.scriptContentHash === script.contentHash &&
+            visualScriptMatches(
+              script,
+              asset.scriptId,
+              asset.scriptContentHash,
+              (id) => this.content.getScript(id),
+            ) &&
             asset.projectId === script.projectId &&
             asset.projectVersion === script.projectVersion &&
             asset.visualDirectionPosition === position &&
@@ -1089,21 +1134,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const r = executionRequest(history);
     if (!r.videoProduction || r.mode !== 'LOCAL_VALIDATION' || r.publication)
       return false;
-    const done: Record<string, unknown> = recoveredContext(history);
-    for (const event of history)
-      if (event.event_type === 'STEP_DONE')
-        done[String(event.evidence.step)] = event.evidence.result;
+    const done = completedContext(history);
     if (!done.EDITORIAL) return false;
     const script = document(document(done.EDITORIAL).script);
     try {
+      const revision = history
+        .filter((h) => h.event_type === 'SCRIPT_REVISED')
+        .at(-1);
       if (
-        paused?.evidence.step === 'AUDIO' &&
-        [
-          'AUDIO_REQUIRED',
-          'LOCAL_TTS_CONFIGURATION_REQUIRED',
-          'LOCAL_TTS_LICENSE_REQUIRED',
-          'ALIGNMENT_CONFIGURATION_REQUIRED',
-        ].includes(String(paused.evidence.code))
+        (revision && (!paused || revision.sequence > paused.sequence)) ||
+        (paused?.evidence.step === 'AUDIO' &&
+          [
+            'AUDIO_REQUIRED',
+            'LOCAL_TTS_CONFIGURATION_REQUIRED',
+            'LOCAL_TTS_LICENSE_REQUIRED',
+            'ALIGNMENT_CONFIGURATION_REQUIRED',
+          ].includes(String(paused.evidence.code)))
       )
         return (
           this.local.authorizedAudio(
@@ -1181,10 +1227,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       )
     )
       return { verified: true, reason: 'NO_IN_FLIGHT_STAGE' };
-    const completed: Record<string, unknown> = recoveredContext(history);
-    for (const event of history)
-      if (event.event_type === 'STEP_DONE')
-        completed[String(event.evidence.step)] = event.evidence.result;
+    const completed = completedContext(history);
     if (
       ['AUDIO', 'ALIGNMENT', 'SUBTITLES', 'QC', 'PREVIEW'].includes(
         String(last.evidence.step),

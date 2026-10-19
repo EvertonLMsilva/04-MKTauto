@@ -17,6 +17,7 @@ import {
 } from '../domain/voice-track-contracts.js';
 import { MediaAssetRepository } from './media-asset.repository.js';
 import { getTemporalQC } from './p4-qc.reader.js';
+import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
 export class CompositionPlanRepositoryError extends Error {
   [key: string]: any;
   constructor(code: any, field: any, message: any, options?: any) {
@@ -451,8 +452,12 @@ export class CompositionPlanRepository extends MediaAssetRepository {
       const asset: any = assets[index];
       verifyScope(asset, plan, 'MEDIA_ASSET_SCOPE_MISMATCH');
       if (
-        asset.scriptId !== plan.scriptId ||
-        asset.scriptContentHash !== plan.scriptContentHash
+        !visualScriptMatches(
+          script,
+          asset.scriptId,
+          asset.scriptContentHash,
+          (id) => this.getScript(id),
+        )
       )
         throw failure(
           'MEDIA_ASSET_SCRIPT_MISMATCH',

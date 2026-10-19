@@ -49,6 +49,7 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     advance: vi.fn(async () => execution),
     retry: vi.fn(async () => execution),
     audioMode: vi.fn(async () => execution),
+    reviseScript: vi.fn(async () => execution),
     instagramConnection: vi.fn(() => ({
       connection: 'NOT_CONFIGURED',
       missingPermissions: null,
@@ -135,6 +136,22 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
       .send({ mode: 'RECORDING' })
       .expect(201);
     expect(mock.audioMode).toHaveBeenCalledTimes(1);
+    await origin(
+      browser.post('/operations/executions/execution_ui/script-revision'),
+    )
+      .send({})
+      .expect(403);
+    await origin(
+      browser.post('/operations/executions/execution_ui/script-revision'),
+    )
+      .set('x-qc-csrf', login.body.csrfToken)
+      .send({ scriptId: 'new_script' })
+      .expect(201);
+    expect(mock.reviseScript).toHaveBeenCalledWith(
+      'execution_ui',
+      { scriptId: 'new_script' },
+      expect.anything(),
+    );
     await browser
       .get('/operations/executions')
       .set('Host', 'localhost:3000')
@@ -158,6 +175,11 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
       .set('x-qc-csrf', login.body.csrfToken)
       .send({})
       .expect(201);
+    await origin(
+      browser.post('/operations/executions/execution_ui/script-revision'),
+    )
+      .send({})
+      .expect(401);
     await browser
       .get('/operations/executions')
       .set('Host', 'localhost:3000')

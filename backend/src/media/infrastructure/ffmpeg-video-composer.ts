@@ -26,6 +26,8 @@ import {
 } from './ffmpeg-video-error.js';
 import { LocalCompositionReferenceResolver } from './local-composition-reference-resolver.js';
 import { hashFile, LocalVideoStorage } from './local-video-storage.js';
+import { validateScript } from '../../content/domain/script-contracts.js';
+import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
 
 export { FfmpegVideoAdapterError } from './ffmpeg-video-error.js';
 export { runProcess } from './ffmpeg-process.js';
@@ -260,7 +262,22 @@ export class FfmpegVideoComposer implements VideoComposer {
           `segments.${index}.mediaAssetContentHash`,
           'mídia divergente do plano',
         );
-      verifyScope(plan, asset, `segments.${index}`);
+      let visualRevision = false;
+      if (asset.scriptId !== plan.scriptId && this.catalog.getScript) {
+        const script = validateScript(this.catalog.getScript(plan.scriptId));
+        visualRevision =
+          script.contentHash === plan.scriptContentHash &&
+          visualScriptMatches(
+            script,
+            asset.scriptId,
+            asset.scriptContentHash,
+            (id) => {
+              const previous = this.catalog.getScript!(id);
+              return previous ? validateScript(previous) : null;
+            },
+          );
+      }
+      verifyScope(plan, asset, `segments.${index}`, visualRevision);
       if (plan.schemaVersion === COMPOSITION_PLAN_V2_CONTRACT_VERSION) {
         if (asset.assetType !== segment.mediaType)
           failureNow(
@@ -567,6 +584,7 @@ export class FfmpegVideoComposer implements VideoComposer {
 }
 
 export interface ArtifactCatalog {
+  getScript?(id: string): unknown;
   getVoiceTrack(id: string): unknown;
   getMediaAsset(id: string): unknown;
 }
@@ -922,7 +940,12 @@ async function requireOutput(path: any, maxBytes: any): Promise<any> {
   if (!value?.isFile() || value.size < 1 || value.size > maxBytes)
     failureNow('COMPOSER_OUTPUT_INVALID', 'output', 'saída inválida');
 }
-function verifyScope(plan: any, artifact: any, field: any): any {
+function verifyScope(
+  plan: any,
+  artifact: any,
+  field: any,
+  visualRevision = false,
+): any {
   for (const key of [
     'pipelineRunId',
     'projectId',
@@ -930,7 +953,10 @@ function verifyScope(plan: any, artifact: any, field: any): any {
     'scriptId',
     'scriptContentHash',
   ])
-    if (artifact[key] !== plan[key])
+    if (
+      !(visualRevision && ['scriptId', 'scriptContentHash'].includes(key)) &&
+      artifact[key] !== plan[key]
+    )
       failureNow(
         'COMPOSER_ARTIFACT_SCOPE_MISMATCH',
         `${field}.${key}`,
