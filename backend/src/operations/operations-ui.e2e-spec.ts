@@ -83,9 +83,10 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     const script = await browser.get('/operations/app.js').expect(200);
     expect(script.text).toContain('option.value = revision.scriptId');
     expect(script.text).toContain(
-      'Nenhuma revisão elegível. Cadastre a próxima versão',
+      'Uma revisão mais curta precisa estar cadastrada',
     );
-    expect(script.text).toContain('POST /content/scripts');
+    expect(script.text).not.toContain('POST /content/scripts');
+    expect(script.text).toContain('action !== "SCRIPT_REVISION_REQUIRED"');
     expect(() => new Script(script.text)).not.toThrow();
     await browser.get('/operations/executions').expect(401);
     await browser.get('/operations/instagram/connection').expect(401);

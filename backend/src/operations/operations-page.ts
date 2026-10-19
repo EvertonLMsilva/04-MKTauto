@@ -411,7 +411,7 @@ export const operationsScript = String.raw`
     if (!prepared) { $("tts-status").textContent = data ? "Prepare a narração para conferir texto, modelo e custo antes de autorizar." : ""; return; }
     $("tts-model").textContent = data.model + " · voz " + data.voice + " · português";
     $("tts-text").textContent = data.text;
-    $("tts-price").textContent = "Estimativa histórica: US$ " + data.estimatedUsd + ". Reserva interna: US$ " + data.reservationUsd + ". O custo efetivo depende da evidência de cobrança.";
+    $("tts-price").textContent = "Estimativa histórica: US$ " + data.estimatedUsd + ". Reserva interna: US$ " + data.reservationUsd + ". O custo efetivo depende da evidência de cobrança." + (data.policyVersion ? " Política: " + data.policyVersion + "." : "");
     const uncertain = ["SUBMITTING", "UNKNOWN"].includes(data.state) && !data.audioConfirmed;
     $("tts-status").textContent = data.audioConfirmed
       ? "Áudio confirmado. A finalização pode continuar sem novo envio pago. O custo efetivo pode continuar pendente de evidência."
@@ -419,6 +419,13 @@ export const operationsScript = String.raw`
       : data.liveEnabled ? "Confira o texto e autorize somente esta narração." : "Geração paga desativada neste ambiente. Nenhuma chamada será realizada.";
     $("tts-generate").textContent = data.audioConfirmed ? "Retomar finalização" : "Autorizar e gerar narração";
     $("tts-generate").disabled = !data.audioConfirmed && (uncertain || !data.liveEnabled || !$("tts-accept-risk").checked);
+  }
+  function renderNextAction(data) {
+    const action = data.nextAction?.code;
+    const ttsAction = ["TTS_AUTHORIZATION_REQUIRED", "TTS_CONTINUATION_REQUIRED", "TTS_RECONCILIATION_REQUIRED"].includes(action);
+    $("script-revision-panel").hidden = action !== "SCRIPT_REVISION_REQUIRED";
+    $("audio-panel").hidden = ttsAction || data.execution.finalization.completedSteps.includes("AUDIO") || data.execution.status !== "WAITING_INPUT";
+    renderTts(ttsAction ? data.tts : null);
   }
 
   const statusNames = {
@@ -656,7 +663,7 @@ export const operationsScript = String.raw`
           : "";
       $("progress").append(li);
     }
-    const pending = finalization.pending;
+    const pending = data.nextAction ?? finalization.pending;
     $("dependency").hidden = !pending;
     $("dependency-title").textContent = pending
       ? "O processamento precisa de você."
@@ -664,6 +671,7 @@ export const operationsScript = String.raw`
     $("dependency-message").textContent = pending ? pending.message : "";
     $("retry").hidden =
       !pending ||
+      ["TTS_AUTHORIZATION_REQUIRED", "TTS_RECONCILIATION_REQUIRED", "SCRIPT_REVISION_REQUIRED"].includes(pending.code) ||
       !["WAITING_INPUT", "WAITING_RECONCILIATION", "FAILED"].includes(
         execution.status,
       );
@@ -680,8 +688,7 @@ export const operationsScript = String.raw`
     if (data.media.some((m) => m.mediaAssetId === current))
       $("media-select").value = current;
     $("load-review").disabled = !data.media.length;
-    $("audio-panel").hidden = finalization.completedSteps.includes("AUDIO") || execution.status!=="WAITING_INPUT";
-    $("script-revision-panel").hidden = execution.status!=="WAITING_INPUT" || !data.script || !finalization.completedSteps.includes("MEDIA_QC") || finalization.completedSteps.includes("HANDOFF");
+    renderNextAction(data);
     $("script-revision-form").dataset.previousHash = data.script?.contentHash || "";
     const revisionSelect = $("script-revision-select");
     const previousRevision = revisionSelect.value;
@@ -703,8 +710,7 @@ export const operationsScript = String.raw`
     $("script-revision-form").querySelector("button").disabled = !revisions.length;
     $("script-revision-help").textContent = revisions.length
       ? "Selecione a revisão que deseja vincular. O identificador será enviado automaticamente."
-      : "Nenhuma revisão elegível. Cadastre a próxima versão pelo fluxo oficial POST /content/scripts, sucedendo o roteiro atual na mesma operação e preservando os visuais e o CTA. Depois, atualize esta execução.";
-    renderTts(data.tts);
+      : "Uma revisão mais curta precisa estar cadastrada, preservando os visuais e o CTA do roteiro atual.";
     $("audio-mode").value = data.audioMode || "AUTOMATIC";
     $("audio-form").hidden = $("audio-mode").value!=="RECORDING";
     $("narration").textContent =

@@ -7,6 +7,7 @@ import { CampaignAdministration } from '../content-operations/application/campai
 import { MediaService } from '../media/application/media.service.js';
 import { LocalFlowService } from '../media/application/local-flow.service.js';
 import { NarrationService } from '../media/application/narration.service.js';
+import { operationsNextAction } from './operations-next-action.js';
 import type { NarrationScope } from '../media/application/narration-plan.port.js';
 import {
   serverApprovalRequest,
@@ -72,6 +73,7 @@ export class OperationsService {
     return {
       requestHash: p.requestHash,
       model: p.request.model,
+      policyVersion: p.request.financialPolicy.schemaVersion,
       voice: p.request.voice,
       text: p.request.operation.narration,
       estimatedUsd: p.request.estimatedUsd,
@@ -193,8 +195,22 @@ export class OperationsService {
     const superseded = new Set(
       assets.map((asset) => asset.supersedesMediaAssetId),
     );
+    const execution = this.campaigns.get(id);
+    const tts =
+      context.completed.MEDIA_QC && this.narration
+        ? (() => {
+            try {
+              return this.ttsPreparation(id);
+            } catch (error) {
+              return {
+                code: (error as any).code ?? 'TTS_PREPARATION_UNAVAILABLE',
+              };
+            }
+          })()
+        : null;
     return {
-      execution: this.campaigns.get(id),
+      execution,
+      nextAction: operationsNextAction(execution, tts),
       scriptRevisions: this.campaigns.scriptRevisions(id),
       script: context.completed.EDITORIAL
         ? document(context.completed.EDITORIAL).script
@@ -216,18 +232,7 @@ export class OperationsService {
         })),
       scheduler: 'OFFLINE_FINALIZATION',
       audioMode: context.request?.audioMode ?? 'AUTOMATIC',
-      tts:
-        context.completed.MEDIA_QC && this.narration
-          ? (() => {
-              try {
-                return this.ttsPreparation(id);
-              } catch (error) {
-                return {
-                  code: (error as any).code ?? 'TTS_PREPARATION_UNAVAILABLE',
-                };
-              }
-            })()
-          : null,
+      tts,
       cost: { status: 'UNKNOWN', amount: null },
     };
   }

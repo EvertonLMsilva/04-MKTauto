@@ -975,6 +975,27 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
               .send(value);
           try {
             const prepared = await call('prepare', {}).expect(201);
+            const beforeAuthorization = await browser
+              .get(`/operations/executions/${e.execution_id}`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            expect(beforeAuthorization.body.nextAction.code).toBe(
+              'TTS_AUTHORIZATION_REQUIRED',
+            );
+            expect(beforeAuthorization.body.script.scriptId).toBe(
+              current.scriptId,
+            );
+            expect(beforeAuthorization.body.script.revision).toBe(2);
+            expect(beforeAuthorization.body.tts).toMatchObject({
+              model: 'gpt-4o-mini-tts',
+              voice: 'marin',
+              estimatedUsd: '0.00306',
+              reservationUsd: '0.01',
+            });
+            const unchangedHistory = service.history(e.execution_id);
+            expect(
+              service.finalizationContext(e.execution_id).completed.MEDIA_QC,
+            ).toBeTruthy();
             expect(prepared.body.text).toBe(
               'Conheça. Publicidade. Confira pelo link',
             );
@@ -982,6 +1003,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
               requestHash: prepared.body.requestHash,
             }).expect(400);
             expect(synth).not.toHaveBeenCalled();
+            expect(service.history(e.execution_id)).toEqual(unchangedHistory);
             await call('authorize', {
               requestHash: prepared.body.requestHash,
               acceptsUnboundedCost: true,
@@ -1022,6 +1044,14 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             expect(service.get(e.execution_id).finalization.pending?.code).toBe(
               'EXACT_HUMAN_APPROVAL_REQUIRED',
             );
+            expect(
+              (
+                await browser
+                  .get(`/operations/executions/${e.execution_id}`)
+                  .set('Host', 'localhost:3000')
+                  .expect(200)
+              ).body.nextAction.code,
+            ).toBe('EXACT_HUMAN_APPROVAL_REQUIRED');
             const file = await browser
               .get(`/operations/executions/${e.execution_id}/final.mp4`)
               .set('Host', 'localhost:3000')
@@ -1086,6 +1116,10 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
                   {
                     syntheticFixture: true,
                     actualP77: false,
+                    operationsNextAction:
+                      beforeAuthorization.body.nextAction.code,
+                    currentScriptRevision:
+                      beforeAuthorization.body.script.revision,
                     fakeProviders: ['fal', 'OpenAI TTS', 'aligner'],
                     paidCalls: 0,
                     mp4Sha256: createHash('sha256')
