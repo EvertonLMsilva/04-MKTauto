@@ -139,7 +139,11 @@ export class CampaignOrchestrator {
               h.event_type === 'STEP_FAILED' &&
               h.sequence >
                 (history
-                  .filter((event) => event.event_type === 'SCRIPT_REVISED')
+                  .filter((event) =>
+                    ['SCRIPT_REVISED', 'COMPOSITION_REVISED'].includes(
+                      event.event_type,
+                    ),
+                  )
                   .at(-1)?.sequence ?? 0) &&
               h.evidence.step === step &&
               h.evidence.retrySafe === true,
@@ -256,11 +260,13 @@ export function executionRequest(
         'publication',
       ])
         delete request[key];
-    }
+    } else if (event.event_type === 'COMPOSITION_REVISED')
+      delete request.composition;
   return request;
 }
 
 const narrationDependents = [
+  'COMPOSITION_REVISION',
   'COMPOSITION_AUTHORIZATION',
   'AUDIO',
   'ALIGNMENT',
@@ -284,7 +290,19 @@ export function completedContext(
       completed.APPROVAL = event.evidence;
     else if (event.event_type === 'COMPOSITION_AUTHORIZED')
       completed.COMPOSITION_AUTHORIZATION = event.evidence;
-    else if (event.event_type === 'SCRIPT_REVISED') {
+    else if (event.event_type === 'COMPOSITION_REVISED') {
+      for (const step of [
+        'COMPOSITION',
+        'BURN',
+        'QC',
+        'PREVIEW',
+        'APPROVAL',
+        'HANDOFF',
+        'PUBLICATION',
+      ])
+        delete completed[step];
+      completed.COMPOSITION_REVISION = event.evidence;
+    } else if (event.event_type === 'SCRIPT_REVISED') {
       for (const step of narrationDependents) delete completed[step];
       completed.EDITORIAL = { script: event.evidence.script };
     }

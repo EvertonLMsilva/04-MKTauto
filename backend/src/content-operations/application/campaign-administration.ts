@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { PRODUCT_FRAMING_POLICY } from '../../media/domain/product-framing.js';
 import {
   compositionScope,
   compositionGrant,
@@ -316,6 +317,79 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       document(document(completed.EDITORIAL).script),
     );
   }
+  framingContext(id: string) {
+    const { completed } = this.finalizationContext(id);
+    if (!completed.COMPOSITION) return null;
+    return document(
+      this.workflow.compositionPlan(
+        String(document(completed.COMPOSITION).compositionPlanId),
+      ),
+    );
+  }
+  reviseComposition(id: string, value: unknown, actorId: string) {
+    const input = document(value),
+      c = this.finalizationContext(id),
+      store = this.open();
+    if (
+      Object.keys(input).sort().join(',') !==
+        'previousRenderContentHash,reason' ||
+      typeof input.previousRenderContentHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.previousRenderContentHash) ||
+      typeof input.reason !== 'string' ||
+      input.reason.trim().length < 15 ||
+      input.reason.length > 1000 ||
+      !/^[a-z][a-z0-9_:-]{2,99}$/.test(actorId)
+    )
+      throw new CampaignError('INVALID_COMPOSITION_REVISION');
+    const previous = c.history
+      .filter((e) => e.event_type === 'COMPOSITION_REVISED')
+      .at(-1)?.evidence;
+    if (
+      previous?.previousRenderContentHash === input.previousRenderContentHash &&
+      previous?.actorId === actorId &&
+      previous?.reason === input.reason.trim()
+    )
+      return this.get(id);
+    const render = document(c.completed.BURN);
+    if (
+      !['WAITING_INPUT', 'CANCELLED', 'SUCCEEDED'].includes(
+        c.execution.status,
+      ) ||
+      render.contentHash !== input.previousRenderContentHash ||
+      c.request.publication ||
+      c.history.some(
+        (e) =>
+          e.event_type === 'STEP_STARTED' && e.evidence.step === 'PUBLICATION',
+      )
+    )
+      throw new CampaignError('COMPOSITION_REVISION_STATE_CONFLICT');
+    // Active/persisted social work must be handled before a render can be superseded.
+    if (
+      store.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE name='instagram_publication_schedules'",
+        )
+        .get() &&
+      store.db
+        .prepare(
+          'SELECT 1 FROM instagram_publication_schedules WHERE execution_id=? LIMIT 1',
+        )
+        .get(id)
+    )
+      throw new CampaignError('COMPOSITION_REVISION_PUBLICATION_CONFLICT');
+    const plan = this.framingContext(id);
+    if (!plan) throw new CampaignError('COMPOSITION_REVISION_STATE_CONFLICT');
+    const now = new Date().toISOString();
+    return store.reviseComposition(id, c.execution.version, now, {
+      policyVersion: PRODUCT_FRAMING_POLICY,
+      previousRenderContentHash: render.contentHash,
+      previousCompositionPlanId: plan.compositionPlanId,
+      revision: Number(plan.revision) + 1,
+      requestedAt: now,
+      actorId,
+      reason: input.reason.trim(),
+    });
+  }
   compositionPreparation(id: string) {
     const { execution, completed } = this.finalizationContext(id);
     if (completed.COMPOSITION || completed.HANDOFF)
@@ -449,8 +523,13 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
             .filter(
               (event) =>
                 event.sequence >
-                (events.filter((h) => h.event_type === 'SCRIPT_REVISED').at(-1)
-                  ?.sequence ?? 0),
+                (events
+                  .filter((h) =>
+                    ['SCRIPT_REVISED', 'COMPOSITION_REVISED'].includes(
+                      h.event_type,
+                    ),
+                  )
+                  .at(-1)?.sequence ?? 0),
             )
             .find(
               (h) =>

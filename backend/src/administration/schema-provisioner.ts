@@ -1,5 +1,9 @@
 import { provisionSocialContext } from '../publishing/infrastructure/social-publication.repository.js';
 import { readFileSync, readdirSync } from 'node:fs';
+import {
+  provisionProductContain,
+  provisionCompositionReframing,
+} from './composition-reframing.js';
 import { fileURLToPath } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
 import { createHash } from 'node:crypto';
@@ -237,6 +241,8 @@ export function provisionSchema(db: DatabaseSync, target = 42): void {
       ).all();
     }
     if (target >= 41) {
+      provisionProductContain(db);
+      provisionCompositionReframing(db);
       db.prepare(
         'SELECT execution_id,claim_token,version FROM campaign_executions LIMIT 0',
       ).all();

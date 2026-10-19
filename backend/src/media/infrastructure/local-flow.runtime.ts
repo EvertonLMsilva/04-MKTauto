@@ -1,4 +1,8 @@
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import {
+  PRODUCT_FRAMING_STRATEGY,
+  PRODUCT_CAPTION_STYLE,
+} from '../domain/product-framing.js';
 import { writeFileSync, readFileSync } from 'node:fs';
 import { mkdir, rmdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -853,7 +857,7 @@ export class LocalFlowRuntime {
   }
   private async burnOnce(videoId: string, subtitleId: string) {
     const id = `video_render:local:${adaptationHash({ videoId, subtitleId })}`;
-    const { source, previous, subtitle } = this.session((r) => {
+    const { source, previous, subtitle, contain } = this.session((r) => {
       const source = r.getVideoRender(videoId) as any,
         subtitle = this.subtitle(r, subtitleId);
       if (
@@ -869,7 +873,14 @@ export class LocalFlowRuntime {
         plan.scriptContentHash !== subtitle.scriptContentHash
       )
         localFail('LOCAL_SUBTITLE_BINDING_INVALID');
-      return { source, subtitle, previous: r.getVideoRender(id) };
+      return {
+        source,
+        subtitle,
+        previous: r.getVideoRender(id),
+        contain: plan.segments.every(
+          (s: any) => s.framingStrategy === PRODUCT_FRAMING_STRATEGY,
+        ),
+      };
     });
     this.renderFiles().read(source.contentHash, 'mp4');
     if (previous) {
@@ -901,7 +912,9 @@ export class LocalFlowRuntime {
           '-i',
           'source.mp4',
           '-vf',
-          'ass=subtitles.ass',
+          contain
+            ? `subtitles=subtitles.ass:force_style='${PRODUCT_CAPTION_STYLE}'`
+            : 'ass=subtitles.ass',
           '-map',
           '0:v:0',
           '-map',

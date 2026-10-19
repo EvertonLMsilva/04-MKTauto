@@ -1,4 +1,5 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import { PRODUCT_FRAMING_STRATEGY } from '../../media/domain/product-framing.js';
 import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
 import type { VideoGenerationService } from '../../media/application/video-generation.service.js';
 import type { VideoProductionPreparationV1 } from '../../media/domain/video-production-preparation.js';
@@ -552,7 +553,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         sourceStartMilliseconds: 0,
         playbackMode: 'TRIM',
         originalAudioMuted: true,
-        framingStrategy: 'COVER_CROP_9_16',
+        framingStrategy: PRODUCT_FRAMING_STRATEGY,
         movementRequirement: 'REAL_MOTION_REQUIRED',
         transition: {
           policyVersion: 'composition-transition/1.0.0',
@@ -563,11 +564,15 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       cursor = end;
       return segment;
     });
+    const revision = done.COMPOSITION_REVISION
+      ? document(done.COMPOSITION_REVISION)
+      : null;
     const key = adaptationHash({
       executionId: e.execution_id,
       scriptHash: script.contentHash,
       voice,
       segments,
+      revision: revision?.revision ?? 1,
     });
     const plan = {
       schemaVersion: 'composition-plan/2.0.0',
@@ -584,9 +589,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       continuityMode: 'CONTIGUOUS',
       durationMilliseconds: voice.durationMilliseconds,
       segments,
-      createdAt: e.scheduled_at,
-      revision: 1,
-      supersedesCompositionPlanId: null,
+      createdAt: revision?.requestedAt ?? e.scheduled_at,
+      revision: revision?.revision ?? 1,
+      supersedesCompositionPlanId: revision?.previousCompositionPlanId ?? null,
       productionProfile: 'MIXED_MEDIA_V2',
       compositionPolicyVersion: 'mixed-media-composition-policy/2.0.0',
       contentHash: '',
@@ -601,11 +606,14 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       containerFormat: 'mp4',
       widthPixels: 1080,
       heightPixels: 1920,
-      requestedAt: e.scheduled_at,
+      requestedAt: revision?.requestedAt ?? e.scheduled_at,
       contentHash: '',
     };
     request.contentHash = videoCompositionRequestHash(request);
     return { request, plan };
+  }
+  compositionPlan(id: string) {
+    return this.media.getCompositionPlan(id);
   }
   private compositionRights(
     asset: ReturnType<MediaService['get']>,

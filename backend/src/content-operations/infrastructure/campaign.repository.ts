@@ -312,6 +312,50 @@ export class CampaignRepository {
       return this.get(id);
     });
   }
+  reviseComposition(
+    id: string,
+    version: number,
+    now: string,
+    evidence: Record<string, unknown>,
+  ) {
+    return this.tx(() => {
+      const e = this.get(id);
+      if (
+        e.version !== version ||
+        !['WAITING_INPUT', 'CANCELLED', 'SUCCEEDED'].includes(e.status)
+      )
+        throw new CampaignError('EXECUTION_VERSION_CONFLICT');
+      for (const table of [
+        'instagram_publication_schedules',
+        'instagram_publication_reservations',
+      ])
+        if (
+          this.db
+            .prepare(
+              "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",
+            )
+            .get(table) &&
+          this.db
+            .prepare(`SELECT 1 FROM ${table} WHERE execution_id=? LIMIT 1`)
+            .get(id)
+        )
+          throw new CampaignError('COMPOSITION_REVISION_PUBLICATION_CONFLICT');
+      this.event(
+        id,
+        'COMPOSITION_REVISED',
+        e.status,
+        'WAITING_INPUT',
+        instant(now),
+        evidence,
+      );
+      this.db
+        .prepare(
+          "UPDATE campaign_executions SET status='WAITING_INPUT',version=version+1,updated_at=? WHERE execution_id=?",
+        )
+        .run(now, id);
+      return this.get(id);
+    });
+  }
   administrativeEvent(
     id: string,
     version: number,
