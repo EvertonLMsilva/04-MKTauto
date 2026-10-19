@@ -1,4 +1,8 @@
 import { createHash } from 'node:crypto';
+import {
+  productContainFilter,
+  PRODUCT_FRAMING_STRATEGY,
+} from '../domain/product-framing.js';
 
 import { createReadStream } from 'node:fs';
 import { lstat, writeFile } from 'node:fs/promises';
@@ -659,7 +663,11 @@ function mixedFilterGraph(plan: any, config: any): any {
     const duration = seconds(
       segment.endMilliseconds - segment.startMilliseconds,
     );
-    return `[${index}:v]scale=${config.widthPixels}:${config.heightPixels}:force_original_aspect_ratio=increase:flags=lanczos,crop=${config.widthPixels}:${config.heightPixels},setsar=1,fps=${config.frameRate},format=${config.pixelFormat},trim=duration=${duration},setpts=PTS-STARTPTS[i${index}]`;
+    const frame =
+      segment.framingStrategy === PRODUCT_FRAMING_STRATEGY
+        ? productContainFilter()
+        : `scale=${config.widthPixels}:${config.heightPixels}:force_original_aspect_ratio=increase:flags=lanczos,crop=${config.widthPixels}:${config.heightPixels}`;
+    return `[${index}:v]${frame},setsar=1,fps=${config.frameRate},format=${config.pixelFormat},trim=duration=${duration},setpts=PTS-STARTPTS[i${index}]`;
   });
   filters.push(
     `${plan.segments.map((_: any, index: any) => `[i${index}]`).join('')}concat=n=${plan.segments.length}:v=1:a=0[vout]`,

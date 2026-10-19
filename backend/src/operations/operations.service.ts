@@ -197,6 +197,17 @@ export class OperationsService {
       String(audio.voiceTrackId),
     );
   }
+  async reviseComposition(id: string, value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    this.campaigns.reviseComposition(id, value, actor.id);
+    const c = this.campaigns.finalizationContext(id);
+    if (!c.completed.COMPOSITION) {
+      if (c.execution.status === 'RUNNING') return this.detail(id);
+      if (c.execution.status !== 'SCHEDULED') await this.campaigns.resume(id);
+      await this.campaigns.advanceFinalization(id);
+    }
+    return this.detail(id);
+  }
   async authorizeComposition(id: string, value: unknown, principal: unknown) {
     const actor = operationalQcIdentity.assertActive(principal);
     this.campaigns.authorizeComposition(id, value, actor.id);
@@ -234,6 +245,9 @@ export class OperationsService {
       execution,
       nextAction: operationsNextAction(execution, tts),
       narrationAvailable: !!context.completed.AUDIO,
+      framing: context.completed.COMPOSITION
+        ? this.campaigns.framingContext(id)
+        : null,
       compositionAuthorization:
         context.completed.SUBTITLES && !context.completed.COMPOSITION
           ? {
@@ -386,11 +400,21 @@ export class OperationsService {
     const reviewer = operationalQcIdentity.assertActive(principal),
       input = document(value);
     if (
-      Object.keys(input).sort().join(',') !== 'decision,justification' ||
+      ![
+        'decision,justification',
+        'decision,justification,reviewedRenderContentHash',
+      ].includes(Object.keys(input).sort().join(',')) ||
       !['APPROVED', 'REJECTED'].includes(String(input.decision))
     )
       fail('HUMAN_APPROVAL_REQUEST_INVALID');
     const { render, qc } = await this.campaigns.finalReviewContext(id);
+    const revised =
+      !!this.campaigns.finalizationContext(id).completed.COMPOSITION_REVISION;
+    if (
+      (revised || input.reviewedRenderContentHash !== undefined) &&
+      input.reviewedRenderContentHash !== render.contentHash
+    )
+      fail('HUMAN_APPROVAL_VERSION_STALE');
     const request = serverApprovalRequest(
       {
         projectId: render.projectId,

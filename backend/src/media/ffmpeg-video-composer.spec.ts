@@ -1,4 +1,5 @@
 import { test } from 'vitest';
+import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import {
   mkdtempSync,
@@ -548,6 +549,171 @@ test('V2 rejeita vídeo curto sem loop antes do FFmpeg', async () =>
     );
     assert.equal(calls, 0);
   }));
+test('V2 contain preserves full source, reserves captions and never crops the product', async () =>
+  withRoots(async (roots: any) => {
+    const f = mixedPhysicalFixture(roots, 'TRIM');
+    let graph = '';
+    const value = mixedInput(f, 'TRIM');
+    value.compositionPlan.segments.forEach(
+      (s: any) => (s.framingStrategy = 'CONTAIN_9_16'),
+    );
+    value.compositionPlan.contentHash = compositionPlanContentHash(
+      value.compositionPlan,
+    );
+    const runner = async (command: any, args: any) => {
+      if (command === 'ffmpeg-bin' && args.includes('-filter_complex_script')) {
+        graph = readFileSync(
+          args[args.indexOf('-filter_complex_script') + 1],
+          'utf8',
+        );
+        writeFileSync(args.at(-1), Buffer.from('contain-fixture'));
+      }
+      if (command === 'ffprobe-bin')
+        return {
+          stdout: String(args.at(-1)).includes('media-001')
+            ? inputVideoProbeJson(1000, true)
+            : probeJson(1000),
+        };
+      return { stdout: '', stderr: '' };
+    };
+    await makeComposer(roots, f.catalog, runner).compose(value);
+    assert.match(graph, /force_original_aspect_ratio=decrease/);
+    assert.match(graph, /pad=1080:1920:0:160/);
+    assert.doesNotMatch(graph, /crop=/);
+  }));
+test.each([
+  [768, 768],
+  [1280, 720],
+  [720, 1280],
+])(
+  'real contain preserves all four source borders and motion for %sx%s',
+  async (width: number, height: number) =>
+    withRoots(async (roots: any) => {
+      const binary = (name: string) =>
+        execFileSync(
+          process.platform === 'win32' ? 'where.exe' : 'which',
+          [name],
+          { encoding: 'utf8', windowsHide: true },
+        )
+          .trim()
+          .split(/\r?\n/)[0];
+      const ffmpeg = binary('ffmpeg'),
+        ffprobe = binary('ffprobe'),
+        f = mixedPhysicalFixture(roots, 'LOOP');
+      const clip = join(roots.mediaRoot, 'source-fixture.mp4');
+      execFileSync(
+        ffmpeg,
+        [
+          '-v',
+          'error',
+          '-f',
+          'lavfi',
+          '-i',
+          `testsrc2=s=${width}x${height}:r=30:d=1,drawbox=x=0:y=0:w=iw:h=ih:color=red:t=16`,
+          '-an',
+          '-c:v',
+          'libx264',
+          '-pix_fmt',
+          'yuv420p',
+          clip,
+        ],
+        { windowsHide: true },
+      );
+      const hash = store(roots.mediaRoot, readFileSync(clip), 'mp4');
+      Object.assign(f.video, {
+        contentHash: hash,
+        mediaReference: `media:sha256_${hash}`,
+        technicalProperties: {
+          ...f.video.technicalProperties,
+          widthPixels: width,
+          heightPixels: height,
+          hasAudio: false,
+        },
+      });
+      const value = mixedInput(f, 'TRIM'),
+        segment = value.compositionPlan.segments[0];
+      value.compositionPlan.segments = [
+        {
+          ...segment,
+          sourceStartMilliseconds: 0,
+          endMilliseconds: 1000,
+          framingStrategy: 'CONTAIN_9_16',
+        },
+      ];
+      value.compositionPlan.contentHash = compositionPlanContentHash(
+        value.compositionPlan,
+      );
+      const c = loadFfmpegVideoConfig({
+        FFMPEG_PATH: ffmpeg,
+        FFPROBE_PATH: ffprobe,
+        FFMPEG_VOICE_ROOT: roots.voiceRoot,
+        FFMPEG_MEDIA_ROOT: roots.mediaRoot,
+        FFMPEG_RENDER_ROOT: roots.renderRoot,
+      });
+      const result = await new FfmpegVideoComposer(c, {
+        artifactCatalog: f.catalog,
+      }).compose(value);
+      const output = join(
+        roots.renderRoot,
+        'sha256',
+        result.contentHash.slice(0, 2),
+        result.contentHash + '.mp4',
+      );
+      const frame = (time: string) =>
+        execFileSync(
+          ffmpeg,
+          [
+            '-v',
+            'error',
+            '-ss',
+            time,
+            '-i',
+            output,
+            '-frames:v',
+            '1',
+            '-pix_fmt',
+            'rgb24',
+            '-f',
+            'rawvideo',
+            'pipe:1',
+          ],
+          { maxBuffer: 10485760, windowsHide: true },
+        );
+      const first = frame('0.1'),
+        last = frame('0.8'),
+        ratio = Math.min(1080 / width, 1400 / height),
+        w = Math.floor((width * ratio) / 2) * 2,
+        h = Math.floor((height * ratio) / 2) * 2,
+        x = (1080 - w) / 2,
+        y = 160 + (1400 - h) / 2;
+      const inset = Math.max(2, Math.round(ratio * 4));
+      for (const [px, py] of [
+        [x + inset, y + inset],
+        [x + w - inset - 1, y + inset],
+        [x + inset, y + h - inset - 1],
+        [x + w - inset - 1, y + h - inset - 1],
+      ]) {
+        const offset = (Math.round(py) * 1080 + Math.round(px)) * 3;
+        assert.ok(
+          first[offset] > 170 &&
+            first[offset + 1] < 85 &&
+            first[offset + 2] < 85,
+          `source corner missing at ${px},${py}`,
+        );
+      }
+      assert.ok(
+        Math.abs(w / h - width / height) < 0.005,
+        'aspect ratio changed',
+      );
+      assert.notDeepEqual(first, last, 'motion lost');
+      const safe = (1750 * 1080 + 540) * 3;
+      assert.ok(
+        first[safe] < 30 && first[safe + 1] < 30 && first[safe + 2] < 30,
+        'caption band not clear',
+      );
+    }),
+  120000,
+);
 
 test('falha antes do processo para cadeia divergente, direitos, formato, limites e cancelamento', async () =>
   withRoots(async (roots: any) => {

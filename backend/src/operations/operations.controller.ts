@@ -164,6 +164,21 @@ export class OperationsController {
       ),
     );
   }
+  @Post('executions/:id/composition-revision')
+  @UseGuards(LocalQcGuard)
+  reviseComposition(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.reviseComposition(
+        id,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      ),
+    );
+  }
   @Post('executions/:id/tts/authorize')
   @UseGuards(LocalQcGuard)
   authorizeTts(

@@ -195,7 +195,7 @@ function validateV2Segment(segment: any, path: any): any {
     fail('INVALID_PLAYBACK_MODE', `${path}.playbackMode`);
   if (segment.originalAudioMuted !== true)
     fail('ORIGINAL_AUDIO_MUST_BE_MUTED', `${path}.originalAudioMuted`);
-  if (segment.framingStrategy !== 'COVER_CROP_9_16')
+  if (!['COVER_CROP_9_16', 'CONTAIN_9_16'].includes(segment.framingStrategy))
     fail('UNSUPPORTED_FRAMING_STRATEGY', `${path}.framingStrategy`);
   record(segment.transition, `${path}.transition`);
   exact(segment.transition, TRANSITION_FIELDS, `${path}.transition`);

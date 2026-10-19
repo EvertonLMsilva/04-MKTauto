@@ -1174,6 +1174,88 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
               requestHash: prepared.body.requestHash,
             }).expect(201);
             expect(synth).toHaveBeenCalledTimes(1);
+            const beforeReframe = service.finalizationContext(
+              e.execution_id,
+            ).completed;
+            await browser
+              .post(`/operations/executions/${e.execution_id}/final-review`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send({
+                decision: 'REJECTED',
+                justification:
+                  'Isolated test requests a new composition while retaining original approved media.',
+              })
+              .expect(201);
+            expect(service.get(e.execution_id).status).toBe('CANCELLED');
+            const revisionBody = {
+              previousRenderContentHash: (beforeReframe.BURN as any)
+                .contentHash,
+              reason:
+                'Regenerate the isolated fixture with full product image and safe caption framing.',
+            };
+            const revise = () =>
+              browser
+                .post(
+                  `/operations/executions/${e.execution_id}/composition-revision`,
+                )
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send(revisionBody);
+            const reframed = await revise().expect((r) =>
+              expect(r.status, JSON.stringify(r.body)).toBe(201),
+            );
+            expect(reframed.body.framing.revision).toBe(2);
+            expect(
+              reframed.body.framing.segments.every(
+                (s: any) => s.framingStrategy === 'CONTAIN_9_16',
+              ),
+            ).toBe(true);
+            expect(reframed.body.nextAction.code).toBe(
+              'EXACT_HUMAN_APPROVAL_REQUIRED',
+            );
+            const afterReframe = service.finalizationContext(
+              e.execution_id,
+            ).completed;
+            for (const step of [
+              'EDITORIAL',
+              'MEDIA_QC',
+              'AUDIO',
+              'ALIGNMENT',
+              'SUBTITLES',
+              'COMPOSITION_AUTHORIZATION',
+            ])
+              expect(afterReframe[step]).toEqual(beforeReframe[step]);
+            expect(afterReframe.APPROVAL).toBeUndefined();
+            expect(afterReframe.HANDOFF).toBeUndefined();
+            for (const patch of [
+              {},
+              { reviewedRenderContentHash: 'f'.repeat(64) },
+            ])
+              await browser
+                .post(`/operations/executions/${e.execution_id}/final-review`)
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send({ decision: 'APPROVED', justification: null, ...patch })
+                .expect(409);
+            expect((afterReframe.BURN as any).videoRenderId).not.toBe(
+              (beforeReframe.BURN as any).videoRenderId,
+            );
+            await revise().expect(201);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((e) => e.event_type === 'COMPOSITION_REVISED'),
+            ).toHaveLength(1);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((e) => e.event_type === 'HUMAN_APPROVAL'),
+            ).toHaveLength(1);
+            expect(synth).toHaveBeenCalledTimes(1);
             const audit = new DatabaseSync(f.database, { readOnly: true });
             let operationId: string;
             try {
