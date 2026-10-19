@@ -71,12 +71,21 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
   const origin = (query: ReturnType<typeof browser.post>) =>
     query.set('Host', 'localhost:3000').set('Origin', 'http://localhost:3000');
   try {
-    await browser
+    const page = await browser
       .get('/operations')
       .expect(200)
       .expect('Cache-Control', 'no-store')
       .expect('Content-Type', /html/);
+    expect(page.text).toContain(
+      '<select id="script-revision-select" name="scriptId" required',
+    );
+    expect(page.text).not.toContain('<input name="scriptId"');
     const script = await browser.get('/operations/app.js').expect(200);
+    expect(script.text).toContain('option.value = revision.scriptId');
+    expect(script.text).toContain(
+      'Nenhuma revisão elegível. Cadastre a próxima versão',
+    );
+    expect(script.text).toContain('POST /content/scripts');
     expect(() => new Script(script.text)).not.toThrow();
     await browser.get('/operations/executions').expect(401);
     await browser.get('/operations/instagram/connection').expect(401);

@@ -61,6 +61,7 @@ export class OperationsService {
     );
     return {
       execution: this.campaigns.get(id),
+      scriptRevisions: this.campaigns.scriptRevisions(id),
       script: context.completed.EDITORIAL
         ? document(context.completed.EDITORIAL).script
         : null,

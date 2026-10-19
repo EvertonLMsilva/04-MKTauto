@@ -2,6 +2,7 @@ import { lstatSync, readFileSync, realpathSync, existsSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
+import { fileURLToPath } from 'node:url';
 import { localFail } from '../domain/alignment-contracts.js';
 import { digest } from './local-evidence-storage.js';
 import { inspectMvpWav } from './physical-media-inspection.js';
@@ -97,7 +98,7 @@ export class LocalPiperTts {
       const m = JSON.parse(bytes.toString());
       if (
         m.schemaVersion !== 'local-tts-license/1' ||
-        m.engine !== 'piper' ||
+        !['piper', 'espeak-ng'].includes(m.engine) ||
         m.language !== 'pt-BR' ||
         typeof m.modelId !== 'string' ||
         !/^[a-zA-Z0-9_.:/-]{3,150}$/.test(m.modelId) ||
@@ -105,7 +106,11 @@ export class LocalPiperTts {
         m.modelSha256 === blockedModel ||
         typeof m.modelVersion !== 'string' ||
         !/^[a-zA-Z0-9_.:/-]{1,100}$/.test(m.modelVersion) ||
-        !['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0'].includes(m.license) ||
+        !(m.engine === 'espeak-ng'
+          ? m.license === 'GPL-3.0-or-later'
+          : ['CC0-1.0', 'CC-BY-4.0', 'MIT', 'Apache-2.0'].includes(
+              m.license,
+            )) ||
         m.commercialUseAllowed !== true ||
         m.localProcessingAllowed !== true ||
         !/^[a-z][a-z0-9_:-]{2,99}$/.test(m.approvedBy ?? '') ||
@@ -119,16 +124,77 @@ export class LocalPiperTts {
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
       this.file(m.modelPath, m.modelSha256, 536870912);
+      if (m.engine === 'espeak-ng') {
+        const inventory = JSON.parse(
+          this.file(m.modelPath, m.modelSha256, 1048576).toString(),
+        );
+        if (
+          m.modelId !== 'espeak-ng/pt-br' ||
+          !isAbsolute(m.dataRoot ?? '') ||
+          inventory.schemaVersion !== 'espeak-native/1' ||
+          inventory.voice !== 'pt-br' ||
+          inventory.type !== 'FORMANT_RULES' ||
+          !inventory.files ||
+          typeof inventory.files !== 'object' ||
+          Array.isArray(inventory.files) ||
+          Object.keys(inventory.files).length > 2000 ||
+          [
+            'espeak-ng.dll',
+            'espeak-ng-data/lang/roa/pt-BR',
+            ...[
+              'phondata',
+              'phonindex',
+              'phontab',
+              'intonations',
+              'pt_dict',
+            ].map((name) => `espeak-ng-data/${name}`),
+          ].some((name) => !inventory.files[name])
+        )
+          localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        for (const [name, hash] of Object.entries(inventory.files)) {
+          if (
+            !name ||
+            name.includes('..') ||
+            isAbsolute(name) ||
+            /[:\\]/.test(name)
+          )
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          this.file(join(m.dataRoot, name), hash, 16777216);
+        }
+        this.file(
+          fileURLToPath(
+            new URL('../../../python/tts/espeak.py', import.meta.url),
+          ),
+          m.adapterSha256,
+          65536,
+        );
+      }
       const metadata = JSON.parse(
         this.file(m.configPath, m.configSha256, 1048576).toString(),
       );
       if (
         metadata.language?.code !== 'pt_BR' ||
-        metadata.espeak?.voice !== 'pt-br' ||
+        !(m.engine === 'espeak-ng'
+          ? ['pt-br', 'pt-br+m1', 'pt-br+m3', 'pt-br+f2', 'pt-br+f3'].includes(
+              metadata.espeak?.voice,
+            )
+          : metadata.espeak?.voice === 'pt-br') ||
         /edresson|ryan/i.test(metadata.dataset ?? '')
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
       const licenseURL = new URL(m.licenseSource);
+      if (m.engine === 'espeak-ng' && metadata.espeak.voice.includes('+')) {
+        const variant = `espeak-ng-data/voices/!v/${metadata.espeak.voice.split('+')[1]}`;
+        const inventory = JSON.parse(
+          this.file(m.modelPath, m.modelSha256, 1048576).toString(),
+        );
+        if (!inventory.files[variant]) localFail('LOCAL_TTS_LICENSE_REQUIRED');
+      }
+      if (
+        m.engine === 'espeak-ng' &&
+        ![140, 150, 160].includes(metadata.espeak.rate ?? 150)
+      )
+        localFail('LOCAL_TTS_LICENSE_REQUIRED');
       if (
         licenseURL.username ||
         licenseURL.password ||
@@ -138,7 +204,12 @@ export class LocalPiperTts {
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
       this.file(m.executablePath, m.executableSha256, 536870912);
       this.file(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
-      return { ...m, configurationHash: digest(bytes) };
+      return {
+        ...m,
+        nativeVoice: metadata.espeak.voice,
+        nativeRate: metadata.espeak.rate ?? 150,
+        configurationHash: digest(bytes),
+      };
     } catch (error) {
       if ((error as { code?: string }).code === 'LOCAL_TTS_LICENSE_REQUIRED')
         throw error;
@@ -193,14 +264,25 @@ export class LocalPiperTts {
     try {
       await this.runner(
         m.executablePath,
-        [
-          '--model',
-          m.modelPath,
-          '--config',
-          m.configPath,
-          '--output_file',
-          raw,
-        ],
+        m.engine === 'espeak-ng'
+          ? [
+              '-B',
+              fileURLToPath(
+                new URL('../../../python/tts/espeak.py', import.meta.url),
+              ),
+              m.dataRoot,
+              raw,
+              m.nativeVoice,
+              String(m.nativeRate),
+            ]
+          : [
+              '--model',
+              m.modelPath,
+              '--config',
+              m.configPath,
+              '--output_file',
+              raw,
+            ],
         { ...options, outputPath: raw, stdin: narration + '\n' },
       );
       await this.runner(

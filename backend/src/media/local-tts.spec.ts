@@ -1,6 +1,8 @@
 import { mkdtempSync, writeFileSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { mkdirSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { digest } from './infrastructure/local-evidence-storage.js';
 import {
   LocalPiperTts,
@@ -116,6 +118,78 @@ function fixture() {
     cleanup: () => rmSync(root, { recursive: true, force: true }),
   };
 }
+
+function espeakFixture(f: ReturnType<typeof fixture>) {
+  Object.assign(f.manifest, {
+    engine: 'espeak-ng',
+    modelId: 'espeak-ng/pt-br',
+    license: 'GPL-3.0-or-later',
+    dataRoot: f.root,
+  });
+  mkdirSync(join(f.root, 'espeak-ng-data/lang/roa'), { recursive: true });
+  writeFileSync(join(f.root, 'espeak-ng.dll'), 'TEST_DLL');
+  writeFileSync(join(f.root, 'espeak-ng-data/lang/roa/pt-BR'), 'TEST_VOICE');
+  Object.assign(f.manifest, {
+    adapterSha256: digest(
+      readFileSync(
+        fileURLToPath(new URL('../../python/tts/espeak.py', import.meta.url)),
+      ),
+    ),
+  });
+  writeFileSync(
+    f.manifest.modelPath,
+    JSON.stringify({
+      schemaVersion: 'espeak-native/1',
+      voice: 'pt-br',
+      type: 'FORMANT_RULES',
+      files: {
+        'espeak-ng.dll': digest(readFileSync(join(f.root, 'espeak-ng.dll'))),
+        'espeak-ng-data/lang/roa/pt-BR': digest(
+          readFileSync(join(f.root, 'espeak-ng-data/lang/roa/pt-BR')),
+        ),
+        ...Object.fromEntries(
+          ['phondata', 'phonindex', 'phontab', 'intonations', 'pt_dict'].map(
+            (name) => {
+              const key = 'espeak-ng-data/' + name;
+              writeFileSync(join(f.root, key), 'TEST_DATA');
+              return [key, digest(readFileSync(join(f.root, key)))];
+            },
+          ),
+        ),
+      },
+    }),
+  );
+  f.manifest.modelSha256 = digest(readFileSync(f.manifest.modelPath));
+  f.save();
+}
+
+test('native pt-BR formant speech requires GPL evidence and a complete pinned local inventory, without a sampled voice', async () => {
+  const f = fixture();
+  try {
+    espeakFixture(f);
+    await new LocalPiperTts(f.env, f.runner).synthesize(
+      'Conheça este travesseiro anatômico. Veja os detalhes do produto.',
+      5184,
+    );
+    expect(f.runner.mock.calls[0][1]).toEqual([
+      '-B',
+      expect.stringContaining('espeak.py'),
+      f.root,
+      expect.any(String),
+      'pt-br',
+      '150',
+    ]);
+    expect(f.runner.mock.calls[0][2].stdin).toContain(
+      'Veja os detalhes do produto.',
+    );
+    writeFileSync(f.manifest.configPath, 'TAMPERED');
+    expect(() => new LocalPiperTts(f.env).configuration()).toThrow(
+      'LOCAL_TTS_LICENSE_REQUIRED',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
 test('conservative adaptation removes literal repetition without adding or dropping unique claims', () => {
   const text =
     'Produto X com ajuste manual. Produto X com ajuste manual. Confira as condições antes da compra.';
@@ -226,162 +300,167 @@ test('actual speech that exceeds available duration is never cropped or accepted
   }
 });
 
-test('native SQLite preserves synthetic provenance, concurrent replay, restart and adapted alignment without accepting synthetic uploads', async () => {
-  const f = fixture(),
-    native = p2EditorialFixture();
-  const db = new DatabaseSync(native.database);
-  provisionSchema(db);
-  db.close();
-  vi.stubEnv('INSTAGRAM_SCHEDULER_ENABLED', 'false');
-  vi.stubEnv('CAMPAIGN_SCHEDULER_ENABLED', 'false');
-  let builder = Test.createTestingModule({ imports: [OperationsModule] });
-  for (const token of [
-    CAMPAIGN_DATABASE,
-    CONTENT_DATABASE,
-    AFFILIATE_DATABASE,
-    PROJECT_DATABASE,
-    RESEARCH_DATABASE,
-    CONTENT_OPERATIONS_DATABASE,
-    FINANCE_DATABASE,
-    MEDIA_DATABASE,
-    PUBLISHING_DATABASE,
-    SOCIAL_HISTORY_DATABASE,
-  ])
-    builder = builder.overrideProvider(token).useValue(native.database);
-  const module = await builder
-    .overrideProvider(EDITORIAL_PROVIDER)
-    .useValue(new FakeEditorialProvider())
-    .compile();
-  try {
-    module
-      .get(AFFILIATE_RUN_CONTEXT)
-      .bindRun(
-        { pipelineRunId: 'run_001', briefingId: 'brief_001' },
-        'bind_auto_audio',
-      );
-    const editorial = await module.get(EditorialFlowService).generate({
-      generationRequestId: 'tts_editorial_test',
-      pipelineRunId: 'run_001',
-      briefingId: 'brief_001',
-      researchShortlistId: native.shortlist.artifactId,
-      referenceInsightId: null,
-      requestedAt: '2026-10-18T00:00:00Z',
-      supersedesScriptId: null,
-    });
-    const script = editorial.script;
-    const env = {
-      ...f.env,
-      LOCAL_MEDIA_EVIDENCE_ROOT: join(f.root, 'evidence'),
-      FFMPEG_VOICE_ROOT: join(f.root, 'voice'),
-    };
-    const open = () =>
-      new LocalFlowRepository(
-        native.database,
-        module.get(CONTENT_OPERATIONS),
-        module.get(ContentService),
-      );
-    const aligner = {
-      identity: 'TEST_FIXTURE_ALIGNER',
-      align: vi.fn(async (input: any) => {
-        const evidence: any = {
-          input,
-          parameters: { fixture: true },
-          provenance: 'FORCED_ALIGNMENT',
-          output: {
-            alignmentId:
-              'align_' +
-              alignmentHash({ input, configuration: 'TEST_FIXTURE_ALIGNER' }),
-            provider: 'offline-fixture',
-            modelVersion: 'TEST/1',
-            audioSha256: input.audioSha256,
-            scriptTextSha256: input.scriptTextSha256,
-            status: 'VERIFIED',
-            evidenceHash: '',
-            segments: [
-              {
-                startMs: 100,
-                endMs: input.durationMs - 100,
-                text: input.canonicalText,
-                textStartOffset: 0,
-                textEndOffset: input.canonicalText.length,
-              },
-            ],
-          },
-        };
-        evidence.output.evidenceHash = alignmentHash(evidence);
-        return evidence;
-      }),
-    };
-    const make = () =>
-      new LocalFlowRuntime(
-        open,
-        module.get(MediaService),
-        env,
-        { verify: async () => true },
-        f.runner,
-        aligner,
-      );
-    const scope = {
-      pipelineRunId: 'run_001',
-      scriptId: script.scriptId,
-      scriptContentHash: script.contentHash,
-      createdAt: '2026-10-18T00:00:00Z',
-    };
-    const flow = make();
-    const [a, b] = await Promise.all([
-      flow.automaticAudio(scope, 60000),
-      flow.automaticAudio(scope, 60000),
-    ]);
-    expect(a).toEqual(b);
-    expect(f.runner).toHaveBeenCalledTimes(3);
-    expect(await make().automaticAudio(scope, 60000)).toEqual(a);
-    expect(f.runner).toHaveBeenCalledTimes(3);
-    const repository = open();
-    const voice = repository.getVoiceTrack(a.voiceTrackId);
-    const ids = repository.localVoiceIds(
-      'run_001',
-      script.scriptId,
-      script.contentHash,
-    );
-    repository.close();
-    expect(ids).toEqual([a.voiceTrackId]);
-    expect(voice).toMatchObject({
-      origin: 'SYNTHETIC_TTS',
-      provider: 'local_piper',
-      rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
-    });
-    expect(
-      make().authorizedAudio(
+test.each(['piper', 'espeak-ng'])(
+  'native SQLite preserves synthetic provenance, replay and adapted alignment for %s',
+  async (engine) => {
+    const f = fixture(),
+      native = p2EditorialFixture();
+    if (engine === 'espeak-ng') espeakFixture(f);
+    const db = new DatabaseSync(native.database);
+    provisionSchema(db);
+    db.close();
+    vi.stubEnv('INSTAGRAM_SCHEDULER_ENABLED', 'false');
+    vi.stubEnv('CAMPAIGN_SCHEDULER_ENABLED', 'false');
+    let builder = Test.createTestingModule({ imports: [OperationsModule] });
+    for (const token of [
+      CAMPAIGN_DATABASE,
+      CONTENT_DATABASE,
+      AFFILIATE_DATABASE,
+      PROJECT_DATABASE,
+      RESEARCH_DATABASE,
+      CONTENT_OPERATIONS_DATABASE,
+      FINANCE_DATABASE,
+      MEDIA_DATABASE,
+      PUBLISHING_DATABASE,
+      SOCIAL_HISTORY_DATABASE,
+    ])
+      builder = builder.overrideProvider(token).useValue(native.database);
+    const module = await builder
+      .overrideProvider(EDITORIAL_PROVIDER)
+      .useValue(new FakeEditorialProvider())
+      .compile();
+    try {
+      module
+        .get(AFFILIATE_RUN_CONTEXT)
+        .bindRun(
+          { pipelineRunId: 'run_001', briefingId: 'brief_001' },
+          'bind_auto_audio',
+        );
+      const editorial = await module.get(EditorialFlowService).generate({
+        generationRequestId: 'tts_editorial_test',
+        pipelineRunId: 'run_001',
+        briefingId: 'brief_001',
+        researchShortlistId: native.shortlist.artifactId,
+        referenceInsightId: null,
+        requestedAt: '2026-10-18T00:00:00Z',
+        supersedesScriptId: null,
+      });
+      const script = editorial.script;
+      const env = {
+        ...f.env,
+        LOCAL_MEDIA_EVIDENCE_ROOT: join(f.root, 'evidence'),
+        FFMPEG_VOICE_ROOT: join(f.root, 'voice'),
+      };
+      const open = () =>
+        new LocalFlowRepository(
+          native.database,
+          module.get(CONTENT_OPERATIONS),
+          module.get(ContentService),
+        );
+      const aligner = {
+        identity: 'TEST_FIXTURE_ALIGNER',
+        align: vi.fn(async (input: any) => {
+          const evidence: any = {
+            input,
+            parameters: { fixture: true },
+            provenance: 'FORCED_ALIGNMENT',
+            output: {
+              alignmentId:
+                'align_' +
+                alignmentHash({ input, configuration: 'TEST_FIXTURE_ALIGNER' }),
+              provider: 'offline-fixture',
+              modelVersion: 'TEST/1',
+              audioSha256: input.audioSha256,
+              scriptTextSha256: input.scriptTextSha256,
+              status: 'VERIFIED',
+              evidenceHash: '',
+              segments: [
+                {
+                  startMs: 100,
+                  endMs: input.durationMs - 100,
+                  text: input.canonicalText,
+                  textStartOffset: 0,
+                  textEndOffset: input.canonicalText.length,
+                },
+              ],
+            },
+          };
+          evidence.output.evidenceHash = alignmentHash(evidence);
+          return evidence;
+        }),
+      };
+      const make = () =>
+        new LocalFlowRuntime(
+          open,
+          module.get(MediaService),
+          env,
+          { verify: async () => true },
+          f.runner,
+          aligner,
+        );
+      const scope = {
+        pipelineRunId: 'run_001',
+        scriptId: script.scriptId,
+        scriptContentHash: script.contentHash,
+        createdAt: '2026-10-18T00:00:00Z',
+      };
+      const flow = make();
+      const [a, b] = await Promise.all([
+        flow.automaticAudio(scope, 60000),
+        flow.automaticAudio(scope, 60000),
+      ]);
+      expect(a).toEqual(b);
+      expect(f.runner).toHaveBeenCalledTimes(3);
+      expect(await make().automaticAudio(scope, 60000)).toEqual(a);
+      expect(f.runner).toHaveBeenCalledTimes(3);
+      const repository = open();
+      const voice = repository.getVoiceTrack(a.voiceTrackId);
+      const ids = repository.localVoiceIds(
         'run_001',
         script.scriptId,
         script.contentHash,
-        undefined,
-        'RECORDING',
-      ),
-    ).toBeNull();
-    await expect(
-      flow.ingest({
-        voiceTrack: voice,
-        authorization: { actorId: 'operator_test', statement: 'TEST' },
-      }),
-    ).rejects.toThrow('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
-    const alignment = await flow.alignAudio(a.voiceTrackId);
-    expect(alignment.input.canonicalText).toBe(
-      adaptLocalNarration(script.fullNarration, 60000),
-    );
-    expect(flow.subtitles(alignment.output.alignmentId)).toHaveProperty(
-      'subtitleId',
-    );
-    expect(await make().alignAudio(a.voiceTrackId)).toEqual(alignment);
-    expect(aligner.align).toHaveBeenCalledTimes(1);
-    writeFileSync(f.manifest.licenseEvidencePath, 'changed TEST license');
-    expect(() =>
-      make().authorizedAudio('run_001', script.scriptId, script.contentHash),
-    ).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
-  } finally {
-    await module.close();
-    vi.unstubAllEnvs();
-    native.cleanup();
-    f.cleanup();
-  }
-});
+      );
+      repository.close();
+      expect(ids).toEqual([a.voiceTrackId]);
+      expect(voice).toMatchObject({
+        origin: 'SYNTHETIC_TTS',
+        provider: engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
+        rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
+      });
+      expect(
+        make().authorizedAudio(
+          'run_001',
+          script.scriptId,
+          script.contentHash,
+          undefined,
+          'RECORDING',
+        ),
+      ).toBeNull();
+      await expect(
+        flow.ingest({
+          voiceTrack: voice,
+          authorization: { actorId: 'operator_test', statement: 'TEST' },
+        }),
+      ).rejects.toThrow('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      const alignment = await flow.alignAudio(a.voiceTrackId);
+      expect(alignment.input.canonicalText).toBe(
+        adaptLocalNarration(script.fullNarration, 60000),
+      );
+      expect(flow.subtitles(alignment.output.alignmentId)).toHaveProperty(
+        'subtitleId',
+      );
+      expect(await make().alignAudio(a.voiceTrackId)).toEqual(alignment);
+      expect(aligner.align).toHaveBeenCalledTimes(1);
+      writeFileSync(f.manifest.licenseEvidencePath, 'changed TEST license');
+      expect(() =>
+        make().authorizedAudio('run_001', script.scriptId, script.contentHash),
+      ).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+    } finally {
+      await module.close();
+      vi.unstubAllEnvs();
+      native.cleanup();
+      f.cleanup();
+    }
+  },
+  15000,
+);

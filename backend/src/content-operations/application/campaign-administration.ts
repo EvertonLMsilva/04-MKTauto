@@ -13,7 +13,7 @@ import {
   campaignRequest,
   document,
 } from './native-campaign-workflow.js';
-import { CampaignError } from '../domain/campaign.js';
+import { CampaignError, identifier } from '../domain/campaign.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
 export const CAMPAIGN_DATABASE = Symbol('CAMPAIGN_DATABASE');
 export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
@@ -304,6 +304,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     }
     return this.runner!.resume(id);
   }
+  scriptRevisions(id: string) {
+    const { execution, completed } = this.finalizationContext(id);
+    if (!completed.EDITORIAL) return [];
+    return this.workflow.scriptRevisions(
+      execution,
+      document(document(completed.EDITORIAL).script),
+    );
+  }
   reviseScript(id: string, value: unknown, actorId: string) {
     const input = document(value),
       store = this.open(),
@@ -321,6 +329,13 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       !/^[a-z][a-z0-9_:-]{2,99}$/.test(actorId)
     )
       throw new CampaignError('INVALID_SCRIPT_REVISION');
+    try {
+      identifier(input.scriptId);
+    } catch (error) {
+      if (error instanceof CampaignError && error.code === 'INVALID_IDENTIFIER')
+        throw new CampaignError('INVALID_SCRIPT_REVISION_IDENTIFIER');
+      throw error;
+    }
     const lastRevision = history
       .filter((event) => event.event_type === 'SCRIPT_REVISED')
       .at(-1);

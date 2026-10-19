@@ -178,6 +178,22 @@ test('official revision is audited, fenced, idempotent after restart and resumes
   const scripts: Record<string, any> = {
     [original.scriptId]: original,
     [revised.scriptId]: revised,
+    other_run: {
+      ...revised,
+      scriptId: 'other_run',
+      pipelineRunId: 'run_other',
+    },
+    wrong_parent: {
+      ...revised,
+      scriptId: 'wrong_parent',
+      supersedesScriptId: 'other',
+    },
+    wrong_version: { ...revised, scriptId: 'wrong_version', revision: 3 },
+    changed_visuals: {
+      ...revised,
+      scriptId: 'changed_visuals',
+      visualDirections: [],
+    },
   };
   const native = new NativeCampaignWorkflow(
     {} as any,
@@ -185,7 +201,10 @@ test('official revision is audited, fenced, idempotent after restart and resumes
     {} as any,
     {} as any,
     {} as any,
-    { getScript: (id) => scripts[id] ?? null } as any,
+    {
+      getScript: (id) => scripts[id] ?? null,
+      listScripts: () => Object.values(scripts),
+    } as any,
     {} as any,
     {} as any,
     {} as any,
@@ -200,6 +219,7 @@ test('official revision is audited, fenced, idempotent after restart and resumes
     return { current: step };
   });
   const flow = {
+    scriptRevisions: native.scriptRevisions.bind(native),
     revisedScript: native.revisedScript.bind(native),
     steps: [
       'EDITORIAL',
@@ -224,6 +244,16 @@ test('official revision is audited, fenced, idempotent after restart and resumes
     reason: 'Autorização de revisão restrita à campanha de teste.',
   };
   try {
+    expect(admin.scriptRevisions(e.execution_id)).toEqual([revised]);
+    for (const scriptId of ['audio inlegivel', 'x', 'script/invalid']) {
+      expect(() =>
+        admin.reviseScript(
+          e.execution_id,
+          { ...input, scriptId },
+          'operator_001',
+        ),
+      ).toThrow('INVALID_SCRIPT_REVISION_IDENTIFIER');
+    }
     for (const patch of [
       { previousScriptContentHash: 'c'.repeat(64) },
       { scriptId: 'missing' },
@@ -244,6 +274,7 @@ test('official revision is audited, fenced, idempotent after restart and resumes
         .filter((h) => h.event_type === 'SCRIPT_REVISED'),
     ).toHaveLength(0);
     admin.reviseScript(e.execution_id, input, 'operator_001');
+    expect(admin.scriptRevisions(e.execution_id)).toEqual([]);
     expect(admin.finalizationContext(e.execution_id).completed).toEqual({
       EDITORIAL: { script: revised },
       MEDIA_QC: { result: 'PASS' },
