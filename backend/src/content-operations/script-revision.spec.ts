@@ -224,6 +224,15 @@ test('official revision is audited, fenced, idempotent after restart and resumes
     reason: 'Autorização de revisão restrita à campanha de teste.',
   };
   try {
+    for (const scriptId of ['audio inlegivel', 'x', 'script/invalid']) {
+      expect(() =>
+        admin.reviseScript(
+          e.execution_id,
+          { ...input, scriptId },
+          'operator_001',
+        ),
+      ).toThrow('INVALID_SCRIPT_REVISION_IDENTIFIER');
+    }
     for (const patch of [
       { previousScriptContentHash: 'c'.repeat(64) },
       { scriptId: 'missing' },
