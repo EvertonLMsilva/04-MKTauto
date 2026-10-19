@@ -66,6 +66,14 @@ export async function createVideoComposer(
     return new FfmpegVideoComposer(config, {
       processRunner,
       artifactCatalog: {
+        getScript(id) {
+          const repository = store.openComposition(true);
+          try {
+            return repository.getScript(id);
+          } finally {
+            repository.close();
+          }
+        },
         getVoiceTrack(id) {
           const repository = store.openComposition(true);
           try {

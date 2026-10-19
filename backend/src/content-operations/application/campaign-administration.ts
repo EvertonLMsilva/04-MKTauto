@@ -6,7 +6,7 @@ import { CampaignRepository } from '../infrastructure/campaign.repository.js';
 import {
   CampaignOrchestrator,
   executionRequest,
-  recoveredContext,
+  completedContext,
 } from './campaign-orchestrator.js';
 import {
   NativeCampaignWorkflow,
@@ -115,10 +115,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         ),
       )
       .at(-1);
-    const done: Record<string, unknown> = {};
-    for (const event of history)
-      if (event.event_type === 'STEP_DONE')
-        done[String(event.evidence.step)] = event.evidence.result;
+    const done = completedContext(history);
     const code =
       execution.status === 'WAITING_INPUT' ||
       execution.status === 'FAILED' ||
@@ -225,10 +222,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       request.publication
     )
       throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
-    const completed: Record<string, unknown> = recoveredContext(history);
-    for (const event of history)
-      if (event.event_type === 'STEP_DONE')
-        completed[String(event.evidence.step)] = event.evidence.result;
+    const completed = completedContext(history);
     return { execution, history, request, completed };
   }
   publicationContext(id: string) {
@@ -292,11 +286,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       if (
         Object.keys(patch).some(
           (k) =>
-            !stages[k] ||
-            history.some(
-              (h) =>
-                h.event_type === 'STEP_DONE' && h.evidence.step === stages[k],
-            ),
+            !stages[k] || Object.hasOwn(completedContext(history), stages[k]),
         )
       )
         throw new CampaignError('COMPLETED_INPUT_CONFLICT');
@@ -314,6 +304,71 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     }
     return this.runner!.resume(id);
   }
+  reviseScript(id: string, value: unknown, actorId: string) {
+    const input = document(value),
+      store = this.open(),
+      execution = store.get(id),
+      history = store.history(id);
+    if (
+      Object.keys(input).sort().join(',') !==
+        'previousScriptContentHash,reason,scriptId' ||
+      typeof input.scriptId !== 'string' ||
+      typeof input.previousScriptContentHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.previousScriptContentHash) ||
+      typeof input.reason !== 'string' ||
+      input.reason.trim().length < 15 ||
+      input.reason.length > 1000 ||
+      !/^[a-z][a-z0-9_:-]{2,99}$/.test(actorId)
+    )
+      throw new CampaignError('INVALID_SCRIPT_REVISION');
+    const lastRevision = history
+      .filter((event) => event.event_type === 'SCRIPT_REVISED')
+      .at(-1);
+    if (
+      lastRevision &&
+      document(lastRevision.evidence.script).scriptId === input.scriptId &&
+      lastRevision.evidence.previousScriptContentHash ===
+        input.previousScriptContentHash &&
+      lastRevision.evidence.actorId === actorId &&
+      lastRevision.evidence.reason === input.reason.trim()
+    )
+      return this.get(id);
+    const { completed, request } = this.finalizationContext(id);
+    if (
+      execution.status !== 'WAITING_INPUT' ||
+      !completed.MEDIA_QC ||
+      request.publication ||
+      completed.HANDOFF ||
+      history.some(
+        (event) =>
+          event.evidence.step === 'PUBLICATION' &&
+          event.event_type === 'STEP_STARTED',
+      )
+    )
+      throw new CampaignError('SCRIPT_REVISION_STATE_CONFLICT');
+    const previous = document(document(completed.EDITORIAL).script);
+    if (previous.contentHash !== input.previousScriptContentHash)
+      throw new CampaignError('SCRIPT_REVISION_STALE');
+    const script = this.workflow.revisedScript(
+      execution,
+      previous,
+      input.scriptId,
+    );
+    store.administrativeEvent(
+      id,
+      execution.version,
+      new Date().toISOString(),
+      'SCRIPT_REVISED',
+      {
+        actorId,
+        reason: input.reason.trim(),
+        previousScriptId: previous.scriptId,
+        previousScriptContentHash: previous.contentHash,
+        script,
+      },
+    );
+    return this.get(id);
+  }
   async tick() {
     this.open();
     await this.runner!.tick();
@@ -322,10 +377,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     const r = this.open(),
       e = r.get(id),
       events = r.history(id);
-    const done: Record<string, unknown> = {};
-    for (const event of events)
-      if (event.event_type === 'STEP_DONE')
-        done[String(event.evidence.step)] = event.evidence.result;
+    const done = completedContext(events);
     const evidence = await this.workflow.approvalEvidence(e, done);
     // Reuse the existing deterministic approval rules with local QC's verified identity.
     const service = new HumanApprovalService({
@@ -333,11 +385,18 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         getVideoRender: () => evidence.render,
         getQualityControlReport: () => evidence.qc,
         getHumanApprovalDecision: (decisionId: string) =>
-          events.find(
-            (h) =>
-              h.event_type === 'HUMAN_APPROVAL' &&
-              h.evidence.humanApprovalDecisionId === decisionId,
-          )?.evidence ?? null,
+          events
+            .filter(
+              (event) =>
+                event.sequence >
+                (events.filter((h) => h.event_type === 'SCRIPT_REVISED').at(-1)
+                  ?.sequence ?? 0),
+            )
+            .find(
+              (h) =>
+                h.event_type === 'HUMAN_APPROVAL' &&
+                h.evidence.humanApprovalDecisionId === decisionId,
+            )?.evidence ?? null,
         registerHumanApprovalDecision: (decision: Record<string, unknown>) =>
           decision,
         findApprovedHumanApprovalDecision: () => null,

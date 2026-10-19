@@ -121,13 +121,7 @@ export class CampaignOrchestrator {
     try {
       const history = this.repository.history(id),
         request = executionRequest(history);
-      const completed: Record<string, unknown> = recoveredContext(history);
-      for (const event of history)
-        if (event.event_type === 'STEP_DONE')
-          completed[String(event.evidence.step)] = event.evidence.result;
-      for (const event of history)
-        if (event.event_type === 'HUMAN_APPROVAL')
-          completed.APPROVAL = event.evidence;
+      const completed = completedContext(history);
       for (const step of this.workflow.steps) {
         if (renewalFailure) throw renewalFailure;
         if (
@@ -143,6 +137,10 @@ export class CampaignOrchestrator {
           .filter(
             (h) =>
               h.event_type === 'STEP_FAILED' &&
+              h.sequence >
+                (history
+                  .filter((event) => event.event_type === 'SCRIPT_REVISED')
+                  .at(-1)?.sequence ?? 0) &&
               h.evidence.step === step &&
               h.evidence.retrySafe === true,
           ).length;
@@ -246,7 +244,49 @@ export function executionRequest(
   for (const event of history)
     if (event.event_type === 'INPUT_SUPPLIED')
       Object.assign(request, event.evidence);
+    else if (event.event_type === 'SCRIPT_REVISED') {
+      request.scriptId = (
+        event.evidence.script as { scriptId: string }
+      ).scriptId;
+      for (const key of [
+        'voiceTrackId',
+        'audio',
+        'alignment',
+        'composition',
+        'publication',
+      ])
+        delete request[key];
+    }
   return request;
+}
+
+const narrationDependents = [
+  'AUDIO',
+  'ALIGNMENT',
+  'SUBTITLES',
+  'COMPOSITION',
+  'BURN',
+  'QC',
+  'PREVIEW',
+  'APPROVAL',
+  'HANDOFF',
+  'PUBLICATION',
+];
+export function completedContext(
+  history: CampaignEvent[],
+): Record<string, unknown> {
+  const completed = recoveredContext(history);
+  for (const event of history) {
+    if (event.event_type === 'STEP_DONE')
+      completed[String(event.evidence.step)] = event.evidence.result;
+    else if (event.event_type === 'HUMAN_APPROVAL')
+      completed.APPROVAL = event.evidence;
+    else if (event.event_type === 'SCRIPT_REVISED') {
+      for (const step of narrationDependents) delete completed[step];
+      completed.EDITORIAL = { script: event.evidence.script };
+    }
+  }
+  return completed;
 }
 
 /** Read-only context from a recovery event, never a completed editorial stage. */

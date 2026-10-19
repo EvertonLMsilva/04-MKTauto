@@ -71,7 +71,8 @@ export class OperationsService {
             !superseded.has(asset.mediaAssetId) &&
             (!script ||
               (asset.scriptId === script.scriptId &&
-                asset.scriptContentHash === script.contentHash)),
+                asset.scriptContentHash === script.contentHash) ||
+              this.reviewedVisual(context.completed, asset)),
         )
         .map((asset) => ({
           mediaAssetId: asset.mediaAssetId,
@@ -93,11 +94,35 @@ export class OperationsService {
       !asset ||
       !script ||
       asset.pipelineRunId !== context.execution.run_id ||
-      asset.scriptId !== script.scriptId ||
-      asset.scriptContentHash !== script.contentHash
+      !(
+        (asset.scriptId === script.scriptId &&
+          asset.scriptContentHash === script.contentHash) ||
+        this.reviewedVisual(context.completed, asset)
+      )
     )
       fail('CAMPAIGN_SCENE_MEDIA_MISMATCH');
     return context;
+  }
+  private reviewedVisual(
+    completed: Record<string, unknown>,
+    asset: { mediaAssetId: string; contentHash: string },
+  ) {
+    const reports = (
+      completed.MEDIA_QC as
+        | {
+            reports?: {
+              identity: { mediaAssetId: string; contentHash: string };
+            }[];
+          }
+        | undefined
+    )?.reports;
+    return (
+      reports?.some(
+        (report) =>
+          report.identity.mediaAssetId === asset.mediaAssetId &&
+          report.identity.contentHash === asset.contentHash,
+      ) === true
+    );
   }
   reviewContext(id: string, mediaId: string, referenceId?: string) {
     this.asset(id, mediaId);
@@ -161,6 +186,10 @@ export class OperationsService {
       fail('AUDIO_INPUT_CONFLICT');
     await this.campaigns.resume(id, { audioMode: input.mode });
     return this.campaigns.get(id);
+  }
+  reviseScript(id: string, value: unknown, principal: unknown) {
+    const reviewer = operationalQcIdentity.assertActive(principal);
+    return this.campaigns.reviseScript(id, value, reviewer.id);
   }
   async finalDecision(id: string, value: unknown, principal: unknown) {
     const reviewer = operationalQcIdentity.assertActive(principal),
