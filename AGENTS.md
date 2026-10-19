@@ -57,3 +57,18 @@ exceção à exigência de PR.
 
 Um tópico só termina com aceite demonstrado, testes pertinentes passando, diff
 restrito, documentação coerente, riscos residuais registrados e PR aberto.
+
+## Entrega funcional e continuidade
+
+Estas regras complementam todas as regras anteriores e orientam a entrega em andamento:
+
+1. **Entrega primeiro:** priorizar funcionalidades completas e utilizáveis, com integração entre os componentes necessários.
+2. **MVP end-to-end:** declarar DONE somente com o fluxo integrado funcionando e evidências verificáveis. Distinguir validação offline de execução real e identificar os artefatos produzidos.
+3. **Sem fragmentação:** corrigir defeitos internos comprovados encontrados durante a entrega no mesmo escopo e PR, sem criar microtarefas ou PRs separados para cada erro.
+4. **Economia de tokens:** reutilizar decisões e diagnósticos; evitar investigações repetidas, prompts excessivos e testes redundantes, sem omitir validações necessárias.
+5. **Autonomia técnica:** resolver decisões de implementação pela arquitetura existente; não transferir ao usuário identificadores internos, decisões técnicas seguras ou procedimentos manuais que pertençam ao produto.
+6. **Qualidade:** preservar TDD proporcional ao risco, contratos, regressões relevantes, dados operacionais, auditoria, retomada e idempotência.
+7. **Segurança financeira:** nenhuma chamada paga ou publicação real sem autorização explícita e, para gastos, orçamento. Preservar Finance, QC, direitos comerciais e todos os gates existentes.
+8. **Transparência:** não declarar DONE sem comprovar funcionamento; informar apenas bloqueios reais e comprovados, com evidência mínima, sem fabricar resultados ou aprovações.
+9. **Continuidade:** concluir a entrega em andamento antes de propor melhorias ou demandas futuras. Falhas internas necessárias ao aceite pertencem à entrega atual.
+10. **Fluxo de trabalho:** ChatGPT atua como Planner/Revisor e Codex como Executor. Usar um PR por entrega funcional, incluindo correções e regras pertinentes, sem merge automático.

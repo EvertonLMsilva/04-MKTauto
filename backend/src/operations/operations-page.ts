@@ -13,7 +13,7 @@ export const operationsPage = `<!doctype html>
 <div id="reference-choice" hidden><label>Imagem original de referência<select id="reference-select"></select></label><button id="load-reference" class="quiet">Usar esta referência</button></div>
 <div id="review-content" hidden><div class="media-grid"><div><video id="source-video" controls preload="metadata" aria-label="Vídeo para revisão"></video><p class="muted">Vídeo gerado / recuperado</p></div><div><img id="source-image" alt="Imagem original de referência autorizada"><p class="muted">Referência original</p></div></div><div id="technical" class="technical"></div><p id="decision-audit" class="audit"></p>
 <form id="review-form"><p>Registre sua observação para cada critério ao longo do vídeo. Uma falha técnica não pode ser substituída por aprovação.</p><label>Movimento real<textarea name="motion" minlength="10" maxlength="1000" required placeholder="Descreva o movimento observado."></textarea></label><label>Continuidade<textarea name="continuity" minlength="10" maxlength="1000" required placeholder="Descreva a continuidade do vídeo completo."></textarea></label><label>Fidelidade à referência<textarea name="fidelity" minlength="10" maxlength="1000" required placeholder="Compare o produto e seus detalhes com a referência."></textarea></label><label class="check"><input type="checkbox" name="watched" required>Assisti ao vídeo completo e comparei com a imagem de referência.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar mídia</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar mídia</button></div></form></div></section>
-<section id="script-revision-panel" class="card" hidden><h2>Revisar roteiro</h2><p>Selecione uma revisão cadastrada para esta campanha e confira o texto antes de continuar. Somente uma revisão de narração com os mesmos visuais pode reutilizar o QC visual. Áudio, legendas, composição e aprovação final anteriores deixam de valer para esta versão.</p><form id="script-revision-form"><label>Roteiro / revisão disponível<select id="script-revision-select" name="scriptId" required aria-describedby="script-revision-help"></select></label><p id="script-revision-help"></p><pre id="script-revision-text"></pre><label>Justificativa<textarea name="reason" required minlength="15" maxlength="1000"></textarea></label><button>Vincular revisão e continuar</button></form></section><section id="audio-panel" class="card" hidden><h2>02 / Narração autorizada</h2><label>Fonte da voz<select id="audio-mode"><option value="AUTOMATIC">Voz automática local</option><option value="RECORDING">Gravação própria ou licenciada</option></select></label><p id="audio-mode-description">A voz automática exige modelo local, licença comercial comprovada e alinhador configurados. Nenhum serviço pago será acionado. A fala não será acelerada ou cortada.</p><details><summary>Ver roteiro da narração</summary><pre id="narration"></pre></details><form id="audio-form" hidden><p>WAV PCM, 24 kHz, mono, 16 bits; até 20 MB.</p><label>Arquivo WAV<input type="file" name="audio" accept=".wav,audio/wav" required></label><label>Direito de uso<select name="usageBasis"><option value="OWNED">Gravação própria</option><option value="LICENSED">Gravação licenciada</option></select></label><label>Evidência de autorização<textarea name="statement" required minlength="15" maxlength="2000" placeholder="Informe a origem e a autorização de uso desta gravação."></textarea></label><label class="check"><input type="checkbox" name="commercialUseAllowed" required>Confirmo autorização para processamento local e uso comercial nesta campanha.</label><button type="submit">Enviar gravação e continuar</button></form></section>
+<section id="script-revision-panel" class="card" hidden><h2>Revisar roteiro</h2><p>Selecione uma revisão cadastrada para esta campanha e confira o texto antes de continuar. Somente uma revisão de narração com os mesmos visuais pode reutilizar o QC visual. Áudio, legendas, composição e aprovação final anteriores deixam de valer para esta versão.</p><form id="script-revision-form"><label>Roteiro / revisão disponível<select id="script-revision-select" name="scriptId" required aria-describedby="script-revision-help"></select></label><p id="script-revision-help"></p><pre id="script-revision-text"></pre><label>Justificativa<textarea name="reason" required minlength="15" maxlength="1000"></textarea></label><button>Vincular revisão e continuar</button></form></section><section id="tts-panel" class="card" hidden><h2>Narração comercial OpenAI</h2><p id="tts-status"></p><button id="tts-prepare">Preparar narração</button><div id="tts-preview" hidden><p id="tts-model"></p><pre id="tts-text"></pre><p id="tts-price"></p><label class="check"><input id="tts-accept-risk" type="checkbox">Autorizo uma única narração e aceito que a cobrança do provedor possa superar a reserva interna de US$ 0,01. A estimativa não é um teto garantido. Autorização válida por 15 minutos.</label><button id="tts-generate" disabled>Autorizar e gerar narração</button></div></section><section id="audio-panel" class="card" hidden><h2>02 / Narração autorizada</h2><label>Fonte da voz<select id="audio-mode"><option value="AUTOMATIC">Voz automática local</option><option value="RECORDING">Gravação própria ou licenciada</option></select></label><p id="audio-mode-description">A voz automática exige modelo local, licença comercial comprovada e alinhador configurados. Nenhum serviço pago será acionado. A fala não será acelerada ou cortada.</p><details><summary>Ver roteiro da narração</summary><pre id="narration"></pre></details><form id="audio-form" hidden><p>WAV PCM, 24 kHz, mono, 16 bits; até 20 MB.</p><label>Arquivo WAV<input type="file" name="audio" accept=".wav,audio/wav" required></label><label>Direito de uso<select name="usageBasis"><option value="OWNED">Gravação própria</option><option value="LICENSED">Gravação licenciada</option></select></label><label>Evidência de autorização<textarea name="statement" required minlength="15" maxlength="2000" placeholder="Informe a origem e a autorização de uso desta gravação."></textarea></label><label class="check"><input type="checkbox" name="commercialUseAllowed" required>Confirmo autorização para processamento local e uso comercial nesta campanha.</label><button type="submit">Enviar gravação e continuar</button></form></section>
 <section id="final-panel" class="card" hidden><div class="title-row"><h2>03 / Seu vídeo final</h2><a id="download" class="button" download="video-final.mp4">Baixar MP4</a></div><video id="final-video" controls preload="metadata" aria-label="Vídeo final com narração e legendas"></video><p class="muted">MP4 com QC técnico validado. Custo computacional local não medido; nenhum custo pago é presumido como zero.</p><form id="final-form" hidden><h3>Aprovação da versão final</h3><p>Esta decisão é independente da revisão da mídia e libera somente a entrega manual.</p><label>Observação / motivo da rejeição<textarea name="justification" maxlength="2000"></textarea></label><label class="check"><input type="checkbox" required>Revisei esta versão final exata, incluindo narração e legendas.</label><div class="actions"><button name="decision" value="APPROVED" type="submit">Aprovar versão final</button><button name="decision" value="REJECTED" type="submit" class="danger">Rejeitar versão final</button></div></form></section><section id="instagram-panel" class="card" hidden><h2>05 / Instagram</h2><p id="instagram-mode"></p><p id="instagram-state" role="status"></p><a id="instagram-url" target="_blank" rel="noopener noreferrer" hidden>Ver publicação</a>
 <form id="instagram-package-form"><label>Texto da postagem<textarea name="caption" required maxlength="5000"></textarea></label><button>Preparar pacote para revisão</button></form>
 <pre id="instagram-package-preview"></pre>
@@ -400,6 +400,27 @@ export const operationsScript = String.raw`
     generation = 0;
   const advancing = new Set();
   let instagramPackageHash = "";
+  let lastTts = null;
+  function renderTts(data) {
+    if (!lastTts || lastTts.requestHash !== data?.requestHash) $("tts-accept-risk").checked = false;
+    lastTts = data;
+    $("tts-panel").hidden = !data;
+    const prepared = !!data?.requestHash;
+    $("tts-preview").hidden = !prepared;
+    $("tts-prepare").disabled = prepared && data.state !== "NOT_SUBMITTED";
+    if (!prepared) { $("tts-status").textContent = data ? "Prepare a narração para conferir texto, modelo e custo antes de autorizar." : ""; return; }
+    $("tts-model").textContent = data.model + " · voz " + data.voice + " · português";
+    $("tts-text").textContent = data.text;
+    $("tts-price").textContent = "Estimativa histórica: US$ " + data.estimatedUsd + ". Reserva interna: US$ " + data.reservationUsd + ". O custo efetivo depende da evidência de cobrança.";
+    const uncertain = ["SUBMITTING", "UNKNOWN"].includes(data.state) && !data.audioConfirmed;
+    $("tts-status").textContent = data.audioConfirmed
+      ? "Áudio confirmado. A finalização pode continuar sem novo envio pago. O custo efetivo pode continuar pendente de evidência."
+      : uncertain ? "Envio em processamento ou incerto. Novo envio bloqueado; aguarde confirmação ou reconciliação."
+      : data.liveEnabled ? "Confira o texto e autorize somente esta narração." : "Geração paga desativada neste ambiente. Nenhuma chamada será realizada.";
+    $("tts-generate").textContent = data.audioConfirmed ? "Retomar finalização" : "Autorizar e gerar narração";
+    $("tts-generate").disabled = !data.audioConfirmed && (uncertain || !data.liveEnabled || !$("tts-accept-risk").checked);
+  }
+
   const statusNames = {
     SCHEDULED: "Na fila",
     RUNNING: "Em processamento",
@@ -470,6 +491,13 @@ export const operationsScript = String.raw`
       "Já existe uma decisão diferente para esta versão. Atualize a revisão.",
     LOCAL_RIGHTS_EVIDENCE_REQUIRED:
       "Informe a origem e confirme os direitos da gravação.",
+    TTS_EXPLICIT_RISK_ACCEPTANCE_REQUIRED: "Confira o texto e aceite explicitamente o risco financeiro desta narração.",
+    TTS_PREPARATION_STALE: "O roteiro ou a preparação mudou. Prepare novamente e confira o texto antes de autorizar.",
+    TTS_LIVE_CONFIGURATION_REQUIRED: "A geração paga permanece desativada ou não foi configurada pelo responsável pelo ambiente.",
+    TTS_RECONCILIATION_REQUIRED: "O envio anterior está incerto. Nenhum novo envio será realizado; é necessário reconciliar as evidências.",
+    TTS_CONFIRMED_AUDIO_REQUIRED: "Ainda não há um resultado de áudio confirmado para finalizar este vídeo.",
+    NARRATION_DURATION_REQUIRED: "A fala não cabe no vídeo. Revise o roteiro e preserve o CTA; o áudio não será cortado nem acelerado.",
+    ALIGNMENT_TEXT_DIVERGENT: "O alinhador não confirmou a correspondência entre a fala e o roteiro. As legendas permanecem bloqueadas.",
     PROVIDER_UNSUPPORTED_AUDIO: "Use WAV PCM, 24 kHz, mono, 16 bits.",
     PROVIDER_INVALID_AUDIO: "O WAV não contém áudio válido no formato exigido.",
     LOCAL_MEDIA_CONFIGURATION_REQUIRED:
@@ -676,6 +704,7 @@ export const operationsScript = String.raw`
     $("script-revision-help").textContent = revisions.length
       ? "Selecione a revisão que deseja vincular. O identificador será enviado automaticamente."
       : "Nenhuma revisão elegível. Cadastre a próxima versão pelo fluxo oficial POST /content/scripts, sucedendo o roteiro atual na mesma operação e preservando os visuais e o CTA. Depois, atualize esta execução.";
+    renderTts(data.tts);
     $("audio-mode").value = data.audioMode || "AUTOMATIC";
     $("audio-form").hidden = $("audio-mode").value!=="RECORDING";
     $("narration").textContent =
@@ -924,6 +953,28 @@ export const operationsScript = String.raw`
     try{await post(base()+"/script-revision",{scriptId:form.get("scriptId"),previousScriptContentHash:event.target.dataset.previousHash,reason:form.get("reason")});event.target.reset();await post(base()+"/retry",{});await advance(selected);}
     catch(error){fail(error);}
     finally{button.disabled=false;}
+  });
+  $("tts-accept-risk").addEventListener("change", () => renderTts(lastTts));
+  $("tts-prepare").addEventListener("click", async () => {
+    const id = selected; $("tts-prepare").disabled = true;
+    try { const data = await post(base() + "/tts/prepare", {}); if (selected === id) renderTts(data); }
+    catch (error) { fail(error); }
+    finally { if (selected === id) $("tts-prepare").disabled = false; }
+  });
+  $("tts-generate").addEventListener("click", async () => {
+    const id = selected, prepared = lastTts;
+    if (!prepared?.requestHash || $("tts-generate").disabled) return;
+    $("tts-generate").disabled = true;
+    try {
+      const path = "/operations/executions/" + encodeURIComponent(id);
+      if (!prepared.audioConfirmed) {
+        if (!$("tts-accept-risk").checked) return;
+        await post(path + "/tts/authorize", {requestHash:prepared.requestHash,acceptsUnboundedCost:true,expiresAt:new Date(Date.now()+900000).toISOString()});
+      }
+      const data = await post(path + "/tts/execute", {requestHash:prepared.requestHash});
+      if (selected === id) render(data);
+    } catch (error) { fail(error); }
+    finally { if (selected === id) renderTts(lastTts); }
   });
   $("audio-mode").addEventListener("change",async(event)=>{
     event.target.disabled=true;

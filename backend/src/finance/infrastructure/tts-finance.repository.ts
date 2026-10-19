@@ -98,6 +98,8 @@ export class TtsFinanceRepository {
       source?.state !== 'COMPLETED' ||
       source.requestHash !== request.source.requestHash ||
       source.request.pipelineRunId !== request.operation.pipelineRunId ||
+      (source.result?.contentHash &&
+        source.result.contentHash !== request.source.sourceContentHash) ||
       (request.source.sourceReference &&
         source.result?.videoReference !== request.source.sourceReference) ||
       (request.source.providerRequestId &&

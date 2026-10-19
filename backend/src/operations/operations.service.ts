@@ -6,6 +6,8 @@ import { Inject, Injectable, Optional } from '@nestjs/common';
 import { CampaignAdministration } from '../content-operations/application/campaign-administration.js';
 import { MediaService } from '../media/application/media.service.js';
 import { LocalFlowService } from '../media/application/local-flow.service.js';
+import { NarrationService } from '../media/application/narration.service.js';
+import type { NarrationScope } from '../media/application/narration-plan.port.js';
 import {
   serverApprovalRequest,
   operationalQcIdentity,
@@ -31,7 +33,139 @@ export class OperationsService {
     @Optional()
     @Inject(InstagramConnectionService)
     private readonly connection?: InstagramConnectionService,
+    @Optional()
+    @Inject(NarrationService)
+    private readonly narration?: NarrationService,
   ) {}
+  private ttsScope(id: string): NarrationScope {
+    const c = this.campaigns.finalizationContext(id),
+      script = document(document(c.completed.EDITORIAL).script);
+    const reports = (c.completed.MEDIA_QC as any)?.reports;
+    if (
+      !Array.isArray(reports) ||
+      reports.length !== 1 ||
+      reports[0].result !== 'PASS' ||
+      reports[0].evidence?.provenance?.parameters?.humanReview?.decision !==
+        'APPROVED'
+    )
+      fail('AUTHENTICATED_MEDIA_REVIEW_REQUIRED');
+    const asset = this.media.get(reports[0].identity.mediaAssetId);
+    if (
+      !asset ||
+      asset.contentHash !== reports[0].identity.contentHash ||
+      asset.pipelineRunId !== c.execution.run_id
+    )
+      fail('TTS_SCOPE_INVALID');
+    return {
+      pipelineRunId: c.execution.run_id,
+      campaignId: c.execution.campaign_id,
+      scriptId: String(script.scriptId),
+      scriptContentHash: String(script.contentHash),
+      mediaAssetId: asset!.mediaAssetId,
+      mediaContentHash: asset!.contentHash,
+      targetDurationMs: Number(asset!.technicalProperties.durationMilliseconds),
+    };
+  }
+  ttsPreparation(id: string, provision = false) {
+    if (!this.narration) fail('TTS_PREPARATION_UNAVAILABLE');
+    const p = this.narration!.preparation(this.ttsScope(id), provision);
+    return {
+      requestHash: p.requestHash,
+      model: p.request.model,
+      voice: p.request.voice,
+      text: p.request.operation.narration,
+      estimatedUsd: p.request.estimatedUsd,
+      reservationUsd: p.request.reservationUsd,
+      guaranteedMaximum: false,
+      authorization: p.authorization,
+      liveEnabled: p.liveEnabled,
+      state: p.operation?.state ?? 'NOT_SUBMITTED',
+      audioConfirmed:
+        !!p.operation?.audio &&
+        !!p.operation?.providerRequestId &&
+        (p.operation.state === 'COMPLETED' ||
+          p.operation.state === 'SUBMITTING' ||
+          (p.operation.state === 'UNKNOWN' &&
+            p.operation.errorCode === 'TTS_BILLING_EVIDENCE_REQUIRED')),
+      errorCode: p.operation?.errorCode ?? null,
+    };
+  }
+  authorizeTts(id: string, value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal),
+      input = document(value);
+    if (
+      Object.keys(input).sort().join(',') !==
+        'acceptsUnboundedCost,expiresAt,requestHash' ||
+      input.acceptsUnboundedCost !== true ||
+      typeof input.requestHash !== 'string' ||
+      typeof input.expiresAt !== 'string'
+    )
+      fail('TTS_EXPLICIT_RISK_ACCEPTANCE_REQUIRED');
+    if (!this.narration) fail('TTS_PREPARATION_UNAVAILABLE');
+    this.narration!.authorize(
+      this.ttsScope(id),
+      input.requestHash as string,
+      actor.id,
+      input.expiresAt as string,
+    );
+    return this.ttsPreparation(id);
+  }
+  private readonly ttsInFlight = new Map<string, Promise<boolean>>();
+  private async continueTts(id: string, hash?: string): Promise<boolean> {
+    const existing = this.ttsInFlight.get(id);
+    if (existing) return existing;
+    const pending = this.continueTtsOnce(id, hash);
+    this.ttsInFlight.set(id, pending);
+    try {
+      return await pending;
+    } finally {
+      this.ttsInFlight.delete(id);
+    }
+  }
+  private async continueTtsOnce(id: string, hash?: string) {
+    if (!this.narration) return false;
+    let c = this.campaigns.finalizationContext(id);
+    if (c.execution.status === 'SCHEDULED') {
+      await this.campaigns.advanceFinalization(id);
+      c = this.campaigns.finalizationContext(id);
+    }
+    if (c.completed.AUDIO) return true;
+    if (c.execution.status === 'RUNNING') return true;
+    const scope = this.ttsScope(id),
+      p = this.narration.preparation(scope);
+    if (!hash && !p.operation?.audio) return false;
+    const op = await this.narration.executeFor(scope, hash ?? p.requestHash);
+    if (!op?.audio || !op.providerRequestId)
+      fail('TTS_RECONCILIATION_REQUIRED');
+    const voice = await this.local.ingestTts(
+      {
+        pipelineRunId: scope.pipelineRunId,
+        scriptId: scope.scriptId,
+        scriptContentHash: scope.scriptContentHash,
+        createdAt: c.execution.scheduled_at,
+      },
+      op.request.operationId,
+      scope.targetDurationMs,
+    );
+    await this.campaigns.resume(id, {
+      voiceTrackId: voice.voiceTrackId,
+      audioMode: 'AUTOMATIC',
+    });
+    await this.campaigns.advanceFinalization(id);
+    return true;
+  }
+  async executeTts(id: string, value: unknown) {
+    const input = document(value);
+    if (
+      Object.keys(input).join(',') !== 'requestHash' ||
+      typeof input.requestHash !== 'string'
+    )
+      fail('TTS_PREPARATION_STALE');
+    if (this.ttsPreparation(id).requestHash !== input.requestHash)
+      fail('TTS_PREPARATION_STALE');
+    await this.continueTts(id, input.requestHash as string);
+    return this.detail(id);
+  }
   instagramConnection() {
     if (!this.connection) fail('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
     return this.connection!.status();
@@ -82,6 +216,18 @@ export class OperationsService {
         })),
       scheduler: 'OFFLINE_FINALIZATION',
       audioMode: context.request?.audioMode ?? 'AUTOMATIC',
+      tts:
+        context.completed.MEDIA_QC && this.narration
+          ? (() => {
+              try {
+                return this.ttsPreparation(id);
+              } catch (error) {
+                return {
+                  code: (error as any).code ?? 'TTS_PREPARATION_UNAVAILABLE',
+                };
+              }
+            })()
+          : null,
       cost: { status: 'UNKNOWN', amount: null },
     };
   }
@@ -222,6 +368,19 @@ export class OperationsService {
     return decision;
   }
   async advance(id: string) {
+    const c = this.campaigns.finalizationContext(id);
+    if (!c.completed.AUDIO && c.completed.MEDIA_QC && this.narration) {
+      try {
+        if (await this.continueTts(id)) return this.campaigns.get(id);
+      } catch (error) {
+        if (
+          !['TTS_AUDIO_CONFIGURATION_REQUIRED', 'TTS_SOURCE_REQUIRED'].includes(
+            (error as any).code,
+          )
+        )
+          throw error;
+      }
+    }
     await this.campaigns.advanceFinalization(id);
     return this.campaigns.get(id);
   }

@@ -6,6 +6,19 @@ import { validateMediaProviderOutput } from '../../media/domain/media-acquisitio
 import { validateCostEvent } from '../domain/cost-event-contracts.js';
 import { falFailure } from '../domain/fal-errors.js';
 export { falFailure } from '../domain/fal-errors.js';
+// Keep the original byte-level JSON receipt shared by every reader of fal output.
+export function verifiedFalOutput(row: {
+  output_json: string | null;
+  output_hash: string | null;
+}) {
+  const output =
+    row.output_json === null
+      ? null
+      : validateMediaProviderOutput(JSON.parse(row.output_json));
+  if (output && digest(row.output_json) !== row.output_hash)
+    throw falFailure('PROVIDER_PERSISTED_JOB_INVALID');
+  return output;
+}
 // Exact monetary arithmetic, with the same maximum precision as CostLedger.
 export function money(value: any) {
   if (typeof value !== 'string' || !/^\d{1,40}(?:\.\d{1,18})?$/.test(value))
@@ -41,12 +54,7 @@ export class FalGenerationRepository {
     if (!row) return null;
     if (affiliateHash(JSON.parse(row.basis_json)) !== key)
       throw falFailure('PROVIDER_PERSISTED_JOB_INVALID');
-    const output =
-      row.output_json === null
-        ? null
-        : validateMediaProviderOutput(JSON.parse(row.output_json));
-    if (output && digest(row.output_json) !== row.output_hash)
-      throw falFailure('PROVIDER_PERSISTED_JOB_INVALID');
+    const output = verifiedFalOutput(row);
     const events = this.observedEvents(key, row.pipeline_run_id);
     return {
       key,

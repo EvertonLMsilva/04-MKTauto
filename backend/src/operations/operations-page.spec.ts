@@ -42,11 +42,42 @@ function browserReviewHarness() {
   new Script(
     operationsScript.replace(
       /\}\)\(\);\s*$/,
-      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection };})();',
+      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection, renderTts };})();',
     ),
   ).runInContext(context);
   return { api: sandbox.reviewTest, node };
 }
+test('TTS risk consent uses the prepared narration and cannot resend an uncertain operation', () => {
+  expect(operationsPage).toContain('id="tts-accept-risk"');
+  const { api, node } = browserReviewHarness();
+  const prepared = {
+    requestHash: 'a'.repeat(64),
+    model: 'gpt-4o-mini-tts',
+    voice: 'marin',
+    text: 'Confira pelo link.',
+    estimatedUsd: '0.00306',
+    reservationUsd: '0.01',
+    state: 'NOT_SUBMITTED',
+    liveEnabled: true,
+    audioConfirmed: false,
+  };
+  api.renderTts(prepared);
+  expect(node('tts-text').textContent).toContain(prepared.text);
+  expect(node('tts-generate').disabled).toBe(true);
+  node('tts-accept-risk').checked = true;
+  api.renderTts(prepared);
+  expect(node('tts-generate').disabled).toBe(false);
+  api.renderTts({ ...prepared, state: 'UNKNOWN' });
+  expect(node('tts-generate').disabled).toBe(true);
+  api.renderTts({
+    ...prepared,
+    state: 'UNKNOWN',
+    audioConfirmed: true,
+    liveEnabled: false,
+  });
+  expect(node('tts-generate').textContent).toContain('Retomar');
+  expect(node('tts-generate').disabled).toBe(false);
+});
 
 test('connection readiness is visible without selecting a completed campaign and keeps LIVE blocked', () => {
   expect(operationsPage).toContain('id="instagram-connection-check"');

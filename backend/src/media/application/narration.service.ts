@@ -4,6 +4,10 @@ import {
   ttsFail,
 } from '../../finance/domain/tts-financial-contracts.js';
 import type { NarrationTransport } from './narration-transport.port.js';
+import type {
+  NarrationPlanStore,
+  NarrationScope,
+} from './narration-plan.port.js';
 import {
   prepareNarration,
   narrationEnvelope,
@@ -25,7 +29,63 @@ export class NarrationService {
   constructor(
     private readonly finance: NarrationFinance,
     private readonly transport?: NarrationTransport,
+    private readonly plans?: NarrationPlanStore,
   ) {}
+  preparation(scope: NarrationScope, provision = false) {
+    if (!this.plans) ttsFail('TTS_PREPARATION_UNAVAILABLE');
+    const plan = this.plans.prepare(scope, provision),
+      prepared = this.prepare(plan);
+    return {
+      plan,
+      ...prepared,
+      authorization: this.plans.authorization(prepared.request.operationId),
+      operation: this.get(prepared.request.operationId),
+      liveEnabled: this.transport?.ready() ?? false,
+    };
+  }
+  authorize(
+    scope: NarrationScope,
+    hash: string,
+    actor: string,
+    expiresAt: string,
+  ) {
+    const p = this.preparation(scope);
+    if (p.requestHash !== hash) ttsFail('TTS_PREPARATION_STALE');
+    return this.approve({
+      plan: p.plan,
+      approval: {
+        requestHash: hash,
+        approvedBy: actor,
+        approvedAt: new Date().toISOString(),
+        expiresAt,
+        approvalReference: `operations/${p.request.operationId}`,
+        acceptsUnboundedCost: true,
+        policyVersion: 'tts-risk-reservation/2.0.0',
+      },
+    });
+  }
+  async executeFor(scope: NarrationScope, hash: string) {
+    const p = this.preparation(scope);
+    if (p.requestHash !== hash) ttsFail('TTS_PREPARATION_STALE');
+    // Media confirmed before a crash is reusable even while its billing is unknown.
+    if (p.operation?.audio && p.operation.providerRequestId) {
+      if (p.operation.state === 'SUBMITTING')
+        return (
+          this.finance.markTtsUnknown?.(
+            p.request.operationId,
+            'TTS_BILLING_EVIDENCE_REQUIRED',
+          ) ?? p.operation
+        );
+      if (!(
+        p.operation.state === 'COMPLETED' ||
+        (p.operation.state === 'UNKNOWN' &&
+          p.operation.errorCode === 'TTS_BILLING_EVIDENCE_REQUIRED')
+      ))
+        ttsFail('TTS_RECONCILIATION_REQUIRED');
+      return p.operation;
+    }
+    return this.execute(p.plan);
+  }
 
   async execute(plan: unknown, now = new Date().toISOString()) {
     const { request } = this.prepare(plan);
