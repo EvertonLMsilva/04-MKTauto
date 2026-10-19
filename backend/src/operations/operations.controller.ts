@@ -125,6 +125,33 @@ export class OperationsController {
   audioMode(@Param('id') id: string, @Body() value: unknown) {
     return this.respond(() => this.operations.audioMode(id, value));
   }
+  @Post('executions/:id/tts/prepare')
+  @UseGuards(LocalQcGuard)
+  prepareTts(@Param('id') id: string, @Body() value: unknown) {
+    return this.respond(() => {
+      if (!value || typeof value !== 'object' || Object.keys(value).length)
+        throw Object.assign(new Error('TTS_PREPARATION_INVALID'), {
+          code: 'TTS_PREPARATION_INVALID',
+        });
+      return this.operations.ttsPreparation(id, true);
+    });
+  }
+  @Post('executions/:id/tts/authorize')
+  @UseGuards(LocalQcGuard)
+  authorizeTts(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.authorizeTts(id, value, request[QC_REVIEWER_CONTEXT]),
+    );
+  }
+  @Post('executions/:id/tts/execute')
+  @UseGuards(LocalQcGuard)
+  executeTts(@Param('id') id: string, @Body() value: unknown) {
+    return this.respond(() => this.operations.executeTts(id, value));
+  }
   @Post('executions/:id/script-revision')
   @UseGuards(LocalQcGuard)
   reviseScript(

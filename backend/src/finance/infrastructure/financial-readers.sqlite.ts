@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { verifiedFalOutput } from './fal-generation.repository.js';
 import {
   affiliateIdentifier,
   immutable,
@@ -146,6 +147,42 @@ export class SqliteTtsFinancialSourcesReader {
         'SELECT state,request_hash,request_json,result_json FROM video_generation_operations WHERE generation_request_id=?',
       )
       .get(id);
+    const fal = this.db
+      .prepare("SELECT 1 FROM sqlite_master WHERE name='fal_generations'")
+      .get()
+      ? this.db
+          .prepare('SELECT * FROM fal_generations WHERE generation_key=?')
+          .get(id)
+      : null;
+    if (row && fal) ttsFail('TTS_SOURCE_IDENTITY_CONFLICT');
+    if (fal) {
+      const basis = JSON.parse(fal.basis_json);
+      let output;
+      try {
+        output = verifiedFalOutput(fal);
+      } catch (error) {
+        if (error instanceof Error && 'code' in error)
+          ttsFail('TTS_SOURCE_INTEGRITY_INVALID');
+        throw error;
+      }
+      if (
+        adaptationHash(basis) !== id ||
+        basis.pipelineRunId !== fal.pipeline_run_id
+      )
+        ttsFail('TTS_SOURCE_INTEGRITY_INVALID');
+      return {
+        state: fal.state,
+        requestHash: id,
+        request: { pipelineRunId: fal.pipeline_run_id },
+        result: output
+          ? {
+              videoReference: output.mediaReference,
+              contentHash: output.contentHash,
+              providerRequestId: fal.request_id,
+            }
+          : null,
+      };
+    }
     return row
       ? {
           state: row.state,

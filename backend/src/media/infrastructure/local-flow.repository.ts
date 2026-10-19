@@ -6,6 +6,7 @@ import {
   documentBytes,
 } from './local-evidence-storage.js';
 import { adaptationHash } from '../domain/media-hash.js';
+import { ttsHash } from '../../finance/domain/tts-financial-contracts.js';
 import { localFail } from '../domain/alignment-contracts.js';
 import {
   validateVoiceTrack,
@@ -16,6 +17,22 @@ import {
   videoRenderIdentityHash,
 } from '../domain/video-render-contracts.js';
 export class LocalFlowRepository extends VideoRenderRepository {
+  paidTtsGrant(id: string) {
+    const row = this.db
+      .prepare(
+        'SELECT d.request_hash,d.approval_hash,a.approval_json FROM tts_risk_dispatches_v2 d JOIN tts_financial_approvals a ON a.operation_id=d.operation_id WHERE d.operation_id=?',
+      )
+      .get(id);
+    if (!row) localFail('TTS_DISPATCH_EVIDENCE_REQUIRED');
+    const approval = JSON.parse(row.approval_json);
+    if (
+      ttsHash(approval) !== row.approval_hash ||
+      approval.requestHash !== row.request_hash ||
+      approval.acceptsUnboundedCost !== true
+    )
+      localFail('TTS_DISPATCH_EVIDENCE_REQUIRED');
+    return { requestHash: row.request_hash, actorId: approval.approvedBy };
+  }
   localVoiceIds(runId: string, scriptId: string, scriptHash: string): string[] {
     return this.db
       .prepare(
@@ -23,7 +40,7 @@ export class LocalFlowRepository extends VideoRenderRepository {
        JOIN artifact_lineage a ON a.artifact_id=v.voice_track_id
        WHERE v.pipeline_run_id=? AND v.script_id=? AND v.script_content_hash=?
        AND ((v.origin IN ('AUTHORIZED_RECORDING','OPERATOR_RECORDING') AND v.provider IS NULL)
-         OR (v.origin='SYNTHETIC_TTS' AND v.provider IN ('local_piper','local_espeak_ng')))
+         OR (v.origin='SYNTHETIC_TTS' AND v.provider IN ('local_piper','local_espeak_ng','openai')))
        AND v.commercial_use_allowed=1
        AND a.artifact_type='voice_track' AND a.generation_metadata_json IS NOT NULL
        AND NOT EXISTS(SELECT 1 FROM voice_tracks n WHERE n.supersedes_voice_track_id=v.voice_track_id)

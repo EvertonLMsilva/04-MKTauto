@@ -25,6 +25,7 @@ import { FinanceService } from '../finance/application/finance.service.js';
 import { FalAcquisitionService } from './application/fal-acquisition.service.js';
 import { NarrationService } from './application/narration.service.js';
 import { OpenAiNarrationTransport } from './infrastructure/openai-narration.transport.js';
+import { NarrationPlanRepository } from './infrastructure/narration-plan.repository.js';
 import { NarrationController } from './narration.controller.js';
 import { LocalFlowController } from './local-flow.controller.js';
 import { LocalFlowService } from './application/local-flow.service.js';
@@ -141,6 +142,7 @@ import {
         content: ContentService,
         runner: ProcessRunner,
         path: string | null,
+        finance: FinanceService,
       ) =>
         new LocalFlowService(
           new LocalFlowRuntime(
@@ -155,6 +157,8 @@ import {
             process.env,
             undefined,
             runner,
+            undefined,
+            finance,
           ),
         ),
       inject: [
@@ -163,16 +167,18 @@ import {
         ContentService,
         FFMPEG_PROCESS_RUNNER,
         MEDIA_DATABASE,
+        FinanceService,
       ],
     },
     {
       provide: NarrationService,
-      useFactory: (finance: FinanceService) =>
+      useFactory: (finance: FinanceService, path: string | null) =>
         new NarrationService(
           finance,
           new OpenAiNarrationTransport(process.env),
+          new NarrationPlanRepository(path),
         ),
-      inject: [FinanceService],
+      inject: [FinanceService, MEDIA_DATABASE],
     },
     { provide: FFMPEG_PROCESS_RUNNER, useValue: runProcess },
     {

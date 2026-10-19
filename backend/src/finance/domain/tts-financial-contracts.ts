@@ -112,7 +112,11 @@ export function ttsRequest(plan: any): any {
     ttsHash(op) !== plan.operationHash ||
     !op.narration?.trim() ||
     op.narration.length > 4096 ||
-    op.maxDurationMilliseconds !== 10000 ||
+    (plan.financialPolicy
+      ? !Number.isSafeInteger(op.maxDurationMilliseconds) ||
+        op.maxDurationMilliseconds < 1000 ||
+        op.maxDurationMilliseconds > 60000
+      : op.maxDurationMilliseconds !== 10000) ||
     op.audioConfigId !== plan.audioConfiguration.id ||
     plan.audioConfiguration.contentHash !== ttsHash(config) ||
     op.audioConfigId !== `audio_config:${ttsHash(config)}` ||
@@ -149,7 +153,12 @@ export function ttsRequest(plan: any): any {
       !hash(risk.scriptContentHash)
     )
       ttsFail('TTS_INVALID_POLICY');
-    affiliateIdentifier(risk.scriptId, 'scriptId');
+    // Content owns revision identifiers (including ':'), not Affiliate.
+    if (
+      typeof risk.scriptId !== 'string' ||
+      !/^[a-z0-9][a-z0-9_:-]{2,199}$/.test(risk.scriptId)
+    )
+      ttsFail('TTS_INVALID_SCRIPT_ID');
   }
   return immutable({
     schemaVersion: risk ? 'tts-operation/2.0.0' : 'tts-operation/1.0.0',

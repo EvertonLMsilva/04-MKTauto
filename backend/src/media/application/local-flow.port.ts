@@ -4,6 +4,16 @@ export interface AuthorizedLocalAudio {
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  ingestTts?(
+    scope: {
+      pipelineRunId: string;
+      scriptId: string;
+      scriptContentHash: string;
+      createdAt: string;
+    },
+    operationId: string,
+    durationMs: number,
+  ): Promise<AuthorizedLocalAudio>;
   automaticAudioReady?(): boolean;
   automaticAudio?(
     scope: {

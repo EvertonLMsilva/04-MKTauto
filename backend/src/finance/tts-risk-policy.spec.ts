@@ -4,6 +4,8 @@ import {
 } from '../../test/support/tts-risk-fixture.js';
 import { ttsHash, ttsRequest } from './domain/tts-financial-contracts.js';
 import { raceFinance } from '../../test/support/finance-concurrency.js';
+import { createHash } from 'node:crypto';
+import { SqliteTtsFinancialSourcesReader } from './infrastructure/financial-readers.sqlite.js';
 
 describe('individual TTS financial risk policy v2', () => {
   let f: ReturnType<typeof ttsRiskFixture>;
@@ -15,6 +17,89 @@ describe('individual TTS financial risk policy v2', () => {
     f.service().approveTts(f.plan, f.approval);
     return f.service().beginTts(f.plan, now);
   };
+  it('accepts the real Content revision identifier without changing the historical script', () => {
+    const plan = structuredClone(f.plan);
+    plan.financialPolicy.scriptId = 'p77_test00_live_script:audio_final_v2';
+    expect(ttsRequest(plan).financialPolicy.scriptId).toBe(
+      plan.financialPolicy.scriptId,
+    );
+  });
+  it('reads a verified fal source without copying operations or financial entries', () => {
+    const basis = {
+      pipelineRunId: 'run_001',
+      scriptId: 'script:original',
+      endpoint: 'fixture/fake',
+    };
+    const key = ttsHash(basis),
+      output = {
+        mediaReference: 'media:sha256_' + 'e'.repeat(64),
+        contentHash: 'e'.repeat(64),
+        assetType: 'VIDEO',
+        technicalProperties: {
+          format: 'mp4',
+          widthPixels: 64,
+          heightPixels: 64,
+          durationMilliseconds: 2000,
+        },
+        origin: 'PROVIDER_GENERATED',
+        provider: 'fal',
+        rights: { usageBasis: 'PROVIDER_TERMS', commercialUseAllowed: true },
+      };
+    f.db
+      .prepare(
+        "INSERT INTO fal_generations VALUES(?,?,?,'COMPLETED',?,NULL,NULL,'0','USD','fixture',?,?,?,?)",
+      )
+      .run(
+        key,
+        'run_001',
+        JSON.stringify(basis),
+        'req_fake',
+        JSON.stringify(output),
+        createHash('sha256').update(JSON.stringify(output)).digest('hex'),
+        now,
+        now,
+      );
+    const before = f.db.prepare('SELECT * FROM cost_events').all();
+    const source = new SqliteTtsFinancialSourcesReader(f.db).videoSource(key);
+    expect(source).toMatchObject({
+      state: 'COMPLETED',
+      requestHash: key,
+      request: { pipelineRunId: 'run_001' },
+      result: {
+        contentHash: output.contentHash,
+        videoReference: output.mediaReference,
+      },
+    });
+    expect(f.db.prepare('SELECT * FROM cost_events').all()).toEqual(before);
+    expect(
+      f.db.prepare('SELECT count(*) n FROM video_generation_operations').get()
+        ?.n,
+    ).toBe(1);
+  });
+  it('rejects a fal output whose persisted hash does not match its bytes', () => {
+    const basis = { pipelineRunId: 'run_001' },
+      key = ttsHash(basis),
+      output = { contentHash: 'e'.repeat(64) };
+    f.db
+      .prepare(
+        "INSERT INTO fal_generations VALUES(?,?,?,'COMPLETED',?,NULL,NULL,'0','USD','fixture',?,?,?,?)",
+      )
+      .run(
+        key,
+        'run_001',
+        JSON.stringify(basis),
+        'req_tampered',
+        JSON.stringify(output),
+        'f'.repeat(64),
+        now,
+        now,
+      );
+    expect(() =>
+      new SqliteTtsFinancialSourcesReader(f.db).videoSource(key),
+    ).toThrow(
+      expect.objectContaining({ code: 'TTS_SOURCE_INTEGRITY_INVALID' }),
+    );
+  });
   it('binds policy, model, script, narration, estimate and reservation to immutable approval', () => {
     const request = ttsRequest(f.plan);
     expect(request.financialPolicy).toEqual(f.plan.financialPolicy);
@@ -43,12 +128,10 @@ describe('individual TTS financial risk policy v2', () => {
   it('replays the same individual authorization without replacing the original audit time', () => {
     const first = f.service().approveTts(f.plan, f.approval);
     expect(
-      f
-        .service()
-        .approveTts(f.plan, {
-          ...f.approval,
-          approvedAt: '2026-10-14T12:01:00Z',
-        }),
+      f.service().approveTts(f.plan, {
+        ...f.approval,
+        approvedAt: '2026-10-14T12:01:00Z',
+      }),
     ).toEqual(first);
     expect(() =>
       f
@@ -56,12 +139,10 @@ describe('individual TTS financial risk policy v2', () => {
         .approveTts(f.plan, { ...f.approval, approvedBy: 'other_operator' }),
     ).toThrow();
     expect(() =>
-      f
-        .service()
-        .approveTts(f.plan, {
-          ...f.approval,
-          expiresAt: '2026-10-15T00:00:00Z',
-        }),
+      f.service().approveTts(f.plan, {
+        ...f.approval,
+        expiresAt: '2026-10-15T00:00:00Z',
+      }),
     ).toThrow();
   });
   it.each(['operation', 'script', 'text', 'model', 'estimate'])(

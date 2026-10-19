@@ -1,6 +1,8 @@
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
-import { writeFileSync } from 'node:fs';
-import { mkdir, rmdir } from 'node:fs/promises';
+import { writeFileSync, readFileSync } from 'node:fs';
+import { mkdir, rmdir, mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import type { FinanceService } from '../../finance/application/finance.service.js';
 import { join, resolve } from 'node:path';
 import type { MediaService } from '../application/media.service.js';
 import type {
@@ -44,6 +46,162 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  private paidOperation(id: string, script: any, target: number) {
+    const op = this.finance?.getTts(id);
+    if (
+      !op?.audio ||
+      !op.providerRequestId ||
+      !(
+        op.state === 'COMPLETED' ||
+        (op.state === 'UNKNOWN' &&
+          op.errorCode === 'TTS_BILLING_EVIDENCE_REQUIRED')
+      ) ||
+      op.audio.provider !== 'openai' ||
+      op.audio.origin !== 'SYNTHETIC_TTS' ||
+      op.audio.rights.usageBasis !== 'PROVIDER_TERMS' ||
+      !op.audio.rights.commercialUseAllowed ||
+      op.request.financialPolicy?.schemaVersion !==
+        'tts-risk-reservation/2.0.0' ||
+      op.request.financialPolicy.scriptId !== script.scriptId ||
+      op.request.financialPolicy.scriptContentHash !== script.contentHash ||
+      op.request.operation.pipelineRunId !== script.pipelineRunId ||
+      op.request.operation.maxDurationMilliseconds !== target ||
+      op.request.operation.narration !==
+        adaptLocalNarration(script.fullNarration, target)
+    )
+      localFail('TTS_CONFIRMED_AUDIO_REQUIRED');
+    return op!;
+  }
+  async ingestTts(
+    scope: {
+      pipelineRunId: string;
+      scriptId: string;
+      scriptContentHash: string;
+      createdAt: string;
+    },
+    id: string,
+    durationMs: number,
+  ) {
+    const binding = this.session((r) => {
+      const script = r.getScript(scope.scriptId);
+      if (
+        !script ||
+        script.pipelineRunId !== scope.pipelineRunId ||
+        script.contentHash !== scope.scriptContentHash
+      )
+        localFail('LOCAL_SCRIPT_BINDING_INVALID');
+      const op = this.paidOperation(id, script, durationMs),
+        grant = r.paidTtsGrant(id);
+      if (grant.requestHash !== op.requestHash)
+        localFail('TTS_DISPATCH_EVIDENCE_REQUIRED');
+      return { script, op, grant };
+    });
+    const voiceId = `voice_tts_openai:${adaptationHash({ id, scope, durationMs })}`;
+    const previous = this.authorizedAudio(
+      scope.pipelineRunId,
+      scope.scriptId,
+      scope.scriptContentHash,
+      voiceId,
+    );
+    if (previous) return previous;
+    const source = this.voiceFiles().read(
+        binding.op.audio!.contentHash,
+        'wav',
+        20971520,
+      ),
+      facts = inspectMvpWav(source);
+    if (facts.durationMilliseconds !== binding.op.audio!.durationMilliseconds)
+      localFail('LOCAL_AUDIO_FORMAT_MISMATCH');
+    if (facts.durationMilliseconds > durationMs)
+      localFail('NARRATION_DURATION_REQUIRED');
+    let bytes = source;
+    if (facts.durationMilliseconds < durationMs) {
+      const temp = await mkdtemp(join(tmpdir(), 'mkt-paid-audio-'));
+      try {
+        const input = join(temp, 'source.wav'),
+          output = join(temp, 'padded.wav');
+        writeFileSync(input, source, { flag: 'wx' });
+        await this.run(
+          this.env.FFMPEG_PATH,
+          [
+            '-v',
+            'error',
+            '-nostdin',
+            '-i',
+            input,
+            '-af',
+            `apad=whole_len=${durationMs * 24},atrim=end_sample=${durationMs * 24}`,
+            '-ar',
+            '24000',
+            '-ac',
+            '1',
+            '-c:a',
+            'pcm_s16le',
+            output,
+          ],
+          { outputPath: output, maxOutputBytes: 20971520 },
+        );
+        bytes = readFileSync(output);
+      } finally {
+        await rm(temp, { recursive: true, force: true });
+      }
+    }
+    if (inspectMvpWav(bytes).durationMilliseconds !== durationMs)
+      localFail('ALIGNMENT_DURATION_MISMATCH');
+    const hash = this.voiceFiles().put(bytes, 'wav');
+    const voice = validateVoiceTrack({
+      schemaVersion: 'voice-track/1.0.0',
+      voiceTrackId: voiceId,
+      ...scope,
+      projectId: binding.script.projectId,
+      projectVersion: binding.script.projectVersion,
+      language: 'pt-BR',
+      voiceStyle: 'informative',
+      durationMilliseconds: durationMs,
+      audioFormat: 'wav',
+      contentHash: hash,
+      storageReference: `object:voice/sha256/${hash}`,
+      origin: 'SYNTHETIC_TTS',
+      provider: 'openai',
+      rights: { usageBasis: 'PROVIDER_TERMS', commercialUseAllowed: true },
+      revision: 1,
+      supersedesVoiceTrackId: null,
+    });
+    const authorization = {
+      actorId: binding.grant.actorId,
+      statement: `Confirmed OpenAI TTS response ${binding.op.providerRequestId}; financial authorization ${binding.op.requestHash}; provider terms; billing may remain unknown.`,
+    };
+    const doc = {
+      voice,
+      authorization,
+      audioSha256: hash,
+      paidTts: {
+        operationId: id,
+        requestHash: binding.op.requestHash,
+        sourceAudioHash: binding.op.audio!.contentHash,
+      },
+      cost: {
+        status: binding.op.billing ? 'KNOWN' : 'UNKNOWN',
+        amount: binding.op.billing?.actualCostUsd ?? null,
+      },
+    };
+    const docHash = this.files().put(documentBytes(doc), 'json');
+    this.session((r) =>
+      r.transaction(() =>
+        r.registerLocalVoice(
+          voice,
+          docHash,
+          adaptationHash({ authorization, paidTts: doc.paidTts }),
+        ),
+      ),
+    );
+    return this.authorizedAudio(
+      scope.pipelineRunId,
+      scope.scriptId,
+      scope.scriptContentHash,
+      voiceId,
+    )!;
+  }
   automaticAudioReady() {
     return new LocalPiperTts(this.env, this.runner).ready();
   }
@@ -157,6 +315,29 @@ export class LocalFlowRuntime {
     }
   }
   private narration(r: LocalFlowRepository, voice: any, script: any): string {
+    if (voice.origin === 'SYNTHETIC_TTS' && voice.provider === 'openai') {
+      const doc = r.document<any>(
+        voice.voiceTrackId,
+        'voice_track',
+        this.files(),
+      );
+      if (!doc.paidTts || voice.rights.usageBasis !== 'PROVIDER_TERMS')
+        localFail('TTS_CONFIRMED_AUDIO_REQUIRED');
+      const op = this.paidOperation(
+          doc.paidTts.operationId,
+          script,
+          voice.durationMilliseconds,
+        ),
+        grant = r.paidTtsGrant(doc.paidTts.operationId);
+      if (
+        grant.requestHash !== op.requestHash ||
+        doc.paidTts.requestHash !== op.requestHash ||
+        doc.paidTts.sourceAudioHash !== op.audio!.contentHash
+      )
+        localFail('TTS_CONFIRMED_AUDIO_REQUIRED');
+      this.voiceFiles().read(op.audio!.contentHash, 'wav', 20971520);
+      return op.request.operation.narration;
+    }
     if (
       voice.origin !== 'SYNTHETIC_TTS' ||
       !['local_piper', 'local_espeak_ng'].includes(voice.provider)
@@ -287,9 +468,13 @@ export class LocalFlowRuntime {
         voice.scriptId !== scriptId ||
         voice.scriptContentHash !== scriptHash ||
         (voice.origin === 'SYNTHETIC_TTS'
-          ? !['local_piper', 'local_espeak_ng'].includes(voice.provider)
+          ? !['local_piper', 'local_espeak_ng', 'openai'].includes(
+              voice.provider,
+            )
           : voice.provider !== null) ||
-        !['OWNED', 'LICENSED'].includes(voice.rights.usageBasis) ||
+        !(voice.provider === 'openai'
+          ? voice.rights.usageBasis === 'PROVIDER_TERMS'
+          : ['OWNED', 'LICENSED'].includes(voice.rights.usageBasis)) ||
         ![
           'AUTHORIZED_RECORDING',
           'OPERATOR_RECORDING',
@@ -336,6 +521,7 @@ export class LocalFlowRuntime {
     ),
     private readonly runner: ProcessRunner = runProcess,
     private readonly aligner: AudioAligner = new LocalPythonAligner(env),
+    private readonly finance?: Pick<FinanceService, 'getTts'>,
   ) {}
   private files() {
     const root = this.env.LOCAL_MEDIA_EVIDENCE_ROOT;
@@ -503,7 +689,9 @@ export class LocalFlowRuntime {
           'SYNTHETIC_TTS',
         ].includes(voice.origin) ||
         (voice.origin === 'SYNTHETIC_TTS' &&
-          !['local_piper', 'local_espeak_ng'].includes(voice.provider)) ||
+          !['local_piper', 'local_espeak_ng', 'openai'].includes(
+            voice.provider,
+          )) ||
         !r.getArtifact(id)?.generationMetadata
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');

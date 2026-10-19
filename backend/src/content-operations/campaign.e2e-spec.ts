@@ -1,7 +1,8 @@
 import { provisionQcReviewer } from '../publishing/application/local-qc-identity.js';
 import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
 import { execFileSync } from 'node:child_process';
-import { readFileSync, mkdirSync } from 'node:fs';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { dirname, join } from 'node:path';
 import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
 import { MediaService } from '../media/application/media.service.js';
@@ -51,6 +52,8 @@ import {
   UnavailableEditorialProvider,
 } from '../content/infrastructure/fake-editorial.provider.js';
 import { FinanceService } from '../finance/application/finance.service.js';
+import { OpenAiNarrationTransport } from '../media/infrastructure/openai-narration.transport.js';
+import { ttsHash } from '../finance/domain/tts-financial-contracts.js';
 import { scriptContentHash } from '../content/domain/script-contracts.js';
 
 describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', () => {
@@ -328,9 +331,15 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
     },
     { mediaDecision: 'REJECTED', finalDecision: 'APPROVED' },
     { mediaDecision: 'APPROVED', finalDecision: 'REJECTED' },
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: false,
+      paidTts: true,
+    },
   ])(
     'browser QC, offline finalization and independent handoff: %j',
-    async ({ mediaDecision, finalDecision, simulateTimeout }) => {
+    async ({ mediaDecision, finalDecision, simulateTimeout, paidTts }) => {
       const e = await service.schedule({
         ...body,
         videoProduction: { mode: 'ASSISTED_LOCAL' },
@@ -741,6 +750,13 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           createdAt: new Date().toISOString(),
           contentHash: '',
         };
+        if (paidTts) {
+          revision.hook = 'Conheça.';
+          revision.narrativeBlocks = revision.narrativeBlocks.map((b: any) => ({
+            ...b,
+            narration: 'Publicidade.',
+          }));
+        }
         revision.fullNarration = [
           revision.hook,
           ...revision.narrativeBlocks.map((b: any) => b.narration),
@@ -791,34 +807,6 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           .set('Host', 'localhost:3000')
           .set('Origin', 'http://localhost:3000')
           .set('x-qc-csrf', session.body.csrfToken);
-      await upload()
-        .field('usageBasis', 'OWNED')
-        .field('commercialUseAllowed', 'false')
-        .field(
-          'statement',
-          'Isolated owned recording fixture, authorized for this test only.',
-        )
-        .attach('audio', audio, {
-          filename: 'recording.wav',
-          contentType: 'audio/wav',
-        })
-        .expect(400);
-      await upload()
-        .field('usageBasis', 'OWNED')
-        .field('commercialUseAllowed', 'true')
-        .field(
-          'statement',
-          'Isolated owned recording fixture, authorized for this test only.',
-        )
-        .attach('audio', audio, {
-          filename: 'recording.wav',
-          contentType: 'audio/wav',
-        })
-        .expect((response) =>
-          expect(response.status, JSON.stringify(response.body)).toBe(201),
-        );
-      vi.stubEnv('LOCAL_ALIGNMENT_PYTHON', '');
-      vi.stubEnv('LOCAL_ALIGNMENT_MODEL_ROOT', '');
       const advance = () =>
         browser
           .post(`/operations/executions/${e.execution_id}/advance`)
@@ -826,10 +814,40 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           .set('Origin', 'http://localhost:3000')
           .set('x-qc-csrf', session.body.csrfToken)
           .send({});
-      await advance().expect(201);
-      expect(service.get(e.execution_id).finalization.pending?.code).toBe(
-        'ALIGNMENT_CONFIGURATION_REQUIRED',
-      );
+      if (!paidTts) {
+        await upload()
+          .field('usageBasis', 'OWNED')
+          .field('commercialUseAllowed', 'false')
+          .field(
+            'statement',
+            'Isolated owned recording fixture, authorized for this test only.',
+          )
+          .attach('audio', audio, {
+            filename: 'recording.wav',
+            contentType: 'audio/wav',
+          })
+          .expect(400);
+        await upload()
+          .field('usageBasis', 'OWNED')
+          .field('commercialUseAllowed', 'true')
+          .field(
+            'statement',
+            'Isolated owned recording fixture, authorized for this test only.',
+          )
+          .attach('audio', audio, {
+            filename: 'recording.wav',
+            contentType: 'audio/wav',
+          })
+          .expect((response) =>
+            expect(response.status, JSON.stringify(response.body)).toBe(201),
+          );
+        vi.stubEnv('LOCAL_ALIGNMENT_PYTHON', '');
+        vi.stubEnv('LOCAL_ALIGNMENT_MODEL_ROOT', '');
+        await advance().expect(201);
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'ALIGNMENT_CONFIGURATION_REQUIRED',
+        );
+      }
       // The unavailable model is replaced only in this isolated test by a deterministic offline aligner.
       const aligner = {
         identity: 'closure-fixture/1',
@@ -877,11 +895,223 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
         { verify: async () => true },
         runProcess,
         aligner,
+        app.get(FinanceService),
       );
       const spy = vi
         .spyOn(local, 'alignAudio')
         .mockImplementation((id: string) => runtime.alignAudio(id));
       try {
+        if (paidTts) {
+          const current = (
+            service.finalizationContext(e.execution_id).completed
+              .EDITORIAL as any
+          ).script;
+          const basis = {
+              pipelineRunId: current.pipelineRunId,
+              scriptId: script.scriptId,
+              endpoint: 'OFFLINE_FAKE_FAL',
+            },
+            key = ttsHash(basis);
+          const output = {
+            mediaReference: ref,
+            contentHash: hash,
+            assetType: 'VIDEO',
+            technicalProperties: media.get(ids[0])!.technicalProperties,
+            origin: 'PROVIDER_GENERATED',
+            provider: 'fal',
+            rights: {
+              usageBasis: 'PROVIDER_TERMS',
+              commercialUseAllowed: true,
+            },
+            source: null,
+          };
+          const db = new DatabaseSync(f.database);
+          try {
+            db.prepare(
+              "INSERT INTO fal_generations VALUES(?,?,?,'COMPLETED',?,NULL,NULL,'0','USD','OFFLINE_FAKE',?,?,?,?)",
+            ).run(
+              key,
+              current.pipelineRunId,
+              JSON.stringify(basis),
+              'req_offline_fal',
+              JSON.stringify(output),
+              createHash('sha256').update(JSON.stringify(output)).digest('hex'),
+              new Date().toISOString(),
+              new Date().toISOString(),
+            );
+          } finally {
+            db.close();
+          }
+          app.get(FinanceService).configureCampaign('camp_001', 2);
+          const audioHash = new LocalEvidenceStorage(
+            process.env.FFMPEG_VOICE_ROOT!,
+          ).put(wav({ durationMilliseconds: 1000 }), 'wav');
+          const synth = vi
+            .spyOn(OpenAiNarrationTransport.prototype, 'synthesize')
+            .mockResolvedValue({
+              audio: {
+                durationMilliseconds: 1000,
+                audioFormat: 'wav',
+                contentHash: audioHash,
+                storageReference: `object:voice/sha256/${audioHash}`,
+                provider: 'openai',
+                origin: 'SYNTHETIC_TTS',
+                rights: {
+                  usageBasis: 'PROVIDER_TERMS',
+                  commercialUseAllowed: true,
+                },
+              },
+              providerRequestId: 'req_offline_tts',
+            });
+          const ready = vi
+            .spyOn(OpenAiNarrationTransport.prototype, 'ready')
+            .mockReturnValue(true);
+          const call = (path: string, value: any) =>
+            browser
+              .post(`/operations/executions/${e.execution_id}/tts/${path}`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send(value);
+          try {
+            const prepared = await call('prepare', {}).expect(201);
+            expect(prepared.body.text).toBe(
+              'Conheça. Publicidade. Confira pelo link',
+            );
+            await call('execute', {
+              requestHash: prepared.body.requestHash,
+            }).expect(400);
+            expect(synth).not.toHaveBeenCalled();
+            await call('authorize', {
+              requestHash: prepared.body.requestHash,
+              acceptsUnboundedCost: true,
+              expiresAt: new Date(Date.now() + 900000).toISOString(),
+            }).expect(201);
+            const interruption = vi
+              .spyOn(local, 'ingestTts')
+              .mockRejectedValueOnce(
+                Object.assign(
+                  new Error('isolated interruption after paid response'),
+                  { code: 'LOCAL_MEDIA_UNAVAILABLE' },
+                ),
+              );
+            try {
+              await call('execute', {
+                requestHash: prepared.body.requestHash,
+              }).expect(503);
+            } finally {
+              interruption.mockRestore();
+            }
+            expect(synth).toHaveBeenCalledTimes(1);
+            await browser
+              .post(`/operations/executions/${e.execution_id}/retry`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send({})
+              .expect(201);
+            await Promise.all(
+              [0, 1].map(() =>
+                call('execute', {
+                  requestHash: prepared.body.requestHash,
+                }).expect((r) =>
+                  expect(r.status, JSON.stringify(r.body)).toBe(201),
+                ),
+              ),
+            );
+            expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+              'EXACT_HUMAN_APPROVAL_REQUIRED',
+            );
+            const file = await browser
+              .get(`/operations/executions/${e.execution_id}/final.mp4`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            expect(file.body.includes(Buffer.from('ftyp'))).toBe(true);
+            expect(
+              service.finalizationContext(e.execution_id).completed.QC,
+            ).toMatchObject({ result: 'PASS' });
+            const audioStage = service.finalizationContext(e.execution_id)
+              .completed.AUDIO as any;
+            const voiceReader = new LocalFlowRepository(
+              f.database,
+              app.get(CONTENT_OPERATIONS),
+              app.get(ContentService),
+            );
+            try {
+              expect(
+                voiceReader.getVoiceTrack(audioStage.voiceTrackId),
+              ).toMatchObject({
+                provider: 'openai',
+                origin: 'SYNTHETIC_TTS',
+                durationMilliseconds: 2000,
+                scriptId: current.scriptId,
+                rights: {
+                  usageBasis: 'PROVIDER_TERMS',
+                  commercialUseAllowed: true,
+                },
+              });
+            } finally {
+              voiceReader.close();
+            }
+            await call('execute', {
+              requestHash: prepared.body.requestHash,
+            }).expect(201);
+            expect(synth).toHaveBeenCalledTimes(1);
+            const audit = new DatabaseSync(f.database, { readOnly: true });
+            let operationId: string;
+            try {
+              operationId = String(
+                audit.prepare('SELECT operation_id FROM tts_operations').get()!
+                  .operation_id,
+              );
+            } finally {
+              audit.close();
+            }
+            const latest = app.get(FinanceService).getTts(operationId);
+            expect(latest?.billing).toBeNull();
+            expect(latest?.state).toBe('UNKNOWN');
+            expect(
+              app.get(FinanceService).getLedgerByPipelineRun('run_001').events,
+            ).toHaveLength(0);
+            expect(
+              service.finalizationContext(e.execution_id).completed.HANDOFF,
+            ).toBeUndefined();
+            if (process.env.MKTAUTO_TTS_E2E_EVIDENCE_ROOT) {
+              const root = process.env.MKTAUTO_TTS_E2E_EVIDENCE_ROOT;
+              mkdirSync(root, { recursive: true });
+              writeFileSync(join(root, 'offline-fixture.mp4'), file.body);
+              writeFileSync(
+                join(root, 'offline-e2e.json'),
+                JSON.stringify(
+                  {
+                    syntheticFixture: true,
+                    actualP77: false,
+                    fakeProviders: ['fal', 'OpenAI TTS', 'aligner'],
+                    paidCalls: 0,
+                    mp4Sha256: createHash('sha256')
+                      .update(file.body)
+                      .digest('hex'),
+                    mp4Bytes: file.body.length,
+                    finalQc: 'PASS',
+                    humanHandoffApproved: false,
+                    ttsSubmissions: synth.mock.calls.length,
+                    billing: latest?.billing,
+                    costState: latest?.state,
+                    completedSteps: Object.keys(
+                      service.finalizationContext(e.execution_id).completed,
+                    ),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            }
+          } finally {
+            synth.mockRestore();
+            ready.mockRestore();
+          }
+          return;
+        }
         await browser
           .post(`/operations/executions/${e.execution_id}/retry`)
           .set('Host', 'localhost:3000')

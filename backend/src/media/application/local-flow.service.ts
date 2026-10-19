@@ -1,6 +1,17 @@
 import type { LocalAudiovisualPort } from './local-flow.port.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
+  ingestTts(
+    scope: Parameters<NonNullable<LocalAudiovisualPort['ingestTts']>>[0],
+    id: string,
+    durationMs: number,
+  ) {
+    if (!this.runtime.ingestTts)
+      throw Object.assign(new Error('LOCAL_MEDIA_UNAVAILABLE'), {
+        code: 'LOCAL_MEDIA_UNAVAILABLE',
+      });
+    return this.runtime.ingestTts(scope, id, durationMs);
+  }
   automaticAudioReady() {
     return this.runtime.automaticAudioReady?.() ?? false;
   }
