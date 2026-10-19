@@ -966,6 +966,37 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           const ready = vi
             .spyOn(OpenAiNarrationTransport.prototype, 'ready')
             .mockReturnValue(true);
+          // Fake rights/acquisition read boundary, applied after authentic visual QC.
+          const scopedAsset = (id: string) => {
+            const asset = realGet(id);
+            if (!asset || !ids.includes(id)) return asset;
+            return {
+              ...asset,
+              rights: {
+                ...asset.rights,
+                evidence: asset.rights.evidence!.map((right) => ({
+                  ...right,
+                  mediaAuthorization: {
+                    ...right.mediaAuthorization!,
+                    campaignId: String(body.campaignId),
+                    purpose: 'HUMAN_QC_REVIEW',
+                    operationScope: 'fixture_operation_001',
+                  },
+                })),
+              },
+            };
+          };
+          const scopeRead = vi
+            .spyOn(media, 'get')
+            .mockImplementation(scopedAsset as any);
+          const originalAcquisition = media.acquisition.bind(media);
+          const acquisitionRead = vi
+            .spyOn(media, 'acquisition')
+            .mockImplementation((id: string) =>
+              id === 'fixture_operation_001'
+                ? ({ mediaAsset: scopedAsset(ids[0]) } as any)
+                : originalAcquisition(id),
+            );
           const call = (path: string, value: any) =>
             browser
               .post(`/operations/executions/${e.execution_id}/tts/${path}`)
@@ -1041,6 +1072,62 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
                 ),
               ),
             );
+            expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+              'COMPOSITION_RIGHTS_REQUIRED',
+            );
+            const rightsResponse = await browser
+              .get(`/operations/executions/${e.execution_id}`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            const grantInput = {
+              scopeHash: rightsResponse.body.compositionAuthorization.scopeHash,
+              acceptsCompositionRights: true,
+              audioIntelligible: true,
+              sourceRef: 'fixture:explicit-local-composition-license',
+              statement:
+                'This isolated fixture permits commercial local composition of its generated test pattern.',
+            };
+            const grant = (input: any) =>
+              browser
+                .post(
+                  `/operations/executions/${e.execution_id}/composition-authorization`,
+                )
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send(input);
+            await grant({ ...grantInput, audioIntelligible: false }).expect(
+              400,
+            );
+            await grant({ ...grantInput, scopeHash: 'f'.repeat(64) }).expect(
+              400,
+            );
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((x) => x.event_type === 'COMPOSITION_AUTHORIZED'),
+            ).toHaveLength(0);
+            const previewAudio = await browser
+              .get(`/operations/executions/${e.execution_id}/narration.wav`)
+              .set('Host', 'localhost:3000')
+              .expect(200)
+              .expect('Content-Type', /audio\/wav/);
+            expect(previewAudio.body.subarray(0, 4).toString()).toBe('RIFF');
+            await Promise.all(
+              [0, 1].map(() =>
+                grant(grantInput).expect((response) =>
+                  expect(response.status, JSON.stringify(response.body)).toBe(
+                    201,
+                  ),
+                ),
+              ),
+            );
+            await grant(grantInput).expect(201);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((x) => x.event_type === 'COMPOSITION_AUTHORIZED'),
+            ).toHaveLength(1);
             expect(service.get(e.execution_id).finalization.pending?.code).toBe(
               'EXACT_HUMAN_APPROVAL_REQUIRED',
             );
@@ -1128,6 +1215,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
                     mp4Bytes: file.body.length,
                     finalQc: 'PASS',
                     humanHandoffApproved: false,
+                    compositionAuthorizationRecorded: true,
                     ttsSubmissions: synth.mock.calls.length,
                     billing: latest?.billing,
                     costState: latest?.state,
@@ -1143,6 +1231,8 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           } finally {
             synth.mockRestore();
             ready.mockRestore();
+            scopeRead.mockRestore();
+            acquisitionRead.mockRestore();
           }
           return;
         }

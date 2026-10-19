@@ -88,11 +88,17 @@ test('browser shell, real session lifecycle and guarded actions use local mocks 
     expect(script.text).not.toContain('POST /content/scripts');
     expect(script.text).toContain('action !== "SCRIPT_REVISION_REQUIRED"');
     expect(() => new Script(script.text)).not.toThrow();
-    await browser.get('/operations/executions').expect(401);
-    await browser.get('/operations/instagram/connection').expect(401);
-    await origin(browser.post('/operations/executions/execution_ui/audio-mode'))
-      .send({ mode: 'RECORDING' })
+    await browser
+      .get('/operations/executions/execution_ui/narration.wav')
       .expect(401);
+    await origin(
+      browser.post(
+        '/operations/executions/execution_ui/composition-authorization',
+      ),
+    )
+      .send({})
+      .expect(401);
+    await browser.get('/operations/instagram/connection').expect(401);
     await origin(browser.post('/operations/instagram/connection/check'))
       .send({})
       .expect(401);

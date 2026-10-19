@@ -1,4 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
+import {
+  compositionScope,
+  compositionGrant,
+} from '../domain/composition-authorization.js';
 import { isAbsolute } from 'node:path';
 import { Logger } from '@nestjs/common';
 import type { OnModuleInit, OnModuleDestroy } from '@nestjs/common';
@@ -311,6 +315,47 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       execution,
       document(document(completed.EDITORIAL).script),
     );
+  }
+  compositionPreparation(id: string) {
+    const { execution, completed } = this.finalizationContext(id);
+    if (completed.COMPOSITION || completed.HANDOFF)
+      throw new CampaignError('COMPOSITION_AUTHORIZATION_NOT_READY');
+    return compositionScope(execution, completed);
+  }
+  authorizeComposition(id: string, value: unknown, actorId: string) {
+    const { execution, completed, history } = this.finalizationContext(id);
+    const grant = compositionGrant(
+      execution,
+      completed,
+      value,
+      actorId,
+      new Date().toISOString(),
+    );
+    const previous = history
+      .filter((e) => e.event_type === 'COMPOSITION_AUTHORIZED')
+      .at(-1)?.evidence;
+    if (
+      previous &&
+      previous.scopeHash === grant.scopeHash &&
+      previous.actorId === actorId &&
+      previous.sourceRef === grant.sourceRef &&
+      previous.statement === grant.statement
+    )
+      return this.get(id);
+    if (
+      execution.status !== 'WAITING_INPUT' ||
+      completed.COMPOSITION ||
+      completed.HANDOFF
+    )
+      throw new CampaignError('COMPOSITION_AUTHORIZATION_NOT_READY');
+    this.open().administrativeEvent(
+      id,
+      execution.version,
+      grant.approvedAt,
+      'COMPOSITION_AUTHORIZED',
+      grant,
+    );
+    return this.get(id);
   }
   reviseScript(id: string, value: unknown, actorId: string) {
     const input = document(value),

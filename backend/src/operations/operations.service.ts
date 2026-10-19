@@ -186,6 +186,28 @@ export class OperationsService {
   list() {
     return this.campaigns.list();
   }
+  narrationBytes(id: string) {
+    const c = this.campaigns.finalizationContext(id),
+      script = document(document(c.completed.EDITORIAL).script),
+      audio = document(c.completed.AUDIO);
+    return this.local.audioBytes(
+      c.execution.run_id,
+      String(script.scriptId),
+      String(script.contentHash),
+      String(audio.voiceTrackId),
+    );
+  }
+  async authorizeComposition(id: string, value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    this.campaigns.authorizeComposition(id, value, actor.id);
+    const c = this.campaigns.finalizationContext(id);
+    if (!c.completed.COMPOSITION) {
+      if (c.execution.status === 'RUNNING') return this.detail(id);
+      if (c.execution.status !== 'SCHEDULED') await this.campaigns.resume(id);
+      await this.campaigns.advanceFinalization(id);
+    }
+    return this.detail(id);
+  }
   detail(id: string) {
     const context = this.campaigns.finalizationContext(id);
     const script = context.completed.EDITORIAL
@@ -211,6 +233,23 @@ export class OperationsService {
     return {
       execution,
       nextAction: operationsNextAction(execution, tts),
+      narrationAvailable: !!context.completed.AUDIO,
+      compositionAuthorization:
+        context.completed.SUBTITLES && !context.completed.COMPOSITION
+          ? {
+              ...this.campaigns.compositionPreparation(id),
+              mediaEvidence: assets
+                .filter((a) =>
+                  (context.completed.MEDIA_QC as any)?.reports?.some(
+                    (r: any) => r.identity.mediaAssetId === a.mediaAssetId,
+                  ),
+                )
+                .map((a) => ({
+                  contentHash: a.contentHash,
+                  evidence: a.rights.evidence ?? [],
+                })),
+            }
+          : null,
       scriptRevisions: this.campaigns.scriptRevisions(id),
       script: context.completed.EDITORIAL
         ? document(context.completed.EDITORIAL).script

@@ -261,6 +261,7 @@ export function executionRequest(
 }
 
 const narrationDependents = [
+  'COMPOSITION_AUTHORIZATION',
   'AUDIO',
   'ALIGNMENT',
   'SUBTITLES',
@@ -281,6 +282,8 @@ export function completedContext(
       completed[String(event.evidence.step)] = event.evidence.result;
     else if (event.event_type === 'HUMAN_APPROVAL')
       completed.APPROVAL = event.evidence;
+    else if (event.event_type === 'COMPOSITION_AUTHORIZED')
+      completed.COMPOSITION_AUTHORIZATION = event.evidence;
     else if (event.event_type === 'SCRIPT_REVISED') {
       for (const step of narrationDependents) delete completed[step];
       completed.EDITORIAL = { script: event.evidence.script };

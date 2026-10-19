@@ -4,6 +4,12 @@ export interface AuthorizedLocalAudio {
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  audioBytes?(
+    runId: string,
+    scriptId: string,
+    scriptHash: string,
+    voiceId: string,
+  ): Buffer;
   ingestTts?(
     scope: {
       pipelineRunId: string;

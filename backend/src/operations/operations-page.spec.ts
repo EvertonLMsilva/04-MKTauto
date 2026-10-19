@@ -23,6 +23,11 @@ function browserReviewHarness() {
       nodes.set(id, {
         hidden: false,
         textContent: '',
+        dataset: {},
+        getAttribute(key: string) {
+          return this[key] ?? null;
+        },
+        reset: vi.fn(),
         addEventListener: vi.fn(),
         removeAttribute: vi.fn(),
       });
@@ -42,11 +47,45 @@ function browserReviewHarness() {
   new Script(
     operationsScript.replace(
       /\}\)\(\);\s*$/,
-      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection, renderTts, renderNextAction };})();',
+      'globalThis.reviewTest = { buildReviewCriteria, fail, reviewPresentation, renderInstagramConnection, renderTts, renderNextAction, renderCompositionRights };})();',
     ),
   ).runInContext(context);
   return { api: sandbox.reviewTest, node };
 }
+test('composition authorization shows exact scope and evidence without granting or checking consent', () => {
+  const { api, node } = browserReviewHarness();
+  const data = {
+    narrationAvailable: true,
+    nextAction: { code: 'COMPOSITION_RIGHTS_REQUIRED' },
+    compositionAuthorization: {
+      scopeHash: 'a'.repeat(64),
+      scope: {
+        purpose: 'LOCAL_COMPOSITION_ONLY',
+        scriptContentHash: 'b'.repeat(64),
+      },
+      mediaEvidence: [{ sourceRef: 'fixture:license' }],
+    },
+  };
+  api.renderCompositionRights(data);
+  expect(node('composition-rights-panel').hidden).toBe(false);
+  expect(node('composition-rights-scope').textContent).toContain(
+    'LOCAL_COMPOSITION_ONLY',
+  );
+  expect(node('composition-rights-evidence').textContent).toContain(
+    'fixture:license',
+  );
+  expect(node('narration-audio').src).toContain('/narration.wav');
+  expect(operationsPage).toContain('name="audioIntelligible" required');
+  expect(operationsPage).toContain('name="acceptsCompositionRights" required');
+  api.renderCompositionRights({
+    ...data,
+    compositionAuthorization: {
+      ...data.compositionAuthorization,
+      scopeHash: 'c'.repeat(64),
+    },
+  });
+  expect(node('composition-rights-form').reset).toHaveBeenCalledOnce();
+});
 test('current v2 narration shows TTS consent and hides unrelated script revision and recording actions', () => {
   const { api, node } = browserReviewHarness();
   const data = {

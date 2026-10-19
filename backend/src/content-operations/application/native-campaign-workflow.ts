@@ -1,3 +1,4 @@
+import { assertCompositionGrant } from '../domain/composition-authorization.js';
 import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
 import type { VideoGenerationService } from '../../media/application/video-generation.service.js';
 import type { VideoProductionPreparationV1 } from '../../media/domain/video-production-preparation.js';
@@ -496,6 +497,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const assets = reports.map(({ identity }) => {
       this.compositionRights(
         this.production?.media.get(identity.mediaAssetId) ?? null,
+        e,
+        done,
       );
       const asset = this.requireSceneMedia(
         identity.mediaAssetId,
@@ -509,7 +512,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       );
       if (asset.contentHash !== identity.contentHash)
         throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
-      this.compositionRights(asset);
+      this.compositionRights(asset, e, done);
       if (
         asset.schemaVersion !== 'media-asset/2.0.0' ||
         asset.technicalProperties.mimeType !== 'video/mp4'
@@ -604,7 +607,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     request.contentHash = videoCompositionRequestHash(request);
     return { request, plan };
   }
-  private compositionRights(asset: ReturnType<MediaService['get']>) {
+  private compositionRights(
+    asset: ReturnType<MediaService['get']>,
+    e: CampaignExecution,
+    done: Record<string, unknown>,
+  ) {
     if (
       asset?.rights.evidence?.some(
         (evidence) =>
@@ -612,7 +619,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           evidence.mediaAuthorization?.operationScope !== undefined,
       )
     )
-      throw new CampaignError('COMPOSITION_RIGHTS_REQUIRED');
+      assertCompositionGrant(e, done);
   }
   async validate(r: Record<string, unknown>) {
     const campaign = await this.affiliate.getCampaign(
@@ -1053,6 +1060,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         for (const segment of segments)
           this.compositionRights(
             this.production?.media.get(String(segment.mediaAssetId)) ?? null,
+            e,
+            done,
           );
       }
       return this.local.compose(request);
