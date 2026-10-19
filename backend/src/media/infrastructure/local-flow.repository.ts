@@ -23,7 +23,7 @@ export class LocalFlowRepository extends VideoRenderRepository {
        JOIN artifact_lineage a ON a.artifact_id=v.voice_track_id
        WHERE v.pipeline_run_id=? AND v.script_id=? AND v.script_content_hash=?
        AND ((v.origin IN ('AUTHORIZED_RECORDING','OPERATOR_RECORDING') AND v.provider IS NULL)
-         OR (v.origin='SYNTHETIC_TTS' AND v.provider='local_piper'))
+         OR (v.origin='SYNTHETIC_TTS' AND v.provider IN ('local_piper','local_espeak_ng')))
        AND v.commercial_use_allowed=1
        AND a.artifact_type='voice_track' AND a.generation_metadata_json IS NOT NULL
        AND NOT EXISTS(SELECT 1 FROM voice_tracks n WHERE n.supersedes_voice_track_id=v.voice_track_id)

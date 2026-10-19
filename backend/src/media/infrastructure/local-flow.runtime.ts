@@ -108,7 +108,8 @@ export class LocalFlowRuntime {
           contentHash: hash,
           storageReference: `object:voice/sha256/${hash}`,
           origin: 'SYNTHETIC_TTS',
-          provider: 'local_piper',
+          provider:
+            config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
           rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
           createdAt: scope.createdAt,
           revision: 1,
@@ -156,7 +157,10 @@ export class LocalFlowRuntime {
     }
   }
   private narration(r: LocalFlowRepository, voice: any, script: any): string {
-    if (voice.origin !== 'SYNTHETIC_TTS' || voice.provider !== 'local_piper')
+    if (
+      voice.origin !== 'SYNTHETIC_TTS' ||
+      !['local_piper', 'local_espeak_ng'].includes(voice.provider)
+    )
       return script.fullNarration;
     if (voice.rights.usageBasis !== 'LICENSED')
       localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
@@ -171,6 +175,8 @@ export class LocalFlowRuntime {
       !evidence ||
       evidence.schemaVersion !== 'local-tts-evidence/1' ||
       evidence.configurationHash !== config.configurationHash ||
+      voice.provider !==
+        (config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper') ||
       evidence.modelSha256 !== config.modelSha256 ||
       evidence.licenseEvidenceSha256 !== config.licenseEvidenceSha256 ||
       evidence.modelId !== config.modelId ||
@@ -281,7 +287,7 @@ export class LocalFlowRuntime {
         voice.scriptId !== scriptId ||
         voice.scriptContentHash !== scriptHash ||
         (voice.origin === 'SYNTHETIC_TTS'
-          ? voice.provider !== 'local_piper'
+          ? !['local_piper', 'local_espeak_ng'].includes(voice.provider)
           : voice.provider !== null) ||
         !['OWNED', 'LICENSED'].includes(voice.rights.usageBasis) ||
         ![
@@ -497,7 +503,7 @@ export class LocalFlowRuntime {
           'SYNTHETIC_TTS',
         ].includes(voice.origin) ||
         (voice.origin === 'SYNTHETIC_TTS' &&
-          voice.provider !== 'local_piper') ||
+          !['local_piper', 'local_espeak_ng'].includes(voice.provider)) ||
         !r.getArtifact(id)?.generationMetadata
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
