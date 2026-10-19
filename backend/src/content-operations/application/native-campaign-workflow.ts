@@ -138,7 +138,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     private readonly research: ResearchReader,
     private readonly editorial: Pick<EditorialFlowService, 'generate'>,
     private readonly provider: EditorialProvider,
-    private readonly content: Pick<ContentService, 'getScript'>,
+    private readonly content: Pick<ContentService, 'getScript' | 'listScripts'>,
     private readonly local: LocalFlowService,
     private readonly media: Pick<
       MediaService,
@@ -173,6 +173,21 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         >;
     },
   ) {}
+  scriptRevisions(e: CampaignExecution, previous: Record<string, unknown>) {
+    return this.content.listScripts(e.run_id).filter((script) => {
+      try {
+        this.revisedScript(e, previous, script.scriptId);
+        return true;
+      } catch (error) {
+        if (
+          error instanceof CampaignError &&
+          error.code === 'SCRIPT_REVISION_SCOPE_MISMATCH'
+        )
+          return false;
+        throw error;
+      }
+    });
+  }
   revisedScript(
     e: CampaignExecution,
     previous: Record<string, unknown>,

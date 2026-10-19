@@ -304,6 +304,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     }
     return this.runner!.resume(id);
   }
+  scriptRevisions(id: string) {
+    const { execution, completed } = this.finalizationContext(id);
+    if (!completed.EDITORIAL) return [];
+    return this.workflow.scriptRevisions(
+      execution,
+      document(document(completed.EDITORIAL).script),
+    );
+  }
   reviseScript(id: string, value: unknown, actorId: string) {
     const input = document(value),
       store = this.open(),

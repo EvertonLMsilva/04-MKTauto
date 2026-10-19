@@ -96,6 +96,7 @@ test('a recovered execution exposes its persisted script and original video for 
       completed: { EDITORIAL: { script } },
     }),
     get: () => ({ provenance: { provenance: 'LEGACY_RECOVERY' } }),
+    scriptRevisions: vi.fn(() => []),
   };
   const media: any = {
     listRun: () => [
@@ -113,6 +114,7 @@ test('a recovered execution exposes its persisted script and original video for 
   const service = new OperationsService(campaigns, media, {} as any);
   expect(service.detail('execution_001')).toMatchObject({
     script,
+    scriptRevisions: [],
     media: [{ mediaAssetId: 'original_video' }],
     execution: { provenance: { provenance: 'LEGACY_RECOVERY' } },
   });
