@@ -5,6 +5,7 @@ import {
   ttsFail,
   ttsHash,
   ttsRequest,
+  isTtsRiskRequest,
   type TtsFinancialOperation,
   type TtsResult,
 } from '../domain/tts-financial-contracts.js';
@@ -60,6 +61,28 @@ export class TtsFinanceRepository {
     if (!op) ttsFail('TTS_OPERATION_NOT_FOUND');
     return op;
   }
+  private riskSchema() {
+    if (
+      !this.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE name='tts_risk_dispatches_v2'",
+        )
+        .get()
+    )
+      ttsFail('TTS_RISK_SCHEMA_REQUIRED');
+  }
+  private validAt(
+    approval: { approvedAt: string; expiresAt?: string },
+    now: string,
+  ) {
+    if (
+      !Number.isFinite(Date.parse(now)) ||
+      Date.parse(now) < Date.parse(approval.approvedAt)
+    )
+      ttsFail('TTS_APPROVAL_INVALID');
+    if (approval.expiresAt && Date.parse(now) >= Date.parse(approval.expiresAt))
+      ttsFail('TTS_APPROVAL_EXPIRED');
+  }
   private binding(request: any) {
     const config = this.sources.audioConfiguration(
       request.operation.audioConfigId,
@@ -87,6 +110,7 @@ export class TtsFinanceRepository {
       approval = ttsApproval(request, value);
     return this.transaction(() => {
       this.schema();
+      if (isTtsRiskRequest(request)) this.riskSchema();
       this.binding(request);
       this.gate.ttsCampaignUsage(request.campaignId);
       const prior = this.db
@@ -94,10 +118,19 @@ export class TtsFinanceRepository {
           'SELECT request_hash,approval_json FROM tts_financial_approvals WHERE operation_id=?',
         )
         .get(request.operationId);
+      if (prior && prior.request_hash !== ttsHash(request))
+        ttsFail('TTS_IDENTITY_CONFLICT');
+      const existingApproval = prior
+        ? ttsApproval(request, JSON.parse(prior.approval_json))
+        : null;
+      const comparedApproval =
+        isTtsRiskRequest(request) && existingApproval
+          ? { ...approval, approvedAt: existingApproval.approvedAt }
+          : approval;
       if (
         prior &&
         (prior.request_hash !== ttsHash(request) ||
-          ttsHash(JSON.parse(prior.approval_json)) !== ttsHash(approval))
+          ttsHash(existingApproval) !== ttsHash(comparedApproval))
       )
         ttsFail('TTS_IDENTITY_CONFLICT');
       if (!prior)
@@ -109,7 +142,7 @@ export class TtsFinanceRepository {
             JSON.stringify(request),
             JSON.stringify(approval),
           );
-      return approval;
+      return existingApproval ?? approval;
     });
   }
   // Historical SUBMITTING reserves financial liability only. It is not a dispatch grant.
@@ -130,6 +163,10 @@ export class TtsFinanceRepository {
       )
         ttsFail('TTS_APPROVAL_REQUIRED');
       const approval = ttsApproval(request, JSON.parse(row.approval_json));
+      if (isTtsRiskRequest(request)) {
+        this.riskSchema();
+        this.validAt(approval, now);
+      }
       if (
         !Number.isFinite(Date.parse(now)) ||
         Date.parse(now) < Date.parse(approval.approvedAt)
@@ -155,6 +192,17 @@ export class TtsFinanceRepository {
       if (usage.hasUnknown || usage.hasCeilingBreach)
         ttsFail('TTS_RECONCILIATION_REQUIRED');
       if (
+        isTtsRiskRequest(request) &&
+        this.reader
+          .list()
+          .some((row) =>
+            ['SUBMITTING', 'UNKNOWN'].includes(
+              this.require(row.operation_id).state,
+            ),
+          )
+      )
+        ttsFail('TTS_RECONCILIATION_REQUIRED');
+      if (
         usdUnits(usage.committedUsd) + usdUnits(request.reservationUsd) >
         usdUnits(usage.totalUsd)
       )
@@ -175,12 +223,40 @@ export class TtsFinanceRepository {
       return { created: true, operation: this.require(operationId) };
     });
   }
-  dispatchTts(id: string, now: string): never {
-    const op = this.require(id);
-    if (!Number.isFinite(Date.parse(now))) ttsFail('TTS_APPROVAL_INVALID');
-    if (op.state !== 'SUBMITTING') ttsFail('TTS_RECONCILIATION_REQUIRED');
-    // Every historically valid request declares guaranteedMaximum=false.
-    ttsFail('TTS_FINANCIAL_GUARANTEE_REQUIRED');
+  dispatchTts(id: string, now: string): void {
+    this.transaction(() => {
+      const op = this.require(id);
+      if (!Number.isFinite(Date.parse(now))) ttsFail('TTS_APPROVAL_INVALID');
+      if (op.state !== 'SUBMITTING') ttsFail('TTS_RECONCILIATION_REQUIRED');
+      // Historic approvals never become dispatch grants through this opt-in policy.
+      if (!isTtsRiskRequest(op.request))
+        ttsFail('TTS_FINANCIAL_GUARANTEE_REQUIRED');
+      this.riskSchema();
+      if (
+        this.db
+          .prepare('SELECT 1 FROM tts_risk_dispatches_v2 WHERE operation_id=?')
+          .get(id)
+      )
+        ttsFail('TTS_RECONCILIATION_REQUIRED');
+      const row = this.db
+        .prepare(
+          'SELECT request_hash,approval_json FROM tts_financial_approvals WHERE operation_id=?',
+        )
+        .get(id);
+      if (!row || row.request_hash !== op.requestHash)
+        ttsFail('TTS_APPROVAL_REQUIRED');
+      const approval = ttsApproval(op.request, JSON.parse(row.approval_json));
+      this.validAt(approval, now);
+      this.binding(op.request);
+      const usage = this.gate.ttsCampaignUsage(op.request.campaignId);
+      if (usage.hasCeilingBreach) ttsFail('TTS_RECONCILIATION_REQUIRED');
+      if (usdUnits(usage.committedUsd) > usdUnits(usage.totalUsd))
+        ttsFail('TTS_BUDGET_EXCEEDED');
+      this.gate.assertGlobalAvailable('0', now);
+      this.db
+        .prepare('INSERT INTO tts_risk_dispatches_v2 VALUES(?,?,?,?)')
+        .run(id, op.requestHash, ttsHash(approval), now);
+    });
   }
   markTtsUnknown(
     id: string,
@@ -332,6 +408,11 @@ export class TtsFinanceRepository {
     return this.transaction(() => this.account(this.require(id)));
   }
   private account(op: TtsFinancialOperation) {
+    if (
+      isTtsRiskRequest(op.request) &&
+      (!op.billing || !op.reconciliationReference)
+    )
+      ttsFail('TTS_BILLING_EVIDENCE_REQUIRED');
     if (op.state === 'SUBMITTING') ttsFail('TTS_STATE_INVALID');
     const adjustments = new CostAdjustmentsRepository(this.ledger);
     const original = this.ledger.getCostEvent(

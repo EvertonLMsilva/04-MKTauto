@@ -53,7 +53,7 @@ export class FinanceSession extends FinanceGate {
   override getTts(id: string) {
     return this.ttsFinance.getTts(id);
   }
-  dispatchTts(id: string, now = new Date().toISOString()): never {
+  dispatchTts(id: string, now = new Date().toISOString()): void {
     return this.ttsFinance.dispatchTts(id, now);
   }
   markTtsUnknown(id: string, errorCode?: string | null) {

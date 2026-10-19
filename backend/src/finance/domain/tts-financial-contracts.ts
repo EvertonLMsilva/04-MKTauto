@@ -5,7 +5,14 @@ import {
 } from '../../affiliate/domain/affiliate-contracts.js';
 import { ContractValidationError } from '../../project/domain/project.errors.js';
 
-// Wire values, hashes and policy are unchanged from tts-finance-contracts.js.
+// Legacy requests retain their wire values and denial policy.
+export const TTS_RISK_POLICY = 'tts-risk-reservation/2.0.0';
+export function isTtsRiskRequest(request: any): boolean {
+  return (
+    request?.schemaVersion === 'tts-operation/2.0.0' &&
+    request.financialPolicy?.schemaVersion === TTS_RISK_POLICY
+  );
+}
 export function ttsFail(code: string): never {
   throw Object.assign(new Error(code), { code });
 }
@@ -132,8 +139,21 @@ export function ttsRequest(plan: any): any {
   for (const key of ['sourceId', 'pipelineRunId'])
     affiliateIdentifier(op[key], key);
   affiliateIdentifier(plan.operationId, 'operationId');
+  const risk = plan.financialPolicy;
+  if (risk !== undefined) {
+    if (
+      !risk ||
+      Object.keys(risk).sort().join(',') !==
+        'schemaVersion,scriptContentHash,scriptId' ||
+      risk.schemaVersion !== TTS_RISK_POLICY ||
+      !hash(risk.scriptContentHash)
+    )
+      ttsFail('TTS_INVALID_POLICY');
+    affiliateIdentifier(risk.scriptId, 'scriptId');
+  }
   return immutable({
-    schemaVersion: 'tts-operation/1.0.0',
+    schemaVersion: risk ? 'tts-operation/2.0.0' : 'tts-operation/1.0.0',
+    ...(risk ? { financialPolicy: risk } : {}),
     operationId: plan.operationId,
     campaignId: config.campaignId,
     operation: op,
@@ -157,12 +177,24 @@ export interface TtsApproval {
   approvedAt: string;
   approvedBy: string;
   requestHash: string;
+  policyVersion?: string;
+  expiresAt?: string;
 }
 export function ttsApproval(request: unknown, value: any): TtsApproval {
+  const risk = isTtsRiskRequest(request);
+  const fields = [
+    'acceptsUnboundedCost',
+    'approvalReference',
+    'approvedAt',
+    'approvedBy',
+    'requestHash',
+    ...(risk ? ['expiresAt', 'policyVersion'] : []),
+  ]
+    .sort()
+    .join(',');
   if (
     !value ||
-    Object.keys(value).sort().join(',') !==
-      'acceptsUnboundedCost,approvalReference,approvedAt,approvedBy,requestHash' ||
+    Object.keys(value).sort().join(',') !== fields ||
     value.requestHash !== ttsHash(request) ||
     value.acceptsUnboundedCost !== true ||
     typeof value.approvedBy !== 'string' ||
@@ -170,7 +202,12 @@ export function ttsApproval(request: unknown, value: any): TtsApproval {
     typeof value.approvalReference !== 'string' ||
     !/^[a-zA-Z0-9_.:/-]{3,200}$/.test(value.approvalReference) ||
     typeof value.approvedAt !== 'string' ||
-    !Number.isFinite(Date.parse(value.approvedAt))
+    !Number.isFinite(Date.parse(value.approvedAt)) ||
+    (risk &&
+      (value.policyVersion !== TTS_RISK_POLICY ||
+        typeof value.expiresAt !== 'string' ||
+        !Number.isFinite(Date.parse(value.expiresAt)) ||
+        Date.parse(value.expiresAt) <= Date.parse(value.approvedAt)))
   )
     ttsFail('TTS_APPROVAL_INVALID');
   return immutable(value);

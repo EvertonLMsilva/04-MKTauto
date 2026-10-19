@@ -9,7 +9,20 @@ import {
   ConflictException,
   NotFoundException,
   InternalServerErrorException,
+  UseGuards,
+  Req,
 } from '@nestjs/common';
+import type { Request } from 'express';
+import {
+  LocalQcGuard,
+  QC_REVIEWER_CONTEXT,
+} from '../publishing/application/local-qc.guard.js';
+import { operationalQcIdentity } from '../publishing/application/local-qc-identity.js';
+import { narrationEnvelope } from './domain/narration-contracts.js';
+import {
+  isTtsRiskRequest,
+  ttsFail,
+} from '../finance/domain/tts-financial-contracts.js';
 import { NarrationService } from './application/narration.service.js';
 import { ContractValidationError } from '../project/domain/project.errors.js';
 
@@ -24,7 +37,56 @@ export class NarrationController {
   }
 
   @Post('approvals') approve(@Body() value: unknown) {
-    return this.respond(() => this.narration.approve(value));
+    return this.respond(() => {
+      const { plan } = narrationEnvelope(value, ['plan', 'approval']);
+      if (isTtsRiskRequest(this.narration.prepare(plan).request))
+        ttsFail('TTS_AUTHENTICATED_APPROVAL_REQUIRED');
+      return this.narration.approve(value);
+    });
+  }
+
+  @Post('risk-authorizations')
+  @UseGuards(LocalQcGuard)
+  authorizeRisk(
+    @Body() value: unknown,
+    @Req() request: Request & { [QC_REVIEWER_CONTEXT]?: unknown },
+  ) {
+    return this.respond(() => {
+      const principal = operationalQcIdentity.assertActive(
+        request[QC_REVIEWER_CONTEXT],
+      );
+      const { plan, approval } = narrationEnvelope(value, ['plan', 'approval']);
+      if (!isTtsRiskRequest(this.narration.prepare(plan).request))
+        ttsFail('TTS_INVALID_POLICY');
+      const accepted = narrationEnvelope(approval, [
+        'requestHash',
+        'approvalReference',
+        'acceptsUnboundedCost',
+        'expiresAt',
+        'policyVersion',
+      ]);
+      return this.narration.approve({
+        plan,
+        approval: {
+          ...accepted,
+          approvedBy: principal.id,
+          approvedAt: new Date().toISOString(),
+        },
+      });
+    });
+  }
+
+  @Post('risk-executions')
+  @UseGuards(LocalQcGuard)
+  async executeRisk(@Body() value: unknown) {
+    try {
+      const { plan } = narrationEnvelope(value, ['plan']);
+      return await this.narration.execute(plan);
+    } catch (error) {
+      return this.respond(() => {
+        throw error;
+      });
+    }
   }
 
   @Get(':id') get(@Param('id') id: string) {

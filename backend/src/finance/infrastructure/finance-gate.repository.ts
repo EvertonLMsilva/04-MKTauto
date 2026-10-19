@@ -30,6 +30,7 @@ import type { CostLedgerRepository } from './cost-ledger.repository.js';
 import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
 import { validateFirstFalRiskProof } from '../domain/first-fal-risk.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
+import { isTtsRiskRequest } from '../domain/tts-financial-contracts.js';
 const GLOBAL_DEFAULTS = Object.freeze({
   dailyUsd: '1',
   monthlyUsd: '20',
@@ -233,7 +234,7 @@ export class FinanceGate {
               (op.billing?.actualCostUsd ?? op.request.estimatedUsd))
         )
           accounted.add(cost.costEventId);
-        if (!v2 && actual > maximum)
+        if (!v2 && !isTtsRiskRequest(op.request) && actual > maximum)
           fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
       }
     for (const cost of this.db
@@ -672,7 +673,8 @@ export class FinanceGate {
               ? realized
               : reservation;
         if (unresolved) hasUnknown = true;
-        if (!v2 && actual > reservation) hasCeilingBreach = true;
+        if (!v2 && !isTtsRiskRequest(operation.request) && actual > reservation)
+          hasCeilingBreach = true;
         if (
           event &&
           event.pipelineRunId === operation.request.operation.pipelineRunId &&
