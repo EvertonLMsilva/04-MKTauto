@@ -136,6 +136,34 @@ export class OperationsController {
       return this.operations.ttsPreparation(id, true);
     });
   }
+  @Get('executions/:id/narration.wav')
+  @UseGuards(LocalQcGuard)
+  narrationAudio(
+    @Param('id') id: string,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    return this.respond(() => {
+      const bytes = this.operations.narrationBytes(id);
+      this.headers(response, 'audio/wav');
+      response.set('Content-Length', String(bytes.length));
+      return new StreamableFile(bytes);
+    });
+  }
+  @Post('executions/:id/composition-authorization')
+  @UseGuards(LocalQcGuard)
+  authorizeComposition(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.authorizeComposition(
+        id,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      ),
+    );
+  }
   @Post('executions/:id/tts/authorize')
   @UseGuards(LocalQcGuard)
   authorizeTts(

@@ -1,4 +1,8 @@
 import { DatabaseSync } from 'node:sqlite';
+import {
+  compositionScope,
+  compositionGrant,
+} from './domain/composition-authorization.js';
 import { provisionSchema } from '../administration/schema-provisioner.js';
 import { NativeCampaignWorkflow } from './application/native-campaign-workflow.js';
 import { LocalFlowService } from '../media/application/local-flow.service.js';
@@ -564,6 +568,34 @@ describe('offline automatic finalization', () => {
       f.workflow.execute('COMPOSITION', f.execution, f.request, f.done),
     ).rejects.toThrow('COMPOSITION_RIGHTS_REQUIRED');
     expect(f.local.compose).not.toHaveBeenCalled();
+  });
+  it('composes review-scoped media only after explicit exact-scope authorization', async () => {
+    const f = setup();
+    Object.assign(f.asset.rights.evidence[0].mediaAuthorization, {
+      campaignId: 'campaign_001',
+      purpose: 'HUMAN_QC_REVIEW',
+    });
+    f.done.MEDIA_QC = { reports: [f.report('APPROVED')] };
+    f.done.AUDIO = { voiceTrackId: 'voice_001' };
+    f.done.ALIGNMENT = { verified: true };
+    f.done.SUBTITLES = { subtitleId: 'subtitle_001' };
+    const p = compositionScope(f.execution, f.done);
+    f.done.COMPOSITION_AUTHORIZATION = compositionGrant(
+      f.execution,
+      f.done,
+      {
+        scopeHash: p.scopeHash,
+        acceptsCompositionRights: true,
+        audioIntelligible: true,
+        sourceRef: 'fixture/license',
+        statement:
+          'Explicit fixture authorization for local commercial composition.',
+      },
+      'operator_001',
+      new Date().toISOString(),
+    );
+    await f.workflow.execute('COMPOSITION', f.execution, f.request, f.done);
+    expect(f.local.compose).toHaveBeenCalledTimes(1);
   });
   it('accepts campaign-scoped rights only for the matching review operation', async () => {
     const f = setup();

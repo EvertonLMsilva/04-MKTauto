@@ -46,6 +46,16 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  audioBytes(
+    runId: string,
+    scriptId: string,
+    scriptHash: string,
+    voiceId: string,
+  ) {
+    const audio = this.authorizedAudio(runId, scriptId, scriptHash, voiceId);
+    if (!audio) localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+    return this.voiceFiles().read(audio!.contentHash, 'wav', 20971520);
+  }
   private paidOperation(id: string, script: any, target: number) {
     const op = this.finance?.getTts(id);
     if (
