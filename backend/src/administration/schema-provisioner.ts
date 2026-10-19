@@ -144,6 +144,7 @@ function financialExtensions(db: DatabaseSync) {
   for (const [marker, name] of [
     ['tts_finance_metadata', 'tts_finance_v1'],
     ['global_finance_policy', 'global_finance_v1'],
+    ['tts_risk_dispatches_v2', 'tts_risk_policy_v2'],
   ]) {
     if (!db.prepare('SELECT 1 FROM sqlite_master WHERE name=?').get(marker!))
       db.exec(extension(name!));
