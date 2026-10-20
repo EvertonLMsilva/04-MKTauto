@@ -251,6 +251,7 @@ export function provisionSchema(db: DatabaseSync, target = 42): void {
       ).all();
     }
     if (target >= 42) {
+      db.exec(extension('instagram_editorial_v1'));
       campaignSourceExtension(db);
       provisionSocialContext(db);
       db.prepare(

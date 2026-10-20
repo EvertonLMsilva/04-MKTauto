@@ -28,6 +28,7 @@ import { FinanceService } from '../finance/application/finance.service.js';
 import { CONTENT_OPERATIONS } from './application/ports/operations.port.js';
 import type { ContentOperationsService } from './application/content-operations.service.js';
 import { PublishingService } from '../publishing/application/publishing.service.js';
+import { InstagramEditorialService } from '../publishing/application/instagram-editorial.service.js';
 import { NativeCampaignWorkflow } from './application/native-campaign-workflow.js';
 import {
   CampaignAdministration,
@@ -68,6 +69,7 @@ import { CampaignController } from './campaign.controller.js';
         InstagramPublicationService,
         VideoProductionPreparationService,
         VideoGenerationService,
+        InstagramEditorialService,
       ],
       useFactory: (
         a: AffiliateService,
@@ -84,12 +86,28 @@ import { CampaignController } from './campaign.controller.js';
         instagram: InstagramPublicationService,
         preparations: VideoProductionPreparationService,
         generation: VideoGenerationService,
+        captions: InstagramEditorialService,
       ) =>
-        new NativeCampaignWorkflow(a, b, r, e, p, c, l, m, f, o, h, instagram, {
-          preparations,
-          generation,
-          media: m,
-        }),
+        new NativeCampaignWorkflow(
+          a,
+          b,
+          r,
+          e,
+          p,
+          c,
+          l,
+          m,
+          f,
+          o,
+          h,
+          instagram,
+          {
+            preparations,
+            generation,
+            media: m,
+          },
+          captions,
+        ),
     },
     {
       provide: CampaignAdministration,

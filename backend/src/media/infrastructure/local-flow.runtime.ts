@@ -1,4 +1,9 @@
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
+import {
+  publicationScope,
+  validPublicationGrant,
+} from '../../publishing/domain/instagram-editorial.js';
 import {
   PRODUCT_FRAMING_STRATEGY,
   PRODUCT_CAPTION_STYLE,
@@ -1019,7 +1024,7 @@ export class LocalFlowRuntime {
       within(audios[0].duration)
     );
   }
-  publicationEvidence(qcId: string) {
+  publicationEvidence(qcId: string, inspectOnly = false) {
     return this.session((r) => {
       const qc: any = r.document(qcId, 'local_qc', this.files());
       const render = r.getVideoRender(qc.videoRenderId) as any;
@@ -1055,30 +1060,89 @@ export class LocalFlowRuntime {
       );
       if (!audio || audio.contentHash !== plan.voiceTrackContentHash)
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
+      const sourceAssets = plan.segments.map((s: any) =>
+        this.media.get(s.mediaAssetId),
+      );
+      const currentScript = r.getScript(plan.scriptId);
+      if (
+        !currentScript ||
+        currentScript.contentHash !== plan.scriptContentHash
+      )
+        localFail('PUBLICATION_LINEAGE_REQUIRED');
+      if (sourceAssets.some((a: any) => !a))
+        localFail('PUBLICATION_RIGHTS_REQUIRED');
+      const scope = publicationScope(render, plan, audio, sourceAssets);
+      const hasTable = r.db
+        .prepare(
+          "SELECT 1 FROM sqlite_master WHERE name='instagram_publication_rights'",
+        )
+        .get();
+      const row = hasTable
+        ? r.db
+            .prepare(
+              'SELECT payload_json FROM instagram_publication_rights WHERE scope_hash=?',
+            )
+            .get(scope.scopeHash)
+        : null;
+      const grant = row ? JSON.parse(String(row.payload_json)) : null;
+      const scoped = sourceAssets.some((a: any) =>
+        a.rights.evidence?.some(
+          (e: any) =>
+            e.mediaAuthorization?.campaignId !== undefined ||
+            e.mediaAuthorization?.operationScope !== undefined,
+        ),
+      );
+      const grantValid = validPublicationGrant(grant, scope);
       const assets = plan.segments.map((segment: any) => {
         const asset = this.media.get(segment.mediaAssetId);
         if (
           !asset ||
           asset.pipelineRunId !== render.pipelineRunId ||
-          asset.scriptId !== plan.scriptId ||
+          !visualScriptMatches(
+            currentScript,
+            asset.scriptId,
+            asset.scriptContentHash,
+            (id) => r.getScript(id),
+          ) ||
           asset.contentHash !== segment.mediaAssetContentHash ||
           !asset.rights.commercialUseAllowed
         )
           localFail('PUBLICATION_RIGHTS_REQUIRED');
-        // Existing composition-only/review-only scopes are never widened for publishing.
-        if (
-          asset!.rights.evidence?.some(
-            (e) =>
-              e.mediaAuthorization?.campaignId !== undefined ||
-              e.mediaAuthorization?.operationScope !== undefined,
-          )
-        )
-          localFail('PUBLICATION_RIGHTS_REQUIRED');
-        assertMediaProcessingRights(
-          asset!.rights.evidence,
-          { mediaRef: asset!.mediaReference, contentHash: asset!.contentHash },
-          null,
+        // Preserve the original review scope; publishing requires its own exact grant.
+        const scopedAsset = asset!.rights.evidence?.some(
+          (e) =>
+            e.mediaAuthorization?.campaignId !== undefined ||
+            e.mediaAuthorization?.operationScope !== undefined,
         );
+        if (scopedAsset && !inspectOnly && !grantValid)
+          localFail('PUBLICATION_RIGHTS_REQUIRED');
+        if (scopedAsset) {
+          for (const e of asset!.rights.evidence!.filter(
+            (e) => e.kind === 'MEDIA_USAGE_RIGHT',
+          )) {
+            const a = e.mediaAuthorization;
+            assertMediaProcessingRights(
+              [e],
+              {
+                mediaRef: asset!.mediaReference,
+                contentHash: asset!.contentHash,
+              },
+              null,
+              a?.operationScope,
+              a?.campaignId
+                ? { campaignId: a.campaignId, purpose: a.purpose! }
+                : undefined,
+            );
+          }
+        } else
+          assertMediaProcessingRights(
+            asset!.rights.evidence,
+            {
+              mediaRef: asset!.mediaReference,
+              contentHash: asset!.contentHash,
+            },
+            null,
+          );
         const review: any = this.media.temporalReview(asset!.mediaAssetId);
         if (review?.result !== 'PASS')
           localFail('PUBLICATION_SOURCE_QC_REQUIRED');
@@ -1102,6 +1166,15 @@ export class LocalFlowRuntime {
       ).authorization;
       return {
         qc,
+        publicationScope: scope,
+        publicationAuthorization: {
+          required: scoped && !grantValid,
+          grant: grantValid ? grant : null,
+          missing:
+            scoped && !grantValid
+              ? 'COMMERCIAL_INSTAGRAM_FAKE_PUBLICATION'
+              : null,
+        },
         render,
         planHash: plan.contentHash,
         audio: {

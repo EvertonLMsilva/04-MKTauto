@@ -2018,3 +2018,9 @@ Executar exatamente um tópico por branch. Antes de editar, aprovar pacote com
 resultado, arquivos, fora de escopo e testes. Concluir com revisão do diff,
 roadmap atualizado, commit, push e PR. O próximo tópico começa somente após o
 merge do anterior.
+
+## Instagram MVP — fechamento operacional e estratégia futura
+
+- O fechamento atual integra legenda automática fundamentada nos dados cadastrados, revisão versionada, autorização específica de publicação quando necessária e agendamento Instagram fake. Direitos, QC, Finance, aprovação da versão exata e histórico permanecem obrigatórios.
+- A extração local registra explicitamente modelo indisponível e ausência de nova inferência de IA; não representa uma chamada generativa nem autoriza chamadas pagas.
+- **Estratégia futura: páginas dark.** Avaliar páginas temáticas sem exposição pessoal após a validação comercial do MVP. Cadastro de contas, identidade editorial, direitos e operação dessas páginas dependem de especificação e autorização futuras. Nenhuma funcionalidade de páginas dark é implementada neste fechamento.

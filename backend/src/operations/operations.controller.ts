@@ -321,6 +321,32 @@ export class OperationsController {
   instagramPackage(@Param('id') id: string, @Body() value: unknown) {
     return this.respond(() => this.operations.prepareInstagram(id, value));
   }
+  @Post('executions/:id/instagram/caption')
+  @UseGuards(LocalQcGuard)
+  instagramCaption(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.caption(id, value, request[QC_REVIEWER_CONTEXT]),
+    );
+  }
+  @Post('executions/:id/instagram/rights')
+  @UseGuards(LocalQcGuard)
+  instagramRights(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() =>
+      this.operations.publicationRights(
+        id,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      ),
+    );
+  }
   @Post('executions/:id/instagram/schedule')
   @UseGuards(LocalQcGuard)
   instagramSchedule(

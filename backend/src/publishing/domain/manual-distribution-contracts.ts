@@ -34,6 +34,12 @@ export function hashValue(v: any, field: any): any {
     distributionFail('DISTRIBUTION_INVALID_HASH', field);
   return v;
 }
+export function captionText(value: any, field = 'caption', max = 5000) {
+  if (typeof value !== 'string' || value !== value.trim() || value.length > max)
+    distributionFail('DISTRIBUTION_INVALID_TEXT', field);
+  publicText(value.replace(/\n/g, ' '), field, max);
+  return value;
+}
 export function timestamp(v: any, field: any): any {
   if (
     typeof v !== 'string' ||
@@ -77,7 +83,7 @@ export function validatePrepare(v: any): any {
   )
     distributionFail('DISTRIBUTION_PLATFORM_INVALID');
   publicText(v.account, 'account', 200);
-  publicText(v.caption, 'caption', 5000);
+  captionText(v.caption, 'caption', 5000);
   return v;
 }
 export function validatePublication(v: any): any {

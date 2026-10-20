@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { InstagramEditorialService } from '../publishing/application/instagram-editorial.service.js';
 import { PublishingService } from '../publishing/application/publishing.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { InstagramConnectionService } from '../publishing/application/instagram-connection.service.js';
@@ -37,7 +38,58 @@ export class OperationsService {
     @Optional()
     @Inject(NarrationService)
     private readonly narration?: NarrationService,
+    @Optional()
+    @Inject(InstagramEditorialService)
+    private readonly captions?: InstagramEditorialService,
   ) {}
+  private async captionContext(id: string) {
+    const c = this.campaigns.finalizationContext(id);
+    return this.campaigns.workflow.captionContext(
+      c.execution,
+      c.request,
+      c.completed,
+    );
+  }
+  async caption(id: string, value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal),
+      input = document(value);
+    if (!this.captions) fail('SOCIAL_CAPTION_UNAVAILABLE');
+    if (
+      !['', 'previousHash', 'previousHash,text'].includes(
+        Object.keys(input).sort().join(','),
+      )
+    )
+      fail('SOCIAL_CAPTION_REQUEST_INVALID');
+    if (
+      Object.keys(input).length &&
+      (typeof input.previousHash !== 'string' ||
+        (input.text !== undefined && typeof input.text !== 'string'))
+    )
+      fail('SOCIAL_CAPTION_REQUEST_INVALID');
+    return this.captions!.ensure(
+      id,
+      await this.captionContext(id),
+      input.previousHash
+        ? {
+            previousHash: input.previousHash as string,
+            actorId: actor.id,
+            ...(input.text !== undefined ? { text: input.text as string } : {}),
+          }
+        : undefined,
+    );
+  }
+  publicationRights(id: string, value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal),
+      c = this.campaigns.publicationContext(id);
+    const proof: any = this.local.publicationEvidence(
+      String(document(c.completed.QC).reportId),
+      true,
+    );
+    if (!proof.publicationAuthorization?.required)
+      return proof.publicationAuthorization;
+    if (!this.captions) fail('SOCIAL_CAPTION_UNAVAILABLE');
+    return this.captions!.grant(proof.publicationScope, value, actor.id);
+  }
   private ttsScope(id: string): NarrationScope {
     const c = this.campaigns.finalizationContext(id),
       script = document(document(c.completed.EDITORIAL).script);
@@ -459,25 +511,50 @@ export class OperationsService {
   }
   async instagramStatus(id: string) {
     this.campaigns.finalizationContext(id);
-    return (
-      this.instagram?.status(id) ?? {
-        configuration: { mode: 'disabled' },
-        schedule: null,
-        operation: null,
-      }
+    const status = await (this.instagram?.status(id) ?? {
+      configuration: { mode: 'disabled' },
+      schedule: null,
+      operation: null,
+    });
+    const c = this.campaigns.finalizationContext(id);
+    if (!this.captions || !c.completed.QC || !c.completed.BURN) return status;
+    const proof: any = this.local.publicationEvidence(
+      String(document(c.completed.QC).reportId),
+      true,
     );
+    const history = this.captions.history(id);
+    return {
+      ...status,
+      caption: history.at(-1) ?? null,
+      captionHistory: history,
+      publicationRights: {
+        ...proof.publicationAuthorization,
+        scope: proof.publicationScope,
+      },
+    };
   }
   prepareInstagram(id: string, value: unknown) {
     const input = document(value),
       config = this.instagram?.configuration();
     if (
-      Object.keys(input).join(',') !== 'caption' ||
+      !['caption', 'captionHash'].includes(Object.keys(input).join(',')) ||
       config?.mode !== 'fake' ||
       !config.accountId
     )
       fail('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
     const c = this.campaigns.publicationContext(id),
       qc = document(c.completed.QC);
+    let text = input.caption;
+    if (input.captionHash !== undefined) {
+      const draft = this.captions?.history(id).at(-1);
+      if (
+        !draft ||
+        draft.contentHash !== input.captionHash ||
+        draft.context.render?.contentHash !== c.handoff.contentHash
+      )
+        fail('SOCIAL_CAPTION_VERSION_STALE');
+      text = draft.text;
+    }
     return this.publishing!.prepare(
       {
         campaignId: c.execution.campaign_id,
@@ -486,10 +563,10 @@ export class OperationsService {
         qualityControlReportId: qc.qualityControlReportId ?? qc.reportId,
         platform: 'instagram',
         account: config!.accountId,
-        caption: input.caption,
+        caption: text,
       },
       `p8_package_${createHash('sha256')
-        .update(id + ':' + String(input.caption))
+        .update(id + ':' + String(text))
         .digest('hex')}`,
     );
   }
@@ -507,6 +584,14 @@ export class OperationsService {
       fail('SOCIAL_LIVE_POST_BLOCKED');
     const c = this.campaigns.publicationContext(id),
       pkg = this.publishing!.package(String(input.packageHash));
+    const currentCaption = this.captions?.history(id).at(-1);
+    if (
+      currentCaption &&
+      pkg &&
+      (pkg.caption !== currentCaption.text ||
+        currentCaption.context.render?.contentHash !== c.handoff.contentHash)
+    )
+      fail('SOCIAL_CAPTION_VERSION_STALE');
     if (
       !pkg ||
       pkg.campaignId !== c.execution.campaign_id ||

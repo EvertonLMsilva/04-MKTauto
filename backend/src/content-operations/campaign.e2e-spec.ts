@@ -340,6 +340,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
   ])(
     'browser QC, offline finalization and independent handoff: %j',
     async ({ mediaDecision, finalDecision, simulateTimeout, paidTts }) => {
+      let restorePublicationRights: (() => void) | undefined;
       const e = await service.schedule({
         ...body,
         videoProduction: { mode: 'ASSISTED_LOCAL' },
@@ -1371,17 +1372,118 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             .find((event) => event.event_type === 'HUMAN_APPROVAL')?.evidence
             .actor,
         ).toBe('qc_operator_test');
-        if (finalDecision === 'APPROVED' && simulateTimeout !== false) {
+        if (finalDecision === 'APPROVED') {
           const prefix = `/operations/executions/${e.execution_id}/instagram`;
+          const authHeaders = {
+            Host: 'localhost:3000',
+            Origin: 'http://localhost:3000',
+            'x-qc-csrf': session.body.csrfToken,
+          };
+          const generated = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({})
+            .expect(201);
+          expect(generated.body.inferencePerformed).toBe(false);
+          const replayCaption = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({})
+            .expect(201);
+          expect(replayCaption.body.contentHash).toBe(
+            generated.body.contentHash,
+          );
+          const regenerated = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({ previousHash: generated.body.contentHash })
+            .expect(201);
+          expect(regenerated.body.revision).toBe(generated.body.revision + 1);
+          await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({ previousHash: generated.body.contentHash })
+            .expect(409);
+          const captionStatus = await browser
+            .get(prefix)
+            .set('Host', 'localhost:3000');
+          expect(captionStatus.status, JSON.stringify(captionStatus.body)).toBe(
+            200,
+          );
+          expect(captionStatus.body.captionHistory).toHaveLength(2);
+          expect(captionStatus.body.caption.text).toContain('Publicidade');
+          const originalGet = media.get.bind(media);
+          const scopedRights = vi
+            .spyOn(media, 'get')
+            .mockImplementation((assetId: string) => {
+              const a = originalGet(assetId);
+              return a
+                ? {
+                    ...a,
+                    rights: {
+                      ...a.rights,
+                      evidence: a.rights.evidence?.map((e) =>
+                        e.mediaAuthorization
+                          ? {
+                              ...e,
+                              mediaAuthorization: {
+                                ...e.mediaAuthorization,
+                                campaignId: 'camp_001',
+                                operationScope: 'fixture_review_scope',
+                                purpose: 'HUMAN_QC_REVIEW' as const,
+                              },
+                            }
+                          : e,
+                      ),
+                    },
+                  }
+                : a;
+            });
+          restorePublicationRights = () => scopedRights.mockRestore();
+          const rightsStatus = await browser
+            .get(prefix)
+            .set('Host', 'localhost:3000');
+          expect(rightsStatus.status, JSON.stringify(rightsStatus.body)).toBe(
+            200,
+          );
+          expect(rightsStatus.body.publicationRights.required).toBe(true);
+          await browser
+            .post(prefix + '/package')
+            .set(authHeaders)
+            .send({ captionHash: regenerated.body.contentHash })
+            .expect(400);
+          const consent = {
+            scopeHash: rightsStatus.body.publicationRights.scope.scopeHash,
+            sourceRef: 'fixture:owned-publication-license',
+            statement:
+              'Offline fixture operator owns the commercial Instagram publication rights.',
+            acceptsCommercialPublication: true,
+          };
+          await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send({ ...consent, acceptsCommercialPublication: false })
+            .expect(400);
+          const granted = await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send(consent)
+            .expect(201);
+          const consentReplay = await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send(consent)
+            .expect(201);
+          expect(
+            consentReplay.body.grant?.contentHash ??
+              consentReplay.body.contentHash,
+          ).toBe(granted.body.contentHash);
           const prepare = await browser
             .post(prefix + '/package')
             .set('Host', 'localhost:3000')
             .set('Origin', 'http://localhost:3000')
             .set('x-qc-csrf', session.body.csrfToken)
-            .send({
-              caption:
-                'Owned offline fixture video, explicitly authorized for a simulated post.',
-            });
+            .send({ captionHash: regenerated.body.contentHash });
           expect(prepare.status, JSON.stringify(prepare.body)).toBe(201);
           const scheduleAt = new Date(Date.now() + 60000).toISOString();
           const input = {
@@ -1396,18 +1498,16 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             .set('x-qc-csrf', session.body.csrfToken)
             .send({ ...input, confirm: false })
             .expect(400);
-          const getAsset = media.get.bind(media);
-          const deniedRights = vi
-            .spyOn(media, 'get')
-            .mockImplementation((mediaId: string) => {
-              const asset = getAsset(mediaId);
-              return asset
-                ? {
-                    ...asset,
-                    rights: { ...asset.rights, commercialUseAllowed: false },
-                  }
-                : asset;
-            });
+          const getAsset = scopedRights.getMockImplementation()!;
+          scopedRights.mockImplementation((mediaId: string) => {
+            const asset = getAsset(mediaId);
+            return asset
+              ? {
+                  ...asset,
+                  rights: { ...asset.rights, commercialUseAllowed: false },
+                }
+              : asset;
+          });
           try {
             const denied = await browser
               .post(prefix + '/schedule')
@@ -1415,10 +1515,10 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
               .set('Origin', 'http://localhost:3000')
               .set('x-qc-csrf', session.body.csrfToken)
               .send(input);
-            expect(denied.status).toBe(400);
+            expect(denied.status, JSON.stringify(denied.body)).toBe(400);
             expect(denied.body.code).toBe('PUBLICATION_RIGHTS_REQUIRED');
           } finally {
-            deniedRights.mockRestore();
+            scopedRights.mockImplementation(getAsset);
           }
           const scheduledResponse = await browser
             .post(prefix + '/schedule')
@@ -1502,9 +1602,12 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             publish.mockRestore();
           }
           expect(service.get(e.execution_id).status).toBe('SUCCEEDED');
+          restorePublicationRights();
+          restorePublicationRights = undefined;
         }
         expect(aligner.align).toHaveBeenCalledTimes(1);
       } finally {
+        restorePublicationRights?.();
         spy.mockRestore();
       }
     },

@@ -39,6 +39,7 @@ export function publishingEvidence(
           'NARRATION_RIGHTS',
         ].map((code) => ({ code, status: 'PASS' })),
         evidence: {
+          publicationAuthorization: proof.publicationAuthorization ?? null,
           localQcHash: adaptationHash(proof.qc),
           planHash: proof.planHash,
           audio: proof.audio,

@@ -30,7 +30,7 @@ export interface LocalAudiovisualPort {
     },
     durationMs: number,
   ): Promise<AuthorizedLocalAudio>;
-  publicationEvidence?(qcId: string): unknown;
+  publicationEvidence?(qcId: string, inspectOnly?: boolean): unknown;
   ingestRecording?(
     scope: {
       pipelineRunId: string;
