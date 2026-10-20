@@ -37,12 +37,12 @@ export class LocalFlowService {
       });
     return this.runtime.automaticAudio(scope, durationMs);
   }
-  publicationEvidence(qcId: string) {
+  publicationEvidence(qcId: string, inspectOnly = false) {
     if (!this.runtime.publicationEvidence)
       throw Object.assign(new Error('PUBLICATION_EVIDENCE_REQUIRED'), {
         code: 'PUBLICATION_EVIDENCE_REQUIRED',
       });
-    return this.runtime.publicationEvidence(qcId);
+    return this.runtime.publicationEvidence(qcId, inspectOnly);
   }
   ingestRecording(
     scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],

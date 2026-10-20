@@ -161,6 +161,11 @@ export class ManualDistributionService {
       fail('DISTRIBUTION_QC_BINDING_MISMATCH');
     if (q.result !== 'PASS' || q.approvalBlocked !== false)
       fail('DISTRIBUTION_QC_FAILED');
+    if (
+      q.evidence?.publicationAuthorization?.grant?.scope?.mode === 'fake' &&
+      p.platform !== 'instagram'
+    )
+      fail('DISTRIBUTION_DESTINATION_RIGHTS_REQUIRED');
     const rightsCodes: any =
       q.schemaVersion === 'quality-control-report/1.0.0'
         ? ['MEDIA_RIGHTS_VALID', 'VOICE_RIGHTS_VALID']
@@ -261,6 +266,11 @@ export class ManualDistributionService {
       key,
       (): any => {
         const p: any = this.#package(v.packageHash);
+        if (
+          p.qualityControl?.evidence?.publicationAuthorization?.grant?.scope
+            ?.mode === 'fake'
+        )
+          fail('DISTRIBUTION_FAKE_ONLY');
         const review: any = this.getReview(p.contentHash);
         if (review?.mediaDecision.decision !== 'APPROVED')
           fail('DISTRIBUTION_APPROVAL_REQUIRED');

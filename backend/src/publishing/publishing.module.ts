@@ -25,17 +25,24 @@ import {
   SOCIAL_HISTORY_DATABASE,
 } from './infrastructure/publishing.persistence.js';
 import { PublishingService } from './application/publishing.service.js';
+import { InstagramEditorialService } from './application/instagram-editorial.service.js';
 import { PublishingController } from './publishing.controller.js';
 
 @Module({
   imports: [MediaModule, AffiliateModule, FinanceModule],
   controllers: [PublishingController],
   exports: [
+    InstagramEditorialService,
     PublishingService,
     InstagramPublicationService,
     InstagramConnectionService,
   ],
   providers: [
+    {
+      provide: InstagramEditorialService,
+      inject: [PUBLISHING_DATABASE],
+      useFactory: (path: string | null) => new InstagramEditorialService(path),
+    },
     {
       provide: InstagramConnectionService,
       useFactory: () =>

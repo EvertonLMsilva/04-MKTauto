@@ -2,6 +2,7 @@ import {
   exact,
   publicText,
   hashValue,
+  captionText,
 } from './manual-distribution-contracts.js';
 export function socialFail(code: any): never {
   throw Object.assign(new Error(code), { code });
@@ -19,7 +20,11 @@ export function validateSocialPrepare(value: any): any {
 }
 export function instagramCaption(p: any): any {
   const caption: any = [p.caption, p.cta, p.disclosure, p.link]
-    .map((v: any, i: any): any => publicText(v, `caption_${i}`, 5000))
+    .map((v: any, i: any): any =>
+      i === 0
+        ? captionText(v, `caption_${i}`, 5000)
+        : publicText(v, `caption_${i}`, 5000),
+    )
     .join('\n\n');
   if (
     [...caption].length > 2200 ||

@@ -1,4 +1,5 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import type { InstagramEditorialService } from '../../publishing/application/instagram-editorial.service.js';
 import { PRODUCT_FRAMING_STRATEGY } from '../../media/domain/product-framing.js';
 import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
 import type { VideoGenerationService } from '../../media/application/video-generation.service.js';
@@ -174,7 +175,39 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           >
         >;
     },
+    private readonly captioning?: InstagramEditorialService,
   ) {}
+  async captionContext(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    done: Record<string, unknown>,
+  ) {
+    const briefing = await this.affiliate.getBriefing(String(r.briefingId));
+    if (
+      !briefing ||
+      briefing.campaignId !== e.campaign_id ||
+      briefing.campaignRevision !== e.campaign_revision
+    )
+      throw new CampaignError('SOCIAL_CAPTION_CONTEXT_REQUIRED');
+    const script = document(document(done.EDITORIAL).script);
+    const render = this.media.getVideoRender(
+      String(document(done.BURN).videoRenderId),
+    );
+    const research =
+      typeof r.researchShortlistId === 'string'
+        ? this.research.getShortlist(r.researchShortlistId)
+        : null;
+    return {
+      briefing,
+      script,
+      render,
+      qc: done.QC,
+      research: research
+        ? { id: research.shortlistId ?? r.researchShortlistId }
+        : null,
+      audience: document(done.CONTEXT ?? {}).audienceProfile ?? null,
+    };
+  }
   scriptRevisions(e: CampaignExecution, previous: Record<string, unknown>) {
     return this.content.listScripts(e.run_id).filter((script) => {
       try {
@@ -1085,6 +1118,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       if (report.result === 'UNKNOWN')
         throw new CampaignError('QC_INPUT_REQUIRED');
       if (report.result !== 'PASS') throw new CampaignError('QC_FAILED');
+      if (this.captioning)
+        await this.captioning.ensure(
+          e.execution_id,
+          await this.captionContext(e, r, { ...done, QC: report }),
+        );
       return report;
     }
     if (step === 'PREVIEW') {
