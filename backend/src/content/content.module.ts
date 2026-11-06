@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { OllamaEditorialProvider } from './infrastructure/ollama-editorial.provider.js';
 import { ContentOperationsModule } from '../content-operations/content-operations.module.js';
 import { CONTENT_OPERATIONS } from '../content-operations/application/ports/operations.port.js';
 import type { ContentOperationsService } from '../content-operations/application/content-operations.service.js';
@@ -43,7 +44,9 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
       useFactory: () =>
         process.env.CONTENT_EDITORIAL_PROVIDER === 'fake'
           ? new FakeEditorialProvider()
-          : new UnavailableEditorialProvider(),
+          : process.env.CONTENT_EDITORIAL_PROVIDER === 'ollama'
+            ? new OllamaEditorialProvider(process.env.OLLAMA_MODEL ?? '')
+            : new UnavailableEditorialProvider(),
     },
     {
       provide: EditorialFlowService,
