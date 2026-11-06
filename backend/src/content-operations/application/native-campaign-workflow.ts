@@ -27,6 +27,7 @@ import { adaptationHash } from '../../media/domain/media-hash.js';
 import { compositionPlanContentHash } from '../../media/domain/composition-plan-contracts.js';
 import { videoCompositionRequestHash } from '../../media/domain/video-composition-contracts.js';
 import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
+import type { LocalImageSource } from '../../media/application/local-flow.port.js';
 
 export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -56,6 +57,7 @@ export function campaignRequest(raw: unknown) {
     'videoProduction',
     'sceneMediaAssetIds',
     'legacyRecovery',
+    'localImage',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
@@ -63,7 +65,12 @@ export function campaignRequest(raw: unknown) {
     'campaignId',
     'runId',
     'briefingId',
-    ...(r.legacyRecovery ? [] : ['researchShortlistId', 'generationRequestId']),
+    ...(r.legacyRecovery
+      ? []
+      : [
+          'generationRequestId',
+          ...(r.researchShortlistId === null ? [] : ['researchShortlistId']),
+        ]),
   ])
     identifier(r[k]);
   instant(r.scheduledAt);
@@ -86,11 +93,34 @@ export function campaignRequest(raw: unknown) {
     const video = document(r.videoProduction);
     if (
       Object.keys(video).join(',') !== 'mode' ||
-      !['OFFLINE', 'ASSISTED_LOCAL'].includes(String(video.mode)) ||
+      !['OFFLINE', 'ASSISTED_LOCAL', 'LOCAL_IMAGES'].includes(
+        String(video.mode),
+      ) ||
       r.mode !== 'LOCAL_VALIDATION' ||
       r.publication !== undefined
     )
       throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+  }
+  if (
+    r.localImage !== undefined ||
+    (r.videoProduction && document(r.videoProduction).mode === 'LOCAL_IMAGES')
+  ) {
+    if (
+      !r.localImage ||
+      !r.videoProduction ||
+      document(r.videoProduction).mode !== 'LOCAL_IMAGES' ||
+      [
+        'sceneMediaAssetIds',
+        'voiceTrackId',
+        'audio',
+        'alignment',
+        'composition',
+        'scriptId',
+        'legacyRecovery',
+      ].some((key) => r[key] !== undefined)
+    )
+      throw new CampaignError('LOCAL_IMAGE_REQUEST_REQUIRED');
+    document(r.localImage);
   }
   if (r.sceneMediaAssetIds !== undefined) {
     if (
@@ -136,7 +166,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     private readonly affiliate: Pick<
       AffiliateService,
       'getCampaign' | 'getBriefing'
-    >,
+    > &
+      Partial<Pick<AffiliateService, 'createBriefing'>>,
     private readonly binding: AffiliateRunContext,
     private readonly research: ResearchReader,
     private readonly editorial: Pick<EditorialFlowService, 'generate'>,
@@ -528,7 +559,17 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const reports = document(done.MEDIA_QC).reports as {
       identity: { mediaAssetId: string; contentHash: string };
     }[];
+    const images = document(r.videoProduction).mode === 'LOCAL_IMAGES';
     const assets = reports.map(({ identity }) => {
+      if (images) {
+        const asset = this.prepareImage(e, r, script);
+        if (
+          asset.mediaAssetId !== identity.mediaAssetId ||
+          asset.contentHash !== identity.contentHash
+        )
+          throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+        return asset;
+      }
       this.compositionRights(
         this.production?.media.get(identity.mediaAssetId) ?? null,
         e,
@@ -555,7 +596,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return asset;
     });
     const durations = assets.map((a) =>
-      Number(a.technicalProperties.durationMilliseconds),
+      images
+        ? voice.durationMilliseconds
+        : Number(a.technicalProperties.durationMilliseconds),
     );
     const total = durations.reduce((sum, value) => sum + value, 0);
     if (
@@ -582,12 +625,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         mediaAssetContentHash: asset.contentHash,
         startMilliseconds: cursor,
         endMilliseconds: end,
-        mediaType: 'VIDEO',
+        mediaType: images ? 'IMAGE' : 'VIDEO',
         sourceStartMilliseconds: 0,
         playbackMode: 'TRIM',
         originalAudioMuted: true,
         framingStrategy: PRODUCT_FRAMING_STRATEGY,
-        movementRequirement: 'REAL_MOTION_REQUIRED',
+        movementRequirement: images ? 'STATIC_ALLOWED' : 'REAL_MOTION_REQUIRED',
         transition: {
           policyVersion: 'composition-transition/1.0.0',
           type: 'CUT',
@@ -648,6 +691,32 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   compositionPlan(id: string) {
     return this.media.getCompositionPlan(id);
   }
+  private prepareImage(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    script: Record<string, unknown>,
+  ) {
+    const brief = this.binding.resolveRunBriefing(
+      e.run_id,
+      String(r.briefingId),
+    );
+    const source = r.localImage as LocalImageSource;
+    if (
+      !brief ||
+      brief.campaignId !== e.campaign_id ||
+      !brief.mediaRefs.includes(source.mediaReference)
+    )
+      throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+    return this.local.prepareImage(
+      {
+        pipelineRunId: e.run_id,
+        scriptId: String(script.scriptId),
+        scriptContentHash: String(script.contentHash),
+        createdAt: e.scheduled_at,
+      },
+      source,
+    );
+  }
   private compositionRights(
     asset: ReturnType<MediaService['get']>,
     e: CampaignExecution,
@@ -676,6 +745,90 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     )
       throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
     return campaign;
+  }
+  async localRequest(value: unknown) {
+    const input = document(value);
+    if (
+      Object.keys(input).sort().join(',') !==
+        'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt' ||
+      !Number.isSafeInteger(input.projectVersion) ||
+      Number(input.projectVersion) < 1
+    )
+      throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+    const requestId = identifier(input.requestId),
+      at = instant(input.requestedAt);
+    const campaign = await this.affiliate.getCampaign(
+      identifier(input.campaignId),
+      Number(input.campaignRevision),
+    );
+    if (!campaign || !this.affiliate.createBriefing)
+      throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
+    const key = adaptationHash({
+      campaignId: campaign.campaignId,
+      requestId,
+    }).slice(0, 32);
+    const briefingId = `brief_${key}`,
+      runId = `run_${key}`;
+    await this.affiliate.createBriefing({
+      idempotencyKey: `brief_${key}`,
+      briefingId,
+      campaignId: campaign.campaignId,
+      campaignRevision: campaign.revision,
+    });
+    return campaignRequest({
+      campaignId: campaign.campaignId,
+      campaignRevision: campaign.revision,
+      scheduledAt: at,
+      runId,
+      briefingId,
+      generationRequestId: `editorial_${key}`,
+      researchShortlistId: null,
+      mode: 'LOCAL_VALIDATION',
+      videoProduction: { mode: 'LOCAL_IMAGES' },
+      localImage: input.localImage,
+      run: {
+        schemaVersion: 'pipeline-handoff/1.0.0',
+        pipelineRunId: runId,
+        projectId: campaign.projectId,
+        projectVersion: input.projectVersion,
+        startedAt: at,
+      },
+    });
+  }
+  async result(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    done: Record<string, unknown>,
+  ) {
+    const briefing = await this.affiliate.getBriefing(String(r.briefingId));
+    const script = done.EDITORIAL
+      ? document(document(done.EDITORIAL).script)
+      : null;
+    const localPackage =
+      r.videoProduction && document(r.videoProduction).mode === 'LOCAL_IMAGES';
+    return {
+      executionId: e.execution_id,
+      status: e.status,
+      preview: done.PREVIEW ?? null,
+      script: done.EDITORIAL ? document(done.EDITORIAL).script : null,
+      subtitles: done.SUBTITLES ?? null,
+      qc: done.QC ?? null,
+      caption:
+        localPackage && script
+          ? {
+              text: script.fullNarration,
+              source: 'VALIDATED_EDITORIAL_SCRIPT',
+              scriptContentHash: script.contentHash,
+              humanReview: 'REQUIRED',
+            }
+          : (this.captioning?.history(e.execution_id).at(-1) ?? null),
+      cta: briefing?.cta ?? null,
+      affiliateUrl: briefing?.affiliateUrl ?? null,
+      format: r.localImage ? 'AUTHORIZED_STATIC_IMAGE' : 'VIDEO',
+      publication:
+        done.PUBLICATION ?? (r.publication ? 'REQUESTED' : 'NOT_REQUESTED'),
+      cost: { status: 'UNKNOWN', amount: null },
+    };
   }
   private financeGate(r: Record<string, unknown>, at: string) {
     const operationIds = r.legacyRecovery
@@ -719,7 +872,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
       const campaign = await this.validate(r);
-      if (!this.research.getShortlist(String(r.researchShortlistId)))
+      if (
+        r.researchShortlistId !== null &&
+        (typeof r.researchShortlistId !== 'string' ||
+          !this.research.getShortlist(r.researchShortlistId))
+      )
         throw new CampaignError('RESEARCH_REQUIRED');
       if (r.run) {
         const run = document(r.run);
@@ -774,6 +931,64 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       });
     }
     const script = document(document(done.EDITORIAL).script);
+    if (
+      r.videoProduction &&
+      document(r.videoProduction).mode === 'LOCAL_IMAGES' &&
+      ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC', 'AUDIO'].includes(step)
+    ) {
+      const asset = this.prepareImage(e, r, script);
+      if (step === 'SCENES')
+        return {
+          mode: 'LOCAL_IMAGES',
+          mediaAssetId: asset.mediaAssetId,
+          contentHash: asset.contentHash,
+        };
+      if (step === 'VIDEO_GENERATION')
+        return {
+          mode: 'LOCAL_IMAGES',
+          generation: 'NOT_REQUESTED',
+          materialization: 'AUTHORIZED_IMAGE',
+        };
+      if (step === 'MEDIA_QC')
+        return {
+          mode: 'LOCAL_IMAGES',
+          reports: [
+            {
+              identity: {
+                mediaAssetId: asset.mediaAssetId,
+                contentHash: asset.contentHash,
+              },
+              result: 'PASS',
+              checks: [
+                'PHYSICAL_SHA256',
+                'PNG_DECODE',
+                'PROCESSING_RIGHTS',
+                'SCRIPT_BINDING',
+              ],
+              motion: 'NOT_APPLICABLE',
+              humanReview: 'PENDING_FINAL_PREVIEW',
+            },
+          ],
+        };
+      if (!done.MEDIA_QC) throw new CampaignError('MEDIA_QC_REQUIRED');
+      const run = this.operations.get(e.run_id);
+      const durationMs = run.projectSnapshot.channel.minDurationSeconds * 1000;
+      const voice = await this.local.automaticAudio(
+        {
+          pipelineRunId: e.run_id,
+          scriptId: String(script.scriptId),
+          scriptContentHash: String(script.contentHash),
+          createdAt: e.scheduled_at,
+        },
+        durationMs,
+      );
+      return {
+        voiceTrackId: voice.voiceTrackId,
+        voiceTrackContentHash: voice.contentHash,
+        durationMilliseconds: voice.durationMilliseconds,
+        cost: { status: 'UNKNOWN', amount: null },
+      };
+    }
     if (r.legacyRecovery && step === 'MEDIA_QC') {
       const verified = await this.recoverLegacy({
         campaignId: e.campaign_id,
@@ -1079,6 +1294,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       )
         throw new CampaignError('CAMPAIGN_COMPOSITION_MISMATCH');
       if (r.videoProduction) {
+        const images = document(r.videoProduction).mode === 'LOCAL_IMAGES';
         const value = document(plan),
           segments = value.segments as Record<string, unknown>[];
         const reports = document(done.MEDIA_QC).reports as {
@@ -1089,7 +1305,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           !Array.isArray(segments) ||
           segments.some(
             (segment) =>
-              segment.movementRequirement !== 'REAL_MOTION_REQUIRED' ||
+              (images
+                ? segment.mediaType !== 'IMAGE' ||
+                  segment.movementRequirement !== 'STATIC_ALLOWED'
+                : segment.movementRequirement !== 'REAL_MOTION_REQUIRED') ||
               !reports.some(
                 (report) =>
                   report.identity.mediaAssetId === segment.mediaAssetId &&
@@ -1118,7 +1337,15 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       if (report.result === 'UNKNOWN')
         throw new CampaignError('QC_INPUT_REQUIRED');
       if (report.result !== 'PASS') throw new CampaignError('QC_FAILED');
-      if (this.captioning)
+      // A local video package has no Instagram publication operation. Its caption
+      // is the already validated editorial text; publication retains its own gates.
+      if (
+        this.captioning &&
+        !(
+          r.videoProduction &&
+          document(r.videoProduction).mode === 'LOCAL_IMAGES'
+        )
+      )
         await this.captioning.ensure(
           e.execution_id,
           await this.captionContext(e, r, { ...done, QC: report }),
@@ -1321,7 +1548,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (
       request.videoProduction &&
       request.mode === 'LOCAL_VALIDATION' &&
-      ['OFFLINE', 'ASSISTED_LOCAL'].includes(
+      ['OFFLINE', 'ASSISTED_LOCAL', 'LOCAL_IMAGES'].includes(
         String(document(request.videoProduction).mode),
       ) &&
       ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(

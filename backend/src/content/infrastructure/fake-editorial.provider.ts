@@ -14,7 +14,10 @@ export class FakeEditorialProvider implements EditorialProvider {
         title: `Conheça ${input.briefing.productName}`,
         editorialAngle: 'Características documentadas para o cotidiano',
         evidenceCandidateIds: [
-          input.shortlist.orderedCandidates[0].candidate.id,
+          input.shortlist?.orderedCandidates[0].candidate.id ??
+            input.briefing.evidence.find(
+              (e) => e.kind === 'PRODUCT_SPECIFICATION',
+            )!.id,
         ],
       },
     ];

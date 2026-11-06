@@ -43,6 +43,9 @@ export class LocalPythonAligner
       manifest: env.LOCAL_ALIGNMENT_MODEL_SHA256 ?? '',
       device: env.LOCAL_ALIGNMENT_DEVICE ?? 'cpu',
       implementation: 'local-python/1',
+      ...(env.LOCAL_ALIGNMENT_TEXT_POLICY
+        ? { textPolicy: env.LOCAL_ALIGNMENT_TEXT_POLICY }
+        : {}),
       timeoutMs,
       maxMemoryBytes: 6 * 1024 ** 3,
       maxAudioBytes: 20971520,
@@ -83,6 +86,9 @@ export class LocalPythonAligner
     const model = this.env.LOCAL_ALIGNMENT_MODEL_ROOT;
     const manifest = this.env.LOCAL_ALIGNMENT_MODEL_SHA256;
     const key = this.env.LOCAL_ALIGNMENT_EVIDENCE_KEY;
+    const textPolicy = this.env.LOCAL_ALIGNMENT_TEXT_POLICY ?? 'strict/1';
+    if (!['strict/1', 'pt-br-written/1'].includes(textPolicy))
+      localFail('ALIGNMENT_CONFIGURATION_REQUIRED');
     if (
       !python ||
       !model ||
@@ -111,9 +117,13 @@ export class LocalPythonAligner
       const audioPath = join(root, 'audio.wav'),
         request = join(root, 'request.json');
       await writeFile(audioPath, audio, { mode: 0o600 });
-      await writeFile(request, JSON.stringify({ input, audioPath, device }), {
-        mode: 0o600,
-      });
+      await writeFile(
+        request,
+        JSON.stringify({ input, audioPath, device, textPolicy }),
+        {
+          mode: 0o600,
+        },
+      );
       // Works in both src/ and dist/: deployment includes backend/python/.
       const script = resolve(
         fileURLToPath(
@@ -130,6 +140,7 @@ export class LocalPythonAligner
         provenance: 'FORCED_ALIGNMENT',
         parameters: {
           algorithm: ALGORITHM,
+          ...(textPolicy !== 'strict/1' ? { textPolicy } : {}),
           configuration: this.identity,
           modelManifestSha256: manifest!,
           emissionsSha256: result.emissionsSha256,

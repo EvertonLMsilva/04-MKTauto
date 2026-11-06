@@ -18,7 +18,7 @@ export function ttsRiskFixture() {
   ).bindRun({ pipelineRunId: 'run_001', briefingId: 'brief_001' }, 'tts_bind');
   const service = () =>
     new FinanceService({ open: () => new FinanceSession(f.database) });
-  service().configureGlobal();
+  service().configureGlobal({});
   service().configureCampaign('camp_001', 1);
   const config = {
     schemaVersion: 'campaign-audio/1.0.0',

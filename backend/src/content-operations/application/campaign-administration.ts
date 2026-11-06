@@ -96,6 +96,18 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       new Date().toISOString(),
     );
   }
+  async startLocal(value: unknown) {
+    return this.schedule(await this.workflow.localRequest(value));
+  }
+  result(id: string) {
+    const store = this.open(),
+      history = store.history(id);
+    return this.workflow.result(
+      store.get(id),
+      executionRequest(history),
+      completedContext(history),
+    );
+  }
   async recoverLegacy(value: unknown) {
     const request = await this.workflow.recoverLegacy(value);
     return this.open().schedule(

@@ -23,7 +23,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
     )
       fail('OLLAMA_MODEL_REQUIRED');
     this.configurationVersion =
-      'ollama-grounded/1:' +
+      'ollama-grounded/2:' +
       createHash('sha256').update(model).digest('hex').slice(0, 16);
   }
   private async select(input: EditorialProviderInput) {
@@ -111,15 +111,18 @@ export class OllamaEditorialProvider implements EditorialProvider {
   }
   async ideas(input: EditorialProviderInput) {
     const result = await this.select(input);
-    const candidate = input.shortlist.orderedCandidates[0]?.candidate.id;
-    if (!candidate) fail('OLLAMA_RESEARCH_REQUIRED');
+    const candidate =
+      input.shortlist?.orderedCandidates[0]?.candidate.id ??
+      input.briefing.evidence.find((e) => e.kind === 'PRODUCT_SPECIFICATION')
+        ?.id;
+    if (!candidate) fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
     return [
       {
         title:
           (result.hookIndex === 0 ? 'Conheça ' : 'Veja os detalhes de ') +
           input.briefing.productName,
         editorialAngle: 'Características verificadas do produto',
-        evidenceCandidateIds: [candidate],
+        evidenceCandidateIds: [candidate!],
       },
     ];
   }
@@ -139,7 +142,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
       fail('NARRATION_DURATION_REQUIRED');
     for (const i of result.attributeIndexes) {
       const a = b.attributes[i],
-        line = `${a.name}: ${a.value}.`;
+        line = `${a.name.replaceAll('_', ' ')}: ${a.value}.`;
       if (
         (text + ' ' + line).split(/\s+/).length <= Math.floor(duration * 2.5)
       ) {
@@ -153,7 +156,10 @@ export class OllamaEditorialProvider implements EditorialProvider {
         {
           position: 1,
           purpose: 'EXPLANATION',
-          narration: [b.disclosure, ...selected].join(' '),
+          narration: [
+            /[.!?]$/.test(b.disclosure) ? b.disclosure : `${b.disclosure}.`,
+            ...selected,
+          ].join(' '),
         },
       ],
       visualDirections: [

@@ -151,7 +151,11 @@ it.each([
   if (kind === 'bytes')
     media.reviewMediaBytes = async () => Buffer.from('tampered');
   if (kind === 'reference')
-    media.reviewMediaBytes = async (_id, _ref, kind) => {
+    media.reviewMediaBytes = async (
+      _id: string,
+      _ref: string,
+      kind: string,
+    ) => {
       if (kind === 'reference') throw new Error('REFERENCE_HASH_MISMATCH');
       return bytes;
     };
@@ -190,7 +194,7 @@ it('recovers atomically, replays after restart, skips upstream stages without ST
     expect(recoveredContext(store.history(a.execution_id)).EDITORIAL).toEqual({
       script,
     });
-    const execute = vi.fn(async () => {
+    const execute = vi.fn(async (_step: string) => {
       throw Object.assign(new Error(), {
         code: 'COMPLETE_TEMPORAL_QC_REQUIRED',
       });

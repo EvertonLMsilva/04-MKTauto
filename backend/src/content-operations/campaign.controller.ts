@@ -43,6 +43,12 @@ export class CampaignController {
   @Post() schedule(@Body() value: unknown) {
     return this.respond(() => this.campaigns.schedule(value));
   }
+  @Post('local') startLocal(@Body() value: unknown) {
+    return this.respond(() => this.campaigns.startLocal(value));
+  }
+  @Get(':id/result') result(@Param('id') id: string) {
+    return this.respond(() => this.campaigns.result(id));
+  }
   @Post('legacy-recovery')
   @UseGuards(LocalQcGuard)
   recoverLegacy(@Body() value: unknown) {

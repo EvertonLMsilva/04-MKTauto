@@ -34,7 +34,7 @@ export interface EditorialRequest {
   generationRequestId: string;
   pipelineRunId: string;
   briefingId: string;
-  researchShortlistId: string;
+  researchShortlistId: string | null;
   referenceInsightId: string | null;
   requestedAt: string;
   supersedesScriptId: string | null;
@@ -91,7 +91,10 @@ export class EditorialFlowService {
           request.briefingId,
         ),
       );
-      const shortlist = this.research.getShortlist(request.researchShortlistId);
+      const shortlist =
+        request.researchShortlistId === null
+          ? null
+          : this.research.getShortlist(request.researchShortlistId);
       const campaignSource = await this.catalog.resolveBriefingSource(
         briefing.briefingId,
       );
@@ -99,12 +102,18 @@ export class EditorialFlowService {
         request.referenceInsightId === null
           ? null
           : this.research.getInsight(request.referenceInsightId);
-      if (!shortlist || (request.referenceInsightId !== null && !references))
+      if (
+        (request.researchShortlistId !== null && !shortlist) ||
+        (request.referenceInsightId !== null && !references)
+      )
         throw new EditorialFlowError(
           'EDITORIAL_RESEARCH_NOT_FOUND',
           'research',
         );
-      for (const artifact of [shortlist, ...(references ? [references] : [])]) {
+      for (const artifact of [
+        ...(shortlist ? [shortlist] : []),
+        ...(references ? [references] : []),
+      ]) {
         if (
           artifact.pipelineRunId !== run.pipelineRunId ||
           artifact.projectId !== run.projectId ||
@@ -117,7 +126,7 @@ export class EditorialFlowService {
         if (artifact.state === 'FAILED')
           throw new EditorialFlowError('EDITORIAL_RESEARCH_FAILED', 'research');
       }
-      if (!shortlist.orderedCandidates.length)
+      if (shortlist && !shortlist.orderedCandidates.length)
         throw new EditorialFlowError('EDITORIAL_RESEARCH_EMPTY', 'research');
       const providerInput: EditorialProviderInput = immutable(
         structuredClone({
@@ -134,7 +143,7 @@ export class EditorialFlowService {
         ...(campaignSource
           ? { campaignSourceHash: affiliateHash(campaignSource) }
           : {}),
-        shortlistHash: shortlist.contentHash,
+        shortlistHash: shortlist?.contentHash ?? null,
         referenceHash: references?.contentHash ?? null,
         provider: this.provider.configurationVersion,
         policyVersion,
@@ -399,7 +408,11 @@ function validateIdeas(ideas: EditorialIdea[], input: EditorialProviderInput) {
       'ideas',
     );
   const candidates = new Set(
-    input.shortlist.orderedCandidates.map((c) => c.candidate.id),
+    input.shortlist
+      ? input.shortlist.orderedCandidates.map((c) => c.candidate.id)
+      : input.briefing.evidence
+          .filter((e) => e.kind === 'PRODUCT_SPECIFICATION')
+          .map((e) => e.id),
   );
   for (const idea of ideas) {
     if (
@@ -445,7 +458,8 @@ function validateRequest(value: unknown): EditorialRequest {
     'briefingId',
   ] as const)
     affiliateIdentifier(r[key], key);
-  stageIdentifier(r.researchShortlistId, 'researchShortlistId', 200);
+  if (r.researchShortlistId !== null)
+    stageIdentifier(r.researchShortlistId, 'researchShortlistId', 200);
   for (const key of ['referenceInsightId', 'supersedesScriptId'] as const)
     if (r[key] !== null) stageIdentifier(r[key], key, 200);
   if (

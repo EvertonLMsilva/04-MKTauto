@@ -35,10 +35,14 @@ import {
   documentBytes,
   LocalEvidenceStorage,
 } from './local-evidence-storage.js';
-import { inspectMvpWav } from './physical-media-inspection.js';
+import { inspectMvpWav, inspectMvpPng } from './physical-media-inspection.js';
 import { LocalVideoStorage, hashFile } from './local-video-storage.js';
 import { runProcess, type ProcessRunner } from './ffmpeg-process.js';
-import type { LocalAudiovisualPort } from '../application/local-flow.port.js';
+import type {
+  LocalAudiovisualPort,
+  LocalMediaScope,
+  LocalImageSource,
+} from '../application/local-flow.port.js';
 import {
   LocalPiperTts,
   adaptLocalNarration,
@@ -55,6 +59,72 @@ type SubtitleDocument = {
   assHash: string;
 };
 export class LocalFlowRuntime {
+  prepareImage(scope: LocalMediaScope, source: LocalImageSource) {
+    const script = this.session((r) => r.getScript(scope.scriptId));
+    if (
+      !script ||
+      script.pipelineRunId !== scope.pipelineRunId ||
+      script.contentHash !== scope.scriptContentHash ||
+      script.visualDirections.length !== 1
+    )
+      localFail('LOCAL_SCRIPT_BINDING_INVALID');
+    assertMediaProcessingRights(
+      source.rights.evidence,
+      {
+        mediaRef: source.mediaReference,
+        contentHash: source.contentHash,
+      },
+      null,
+    );
+    if (!this.env.FFMPEG_MEDIA_ROOT)
+      localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
+    const bytes = new LocalEvidenceStorage(
+      resolve(this.env.FFMPEG_MEDIA_ROOT!),
+    ).read(source.contentHash, 'png', 20971520);
+    const technical = inspectMvpPng(bytes);
+    // A physical alias preserves the authorized bytes. Original identity and
+    // authorization remain in the immutable campaign request.
+    const mediaReference = `media:sha256_${source.contentHash}`;
+    const rights = {
+      ...source.rights,
+      evidence: source.rights.evidence?.map((e) => ({
+        ...e,
+        ...(e.mediaAuthorization
+          ? {
+              mediaAuthorization: {
+                ...e.mediaAuthorization,
+                mediaRef: mediaReference,
+              },
+            }
+          : {}),
+      })),
+    };
+    return this.media.register({
+      schemaVersion: 'media-asset/2.0.0',
+      mediaAssetId: `image_auto:${adaptationHash({ scope, source })}`,
+      pipelineRunId: scope.pipelineRunId,
+      projectId: script.projectId,
+      projectVersion: script.projectVersion,
+      scriptId: scope.scriptId,
+      scriptContentHash: scope.scriptContentHash,
+      visualDirectionPosition: script.visualDirections[0].position,
+      assetType: 'IMAGE',
+      technicalProperties: {
+        ...technical,
+        mimeType: 'image/png',
+        hasAudio: null,
+      },
+      contentHash: source.contentHash,
+      mediaReference,
+      origin: source.origin,
+      provider: source.provider,
+      rights,
+      source: null,
+      createdAt: scope.createdAt,
+      revision: 1,
+      supersedesMediaAssetId: null,
+    });
+  }
   audioBytes(
     runId: string,
     scriptId: string,
@@ -286,7 +356,11 @@ export class LocalFlowRuntime {
           storageReference: `object:voice/sha256/${hash}`,
           origin: 'SYNTHETIC_TTS',
           provider:
-            config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
+            config.engine === 'kokoro'
+              ? 'local_kokoro'
+              : config.engine === 'espeak-ng'
+                ? 'local_espeak_ng'
+                : 'local_piper',
           rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
           createdAt: scope.createdAt,
           revision: 1,
@@ -359,7 +433,9 @@ export class LocalFlowRuntime {
     }
     if (
       voice.origin !== 'SYNTHETIC_TTS' ||
-      !['local_piper', 'local_espeak_ng'].includes(voice.provider)
+      !['local_piper', 'local_espeak_ng', 'local_kokoro'].includes(
+        voice.provider,
+      )
     )
       return script.fullNarration;
     if (voice.rights.usageBasis !== 'LICENSED')
@@ -376,7 +452,11 @@ export class LocalFlowRuntime {
       evidence.schemaVersion !== 'local-tts-evidence/1' ||
       evidence.configurationHash !== config.configurationHash ||
       voice.provider !==
-        (config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper') ||
+        (config.engine === 'kokoro'
+          ? 'local_kokoro'
+          : config.engine === 'espeak-ng'
+            ? 'local_espeak_ng'
+            : 'local_piper') ||
       evidence.modelSha256 !== config.modelSha256 ||
       evidence.licenseEvidenceSha256 !== config.licenseEvidenceSha256 ||
       evidence.modelId !== config.modelId ||
@@ -487,9 +567,12 @@ export class LocalFlowRuntime {
         voice.scriptId !== scriptId ||
         voice.scriptContentHash !== scriptHash ||
         (voice.origin === 'SYNTHETIC_TTS'
-          ? !['local_piper', 'local_espeak_ng', 'openai'].includes(
-              voice.provider,
-            )
+          ? ![
+              'local_piper',
+              'local_espeak_ng',
+              'local_kokoro',
+              'openai',
+            ].includes(voice.provider)
           : voice.provider !== null) ||
         !(voice.provider === 'openai'
           ? voice.rights.usageBasis === 'PROVIDER_TERMS'
@@ -708,9 +791,12 @@ export class LocalFlowRuntime {
           'SYNTHETIC_TTS',
         ].includes(voice.origin) ||
         (voice.origin === 'SYNTHETIC_TTS' &&
-          !['local_piper', 'local_espeak_ng', 'openai'].includes(
-            voice.provider,
-          )) ||
+          ![
+            'local_piper',
+            'local_espeak_ng',
+            'local_kokoro',
+            'openai',
+          ].includes(voice.provider)) ||
         !r.getArtifact(id)?.generationMetadata
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');

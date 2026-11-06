@@ -12,7 +12,7 @@ const input: any = {
 };
 it('uses only loopback structured local inference and literal verified facts', async () => {
   const send = vi.fn(
-    async () =>
+    async (_url: string, _init: RequestInit) =>
       new Response(
         JSON.stringify({
           done: true,
@@ -28,7 +28,9 @@ it('uses only loopback structured local inference and literal verified facts', a
   expect(script.narrativeBlocks[0].narration).toBe('Publicidade. Cor: Branco.');
   expect(script.cta).toBe(input.briefing.cta);
   expect(send.mock.calls[0][0]).toBe('http://127.0.0.1:11434/api/generate');
-  expect(JSON.parse(send.mock.calls[0][1].body).stream).toBe(false);
+  const body = send.mock.calls[0][1].body;
+  if (typeof body !== 'string') throw new Error('Expected JSON request body');
+  expect(JSON.parse(body).stream).toBe(false);
   expect(provider.mode).toBe('LOCAL');
 });
 it.each([
@@ -53,4 +55,30 @@ it('fails closed on transport failure without fallback or paid calls', async () 
     new OllamaEditorialProvider('gemma3:4b', send).script(input),
   ).rejects.toThrow('OLLAMA_UNAVAILABLE');
   expect(send).toHaveBeenCalledTimes(1);
+});
+it('renders readable factual labels and separates disclosure without inventing claims', async () => {
+  const p = new OllamaEditorialProvider(
+    'gemma3:4b',
+    async () =>
+      new Response(
+        JSON.stringify({
+          done: true,
+          response: JSON.stringify({ attributeIndexes: [0], hookIndex: 0 }),
+        }),
+      ),
+  );
+  const script = await p.script({
+    ...input,
+    shortlist: null,
+    briefing: {
+      ...input.briefing,
+      disclosure: 'Publicidade · Cena ilustrativa',
+      attributes: [
+        { name: 'material_declarado', value: 'plástico', evidenceRef: 'spec' },
+      ],
+    },
+  });
+  expect(script.narrativeBlocks[0].narration).toBe(
+    'Publicidade · Cena ilustrativa. material declarado: plástico.',
+  );
 });

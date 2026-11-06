@@ -202,7 +202,7 @@ test('official revision is audited, fenced, idempotent after restart and resumes
     {} as any,
     {} as any,
     {
-      getScript: (id) => scripts[id] ?? null,
+      getScript: (id: string) => scripts[id] ?? null,
       listScripts: () => Object.values(scripts),
     } as any,
     {} as any,

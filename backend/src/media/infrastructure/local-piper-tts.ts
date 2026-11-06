@@ -98,7 +98,7 @@ export class LocalPiperTts {
       const m = JSON.parse(bytes.toString());
       if (
         m.schemaVersion !== 'local-tts-license/1' ||
-        !['piper', 'espeak-ng'].includes(m.engine) ||
+        !['piper', 'espeak-ng', 'kokoro'].includes(m.engine) ||
         m.language !== 'pt-BR' ||
         typeof m.modelId !== 'string' ||
         !/^[a-zA-Z0-9_.:/-]{3,150}$/.test(m.modelId) ||
@@ -172,13 +172,38 @@ export class LocalPiperTts {
       const metadata = JSON.parse(
         this.file(m.configPath, m.configSha256, 1048576).toString(),
       );
+      if (m.engine === 'kokoro') {
+        if (
+          m.modelId !== 'kokoro/pf_dora' ||
+          m.license !== 'Apache-2.0' ||
+          metadata.voice !== 'pf_dora' ||
+          metadata.speed !== 1 ||
+          metadata.sentencePause !== 0.25 ||
+          metadata.language?.code !== 'pt_BR'
+        )
+          localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        this.file(m.voicesPath, m.voicesSha256, 536870912);
+        this.file(
+          fileURLToPath(
+            new URL('../../../python/tts/kokoro.py', import.meta.url),
+          ),
+          m.adapterSha256,
+          65536,
+        );
+      }
       if (
         metadata.language?.code !== 'pt_BR' ||
-        !(m.engine === 'espeak-ng'
-          ? ['pt-br', 'pt-br+m1', 'pt-br+m3', 'pt-br+f2', 'pt-br+f3'].includes(
-              metadata.espeak?.voice,
-            )
-          : metadata.espeak?.voice === 'pt-br') ||
+        !(m.engine === 'kokoro'
+          ? metadata.voice === 'pf_dora'
+          : m.engine === 'espeak-ng'
+            ? [
+                'pt-br',
+                'pt-br+m1',
+                'pt-br+m3',
+                'pt-br+f2',
+                'pt-br+f3',
+              ].includes(metadata.espeak?.voice)
+            : metadata.espeak?.voice === 'pt-br') ||
         /edresson|ryan/i.test(metadata.dataset ?? '')
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
@@ -206,8 +231,8 @@ export class LocalPiperTts {
       this.file(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
       return {
         ...m,
-        nativeVoice: metadata.espeak.voice,
-        nativeRate: metadata.espeak.rate ?? 150,
+        nativeVoice: metadata.espeak?.voice ?? metadata.voice,
+        nativeRate: metadata.espeak?.rate ?? 150,
         configurationHash: digest(bytes),
       };
     } catch (error) {
@@ -264,25 +289,35 @@ export class LocalPiperTts {
     try {
       await this.runner(
         m.executablePath,
-        m.engine === 'espeak-ng'
+        m.engine === 'kokoro'
           ? [
               '-B',
               fileURLToPath(
-                new URL('../../../python/tts/espeak.py', import.meta.url),
+                new URL('../../../python/tts/kokoro.py', import.meta.url),
               ),
-              m.dataRoot,
-              raw,
-              m.nativeVoice,
-              String(m.nativeRate),
-            ]
-          : [
-              '--model',
               m.modelPath,
-              '--config',
-              m.configPath,
-              '--output_file',
+              m.voicesPath,
               raw,
-            ],
+            ]
+          : m.engine === 'espeak-ng'
+            ? [
+                '-B',
+                fileURLToPath(
+                  new URL('../../../python/tts/espeak.py', import.meta.url),
+                ),
+                m.dataRoot,
+                raw,
+                m.nativeVoice,
+                String(m.nativeRate),
+              ]
+            : [
+                '--model',
+                m.modelPath,
+                '--config',
+                m.configPath,
+                '--output_file',
+                raw,
+              ],
         { ...options, outputPath: raw, stdin: narration + '\n' },
       );
       await this.runner(

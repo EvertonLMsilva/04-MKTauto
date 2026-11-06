@@ -65,18 +65,45 @@ def verify_model(root, manifest_hash):
     return manifest
 
 
-def script_tokens(text, vocab):
+def spoken_integer(match):
+    # Bounded written-to-spoken expansion, never a timestamp approximation.
+    raw = match[0]
+    if len(raw) > 2 or (len(raw) > 1 and raw.startswith('0')):
+        fail('ALIGNMENT_TEXT_UNSUPPORTED')
+    n = int(raw)
+    units = ['zero', 'um', 'dois', 'três', 'quatro', 'cinco', 'seis', 'sete',
+             'oito', 'nove', 'dez', 'onze', 'doze', 'treze', 'catorze', 'quinze',
+             'dezesseis', 'dezessete', 'dezoito', 'dezenove']
+    tens = ['', '', 'vinte', 'trinta', 'quarenta', 'cinquenta', 'sessenta',
+            'setenta', 'oitenta', 'noventa']
+    return units[n] if n < 20 else tens[n // 10] + (' e ' + units[n % 10] if n % 10 else '')
+
+
+def script_tokens(text, vocab, text_policy='strict/1'):
+    if text_policy not in ('strict/1', 'pt-br-written/1'):
+        fail('ALIGNMENT_TEXT_UNSUPPORTED')
     if not text.strip() or len(text.encode('utf-16-le')) > 12000:
         fail('ALIGNMENT_TEXT_INVALID')
     tokens, words = [], []
     for match in re.finditer(r'\S+', text):
+        surface = unicodedata.normalize('NFC', match[0])
+        if text_policy == 'pt-br-written/1':
+            if surface == '·' and words:
+                a, _, first, last = words[-1]
+                words[-1] = (a, match.end(), first, last)
+                continue
+            surface = re.sub(r'(?<![\w.,])\d+(?![\w.,]\d)', spoken_integer, surface)
+            surface = surface.replace('_', ' ')
         start = len(tokens)
         if words:
             if '|' not in vocab:
                 fail('ALIGNMENT_TEXT_UNSUPPORTED')
             tokens.append(vocab['|'])
             start += 1
-        for char in unicodedata.normalize('NFC', match[0]):
+        for char in surface:
+            if char == ' ' and text_policy == 'pt-br-written/1':
+                tokens.append(vocab['|'])
+                continue
             if char.isalpha() or char.isdigit():
                 normalized = char.lower() if char.lower() in vocab else char.upper()
                 if len(normalized) != 1 or normalized not in vocab:
@@ -191,7 +218,7 @@ def run(request, root, manifest_hash):
     audio = resample_poly(audio, 16000 // divisor, rate // divisor).astype(np.float32)
     processor = Wav2Vec2Processor.from_pretrained(root, local_files_only=True)
     model = Wav2Vec2ForCTC.from_pretrained(root, local_files_only=True, weights_only=True).eval()
-    tokens, words = script_tokens(request['input']['canonicalText'], processor.tokenizer.get_vocab())
+    tokens, words = script_tokens(request['input']['canonicalText'], processor.tokenizer.get_vocab(), request.get('textPolicy', 'strict/1'))
     device = 'cuda' if request['device'] == 'auto' and torch.cuda.is_available() else 'cpu'
     model.to(device)
     data = processor(audio, sampling_rate=16000, return_tensors='pt', padding=True)

@@ -162,6 +162,80 @@ function espeakFixture(f: ReturnType<typeof fixture>) {
   f.manifest.modelSha256 = digest(readFileSync(f.manifest.modelPath));
   f.save();
 }
+function kokoroFixture(f: ReturnType<typeof fixture>) {
+  Object.assign(f.manifest, {
+    engine: 'kokoro',
+    modelId: 'kokoro/pf_dora',
+    license: 'Apache-2.0',
+    voicesPath: f.manifest.modelPath,
+    voicesSha256: f.manifest.modelSha256,
+    adapterSha256: digest(
+      readFileSync(
+        fileURLToPath(new URL('../../python/tts/kokoro.py', import.meta.url)),
+      ),
+    ),
+  });
+  writeFileSync(
+    f.manifest.configPath,
+    JSON.stringify({
+      language: { code: 'pt_BR' },
+      voice: 'pf_dora',
+      speed: 1,
+      sentencePause: 0.25,
+    }),
+  );
+  f.manifest.configSha256 = digest(readFileSync(f.manifest.configPath));
+  f.save();
+}
+
+test('Kokoro pins Dora natural, voices and adapter; never falls back or changes speed', async () => {
+  const f = fixture();
+  try {
+    Object.assign(f.manifest, {
+      engine: 'kokoro',
+      modelId: 'kokoro/pf_dora',
+      license: 'Apache-2.0',
+      voicesPath: f.manifest.modelPath,
+      voicesSha256: f.manifest.modelSha256,
+      adapterSha256: digest(
+        readFileSync(
+          fileURLToPath(new URL('../../python/tts/kokoro.py', import.meta.url)),
+        ),
+      ),
+    });
+    writeFileSync(
+      f.manifest.configPath,
+      JSON.stringify({
+        language: { code: 'pt_BR' },
+        voice: 'pf_dora',
+        speed: 1,
+        sentencePause: 0.25,
+      }),
+    );
+    f.manifest.configSha256 = digest(readFileSync(f.manifest.configPath));
+    f.save();
+    const result = await new LocalPiperTts(f.env, f.runner).synthesize(
+      'Publicidade. Cena ilustrativa.',
+      20000,
+    );
+    expect(result.evidence.modelId).toBe('kokoro/pf_dora');
+    expect(f.runner.mock.calls[0][1]).toEqual([
+      '-B',
+      expect.stringContaining('kokoro.py'),
+      f.manifest.modelPath,
+      f.manifest.modelPath,
+      expect.any(String),
+    ]);
+    expect(f.runner.mock.calls[0][2].stdin).toContain('Cena ilustrativa.');
+    expect(f.runner.mock.calls.flat().join(' ')).not.toContain('atempo');
+    writeFileSync(f.manifest.modelPath, 'changed voice');
+    expect(() => new LocalPiperTts(f.env).configuration()).toThrow(
+      'LOCAL_TTS_LICENSE_REQUIRED',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
 
 test('native pt-BR formant speech requires GPL evidence and a complete pinned local inventory, without a sampled voice', async () => {
   const f = fixture();
@@ -300,12 +374,13 @@ test('actual speech that exceeds available duration is never cropped or accepted
   }
 });
 
-test.each(['piper', 'espeak-ng'])(
+test.each(['piper', 'espeak-ng', 'kokoro'])(
   'native SQLite preserves synthetic provenance, replay and adapted alignment for %s',
   async (engine) => {
     const f = fixture(),
       native = p2EditorialFixture();
     if (engine === 'espeak-ng') espeakFixture(f);
+    if (engine === 'kokoro') kokoroFixture(f);
     const db = new DatabaseSync(native.database);
     provisionSchema(db);
     db.close();
@@ -424,7 +499,12 @@ test.each(['piper', 'espeak-ng'])(
       expect(ids).toEqual([a.voiceTrackId]);
       expect(voice).toMatchObject({
         origin: 'SYNTHETIC_TTS',
-        provider: engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
+        provider:
+          engine === 'kokoro'
+            ? 'local_kokoro'
+            : engine === 'espeak-ng'
+              ? 'local_espeak_ng'
+              : 'local_piper',
         rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
       });
       expect(
