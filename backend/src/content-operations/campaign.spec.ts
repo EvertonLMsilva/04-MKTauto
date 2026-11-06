@@ -55,6 +55,32 @@ describe('campaign atomic persistence', () => {
       ),
     ).toThrow('CAMPAIGN_DAY_CONFLICT');
   });
+  it('keeps the daily slot per campaign and Sao Paulo date', () => {
+    const first = r.due(at)[0];
+    const other = r.schedule(
+      {
+        campaignId: 'campaign_002',
+        campaignRevision: 1,
+        scheduledAt: at,
+        runId: 'run_other_campaign',
+      },
+      {},
+      at,
+    );
+    const nextDay = r.schedule(
+      {
+        campaignId: 'campaign_001',
+        campaignRevision: 1,
+        scheduledAt: '2026-10-16T03:00:00Z',
+        runId: 'run_next_local_day',
+      },
+      {},
+      at,
+    );
+    expect(other.execution_id).not.toBe(first.execution_id);
+    expect(nextDay.production_date).toBe('2026-10-16');
+    expect(r.due('2026-10-16T03:00:00Z')).toHaveLength(3);
+  });
   it('claims once and fences expired owners without re-dispatch', () => {
     const id = r.due(at)[0].execution_id;
     const a = r.claim(id, at, 1000)!;
