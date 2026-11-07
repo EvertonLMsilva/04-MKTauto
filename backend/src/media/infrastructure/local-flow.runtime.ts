@@ -58,6 +58,65 @@ type SubtitleDocument = {
   srtHash: string;
   assHash: string;
 };
+export function publicationSourceReview(
+  asset: NonNullable<ReturnType<MediaService['get']>>,
+  media: Pick<MediaService, 'temporalReview'>,
+  root: string,
+): { reviewHash: string; sourceKind: 'STATIC_IMAGE' | 'TEMPORAL_VIDEO' } {
+  if (!asset.rights.commercialUseAllowed)
+    localFail('PUBLICATION_RIGHTS_REQUIRED');
+  if (asset.assetType === 'VIDEO') {
+    const review = media.temporalReview(asset.mediaAssetId) as {
+      result: string;
+      contentHash: string;
+    } | null;
+    if (review?.result !== 'PASS')
+      localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+    new LocalEvidenceStorage(resolve(root)).read(
+      asset.contentHash,
+      asset.technicalProperties.format,
+      33554432,
+    );
+    return { reviewHash: review.contentHash, sourceKind: 'TEMPORAL_VIDEO' };
+  }
+  if (asset.assetType !== 'IMAGE')
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  const properties = asset.technicalProperties;
+  if (
+    asset.mediaReference !== `media:sha256_${asset.contentHash}` ||
+    properties.format !== 'png' ||
+    properties.mimeType !== 'image/png' ||
+    !Number.isSafeInteger(properties.widthPixels) ||
+    !Number.isSafeInteger(properties.heightPixels) ||
+    properties.durationMilliseconds !== null ||
+    properties.hasAudio !== null
+  )
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  const bytes = new LocalEvidenceStorage(resolve(root)).read(
+    asset.contentHash,
+    'png',
+    33554432,
+  );
+  let inspected: ReturnType<typeof inspectMvpPng>;
+  try {
+    inspected = inspectMvpPng(bytes, {
+      widthPixels: properties.widthPixels,
+      heightPixels: properties.heightPixels,
+    });
+  } catch {
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  }
+  return {
+    reviewHash: adaptationHash({
+      schemaVersion: 'static-image-publication-inspection/1.0.0',
+      mediaAssetId: asset.mediaAssetId,
+      mediaReference: asset.mediaReference,
+      contentHash: asset.contentHash,
+      technicalProperties: inspected,
+    }),
+    sourceKind: 'STATIC_IMAGE',
+  };
+}
 export class LocalFlowRuntime {
   prepareImage(scope: LocalMediaScope, source: LocalImageSource) {
     const script = this.session((r) => r.getScript(scope.scriptId));
@@ -1229,19 +1288,17 @@ export class LocalFlowRuntime {
             },
             null,
           );
-        const review: any = this.media.temporalReview(asset!.mediaAssetId);
-        if (review?.result !== 'PASS')
-          localFail('PUBLICATION_SOURCE_QC_REQUIRED');
-        new LocalEvidenceStorage(resolve(this.env.FFMPEG_MEDIA_ROOT!)).read(
-          asset!.contentHash,
-          asset!.technicalProperties.format,
-          33554432,
+        const source = publicationSourceReview(
+          asset!,
+          this.media,
+          this.env.FFMPEG_MEDIA_ROOT!,
         );
         return {
           id: asset!.mediaAssetId,
           contentHash: asset!.contentHash,
           rightsHash: adaptationHash(asset!.rights),
-          reviewHash: review.contentHash,
+          reviewHash: source.reviewHash,
+          sourceKind: source.sourceKind,
         };
       });
       const voice = r.getVoiceTrack(audio.voiceTrackId) as any;

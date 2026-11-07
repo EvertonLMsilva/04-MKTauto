@@ -6,7 +6,7 @@ import {
   instagramCaption,
   socialFail,
 } from './social-publication-contracts.js';
-export const CAPTION_POLICY = 'instagram-grounded-extraction/1.0.0';
+export const CAPTION_POLICY = 'instagram-grounded-extraction/1.1.0';
 const risky =
   /(cur[ae]|doen[cç]|\bdor(?:es)?\b|terap|circula[cç]|sa[uú]de|emagre|garant|resultado|milagr|melhor|reduz|alivia|previne|elimina|ins[oô]nia|s[oó] hoje|[uú]ltimas|esgot|promo[cç]|desconto|gr[aá]tis|100%)/iu;
 const normalize = (s: string) =>
@@ -36,15 +36,43 @@ export function buildCaption(context: any, variant = 1) {
       .filter((e: any) => e.kind === 'PRODUCT_SPECIFICATION')
       .map((e: any) => e.id),
   );
-  const facts = b.attributes
-    .filter(
-      (a: any) => evidence.has(a.evidenceRef) && safe(a.name + ': ' + a.value),
-    )
-    .slice(0, 3);
-  const hooks = [
-    `Conheça ${b.productName}.`,
-    `Veja os detalhes de ${b.productName}.`,
-  ];
+  const grounded = b.attributes.filter(
+    (a: any) => evidence.has(a.evidenceRef) && safe(a.name + ': ' + a.value),
+  );
+  const title = /^Kit (\d+) e Kit (\d+) (.+)$/iu.exec(b.productName);
+  const byName = (name: string) =>
+    grounded.find((a: any) => a.name === name);
+  const seller = byName('loja_declarada');
+  const material = byName('material_declarado');
+  const organization = byName('organizacao_declarada');
+  const variants = byName('variantes_declaradas');
+  const variantNumbers = /^kits de (\d+) ou (\d+) peças$/iu.exec(
+    variants?.value ?? '',
+  );
+  const displayFact = (a: any): string | null => {
+    if (a.name === 'loja_declarada') return `Anunciado pela loja ${a.value}.`;
+    if (a.name === 'material_declarado')
+      return `Segundo a descrição do vendedor, material: ${a.value}.`;
+    if (a.name === 'organizacao_declarada')
+      return `Segundo a descrição do vendedor, organização: ${a.value}.`;
+    if (a.name === 'variantes_declaradas')
+      return `Segundo a descrição do vendedor, variantes: ${a.value}.`;
+    return a.name.includes('_') ? null : `${a.name}: ${a.value}`;
+  };
+  const sellerCopy = title && seller && material && organization &&
+    variantNumbers?.[1] === title[1] && variantNumbers?.[2] === title[2];
+  const facts = sellerCopy
+    ? [seller, material, organization, variants]
+    : grounded.filter((a: any) => displayFact(a) !== null).slice(0, 3);
+  const subject = sellerCopy
+    ? `os kits de ${title[1]} ou ${title[2]} ${title[3].toLowerCase()}`
+    : b.productName;
+  const hooks = sellerCopy
+    ? [
+        `Conheça ${subject} anunciados pela loja ${seller.value}.`,
+        `Veja os detalhes dos kits anunciados pela loja ${seller.value}.`,
+      ]
+    : [`Conheça ${subject}.`, `Veja os detalhes de ${subject}.`];
   const tags = b.productName
     .normalize('NFD')
     .replace(/\p{M}/gu, '')
@@ -52,18 +80,25 @@ export function buildCaption(context: any, variant = 1) {
     .filter((x: string) => x.length > 3)
     .slice(0, 3)
     .map((x: string) => '#' + x.toLowerCase());
-  const allowedLines = [
-    b.disclosure,
-    ...hooks,
-    ...facts.map((a: any) => `${a.name}: ${a.value}`),
-    'Confira o produto no vídeo e consulte os detalhes no link.',
-    ...tags,
-  ];
+  const description = sellerCopy
+    ? `Segundo a descrição do vendedor, são de ${material.value}, com organização ${organization.value}.`
+    : null;
+  const allowedLines = sellerCopy
+    ? [...hooks, description, ...tags]
+    : [
+        ...hooks,
+        ...facts.map(displayFact),
+        'Confira o produto no vídeo e consulte os detalhes no link.',
+        ...tags,
+      ];
   const text = [
-    allowedLines[0],
     hooks[(variant - 1) % hooks.length],
-    ...facts.map((a: any) => `${a.name}: ${a.value}`),
-    allowedLines.at(-tags.length - 1),
+    ...(sellerCopy
+      ? [description]
+      : [
+          ...facts.map(displayFact),
+          'Confira o produto no vídeo e consulte os detalhes no link.',
+        ]),
     tags.join(' '),
   ]
     .filter(Boolean)
@@ -98,7 +133,7 @@ export function validateCaptionEdit(
   if (
     typeof text !== 'string' ||
     !text.trim() ||
-    !text.startsWith('Publicidade')
+    !base.allowedLines.slice(0, 2).includes(normalize(text.split(/\n+/)[0] ?? ''))
   )
     socialFail('SOCIAL_CAPTION_UNGROUNDED');
   const lines = text.split(/\n+/).map(normalize).filter(Boolean);
