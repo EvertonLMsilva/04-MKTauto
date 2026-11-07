@@ -94,6 +94,71 @@ test('script revision invalidates only narration dependents and exact final appr
     ]).AUDIO,
   ).toEqual({ current: true });
 });
+test('local image script revision requires fresh image identity and static QC while retaining completed v3 narration', () => {
+  const imageV1 = { mediaAssetId: 'image_v1', contentHash: 'c'.repeat(64) };
+  const imageV3 = { mediaAssetId: 'image_v3', contentHash: 'c'.repeat(64) };
+  const report = (identity: typeof imageV1) => ({
+    mode: 'LOCAL_IMAGES',
+    reports: [{ identity, result: 'PASS', checks: ['PHYSICAL_SHA256', 'PNG_DECODE', 'PROCESSING_RIGHTS', 'SCRIPT_BINDING'] }],
+  });
+  const h = [
+    event('SCHEDULED', { mode: 'LOCAL_VALIDATION', videoProduction: { mode: 'LOCAL_IMAGES' } }),
+    event('STEP_DONE', { step: 'EDITORIAL', result: { script: original } }),
+    event('STEP_DONE', { step: 'SCENES', result: { mediaAssetId: imageV1.mediaAssetId } }),
+    event('STEP_DONE', { step: 'VIDEO_GENERATION', result: { generation: 'NOT_REQUESTED' } }),
+    event('STEP_DONE', { step: 'MEDIA_QC', result: report(imageV1) }),
+    event('SCRIPT_REVISED', { script: revised }),
+    event('STEP_DONE', { step: 'AUDIO', result: { voiceTrackId: 'voice_v3' } }),
+    event('STEP_DONE', { step: 'ALIGNMENT', result: { alignmentId: 'align_v3' } }),
+    event('STEP_DONE', { step: 'SUBTITLES', result: { subtitleId: 'subtitle_v3' } }),
+  ];
+  const snapshot = JSON.stringify(h);
+  expect(completedContext(h)).toEqual({
+    EDITORIAL: { script: revised },
+    AUDIO: { voiceTrackId: 'voice_v3' },
+    ALIGNMENT: { alignmentId: 'align_v3' },
+    SUBTITLES: { subtitleId: 'subtitle_v3' },
+  });
+  const repaired = [
+    ...h,
+    event('STEP_DONE', { step: 'SCENES', result: { mediaAssetId: imageV3.mediaAssetId } }),
+    event('STEP_DONE', { step: 'VIDEO_GENERATION', result: { generation: 'NOT_REQUESTED' } }),
+    event('STEP_DONE', { step: 'MEDIA_QC', result: report(imageV3) }),
+  ];
+  expect(completedContext(repaired).MEDIA_QC).toEqual(report(imageV3));
+  expect(completedContext(repaired).AUDIO).toEqual({ voiceTrackId: 'voice_v3' });
+  expect(JSON.stringify(h)).toBe(snapshot);
+  expect(h[4].evidence).toEqual({ step: 'MEDIA_QC', result: report(imageV1) });
+});
+test.each([
+  { mediaAssetId: 'image_v1', contentHash: 'c'.repeat(64) },
+  { mediaAssetId: 'image_v3', contentHash: 'd'.repeat(64) },
+])('local composition rejects QC from another image identity or hash: %j', (identity) => {
+  const registerCompositionPlan = vi.fn();
+  const native = new NativeCampaignWorkflow(
+    {} as any,
+    { resolveRunBriefing: () => ({ campaignId: 'campaign_001', mediaRefs: ['image_ref'] }) } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {
+      authorizedAudio: () => ({ voiceTrackId: 'voice_v3', contentHash: 'b'.repeat(64), durationMilliseconds: 20000 }),
+      prepareImage: () => ({ mediaAssetId: 'image_v3', contentHash: 'c'.repeat(64) }),
+    } as any,
+    { registerCompositionPlan } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
+  expect(() => (native as any).automaticComposition(
+    { run_id: 'run_001', campaign_id: 'campaign_001', scheduled_at: '2026-11-02T20:00:00Z' },
+    { videoProduction: { mode: 'LOCAL_IMAGES' }, briefingId: 'brief_001', localImage: { mediaReference: 'image_ref' } },
+    { AUDIO: { voiceTrackId: 'voice_v3' }, MEDIA_QC: { reports: [{ identity, result: 'PASS' }] } },
+    revised,
+  )).toThrow('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+  expect(registerCompositionPlan).not.toHaveBeenCalled();
+});
 test('legacy recovery uses the revised script after restart without losing its immutable original snapshot', () => {
   const h = [
     event('LEGACY_RECOVERY', { legacyRecovery: { script: original } }),

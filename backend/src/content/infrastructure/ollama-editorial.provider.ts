@@ -141,8 +141,26 @@ export class OllamaEditorialProvider implements EditorialProvider {
     if (text.split(/\s+/).length > Math.floor(duration * 2.5))
       fail('NARRATION_DURATION_REQUIRED');
     for (const i of result.attributeIndexes) {
-      const a = b.attributes[i],
-        line = `${a.name.replaceAll('_', ' ')}: ${a.value}.`;
+      const a = b.attributes[i];
+      let line: string;
+
+      switch (a.name) {
+        case 'material_declarado':
+          line = `Segundo o vendedor, o material é ${a.value}`;
+          break;
+        case 'organizacao_declarada':
+          line = `A organização informada pelo vendedor é ${a.value}`;
+          break;
+        case 'loja_declarada':
+          line = `O anúncio é da loja ${a.value}`;
+          break;
+        default:
+          continue;
+      }
+
+      if (!/[.!?]$/u.test(line)) {
+        line += '.';
+      }
       if (
         (text + ' ' + line).split(/\s+/).length <= Math.floor(duration * 2.5)
       ) {
