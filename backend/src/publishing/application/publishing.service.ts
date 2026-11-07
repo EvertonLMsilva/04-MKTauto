@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import {
   HumanApprovalService,
   validateRequest,
@@ -42,6 +43,47 @@ export class PublishingService {
   }
   prepare(value: unknown, key: string) {
     return this.session(false, (s) => s.manual.prepare(value, key));
+  }
+  coordinatePackage(
+    runId: string,
+    input: {
+      campaignId: string;
+      campaignRevision: number;
+      videoRenderId: string;
+      qualityControlReportId: string;
+      platform: string;
+      account: string;
+      caption: string;
+    },
+  ) {
+    return this.session(false, (s) => {
+      const packages = s.manual.repository
+        .list('PACKAGE')
+        .filter((p: any) => p.identity.pipelineRunId === runId);
+      if (packages.length > 1)
+        distributionFail('DISTRIBUTION_PACKAGE_AMBIGUOUS');
+      const p = packages[0];
+      if (p) {
+        if (
+          p.campaignId !== input.campaignId ||
+          p.campaignRevision !== input.campaignRevision ||
+          p.account !== input.account ||
+          p.platform !== input.platform ||
+          p.identity.videoRenderId !== input.videoRenderId ||
+          p.identity.qualityControlReportId !== input.qualityControlReportId ||
+          p.caption !== input.caption
+        )
+          distributionFail('DISTRIBUTION_PACKAGE_SCOPE_MISMATCH');
+        return p;
+      }
+      return s.manual.prepare(
+        input,
+        `campaign_package_${createHash('sha256').update(runId).digest('hex').slice(0, 32)}`,
+      );
+    });
+  }
+  validatePackage(hash: string) {
+    return this.session(true, (s) => s.manual.validateForPublication(hash));
   }
   package(hash: string) {
     return this.session(true, (s) => s.manual.getPackage(hash));

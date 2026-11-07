@@ -286,6 +286,8 @@ export function completedContext(
   for (const event of history) {
     if (event.event_type === 'STEP_DONE')
       completed[String(event.evidence.step)] = event.evidence.result;
+    else if (event.event_type === 'OPERATOR_REVIEW_PRESENTED')
+      completed.OPERATOR_FLOW = true;
     else if (event.event_type === 'HUMAN_APPROVAL')
       completed.APPROVAL = event.evidence;
     else if (event.event_type === 'COMPOSITION_AUTHORIZED')

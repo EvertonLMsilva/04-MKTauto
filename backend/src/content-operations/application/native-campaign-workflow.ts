@@ -1,4 +1,5 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import { instagramCaption } from '../../publishing/domain/social-publication-contracts.js';
 import type { InstagramEditorialService } from '../../publishing/application/instagram-editorial.service.js';
 import { PRODUCT_FRAMING_STRATEGY } from '../../media/domain/product-framing.js';
 import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
@@ -265,7 +266,13 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       ContentOperationsService,
       'start' | 'get'
     >,
-    private readonly publishing: Pick<PublishingService, 'approvals'>,
+    private readonly publishing: Pick<PublishingService, 'approvals'> &
+      Partial<
+        Pick<
+          PublishingService,
+          'coordinatePackage' | 'validatePackage' | 'packageReview' | 'review'
+        >
+      >,
     private readonly instagram?: Pick<
       InstagramPublicationService,
       'execute' | 'reconcile'
@@ -284,6 +291,72 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     },
     private readonly captioning?: InstagramEditorialService,
   ) {}
+  coordinatedPackage(e: CampaignExecution, done: Record<string, unknown>) {
+    if (!done.HANDOFF) return null;
+    const destination = this.instagram?.configuration?.().accountId;
+    if (!destination)
+      throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+    if (!this.publishing.coordinatePackage)
+      throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+    const handoff = document(done.HANDOFF),
+      script = document(document(done.EDITORIAL).script);
+    const pkg = this.publishing.coordinatePackage(e.run_id, {
+      campaignId: e.campaign_id,
+      campaignRevision: e.campaign_revision,
+      videoRenderId: String(handoff.videoRenderId),
+      qualityControlReportId: String(document(done.QC).reportId),
+      platform: 'instagram',
+      account: destination,
+      caption: String(script.fullNarration),
+    });
+    if (pkg.identity.videoRenderContentHash !== handoff.contentHash)
+      throw new CampaignError('SOCIAL_HANDOFF_MISMATCH');
+    return pkg;
+  }
+  async operatorReview(e: CampaignExecution, done: Record<string, unknown>) {
+    const evidence = await this.approvalEvidence(e, done);
+    const pkg = this.coordinatedPackage(e, done);
+    const identity = {
+      projectId: evidence.render.projectId,
+      projectVersion: evidence.render.projectVersion,
+      pipelineRunId: e.run_id,
+      videoRenderId: evidence.render.videoRenderId,
+      videoRenderRevision: evidence.render.revision,
+      videoRenderContentHash: evidence.render.contentHash,
+      qualityControlReportId: evidence.qc.qualityControlReportId,
+      qualityControlReportContentHash: evidence.qc.contentHash,
+    };
+    return {
+      identity,
+      render: evidence.render,
+      qc: evidence.qc,
+      preview: done.PREVIEW,
+      finalCaption: pkg
+        ? instagramCaption(pkg)
+        : document(document(done.EDITORIAL).script).fullNarration,
+      package: pkg,
+      destination: this.instagram?.configuration?.().accountId ?? null,
+      renderApproval: done.APPROVAL ?? null,
+      packageApproval: pkg
+        ? this.publishing.packageReview?.(pkg.contentHash)
+        : null,
+      publication: (await this.instagram?.status?.(e.execution_id)) ?? null,
+    };
+  }
+  reviewOperatorPackage(
+    hash: string,
+    decision: string,
+    actor: string,
+    justification: unknown,
+    key: string,
+  ) {
+    if (!this.publishing.review)
+      throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+    return this.publishing.review(
+      { packageHash: hash, decision, actor, justification },
+      key,
+    );
+  }
   async captionContext(
     e: CampaignExecution,
     r: Record<string, unknown>,
@@ -957,6 +1030,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     done: Record<string, unknown>,
   ): Promise<unknown> {
     if (step === 'PUBLICATION') {
+      if (
+        !r.publication &&
+        done.HANDOFF &&
+        this.publishing.coordinatePackage &&
+        (done.OPERATOR_FLOW ||
+          this.instagram?.configuration?.().mode === 'live')
+      ) {
+        const pkg = this.coordinatedPackage(e, done);
+        if (!pkg)
+          throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+        this.publishing.validatePackage!(pkg.contentHash);
+        r = {
+          ...r,
+          publication: { packageHash: pkg.contentHash, accountId: pkg.account },
+        };
+      }
       if (!r.publication) {
         if (
           r.videoProduction &&
@@ -1636,13 +1725,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       const status = await this.instagram.status?.(e.execution_id);
       const op = status?.operation;
       const request = executionRequest(history);
+      if (!request.publication && this.publishing.coordinatePackage) {
+        const pkg = this.coordinatedPackage(e, completedContext(history));
+        if (pkg)
+          request.publication = {
+            packageHash: pkg.contentHash,
+            accountId: pkg.account,
+          };
+      }
       const handoff = completedContext(history).HANDOFF as
         Record<string, unknown> | undefined;
       if (
         e.status === 'WAITING_RECONCILIATION' &&
-        this.instagram.configuration?.().mode === 'live' &&
+        (this.instagram.configuration?.().mode === 'live' ||
+          completedContext(history).OPERATOR_FLOW === true) &&
         op?.state === 'UNCERTAIN' &&
-        op.executionMode === 'live' &&
+        op.executionMode === this.instagram.configuration?.().mode &&
         op.publicationFlowVersion === 2 &&
         op.uncertainStage === 'UPLOAD' &&
         op.providerStatus === 'FINISHED' &&

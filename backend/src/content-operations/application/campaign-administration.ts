@@ -139,6 +139,105 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       this.now(),
     );
   }
+  async operatorReview(id: string, actor: string) {
+    const store = this.open(),
+      e = store.get(id);
+    const snapshot = await this.workflow.operatorReview(
+      e,
+      completedContext(store.history(id)),
+    );
+    const reviewId = store.presentOperatorReview(
+      id,
+      e.version,
+      actor,
+      snapshot,
+      this.now(),
+    );
+    return { executionId: id, reviewId, ...snapshot };
+  }
+  async operatorDecision(
+    id: string,
+    kind: 'render' | 'package',
+    input: unknown,
+  ) {
+    const v = document(input);
+    if (
+      Object.keys(v).sort().join(',') !==
+        'actor,decision,justification,reviewId' ||
+      !['APPROVED', 'REJECTED'].includes(String(v.decision))
+    )
+      throw new CampaignError('INVALID_REVIEW_DECISION');
+    const store = this.open(),
+      e = store.get(id),
+      history = store.history(id);
+    const view = history.find(
+      (h) =>
+        h.event_type === 'OPERATOR_REVIEW_PRESENTED' &&
+        h.evidence.reviewId === v.reviewId,
+    )?.evidence;
+    if (!view || view.actor !== v.actor)
+      throw new CampaignError('REVIEW_OWNERSHIP_CONFLICT');
+    const receipt = history.find(
+      (h) =>
+        h.event_type === 'OPERATOR_REVIEW_DECIDED' &&
+        h.evidence.reviewId === v.reviewId &&
+        h.evidence.kind === kind,
+    )?.evidence;
+    if (receipt) {
+      if (
+        receipt.decision !== v.decision ||
+        receipt.justification !== v.justification
+      )
+        throw new CampaignError('REVIEW_DECISION_CONFLICT');
+      return receipt.result;
+    }
+    const current = await this.workflow.operatorReview(
+      e,
+      completedContext(history),
+    );
+    const shown = document(view.snapshot);
+    if (
+      store.get(id).version !== e.version ||
+      e.version !== view.version ||
+      canonicalJson(current.identity) !== canonicalJson(shown.identity) ||
+      current.destination !== shown.destination ||
+      canonicalJson(current.package) !== canonicalJson(shown.package)
+    )
+      throw new CampaignError('STALE_REVIEW_CONFLICT');
+    const result =
+      kind === 'render'
+        ? await this.approve(id, {
+            ...current.identity,
+            actor: v.actor,
+            decision: v.decision,
+            justification: v.justification,
+          })
+        : current.package
+          ? this.workflow.reviewOperatorPackage(
+              current.package.contentHash,
+              String(v.decision),
+              String(v.actor),
+              v.justification,
+              `operator_review_${String(v.reviewId)}`,
+            )
+          : (() => {
+              throw new CampaignError('PACKAGE_REVIEW_REQUIRED');
+            })();
+    store.administrativeEvent(
+      id,
+      store.get(id).version,
+      this.now(),
+      'OPERATOR_REVIEW_DECIDED',
+      {
+        reviewId: v.reviewId,
+        kind,
+        decision: v.decision,
+        justification: v.justification,
+        result,
+      },
+    );
+    return result;
+  }
   result(id: string) {
     const store = this.open(),
       history = store.history(id);
@@ -323,6 +422,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   }
   async resume(id: string, value?: unknown) {
     const store = this.open();
+    if (
+      (!value || Object.keys(document(value)).length === 0) &&
+      ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(store.get(id).status) &&
+      store
+        .history(id)
+        .some((event) => event.event_type === 'OPERATOR_REVIEW_PRESENTED')
+    )
+      return this.get(id);
     if (
       value !== undefined &&
       value !== null &&
@@ -610,6 +717,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       },
     });
     const decision = service.decide(value) as Record<string, unknown>;
+    if (
+      events.some(
+        (event) =>
+          event.event_type === 'HUMAN_APPROVAL' &&
+          event.evidence.contentHash === decision.contentHash,
+      )
+    )
+      return decision;
     r.administrativeEvent(
       id,
       e.version,

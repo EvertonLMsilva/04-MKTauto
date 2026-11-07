@@ -66,6 +66,28 @@ export class CampaignRepository {
       )
       .all() as unknown as CampaignExecution[];
   }
+  presentOperatorReview(
+    id: string,
+    version: number,
+    actor: string,
+    snapshot: Record<string, unknown>,
+    now: string,
+  ) {
+    return this.tx(() => {
+      const e = this.get(id);
+      if (e.version !== version || e.status !== 'WAITING_INPUT')
+        throw new CampaignError('STALE_REVIEW_CONFLICT');
+      const reviewId = randomUUID();
+      this.event(id, 'OPERATOR_REVIEW_PRESENTED', e.status, e.status, now, {
+        schemaVersion: 'operator-review/1.0.0',
+        reviewId,
+        actor,
+        version,
+        snapshot,
+      });
+      return reviewId;
+    });
+  }
   private event(
     id: string,
     type: string,
