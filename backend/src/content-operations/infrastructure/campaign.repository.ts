@@ -7,6 +7,14 @@ import {
   productionDate,
   canonicalJson,
 } from '../domain/campaign.js';
+
+export interface CampaignRecurrence {
+  schemaVersion: 'campaign-recurrence/1.0.0';
+  revision: number;
+  enabled: boolean;
+  commandId: string;
+  request: Record<string, unknown>;
+}
 import type {
   CampaignExecution,
   CampaignEvent,
@@ -73,6 +81,13 @@ export class CampaignRepository {
       .run(id, id, type, prior, next, at, JSON.stringify(evidence));
   }
   schedule(input: ScheduleIdentity, request: unknown, now: string) {
+    return this.tx(() => this.persistSchedule(input, request, now));
+  }
+  private persistSchedule(
+    input: ScheduleIdentity,
+    request: unknown,
+    now: string,
+  ) {
     identifier(input.campaignId);
     identifier(input.runId);
     if (
@@ -83,56 +98,192 @@ export class CampaignRepository {
     const at = instant(input.scheduledAt),
       day = productionDate(at);
     now = instant(now);
+    const prior = this.db
+      .prepare(
+        'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
+      )
+      .get(input.campaignId, day);
+    if (prior) {
+      const e = this.get(String(prior.execution_id));
+      if (
+        e.campaign_revision !== input.campaignRevision ||
+        e.run_id !== input.runId ||
+        e.scheduled_at !== at ||
+        canonicalJson(this.history(e.execution_id)[0].evidence) !==
+          canonicalJson(request)
+      )
+        throw new CampaignError('CAMPAIGN_DAY_CONFLICT');
+      return e;
+    }
+    if (
+      this.db
+        .prepare('SELECT 1 FROM campaign_executions WHERE run_id=?')
+        .get(input.runId)
+    )
+      throw new CampaignError('CAMPAIGN_RUN_CONFLICT');
+    const id = randomUUID();
+    this.db
+      .prepare(
+        "INSERT INTO campaign_executions VALUES(?,?,?,?,?,?,'SCHEDULED',1,NULL,NULL,?,?)",
+      )
+      .run(
+        id,
+        input.campaignId,
+        input.campaignRevision,
+        day,
+        at,
+        input.runId,
+        now,
+        now,
+      );
+    this.event(
+      id,
+      (request as Record<string, unknown>).legacyRecovery
+        ? 'LEGACY_RECOVERY'
+        : 'SCHEDULED',
+      null,
+      'SCHEDULED',
+      now,
+      request,
+    );
+    return this.get(id);
+  }
+  private recurrenceEvents(campaignId?: string) {
+    return this.db
+      .prepare(
+        `SELECT h.execution_id,h.evidence_json,e.campaign_id FROM campaign_execution_events h
+      JOIN campaign_executions e ON e.execution_id=h.execution_id
+      WHERE h.event_type='CAMPAIGN_RECURRENCE_CONFIGURED' AND (? IS NULL OR e.campaign_id=?)`,
+      )
+      .all(campaignId ?? null, campaignId ?? null)
+      .map((row) => {
+        const config = JSON.parse(
+          String(row.evidence_json),
+        ) as CampaignRecurrence;
+        if (
+          config.schemaVersion !== 'campaign-recurrence/1.0.0' ||
+          !Number.isSafeInteger(config.revision) ||
+          config.revision < 1 ||
+          typeof config.enabled !== 'boolean' ||
+          typeof config.commandId !== 'string' ||
+          !config.request ||
+          config.request.campaignId !== row.campaign_id
+        )
+          throw new CampaignError('INVALID_CAMPAIGN_RECURRENCE_HISTORY');
+        return { executionId: String(row.execution_id), config };
+      });
+  }
+  recurrences(includeDisabled = false) {
+    const latest = new Map<
+      string,
+      ReturnType<CampaignRepository['recurrenceEvents']>[number]
+    >();
+    for (const event of this.recurrenceEvents()) {
+      const id = this.get(event.executionId).campaign_id;
+      if (
+        !latest.has(id) ||
+        latest.get(id)!.config.revision < event.config.revision
+      )
+        latest.set(id, event);
+    }
+    return [...latest.values()].filter(
+      (e) => includeDisabled || e.config.enabled,
+    );
+  }
+  configureRecurrence(
+    request: Record<string, unknown>,
+    enabled: boolean,
+    commandId: string,
+    now: string,
+  ) {
+    identifier(commandId);
     return this.tx(() => {
+      const campaignId = String(request.campaignId);
+      const events = this.recurrenceEvents(campaignId);
+      const replay = events.find((e) => e.config.commandId === commandId);
+      if (replay) {
+        if (
+          replay.config.enabled !== enabled ||
+          canonicalJson(replay.config.request) !== canonicalJson(request)
+        )
+          throw new CampaignError('CAMPAIGN_RECURRENCE_CONFLICT');
+        return this.get(replay.executionId);
+      }
       const prior = this.db
         .prepare(
           'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
         )
-        .get(input.campaignId, day);
-      if (prior) {
-        const e = this.get(String(prior.execution_id));
-        if (
-          e.campaign_revision !== input.campaignRevision ||
-          e.run_id !== input.runId ||
-          e.scheduled_at !== at ||
-          canonicalJson(this.history(e.execution_id)[0].evidence) !==
-            canonicalJson(request)
-        )
-          throw new CampaignError('CAMPAIGN_DAY_CONFLICT');
-        return e;
-      }
+        .get(campaignId, productionDate(String(request.scheduledAt)));
+      const execution = prior
+        ? this.get(String(prior.execution_id))
+        : this.persistSchedule(
+            {
+              campaignId,
+              campaignRevision: Number(request.campaignRevision),
+              runId: String(request.runId),
+              scheduledAt: String(request.scheduledAt),
+            },
+            request,
+            now,
+          );
+      // Configuration commands may reuse today's master, but never rewrite it.
+      const seed = this.history(execution.execution_id)[0].evidence;
       if (
-        this.db
-          .prepare('SELECT 1 FROM campaign_executions WHERE run_id=?')
-          .get(input.runId)
+        execution.campaign_revision !== request.campaignRevision ||
+        execution.scheduled_at !== request.scheduledAt ||
+        canonicalJson(seed.localImage) !== canonicalJson(request.localImage) ||
+        canonicalJson(
+          seed.run && (seed.run as Record<string, unknown>).projectVersion,
+        ) !==
+          canonicalJson((request.run as Record<string, unknown>).projectVersion)
       )
-        throw new CampaignError('CAMPAIGN_RUN_CONFLICT');
-      const id = randomUUID();
-      this.db
-        .prepare(
-          "INSERT INTO campaign_executions VALUES(?,?,?,?,?,?,'SCHEDULED',1,NULL,NULL,?,?)",
-        )
-        .run(
-          id,
-          input.campaignId,
-          input.campaignRevision,
-          day,
-          at,
-          input.runId,
-          now,
-          now,
-        );
-      this.event(
-        id,
-        (request as Record<string, unknown>).legacyRecovery
-          ? 'LEGACY_RECOVERY'
-          : 'SCHEDULED',
-        null,
-        'SCHEDULED',
-        now,
+        throw new CampaignError('CAMPAIGN_DAY_CONFLICT');
+      const config: CampaignRecurrence = {
+        schemaVersion: 'campaign-recurrence/1.0.0',
+        revision: Math.max(0, ...events.map((e) => e.config.revision)) + 1,
+        commandId,
+        enabled,
         request,
+      };
+      this.event(
+        execution.execution_id,
+        'CAMPAIGN_RECURRENCE_CONFIGURED',
+        execution.status,
+        execution.status,
+        instant(now),
+        config,
       );
-      return this.get(id);
+      return execution;
+    });
+  }
+  scheduleRecurring(
+    config: CampaignRecurrence,
+    request: Record<string, unknown>,
+    now: string,
+  ) {
+    return this.tx(() => {
+      const current = this.recurrences().find(
+        (e) => e.config.request.campaignId === config.request.campaignId,
+      );
+      if (!current || current.config.revision !== config.revision) return null;
+      const campaignId = String(request.campaignId),
+        day = productionDate(String(request.scheduledAt));
+      const existing = this.db
+        .prepare(
+          'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
+        )
+        .get(campaignId, day);
+      if (existing) return this.get(String(existing.execution_id));
+      return this.persistSchedule(
+        {
+          campaignId,
+          campaignRevision: Number(request.campaignRevision),
+          runId: String(request.runId),
+          scheduledAt: String(request.scheduledAt),
+        },
+        request,
+        now,
+      );
     });
   }
   due(now: string, id?: string) {

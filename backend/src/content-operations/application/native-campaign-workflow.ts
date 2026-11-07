@@ -20,7 +20,12 @@ import type { ContentOperationsService } from './content-operations.service.js';
 import type { CampaignWorkflow } from './campaign-orchestrator.js';
 import { executionRequest, completedContext } from './campaign-orchestrator.js';
 import type { CampaignEvent, CampaignExecution } from '../domain/campaign.js';
-import { CampaignError, identifier, instant } from '../domain/campaign.js';
+import {
+  CampaignError,
+  identifier,
+  instant,
+  productionDate,
+} from '../domain/campaign.js';
 import { usdUnits } from '../../finance/domain/video-financial-contracts.js';
 import { createHash } from 'node:crypto';
 import { adaptationHash } from '../../media/domain/media-hash.js';
@@ -33,6 +38,76 @@ export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
   return value as Record<string, unknown>;
+}
+
+// Optional command on POST .../local. Absence preserves single-shot semantics.
+export function localRecurrence(
+  input: Record<string, unknown>,
+): boolean | undefined {
+  if (!Object.hasOwn(input, 'recurrence')) return undefined;
+  const value = input.recurrence;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).join(',') !== 'enabled' ||
+    typeof (value as { enabled?: unknown }).enabled !== 'boolean'
+  )
+    throw new CampaignError('INVALID_CAMPAIGN_RECURRENCE');
+  return (value as { enabled: boolean }).enabled;
+}
+
+export function localRequestInput(value: unknown) {
+  const input = document(value);
+  localRecurrence(input);
+  if (
+    Object.keys(input)
+      .filter((key) => key !== 'recurrence')
+      .sort()
+      .join(',') !==
+      'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt' ||
+    !Number.isSafeInteger(input.projectVersion) ||
+    Number(input.projectVersion) < 1 ||
+    !Number.isSafeInteger(input.campaignRevision) ||
+    Number(input.campaignRevision) < 1
+  )
+    throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+  identifier(input.campaignId);
+  identifier(input.requestId);
+  instant(input.requestedAt);
+  document(input.localImage);
+  return input;
+}
+
+// Only materialize today's due occurrence; never backfill an unattended backlog.
+function dailyOccurrence(seed: string, now: string): string | null {
+  const day = productionDate(now);
+  if (day <= productionDate(seed)) return null;
+  const clock = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const localTime = clock.format(new Date(seed));
+  const millis = new Date(seed)
+    .getUTCMilliseconds()
+    .toString()
+    .padStart(3, '0');
+  const target = Date.parse(`${day}T${localTime}.${millis}Z`);
+  let candidate = target;
+  // Convert civil time using the zone database, rather than a fixed UTC offset.
+  for (let i = 0; i < 3; i++) {
+    const observed = Date.parse(
+      `${productionDate(new Date(candidate).toISOString())}T${clock.format(new Date(candidate))}.${millis}Z`,
+    );
+    candidate += target - observed;
+  }
+  const at = new Date(candidate).toISOString();
+  if (productionDate(at) !== day || clock.format(new Date(at)) !== localTime)
+    return null; // Nonexistent civil time at a timezone transition.
+  return at <= instant(now) ? at : null;
 }
 export function campaignRequest(raw: unknown) {
   const r = document(raw);
@@ -748,14 +823,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     return campaign;
   }
   async localRequest(value: unknown) {
-    const input = document(value);
-    if (
-      Object.keys(input).sort().join(',') !==
-        'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt' ||
-      !Number.isSafeInteger(input.projectVersion) ||
-      Number(input.projectVersion) < 1
-    )
-      throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+    const input = localRequestInput(value);
     const requestId = identifier(input.requestId),
       at = instant(input.requestedAt);
     const campaign = await this.affiliate.getCampaign(
@@ -794,6 +862,35 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         projectVersion: input.projectVersion,
         startedAt: at,
       },
+    });
+  }
+  async recurringRequest(seed: Record<string, unknown>, now: string) {
+    const at = dailyOccurrence(String(seed.scheduledAt), now);
+    if (!at) return null;
+    try {
+      await this.validate(seed);
+    } catch (error) {
+      if (
+        error instanceof CampaignError &&
+        error.code === 'CAMPAIGN_CONTEXT_NOT_FOUND'
+      )
+        return null;
+      throw error;
+    }
+    const brief = await this.affiliate.getBriefing(String(seed.briefingId));
+    if (
+      !brief?.mediaRefs.includes(
+        String(document(seed.localImage).mediaReference),
+      )
+    )
+      return null;
+    return this.localRequest({
+      campaignId: seed.campaignId,
+      campaignRevision: seed.campaignRevision,
+      projectVersion: document(seed.run).projectVersion,
+      requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+      requestedAt: at,
+      localImage: seed.localImage,
     });
   }
   async result(

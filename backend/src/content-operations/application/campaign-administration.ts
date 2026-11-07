@@ -17,8 +17,15 @@ import {
   NativeCampaignWorkflow,
   campaignRequest,
   document,
+  localRecurrence,
+  localRequestInput,
 } from './native-campaign-workflow.js';
-import { CampaignError, identifier } from '../domain/campaign.js';
+import {
+  CampaignError,
+  identifier,
+  instant,
+  canonicalJson,
+} from '../domain/campaign.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
 export const CAMPAIGN_DATABASE = Symbol('CAMPAIGN_DATABASE');
 export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
@@ -32,6 +39,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     private readonly path: string | null,
     readonly workflow: NativeCampaignWorkflow,
     private readonly enabled = false,
+    private readonly now = () => new Date().toISOString(),
   ) {}
   private open() {
     if (this.store) return this.store;
@@ -51,7 +59,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     this.db = new DatabaseSync(this.path);
     this.db.exec('PRAGMA foreign_keys=ON');
     this.store = new CampaignRepository(this.db);
-    this.runner = new CampaignOrchestrator(this.store, this.workflow);
+    this.runner = new CampaignOrchestrator(this.store, this.workflow, this.now);
     return this.store;
   }
   onModuleInit() {
@@ -97,7 +105,39 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   async startLocal(value: unknown) {
-    return this.schedule(await this.workflow.localRequest(value));
+    const input = localRequestInput(value),
+      enabled = localRecurrence(input);
+    if (enabled === false) {
+      const existing = this.open()
+        .recurrences(true)
+        .find((e) => e.config.request.campaignId === input.campaignId);
+      if (existing) {
+        const seed = existing.config.request;
+        // Stopping production must remain possible after catalog eligibility is lost.
+        if (
+          seed.campaignRevision !== input.campaignRevision ||
+          seed.scheduledAt !== instant(input.requestedAt) ||
+          document(seed.run).projectVersion !== input.projectVersion ||
+          canonicalJson(seed.localImage) !== canonicalJson(input.localImage)
+        )
+          throw new CampaignError('CAMPAIGN_RECURRENCE_CONFLICT');
+        return this.open().configureRecurrence(
+          seed,
+          false,
+          String(input.requestId),
+          this.now(),
+        );
+      }
+    }
+    const request = await this.workflow.localRequest(value);
+    if (enabled === undefined) return this.schedule(request);
+    await this.workflow.validate(request);
+    return this.open().configureRecurrence(
+      request,
+      enabled,
+      String(input.requestId),
+      this.now(),
+    );
   }
   result(id: string) {
     const store = this.open(),
@@ -516,7 +556,23 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.get(id);
   }
   async tick() {
-    this.open();
+    const store = this.open();
+    for (const { config } of store.recurrences()) {
+      try {
+        const request = await this.workflow.recurringRequest(
+          config.request,
+          this.now(),
+        );
+        if (request) store.scheduleRecurring(config, request, this.now());
+      } catch (error) {
+        // Report a failed configuration without starving other scheduled campaigns.
+        this.logger.error(
+          error instanceof CampaignError
+            ? error.code
+            : 'CAMPAIGN_RECURRENCE_FAILED',
+        );
+      }
+    }
     await this.runner!.tick();
   }
   async approve(id: string, value: unknown) {
