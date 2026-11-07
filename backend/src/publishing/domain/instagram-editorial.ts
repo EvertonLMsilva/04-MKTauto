@@ -8,7 +8,7 @@ import {
 } from './social-publication-contracts.js';
 export const CAPTION_POLICY = 'instagram-grounded-extraction/1.0.0';
 const risky =
-  /(cur[ae]|doen[cç]|dor(?:es)?|terap|circula[cç]|sa[uú]de|emagre|garant|resultado|milagr|melhor|reduz|alivia|previne|elimina|ins[oô]nia|s[oó] hoje|[uú]ltimas|esgot|promo[cç]|desconto|gr[aá]tis|100%)/iu;
+  /(cur[ae]|doen[cç]|\bdor(?:es)?\b|terap|circula[cç]|sa[uú]de|emagre|garant|resultado|milagr|melhor|reduz|alivia|previne|elimina|ins[oô]nia|s[oó] hoje|[uú]ltimas|esgot|promo[cç]|desconto|gr[aá]tis|100%)/iu;
 const normalize = (s: string) =>
   s.normalize('NFKC').replace(/\s+/g, ' ').trim();
 export function buildCaption(context: any, variant = 1) {
@@ -53,7 +53,7 @@ export function buildCaption(context: any, variant = 1) {
     .slice(0, 3)
     .map((x: string) => '#' + x.toLowerCase());
   const allowedLines = [
-    'Publicidade • Link de afiliado.',
+    b.disclosure,
     ...hooks,
     ...facts.map((a: any) => `${a.name}: ${a.value}`),
     'Confira o produto no vídeo e consulte os detalhes no link.',

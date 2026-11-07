@@ -1,4 +1,8 @@
 import { InstagramGraphAdapter } from './infrastructure/instagram-graph.adapter.js';
+import { createHash } from 'node:crypto';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 describe('official Instagram Graph transport (injected HTTP only)', () => {
   const requests: any[] = [];
@@ -130,5 +134,50 @@ describe('official Instagram Graph transport (injected HTTP only)', () => {
           fetch: async () => response({}),
         }),
     ).toThrow();
+  });
+  it('creates a resumable session and uploads exact local bytes with simulated transport', async () => {
+    const calls: { url: string; init: RequestInit }[] = [];
+    const a = new InstagramGraphAdapter({
+      mode: 'fake', accountId: '123456789', apiVersion: 'v25.0',
+      getAccessToken: () => 'PRIVATE_TOKEN',
+      fetch: async (url, init) => {
+        calls.push({ url: typeof url === 'string' ? url : url instanceof URL ? url.href : url.url, init: init! });
+        return response(calls.length === 1
+          ? { id: '234567890', uri: 'https://rupload.facebook.com/ig-api-upload/234567890' }
+          : calls.length === 2 ? { success: true } : { status_code: 'FINISHED' });
+      },
+    });
+    const session = await a.createResumableContainer({ accountId: a.accountId, caption: 'Publicidade. Produto.' });
+    expect(session.containerId).toBe('234567890');
+    expect(new URLSearchParams(calls[0].init.body as string).get('upload_type')).toBe('resumable');
+    await a.uploadResumableBytes(session.uploadUri, Buffer.from('fixture'));
+    expect(calls[1].url).toBe(session.uploadUri);
+    expect(calls[1].init.headers).toMatchObject({ Authorization: 'OAuth PRIVATE_TOKEN', offset: '0', file_size: '7' });
+    expect(Buffer.from(calls[1].init.body as Uint8Array)).toEqual(Buffer.from('fixture'));
+    expect((await a.getContainerStatus({ containerId: session.containerId })).status).toBe('FINISHED');
+  });
+  it('rejects an untrusted upload URI and never retries an uncertain upload', async () => {
+    let calls = 0;
+    const a = new InstagramGraphAdapter({ mode: 'fake', accountId: '123456789', apiVersion: 'v25.0',
+      getAccessToken: () => 'PRIVATE_TOKEN', fetch: async () => { calls++; throw Error('network'); } });
+    await expect(a.uploadResumableBytes('https://example.test/upload', Buffer.from('x'))).rejects.toThrow('SOCIAL_TRANSFER_INVALID');
+    expect(calls).toBe(0);
+    await expect(a.uploadResumableBytes('https://rupload.facebook.com/ig-api-upload/234567890', Buffer.from('x'))).rejects.toThrow('SOCIAL_NETWORK_UNCERTAIN');
+    expect(calls).toBe(1);
+  });
+  it('checks local file bytes against the exact render hash before transport', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'ig-upload-'));
+    const path = join(root, 'render.mp4');
+    writeFileSync(path, 'fixture');
+    let calls = 0;
+    const a = new InstagramGraphAdapter({ mode: 'fake', accountId: '123456789', apiVersion: 'v25.0',
+      getAccessToken: () => 'PRIVATE_TOKEN', fetch: async () => { calls++; return response({ success: true }); } });
+    const uri = 'https://rupload.facebook.com/ig-api-upload/234567890';
+    try {
+      await expect(a.uploadResumableFile(uri, path, 'a'.repeat(64))).rejects.toThrow('SOCIAL_MEDIA_INCOMPATIBLE');
+      expect(calls).toBe(0);
+      await a.uploadResumableFile(uri, path, createHash('sha256').update('fixture').digest('hex'));
+      expect(calls).toBe(1);
+    } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });

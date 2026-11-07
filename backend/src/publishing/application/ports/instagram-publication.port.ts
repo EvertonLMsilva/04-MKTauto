@@ -3,6 +3,8 @@ export interface InstagramPublicationPorts {
     mode: 'fake' | 'live';
     accountId: string;
     createContainer(input: any): Promise<any>;
+    createResumableContainer?(input: any): Promise<any>;
+    uploadResumableBytes?(uri: string, bytes: Buffer): Promise<any>;
     getContainerStatus(input: any): Promise<any>;
     publish(input: any): Promise<any>;
     getMedia(input: any): Promise<any>;
@@ -12,6 +14,12 @@ export interface InstagramPublicationPorts {
   transfer(
     packageHash: string,
   ): Promise<{ url: string; expiresAt: string; contentHash: string }>;
+  localBytes?(
+    packageHash: string,
+    renderId: string,
+    expectedHash: string,
+  ): Promise<Buffer>;
+  verifyConnection?(): Promise<void>;
   verifier: {
     mode: 'fake' | 'live';
     verifyTransfer(value: any): Promise<any>;

@@ -289,7 +289,18 @@ export class SocialPublicationRepository {
       if (
         Object.keys(patch).some((k: any): any => !patchFields.has(k)) ||
         (!transitions[previous.state]?.includes(next) && !directTransition) ||
-        (direct && next === 'PUBLISHING')
+        (direct &&
+          next === 'PUBLISHING' &&
+          (previous.publicationFlowVersion !== 2 ||
+            previous.state !== 'READY' ||
+            previous.uploadStage !== 'ACKNOWLEDGED' ||
+            previous.providerStatus !== 'FINISHED' ||
+            !previous.uploadUri ||
+            previous.uncertainStage ||
+            previous.requiresReconciliation ||
+            previous.transferEvidence?.operationId !== previous.operationId ||
+            previous.transferEvidence?.containerId !== previous.containerId ||
+            previous.transferEvidence?.contentHash !== previous.mediaHash))
       )
         socialFail('SOCIAL_TRANSITION_INVALID');
       if (
@@ -335,7 +346,7 @@ export class SocialPublicationRepository {
         (!direct ||
           previous.uploadUri ||
           typeof patch.uploadUri !== 'string' ||
-          !/^https:\/\/rupload\.facebook\.com\/ig-api-upload\/v\d+\.\d+\/\d{5,64}$/.test(
+          !/^https:\/\/rupload\.facebook\.com\/ig-api-upload\/(?:v\d+\.\d+\/)?\d{5,64}$/.test(
             patch.uploadUri,
           ) ||
           patch.uploadUri.split('/').at(-1) !==

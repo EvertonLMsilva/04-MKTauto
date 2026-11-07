@@ -4,6 +4,9 @@ import { LocalFlowService } from '../media/application/local-flow.service.js';
 import { publishingEvidence } from './application/publication-eligibility.js';
 const PUBLISHING_EVIDENCE = Symbol('PUBLISHING_EVIDENCE');
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
+import { InstagramGraphAdapter } from './infrastructure/instagram-graph.adapter.js';
+import { socialFail } from './domain/social-publication-contracts.js';
+import { createHash } from 'node:crypto';
 import { InstagramPublicationService } from './application/instagram-publication.service.js';
 import { InstagramConnectionService } from './application/instagram-connection.service.js';
 import { instagramAccountId } from './infrastructure/instagram-environment.js';
@@ -55,16 +58,86 @@ import { PublishingController } from './publishing.controller.js';
     },
     {
       provide: INSTAGRAM_PUBLICATION_PORTS,
-      inject: [PublishingService, MediaService],
-      useFactory: (publishing: PublishingService, media: MediaService) =>
-        process.env.INSTAGRAM_PUBLICATION_MODE === 'fake'
-          ? deterministicInstagramPorts(
-              publishing,
-              media,
-              instagramAccountId(process.env),
-              process.env.INSTAGRAM_API_VERSION ?? '',
-            )
-          : null,
+      inject: [
+        PublishingService,
+        MediaService,
+        LocalFlowService,
+        InstagramConnectionService,
+      ],
+      useFactory: (
+        publishing: PublishingService,
+        media: MediaService,
+        local: LocalFlowService,
+        connection: InstagramConnectionService,
+      ) => {
+        const mode = process.env.INSTAGRAM_PUBLICATION_MODE;
+        const bytes = async (
+          packageHash: string,
+          renderId: string,
+          expectedHash: string,
+        ) => {
+          const pkg = publishing.package(packageHash);
+          if (
+            !pkg ||
+            pkg.identity.videoRenderId !== renderId ||
+            pkg.identity.videoRenderContentHash !== expectedHash ||
+            media.verifyMedia(pkg.mediaReference) !== expectedHash
+          )
+            socialFail('SOCIAL_MEDIA_INCOMPATIBLE');
+          const value = await local.previewBytes(renderId);
+          if (createHash('sha256').update(value).digest('hex') !== expectedHash)
+            socialFail('SOCIAL_MEDIA_INCOMPATIBLE');
+          return value;
+        };
+        if (mode === 'fake') {
+          const ports = deterministicInstagramPorts(
+            publishing,
+            media,
+            instagramAccountId(process.env),
+            process.env.INSTAGRAM_API_VERSION ?? '',
+          );
+          return process.env.INSTAGRAM_PUBLICATION_SOURCE === 'local'
+            ? { ...ports, localBytes: bytes }
+            : ports;
+        }
+        if (!mode) return null;
+        if (mode !== 'live') socialFail('SOCIAL_CONFIG_INVALID');
+        if (connection.status().missingConfiguration.length)
+          socialFail('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+        const publisher = new InstagramGraphAdapter({
+          mode: 'live',
+          accountId: instagramAccountId(process.env),
+          apiVersion: process.env.INSTAGRAM_API_VERSION ?? '',
+          getAccessToken: () => process.env.INSTAGRAM_ACCESS_TOKEN ?? '',
+          fetch: globalThis.fetch,
+          allowLivePosts: process.env.INSTAGRAM_LIVE_POSTS_ENABLED === 'true',
+        });
+        return {
+          publisher,
+          media: {
+            inspect: async (reference: string) => ({
+              contentHash: media.verifyMedia(reference),
+              result: 'PASS',
+              policyVersion: 'instagram-reels-profile/1.0.0',
+            }),
+          },
+          transfer: async () => socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED'),
+          localBytes: bytes,
+          verifier: {
+            mode: 'live',
+            verifyTransfer: async () =>
+              socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED'),
+            verifyPublication: async () =>
+              socialFail('SOCIAL_HOSTED_MEDIA_UNVERIFIED'),
+          },
+          allowLivePosts: process.env.INSTAGRAM_LIVE_POSTS_ENABLED === 'true',
+          verifyConnection: async () => {
+            const result = await connection.check();
+            if (result.connection !== 'READY')
+              socialFail('SOCIAL_AUTH_REQUIRED');
+          },
+        } satisfies InstagramPublicationPorts;
+      },
     },
     {
       provide: InstagramPublicationService,

@@ -44,6 +44,18 @@ it('grounds conversion copy in safe documented facts and validates the complete 
   expect(c.inferencePerformed).toBe(false);
   expect(c.evidenceRefs).toContain('spec_1');
 });
+it('accepts the authorized organizers product and preserves its illustrative-scene disclosure', () => {
+  const caption = buildCaption({
+    ...context,
+    briefing: {
+      ...context.briefing,
+      productName: 'Kit 7 e Kit 14 Organizadores Multiuso',
+      disclosure: 'Publicidade · Cena ilustrativa · Link de afiliado',
+    },
+  });
+  expect(caption.text).toContain('Organizadores Multiuso');
+  expect(caption.text).toContain('Cena ilustrativa');
+});
 it.each([
   'Cura todas as dores!',
   'Só hoje! Últimas unidades!',
