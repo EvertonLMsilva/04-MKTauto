@@ -97,7 +97,7 @@ export function campaignRequest(raw: unknown) {
         String(video.mode),
       ) ||
       r.mode !== 'LOCAL_VALIDATION' ||
-      r.publication !== undefined
+      (r.publication !== undefined && video.mode !== 'LOCAL_IMAGES')
     )
       throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
   }
@@ -194,7 +194,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     private readonly instagram?: Pick<
       InstagramPublicationService,
       'execute' | 'reconcile'
-    >,
+    > &
+      Partial<Pick<InstagramPublicationService, 'configuration' | 'status'>>,
     private readonly production?: {
       preparations: Pick<VideoProductionPreparationService, 'prepare'>;
       generation: Pick<VideoGenerationService, 'submit' | 'poll' | 'recover'>;
@@ -859,9 +860,43 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     done: Record<string, unknown>,
   ): Promise<unknown> {
     if (step === 'PUBLICATION') {
-      if (!r.publication) return { publication: 'MANUAL_HANDOFF' };
+      if (!r.publication) {
+        if (
+          r.videoProduction &&
+          document(r.videoProduction).mode === 'LOCAL_IMAGES' &&
+          this.instagram?.configuration?.().mode === 'live'
+        )
+          throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+        return { publication: 'MANUAL_HANDOFF' };
+      }
       if (!this.instagram)
         throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+      const previous = await this.instagram.status?.(e.execution_id);
+      const operation = previous?.operation;
+      if (
+        operation &&
+        ([
+          'UNCERTAIN',
+          'CREATING_CONTAINER',
+          'PUBLISHING',
+          'PUBLISHED',
+        ].includes(operation.state) ||
+          operation.requiresReconciliation)
+      ) {
+        const proof = await this.instagram.reconcile(e.execution_id);
+        if (proof?.verified && proof.step === 'PUBLICATION')
+          return proof.result;
+        const current = await this.instagram.status?.(e.execution_id);
+        if (
+          !proof?.verified ||
+          !current?.operation ||
+          !['PREPARED', 'PROCESSING', 'READY'].includes(
+            current.operation.state,
+          ) ||
+          current.operation.requiresReconciliation
+        )
+          throw new CampaignError('SOCIAL_RECONCILIATION_REQUIRED');
+      }
       return this.instagram.execute(e, r.publication, done.HANDOFF);
     }
     // No paid transport is reachable from this workflow. Unknown charges stay unknown.
@@ -1498,8 +1533,39 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const publication = history
       .filter((h) => h.event_type === 'STEP_STARTED')
       .at(-1);
-    if (publication?.evidence.step === 'PUBLICATION' && this.instagram)
-      return this.instagram.reconcile(e.execution_id);
+    if (publication?.evidence.step === 'PUBLICATION' && this.instagram) {
+      const proof = await this.instagram.reconcile(e.execution_id);
+      if (proof?.verified) return proof;
+      const status = await this.instagram.status?.(e.execution_id);
+      const op = status?.operation;
+      const request = executionRequest(history);
+      const handoff = completedContext(history).HANDOFF as
+        Record<string, unknown> | undefined;
+      if (
+        e.status === 'WAITING_RECONCILIATION' &&
+        this.instagram.configuration?.().mode === 'live' &&
+        op?.state === 'UNCERTAIN' &&
+        op.executionMode === 'live' &&
+        op.publicationFlowVersion === 2 &&
+        op.uncertainStage === 'UPLOAD' &&
+        op.providerStatus === 'FINISHED' &&
+        op.uploadStage === 'UPLOADING' &&
+        op.containerId &&
+        !op.mediaId &&
+        request.publication &&
+        op.packageHash === document(request.publication).packageHash &&
+        op.accountId === document(request.publication).accountId &&
+        op.mediaHash === handoff?.contentHash
+      )
+        return {
+          verified: true,
+          reason: 'META_CONTAINER_FINISHED',
+          operationId: op.operationId,
+          containerId: op.containerId,
+          providerStatus: 'FINISHED',
+        };
+      return null;
+    }
     const lastFailure = history
       .filter((h) => h.event_type === 'STEP_FAILED')
       .at(-1);
