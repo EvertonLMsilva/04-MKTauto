@@ -46,6 +46,7 @@ import type {
 import {
   LocalPiperTts,
   adaptLocalNarration,
+  adaptKokoroNarration,
   type LocalSpeechEvidence,
 } from './local-piper-tts.js';
 type SubtitleDocument = {
@@ -505,7 +506,9 @@ export class LocalFlowRuntime {
       this.files(),
     );
     const evidence = doc.synthesis,
-      config = new LocalPiperTts(this.env, this.runner).configuration();
+      config = new LocalPiperTts(this.env, this.runner).configuration(
+        evidence?.configurationHash,
+      );
     if (
       !evidence ||
       evidence.schemaVersion !== 'local-tts-evidence/1' ||
@@ -520,15 +523,26 @@ export class LocalFlowRuntime {
       evidence.licenseEvidenceSha256 !== config.licenseEvidenceSha256 ||
       evidence.modelId !== config.modelId ||
       evidence.modelVersion !== config.modelVersion ||
+      evidence.executableSha256 !== config.executableSha256 ||
       evidence.license !== config.license ||
+      evidence.licenseSource !== config.licenseSource ||
+      evidence.attribution !== config.attribution ||
+      evidence.approvedBy !== config.approvedBy ||
+      evidence.approvedAt !== config.approvedAt ||
       evidence.targetDurationMs !== voice.durationMilliseconds ||
       evidence.speechDurationMs > evidence.targetDurationMs ||
-      evidence.adaptation !== 'literal-deduplication/1' ||
+      !['literal-deduplication/1', 'paragraph-preserving-deduplication/2']
+        .includes(evidence.adaptation) ||
       evidence.narration !==
-        adaptLocalNarration(script.fullNarration, voice.durationMilliseconds)
+        (evidence.adaptation === 'paragraph-preserving-deduplication/2'
+          ? adaptKokoroNarration(script.fullNarration, voice.durationMilliseconds)
+          : adaptLocalNarration(script.fullNarration, voice.durationMilliseconds))
     )
       localFail('LOCAL_TTS_LICENSE_REQUIRED');
-    return evidence.narration;
+    // CTC keeps its existing canonical text; Kokoro receives paragraph breaks.
+    return evidence.adaptation === 'paragraph-preserving-deduplication/2'
+      ? adaptLocalNarration(script.fullNarration, voice.durationMilliseconds)
+      : evidence.narration;
   }
   async ingestRecording(
     scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],
