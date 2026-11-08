@@ -187,9 +187,12 @@ import { PublishingController } from './publishing.controller.js';
     },
     {
       provide: PublishingService,
-      useFactory: (store: PublishingPersistence, media: MediaService) =>
-        new PublishingService(store, media),
-      inject: [PublishingPersistence, PUBLISHING_EVIDENCE],
+      useFactory: (
+        store: PublishingPersistence,
+        media: MediaService,
+        finance: FinanceService,
+      ) => new PublishingService(store, media, finance),
+      inject: [PublishingPersistence, PUBLISHING_EVIDENCE, FinanceService],
     },
   ],
 })

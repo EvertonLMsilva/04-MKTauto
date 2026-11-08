@@ -106,6 +106,63 @@ export class PublishingController {
       this.publishing.recordResults(input, key),
     );
   }
+  @Post('executions/:id/commercial-results') recordExecutionResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'execution', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('executions/:id/commercial-results') executionSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'execution', id }),
+    );
+  }
+  @Post('social-operations/:id/commercial-results') recordOperationResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'operation', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('social-operations/:id/commercial-results') operationSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'operation', id }),
+    );
+  }
+  @Post('manual-publications/:id/commercial-results') recordPublicationResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'publication', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('manual-publications/:id/commercial-results') publicationSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'publication', id }),
+    );
+  }
   @Get('manual-publications/:id/results') results(@Param('id') id: string) {
     return this.respond(() => this.publishing.results(id));
   }

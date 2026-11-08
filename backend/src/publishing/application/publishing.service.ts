@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { CommercialMeasurementService } from './commercial-measurement.service.js';
+import type { FinanceService } from '../../finance/application/finance.service.js';
+import type { MeasurementTarget } from '../domain/commercial-measurement.js';
 import {
   HumanApprovalService,
   validateRequest,
@@ -9,6 +12,10 @@ export class PublishingService {
   constructor(
     private readonly store: PublishingStore,
     private readonly media: PublishingMedia,
+    private readonly finance?: Pick<
+      FinanceService,
+      'getLedgerV2ByPipelineRun' | 'getGlobalOperation'
+    >,
   ) {}
   private session<T>(
     readOnly: boolean,
@@ -108,6 +115,26 @@ export class PublishingService {
   }
   recordResults(value: unknown, key: string) {
     return this.session(false, (s) => s.manual.recordResults(value, key));
+  }
+  recordCommercialResults(
+    target: MeasurementTarget,
+    input: unknown,
+    key: string,
+  ) {
+    return this.session(false, (s) =>
+      new CommercialMeasurementService(
+        s.manual.repository,
+        this.finance,
+      ).record(target, input, key),
+    );
+  }
+  commercialSummary(target: MeasurementTarget) {
+    return this.session(true, (s) =>
+      new CommercialMeasurementService(
+        s.manual.repository,
+        this.finance,
+      ).summary(target),
+    );
   }
   results(id: string) {
     return this.session(true, (s) => s.manual.listResults(id));
