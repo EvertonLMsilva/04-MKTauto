@@ -1,4 +1,6 @@
 import { FinanceModule } from '../finance/finance.module.js';
+import { OperationalNotificationsModule } from '../notifications/operational-notifications.module.js';
+import { OperationalAlertsService } from '../notifications/application/operational-alerts.service.js';
 import { FinanceService } from '../finance/application/finance.service.js';
 import { LocalFlowService } from '../media/application/local-flow.service.js';
 import { publishingEvidence } from './application/publication-eligibility.js';
@@ -32,7 +34,12 @@ import { InstagramEditorialService } from './application/instagram-editorial.ser
 import { PublishingController } from './publishing.controller.js';
 
 @Module({
-  imports: [MediaModule, AffiliateModule, FinanceModule],
+  imports: [
+    MediaModule,
+    AffiliateModule,
+    FinanceModule,
+    OperationalNotificationsModule,
+  ],
   controllers: [PublishingController],
   exports: [
     InstagramEditorialService,
@@ -145,11 +152,13 @@ import { PublishingController } from './publishing.controller.js';
         PublishingPersistence,
         INSTAGRAM_PUBLICATION_PORTS,
         FinanceService,
+        OperationalAlertsService,
       ],
       useFactory: (
         store: PublishingPersistence,
         ports: InstagramPublicationPorts | null,
         finance: FinanceService,
+        notifications: OperationalAlertsService,
       ) =>
         new InstagramPublicationService(
           store,
@@ -158,6 +167,7 @@ import { PublishingController } from './publishing.controller.js';
           process.env.INSTAGRAM_PUBLICATION_MODE === 'fake' &&
             process.env.INSTAGRAM_SCHEDULER_ENABLED !== 'false',
           finance,
+          notifications,
         ),
     },
     {
@@ -191,8 +201,14 @@ import { PublishingController } from './publishing.controller.js';
         store: PublishingPersistence,
         media: MediaService,
         finance: FinanceService,
-      ) => new PublishingService(store, media, finance),
-      inject: [PublishingPersistence, PUBLISHING_EVIDENCE, FinanceService],
+        notifications: OperationalAlertsService,
+      ) => new PublishingService(store, media, finance, notifications),
+      inject: [
+        PublishingPersistence,
+        PUBLISHING_EVIDENCE,
+        FinanceService,
+        OperationalAlertsService,
+      ],
     },
   ],
 })

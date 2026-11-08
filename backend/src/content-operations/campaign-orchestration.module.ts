@@ -2,6 +2,8 @@ import { VideoProductionPreparationService } from '../media/application/video-pr
 import { VideoGenerationService } from '../media/application/video-generation.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { Module } from '@nestjs/common';
+import { OperationalNotificationsModule } from '../notifications/operational-notifications.module.js';
+import { OperationalAlertsService } from '../notifications/application/operational-alerts.service.js';
 import { ContentOperationsModule } from './content-operations.module.js';
 import { ContentModule } from '../content/content.module.js';
 import { MediaModule } from '../media/media.module.js';
@@ -37,6 +39,7 @@ import {
 import { CampaignController } from './campaign.controller.js';
 @Module({
   imports: [
+    OperationalNotificationsModule,
     ContentOperationsModule,
     ContentModule,
     MediaModule,
@@ -111,12 +114,22 @@ import { CampaignController } from './campaign.controller.js';
     },
     {
       provide: CampaignAdministration,
-      inject: [CAMPAIGN_DATABASE, NativeCampaignWorkflow],
-      useFactory: (path: string | null, w: NativeCampaignWorkflow) =>
+      inject: [
+        CAMPAIGN_DATABASE,
+        NativeCampaignWorkflow,
+        OperationalAlertsService,
+      ],
+      useFactory: (
+        path: string | null,
+        w: NativeCampaignWorkflow,
+        notifications: OperationalAlertsService,
+      ) =>
         new CampaignAdministration(
           path,
           w,
           process.env.CAMPAIGN_SCHEDULER_ENABLED === 'true',
+          undefined,
+          notifications,
         ),
     },
   ],

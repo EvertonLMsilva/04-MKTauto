@@ -1,4 +1,12 @@
 import { randomUUID } from 'node:crypto';
+import type {
+  CampaignOperationsStore,
+  CampaignOperationalEvent,
+  NotificationBaseline,
+  NotificationAttempt,
+  NotificationReference,
+  NotificationReceipt,
+} from '../application/campaign-operations.port.js';
 type CatalogResolver = (
   previousProduct: string | null,
 ) => Record<string, unknown>;
@@ -25,7 +33,169 @@ import type {
   ScheduleIdentity,
 } from '../domain/campaign.js';
 
-export class CampaignRepository {
+export class CampaignRepository implements CampaignOperationsStore {
+  operationalExecutions(id?: string): CampaignExecution[] {
+    return this.db
+      .prepare(
+        `SELECT * FROM campaign_executions${id ? ' WHERE execution_id=?' : ''} ORDER BY production_date,execution_id`,
+      )
+      .all(...(id ? [id] : [])) as unknown as CampaignExecution[];
+  }
+  operationalHistory(id: string): CampaignOperationalEvent[] {
+    this.get(id);
+    return this.db
+      .prepare(
+        'SELECT rowid AS cursor,* FROM campaign_execution_events WHERE execution_id=? ORDER BY sequence',
+      )
+      .all(id)
+      .map((row) => ({
+        ...row,
+        evidence: JSON.parse(String(row.evidence_json)),
+      })) as unknown as CampaignOperationalEvent[];
+  }
+  checkpoint(): number {
+    return Number(
+      this.db
+        .prepare(
+          'SELECT COALESCE(MAX(rowid),0) n FROM campaign_execution_events',
+        )
+        .get()?.n,
+    );
+  }
+  hasNotificationAttempt(key: string): boolean {
+    return !!this.db
+      .prepare(
+        "SELECT 1 FROM campaign_execution_events WHERE event_type='OPERATIONAL_NOTIFICATION_ATTEMPTED' AND json_extract(evidence_json,'$.key')=?",
+      )
+      .get(key);
+  }
+  private notificationEvent(
+    id: string,
+    type: string,
+    evidence: unknown,
+    now: string,
+  ) {
+    const e = this.get(id);
+    this.event(id, type, e.status, e.status, now, evidence);
+  }
+
+  notificationBaseline(
+    destinationId: string,
+    initial: () => NotificationBaseline,
+    now = new Date().toISOString(),
+  ): NotificationBaseline {
+    return this.tx(() => {
+      const prior = this.db
+        .prepare(
+          "SELECT evidence_json FROM campaign_execution_events WHERE event_type='OPERATIONAL_NOTIFICATION_BASELINE' AND json_extract(evidence_json,'$.destinationId')=? ORDER BY rowid LIMIT 1",
+        )
+        .get(destinationId);
+      if (prior) return JSON.parse(String(prior.evidence_json)).baseline;
+      const baseline = initial();
+      const anchor = this.db
+        .prepare(
+          'SELECT execution_id FROM campaign_executions ORDER BY created_at,execution_id LIMIT 1',
+        )
+        .get();
+      if (anchor)
+        this.notificationEvent(
+          String(anchor.execution_id),
+          'OPERATIONAL_NOTIFICATION_BASELINE',
+          { destinationId, baseline },
+          now,
+        );
+      return baseline;
+    });
+  }
+
+  claimNotification(
+    intent: NotificationAttempt,
+    eligible: () => boolean,
+    now: string,
+  ): boolean {
+    return this.tx(() => {
+      if (this.hasNotificationAttempt(intent.key)) return false;
+      // All BC readers use the same database. BEGIN IMMEDIATE excludes competing
+      // writers while the synchronous policy revalidates facts through their ports.
+      const current = eligible();
+      if (typeof current !== 'boolean')
+        throw new Error('SYNCHRONOUS_NOTIFICATION_VALIDATION_REQUIRED');
+      if (!current) return false;
+      this.notificationEvent(
+        intent.executionId,
+        'OPERATIONAL_NOTIFICATION_ATTEMPTED',
+        {
+          key: intent.key,
+          kind: intent.kind,
+          sourceIdentity: intent.sourceIdentity,
+          destinationId: intent.destinationId,
+          status: 'ATTEMPTED',
+          messageHash: intent.messageHash,
+        },
+        now,
+      );
+      return true;
+    });
+  }
+  finishNotification(
+    intent: NotificationReference,
+    result: NotificationReceipt,
+    now: string,
+  ) {
+    this.tx(() => {
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM campaign_execution_events WHERE event_type IN ('OPERATIONAL_NOTIFICATION_DELIVERED','OPERATIONAL_NOTIFICATION_FAILED','OPERATIONAL_NOTIFICATION_UNCERTAIN') AND json_extract(evidence_json,'$.key')=?",
+          )
+          .get(intent.key)
+      )
+        return;
+      this.notificationEvent(
+        intent.executionId,
+        `OPERATIONAL_NOTIFICATION_${result.status}`,
+        {
+          key: intent.key,
+          kind: intent.kind,
+          destinationId: intent.destinationId,
+          ...result,
+        },
+        now,
+      );
+    });
+  }
+  recoverNotifications(destinationId: string, now: string) {
+    this.tx(() => {
+      const attempted = this.db
+        .prepare(
+          "SELECT execution_id,occurred_at,evidence_json FROM campaign_execution_events WHERE event_type='OPERATIONAL_NOTIFICATION_ATTEMPTED' AND json_extract(evidence_json,'$.destinationId')=?",
+        )
+        .all(destinationId);
+      for (const row of attempted) {
+        const value = JSON.parse(String(row.evidence_json));
+        if (Date.parse(now) - Date.parse(String(row.occurred_at)) < 30000)
+          continue;
+        const finished = this.db
+          .prepare(
+            "SELECT 1 FROM campaign_execution_events WHERE event_type IN ('OPERATIONAL_NOTIFICATION_DELIVERED','OPERATIONAL_NOTIFICATION_FAILED','OPERATIONAL_NOTIFICATION_UNCERTAIN') AND json_extract(evidence_json,'$.key')=?",
+          )
+          .get(value.key);
+        if (!finished)
+          this.notificationEvent(
+            String(row.execution_id),
+            'OPERATIONAL_NOTIFICATION_UNCERTAIN',
+            {
+              key: value.key,
+              kind: value.kind,
+              destinationId,
+              status: 'UNCERTAIN',
+              errorCode: 'NOTIFICATION_PROCESS_INTERRUPTED',
+            },
+            now,
+          );
+      }
+    });
+  }
   constructor(readonly db: DatabaseSync) {
     db.exec('PRAGMA busy_timeout=5000');
   }

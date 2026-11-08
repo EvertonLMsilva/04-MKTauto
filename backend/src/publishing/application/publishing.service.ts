@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import { CommercialMeasurementService } from './commercial-measurement.service.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
 import type { MeasurementTarget } from '../domain/commercial-measurement.js';
@@ -16,7 +17,15 @@ export class PublishingService {
       FinanceService,
       'getLedgerV2ByPipelineRun' | 'getGlobalOperation'
     >,
+    private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
   ) {}
+  private signalNotifications() {
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
+  }
   private session<T>(
     readOnly: boolean,
     action: (session: ReturnType<PublishingStore['open']>) => T,
@@ -49,7 +58,9 @@ export class PublishingService {
     );
   }
   prepare(value: unknown, key: string) {
-    return this.session(false, (s) => s.manual.prepare(value, key));
+    const result = this.session(false, (s) => s.manual.prepare(value, key));
+    this.signalNotifications();
+    return result;
   }
   coordinatePackage(
     runId: string,
@@ -63,7 +74,8 @@ export class PublishingService {
       caption: string;
     },
   ) {
-    return this.session(false, (s) => {
+    let created = false;
+    const result = this.session(false, (s) => {
       const packages = s.manual.repository
         .list('PACKAGE')
         .filter((p: any) => p.identity.pipelineRunId === runId);
@@ -83,11 +95,15 @@ export class PublishingService {
           distributionFail('DISTRIBUTION_PACKAGE_SCOPE_MISMATCH');
         return p;
       }
-      return s.manual.prepare(
+      const prepared = s.manual.prepare(
         input,
         `campaign_package_${createHash('sha256').update(runId).digest('hex').slice(0, 32)}`,
       );
+      created = true;
+      return prepared;
     });
+    if (created) this.signalNotifications();
+    return result;
   }
   validatePackage(hash: string) {
     return this.session(true, (s) => s.manual.validateForPublication(hash));
@@ -96,7 +112,9 @@ export class PublishingService {
     return this.session(true, (s) => s.manual.getPackage(hash));
   }
   review(value: unknown, key: string) {
-    return this.session(false, (s) => s.manual.review(value, key));
+    const result = this.session(false, (s) => s.manual.review(value, key));
+    this.signalNotifications();
+    return result;
   }
   revokeApproval(value: unknown) {
     return this.session(false, (s) => s.manual.revokeApproval(value));
@@ -105,7 +123,11 @@ export class PublishingService {
     return this.session(true, (s) => s.manual.getReview(hash));
   }
   recordPublication(value: unknown, key: string) {
-    return this.session(false, (s) => s.manual.recordPublication(value, key));
+    const result = this.session(false, (s) =>
+      s.manual.recordPublication(value, key),
+    );
+    this.signalNotifications();
+    return result;
   }
   publication(id: string) {
     return this.session(true, (s) => s.manual.getPublication(id));

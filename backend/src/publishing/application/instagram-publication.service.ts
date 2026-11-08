@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
 import type { InstagramPublicationPorts } from './ports/instagram-publication.port.js';
 import type {
@@ -15,7 +16,15 @@ export class InstagramPublicationService {
     private readonly now = () => new Date().toISOString(),
     private readonly schedulerEnabled = false,
     private readonly finance?: Pick<FinanceService, 'getGlobalOperation'>,
+    private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
   ) {}
+  private signalNotifications() {
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
+  }
   private readonly logger = new Logger(InstagramPublicationService.name);
   private timer?: ReturnType<typeof setInterval>;
   private pending?: Promise<void>;
@@ -307,7 +316,9 @@ export class InstagramPublicationService {
         receipt: op.remoteReceipt,
         cost: { status: 'UNKNOWN', amount: null },
       };
-    }, execution.claim_token ?? undefined);
+    }, execution.claim_token ?? undefined).finally(() =>
+      this.signalNotifications(),
+    );
   }
   async reconcile(executionId: string) {
     return this.session(async (s, service) => {
@@ -337,9 +348,11 @@ export class InstagramPublicationService {
           cost: { status: 'UNKNOWN', amount: null },
         },
       };
-    });
+    }).finally(() => this.signalNotifications());
   }
   async receipt(id: string) {
-    return this.session(async (_s, service) => service.receipt(id));
+    return this.session(async (_s, service) => service.receipt(id)).finally(
+      () => this.signalNotifications(),
+    );
   }
 }

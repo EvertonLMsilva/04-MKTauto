@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import { PRODUCT_FRAMING_POLICY } from '../../media/domain/product-framing.js';
 import {
   compositionScope,
@@ -40,6 +41,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     readonly workflow: NativeCampaignWorkflow,
     private readonly enabled = false,
     private readonly now = () => new Date().toISOString(),
+    private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
   ) {}
   private open() {
     if (this.store) return this.store;
@@ -706,6 +708,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       }
     }
     await this.runner!.tick();
+    // Notification failures never change the completed campaign transition.
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
   }
   async approve(id: string, value: unknown) {
     const r = this.open(),
@@ -757,6 +765,11 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       'HUMAN_APPROVAL',
       decision,
     );
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
     return decision;
   }
 }
