@@ -78,7 +78,10 @@ export class PublishingService {
     const result = this.session(false, (s) => {
       const packages = s.manual.repository
         .list('PACKAGE')
-        .filter((p: any) => p.identity.pipelineRunId === runId);
+        .filter(
+          (p: any) =>
+            p.identity.pipelineRunId === runId && p.platform === input.platform,
+        );
       if (packages.length > 1)
         distributionFail('DISTRIBUTION_PACKAGE_AMBIGUOUS');
       const p = packages[0];
@@ -97,7 +100,18 @@ export class PublishingService {
       }
       const prepared = s.manual.prepare(
         input,
-        `campaign_package_${createHash('sha256').update(runId).digest('hex').slice(0, 32)}`,
+        `campaign_package_${createHash('sha256')
+          .update(
+            input.platform === 'instagram'
+              ? runId
+              : JSON.stringify({
+                  runId,
+                  platform: input.platform,
+                  account: input.account,
+                }),
+          )
+          .digest('hex')
+          .slice(0, 32)}`,
       );
       created = true;
       return prepared;

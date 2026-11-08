@@ -50,7 +50,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     const db = new DatabaseSync(this.path, { readOnly: true });
     try {
       if (
-        ![41, 42].includes(
+        ![41, 42, 43].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         )
       )

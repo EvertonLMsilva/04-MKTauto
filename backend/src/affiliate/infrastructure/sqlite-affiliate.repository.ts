@@ -39,7 +39,7 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40, 41, 42].includes(
+        ![39, 40, 41, 42, 43].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=

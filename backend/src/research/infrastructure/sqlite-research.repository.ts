@@ -27,7 +27,7 @@ export class SqliteResearchRepository {
     try {
       preflight.exec('PRAGMA busy_timeout=5000;');
       if (
-        ![39, 40, 41, 42].includes(
+        ![39, 40, 41, 42, 43].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=

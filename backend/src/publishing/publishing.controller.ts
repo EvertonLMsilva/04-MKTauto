@@ -19,7 +19,10 @@ import {
 } from '@nestjs/common';
 import { PublishingService } from './application/publishing.service.js';
 import { exact } from './domain/manual-distribution-contracts.js';
-import { instagramCaption } from './domain/social-publication-contracts.js';
+import {
+  instagramCaption,
+  facebookCaption,
+} from './domain/social-publication-contracts.js';
 @Controller('publishing')
 export class PublishingController {
   constructor(
@@ -76,7 +79,15 @@ export class PublishingController {
   @Get('packages/:hash') package(@Param('hash') hash: string) {
     return this.respond(() => {
       const value = this.publishing.package(hash);
-      return value ? { ...value, finalCaption: instagramCaption(value) } : null;
+      return value
+        ? {
+            ...value,
+            finalCaption:
+              value.platform === 'facebook'
+                ? facebookCaption(value)
+                : instagramCaption(value),
+          }
+        : null;
     });
   }
   @Post('reviews') review(@Body() value: unknown) {

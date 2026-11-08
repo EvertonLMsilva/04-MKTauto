@@ -1,3 +1,15 @@
+import { CampaignOperationsModule } from '../content-operations/campaign-operations.module.js';
+import {
+  CAMPAIGN_OPERATIONS,
+  type CampaignOperationsPort,
+} from '../content-operations/application/campaign-operations.port.js';
+import { DestinationPublicationService } from './application/destination-publication.service.js';
+import { DestinationPublicationController } from './destination-publication.controller.js';
+import {
+  FACEBOOK_PUBLICATION_PORTS,
+  type FacebookPublicationPorts,
+} from './application/ports/destination-publication.port.js';
+import { facebookPublicationPorts } from './infrastructure/facebook-publication.provider.js';
 import { FinanceModule } from '../finance/finance.module.js';
 import { OperationalNotificationsModule } from '../notifications/operational-notifications.module.js';
 import { OperationalAlertsService } from '../notifications/application/operational-alerts.service.js';
@@ -35,19 +47,47 @@ import { PublishingController } from './publishing.controller.js';
 
 @Module({
   imports: [
+    CampaignOperationsModule,
     MediaModule,
     AffiliateModule,
     FinanceModule,
     OperationalNotificationsModule,
   ],
-  controllers: [PublishingController],
+  controllers: [PublishingController, DestinationPublicationController],
   exports: [
+    DestinationPublicationService,
     InstagramEditorialService,
     PublishingService,
     InstagramPublicationService,
     InstagramConnectionService,
   ],
   providers: [
+    {
+      provide: FACEBOOK_PUBLICATION_PORTS,
+      inject: [PublishingService, PUBLISHING_EVIDENCE, LocalFlowService],
+      useFactory: (
+        p: PublishingService,
+        m: MediaService,
+        l: LocalFlowService,
+      ) => facebookPublicationPorts(process.env, p, m, l),
+    },
+    {
+      provide: DestinationPublicationService,
+      inject: [
+        PublishingPersistence,
+        CAMPAIGN_OPERATIONS,
+        FACEBOOK_PUBLICATION_PORTS,
+        FinanceService,
+        OperationalAlertsService,
+      ],
+      useFactory: (
+        s: PublishingPersistence,
+        c: CampaignOperationsPort,
+        p: FacebookPublicationPorts | null,
+        f: FinanceService,
+        n: OperationalAlertsService,
+      ) => new DestinationPublicationService(s, c, p, f, n),
+    },
     {
       provide: InstagramEditorialService,
       inject: [PUBLISHING_DATABASE],

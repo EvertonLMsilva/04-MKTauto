@@ -53,3 +53,16 @@ test('coordination never selects among ambiguous packages or another destination
     'DISTRIBUTION_PACKAGE_SCOPE_MISMATCH',
   );
 });
+
+test('Facebook package on the same run does not make Instagram coordination ambiguous', () => {
+  const f = fixture();
+  const instagram = f.service.coordinatePackage('run_001', input);
+  f.records.push({
+    ...instagram,
+    platform: 'facebook',
+    account: '1355505384315575',
+    contentHash: 'c'.repeat(64),
+  });
+  expect(f.service.coordinatePackage('run_001', input)).toEqual(instagram);
+  expect(f.manual.prepare).toHaveBeenCalledTimes(1);
+});

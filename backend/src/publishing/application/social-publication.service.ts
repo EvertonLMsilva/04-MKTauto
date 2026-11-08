@@ -6,6 +6,7 @@ import {
   accountId,
   validateSocialPrepare,
   instagramCaption,
+  facebookCaption,
   validateTransfer,
 } from '../domain/social-publication-contracts.js';
 export class SocialPublicationService {
@@ -64,10 +65,17 @@ export class SocialPublicationService {
     const value: any = this.repository.get(id);
     if (!value) socialFail('SOCIAL_OPERATION_NOT_FOUND');
     if (
+      (value.network ?? 'INSTAGRAM') !== (this.publisher.network ?? 'INSTAGRAM')
+    )
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    if (
       value.uploadStrategy &&
       !(
         value.publicationFlowVersion === 2 &&
-        value.uploadStrategy === 'facebook-login-resumable/experimental'
+        [
+          'facebook-login-resumable/experimental',
+          'facebook-reels-local/1',
+        ].includes(value.uploadStrategy)
       )
     )
       socialFail('SOCIAL_EXECUTION_STRATEGY_MISMATCH');
@@ -81,8 +89,13 @@ export class SocialPublicationService {
   async #gate(packageHash: any, account: any): Promise<any> {
     const p: any = this.manual.validateForPublication(packageHash);
     if (
-      p.platform !== 'instagram' ||
-      p.account !== account ||
+      p.platform !==
+        (this.publisher.network === 'FACEBOOK_REELS'
+          ? 'facebook'
+          : 'instagram') ||
+      (this.publisher.network === 'FACEBOOK_REELS'
+        ? 'facebook_reels:' + p.account
+        : p.account) !== account ||
       this.publisher.accountId !== account
     )
       socialFail('SOCIAL_DESTINATION_INVALID');
@@ -92,11 +105,20 @@ export class SocialPublicationService {
     if (
       profile.contentHash !== p.identity.videoRenderContentHash ||
       profile.result !== 'PASS' ||
-      profile.policyVersion !== 'instagram-reels-profile/1.0.0'
+      profile.policyVersion !==
+        (this.publisher.network === 'FACEBOOK_REELS'
+          ? 'facebook-reels-profile/1.0.0'
+          : 'instagram-reels-profile/1.0.0')
     )
       socialFail('SOCIAL_MEDIA_INCOMPATIBLE');
     this.manual.validateForPublication(packageHash); // Rights/bytes may change while probing.
-    return { p, caption: instagramCaption(p) };
+    return {
+      p,
+      caption:
+        this.publisher.network === 'FACEBOOK_REELS'
+          ? facebookCaption(p)
+          : instagramCaption(p),
+    };
   }
   async prepare(
     raw: any,
@@ -109,12 +131,18 @@ export class SocialPublicationService {
     return this.repository.prepare(
       {
         ...v,
+        ...(this.publisher.network === 'FACEBOOK_REELS'
+          ? { network: 'FACEBOOK_REELS' }
+          : {}),
         mediaHash: p.identity.videoRenderContentHash,
         caption,
         ...(source === 'local'
           ? {
               publicationFlowVersion: 2,
-              uploadStrategy: 'facebook-login-resumable/experimental',
+              uploadStrategy:
+                this.publisher.network === 'FACEBOOK_REELS'
+                  ? 'facebook-reels-local/1'
+                  : 'facebook-login-resumable/experimental',
             }
           : {}),
       },
@@ -324,6 +352,7 @@ export class SocialPublicationService {
         this.publisher.publish({
           accountId: op.accountId,
           containerId: op.containerId,
+          ...(op.network === 'FACEBOOK_REELS' ? { caption: op.caption } : {}),
         }),
       (receipt: any): any => ({
         state: 'PUBLISHED',
@@ -345,6 +374,16 @@ export class SocialPublicationService {
   }
   async reconcile(id: any): Promise<any> {
     let op: any = this.#get(id);
+    if (
+      op.publicationFlowVersion === 2 &&
+      op.state === 'PROCESSING' &&
+      op.uploadStage === 'UPLOADING'
+    )
+      op = this.#transition(op, ['PROCESSING'], {
+        state: 'UNCERTAIN',
+        uncertainStage: 'UPLOAD',
+        errorCode: 'SOCIAL_INTERRUPTED_POST',
+      }).value;
     if (['CREATING_CONTAINER', 'PUBLISHING'].includes(op.state))
       op = this.#transition(op, [op.state], {
         state: 'UNCERTAIN',
@@ -446,6 +485,9 @@ export class SocialPublicationService {
               : op.state;
     return this.#transition(op, [op.state], {
       state,
+      ...(state === 'PUBLISHED' && op.network === 'FACEBOOK_REELS'
+        ? { mediaId: op.containerId }
+        : {}),
       errorCode: null,
       providerStatus: status,
       ...(reconcile ? { requiresReconciliation: false } : {}),

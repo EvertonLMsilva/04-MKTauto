@@ -1,3 +1,4 @@
+import { DestinationReservationsRepository } from './destination-reservations.repository.js';
 import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { publicText } from '../domain/manual-distribution-contracts.js';
@@ -175,7 +176,10 @@ export class SocialPublicationRepository {
     if (
       Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
     )
-      new InstagramPublicationRepository(this.db).authorize(operation, at);
+      (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 43
+        ? new DestinationReservationsRepository(this.db)
+        : new InstagramPublicationRepository(this.db)
+      ).authorize(operation, at);
   }
   history(id: string): any[] {
     const operation = this.get(id);
@@ -279,8 +283,10 @@ export class SocialPublicationRepository {
         !allowed.includes(previous.state)
       )
         return { claimed: false, value: previous };
-      const direct: any =
-        previous.uploadStrategy === 'facebook-login-resumable/experimental';
+      const direct: any = [
+        'facebook-login-resumable/experimental',
+        'facebook-reels-local/1',
+      ].includes(previous.uploadStrategy);
       const next: any = patch.state ?? previous.state;
       const directTransition: any =
         direct &&
@@ -346,9 +352,11 @@ export class SocialPublicationRepository {
         (!direct ||
           previous.uploadUri ||
           typeof patch.uploadUri !== 'string' ||
-          !/^https:\/\/rupload\.facebook\.com\/ig-api-upload\/(?:v\d+\.\d+\/)?\d{5,64}$/.test(
-            patch.uploadUri,
-          ) ||
+          !(
+            previous.network === 'FACEBOOK_REELS'
+              ? /^https:\/\/rupload\.facebook\.com\/video-upload\/v\d+\.0\/\d{5,64}$/
+              : /^https:\/\/rupload\.facebook\.com\/ig-api-upload\/(?:v\d+\.\d+\/)?\d{5,64}$/
+          ).test(patch.uploadUri) ||
           patch.uploadUri.split('/').at(-1) !==
             (patch.containerId ?? previous.containerId))
       )
@@ -413,9 +421,12 @@ export class SocialPublicationRepository {
           next !== 'PUBLISHED' ||
           r?.mediaId !== previous.mediaId ||
           Object.keys(r).sort().join(',') !== 'mediaId,permalink,publishedAt' ||
-          !/^https:\/\/(www\.)?instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+\/$/.test(
-            r.permalink,
-          ) ||
+          !(previous.network === 'FACEBOOK_REELS'
+            ? r.permalink === null ||
+              /^https:\/\/www\.facebook\.com\/reel\/\d+\/?$/.test(r.permalink)
+            : /^https:\/\/(www\.)?instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+\/$/.test(
+                r.permalink,
+              )) ||
           !Number.isFinite(Date.parse(r.publishedAt))
         )
           socialFail('SOCIAL_RECEIPT_INVALID');

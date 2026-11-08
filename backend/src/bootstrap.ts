@@ -18,7 +18,7 @@ export function validateConfiguration(env: NodeJS.ProcessEnv) {
   const db = new DatabaseSync(database, { readOnly: true });
   try {
     if (
-      ![41, 42].includes(
+      ![41, 42, 43].includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       ) ||
       db.prepare('SELECT name FROM schema_migrations WHERE version=41').get()
@@ -26,11 +26,21 @@ export function validateConfiguration(env: NodeJS.ProcessEnv) {
     )
       throw new Error('SCHEMA_41_REQUIRED: run db:provision explicitly');
     if (
-      db.prepare('PRAGMA user_version').get()?.user_version === 42 &&
+      Number(db.prepare('PRAGMA user_version').get()?.user_version) >= 42 &&
       db.prepare('SELECT name FROM schema_migrations WHERE version=42').get()
         ?.name !== '042_instagram_publication'
     )
       throw new Error('SCHEMA_42_REQUIRED');
+    if (db.prepare('PRAGMA user_version').get()?.user_version === 43) {
+      if (
+        db.prepare('SELECT name FROM schema_migrations WHERE version=43').get()
+          ?.name !== '043_multi_network_publication_reservations'
+      )
+        throw new Error('SCHEMA_43_REQUIRED');
+      db.prepare(
+        'SELECT execution_id,network,account_id FROM multi_network_publication_reservations LIMIT 0',
+      ).all();
+    }
     db.prepare('SELECT adjustment_id FROM cost_adjustments LIMIT 0').all();
     db.prepare(
       'SELECT execution_id,claim_token FROM campaign_executions LIMIT 0',

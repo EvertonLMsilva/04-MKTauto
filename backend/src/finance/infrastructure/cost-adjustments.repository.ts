@@ -1,3 +1,4 @@
+import { supportsFinancialAdjustments } from './finance-schema-compatibility.js';
 import type { CostEvent } from '../domain/finance.types.js';
 import {
   adjustmentHash,
@@ -17,7 +18,7 @@ export class CostAdjustmentsRepository {
     return this.ledger.db;
   }
   enabled(): boolean {
-    return [40, 41, 42].includes(
+    return supportsFinancialAdjustments(
       Number(this.db.prepare('PRAGMA user_version').get()?.user_version),
     );
   }

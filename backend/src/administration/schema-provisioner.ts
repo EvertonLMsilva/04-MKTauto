@@ -12,7 +12,7 @@ import { createHash } from 'node:crypto';
 const directory = fileURLToPath(
   new URL('../../../src/db/migrations/', import.meta.url),
 );
-const migrations = Array.from({ length: 42 }, (_, i) => {
+const migrations = Array.from({ length: 43 }, (_, i) => {
   const version = i + 1;
   const files = readdirSync(directory).filter(
     (name) =>
@@ -199,9 +199,9 @@ function campaignSourceExtension(db: DatabaseSync) {
   }
 }
 
-export function provisionSchema(db: DatabaseSync, target = 42): void {
+export function provisionSchema(db: DatabaseSync, target = 43): void {
   if (db.isTransaction) throw new Error('SCHEMA_TRANSACTION_ACTIVE');
-  if (!Number.isInteger(target) || target < 1 || target > 42)
+  if (!Number.isInteger(target) || target < 1 || target > 43)
     throw new Error('SCHEMA_VERSION_UNSUPPORTED');
   db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000;');
   try {
@@ -261,6 +261,10 @@ export function provisionSchema(db: DatabaseSync, target = 42): void {
         'SELECT operation_id FROM instagram_publication_reservations LIMIT 0',
       ).all();
     }
+    if (target >= 43)
+      db.prepare(
+        'SELECT execution_id,network,account_id,operation_id,package_hash,review_hash FROM multi_network_publication_reservations LIMIT 0',
+      ).all();
     if (db.prepare('PRAGMA foreign_key_check').all().length)
       throw new Error('SCHEMA_REFERENTIAL_INTEGRITY');
     db.exec('COMMIT');

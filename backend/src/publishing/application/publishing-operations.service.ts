@@ -22,9 +22,10 @@ export class PublishingOperationsService implements PublishingOperationsPort {
         .packages(runId)
         .map(({ cursor, value: p, review, revoked }) => {
           const destination = {
-            network: String(p.platform),
+            network:
+              p.platform === 'facebook' ? 'facebook_reels' : String(p.platform),
             account: String(p.account),
-            label: `${p.platform} ${p.account}`,
+            label: `${p.platform === 'facebook' ? 'Facebook Reels' : p.platform} ${p.account}`,
           };
           const publications: OperationalPublication[] = session
             .operations(p.contentHash)
@@ -63,7 +64,7 @@ export class PublishingOperationsService implements PublishingOperationsPort {
                 // The existing social adapter is Instagram; destination knowledge stays here.
                 destination: {
                   ...destination,
-                  label: `${p.platform === 'instagram' ? 'Instagram' : p.platform} ${p.account}`,
+                  label: `${p.platform === 'instagram' ? 'Instagram' : p.platform === 'facebook' ? 'Facebook Reels' : p.platform} ${p.account}`,
                 },
                 confirmed,
                 requiresReconciliation,
