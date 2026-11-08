@@ -92,6 +92,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (document(value).legacyRecovery)
       throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
     const r = campaignRequest(value);
+    if (r.selectionMode === 'CATALOG' || Object.hasOwn(r, 'catalogSelection'))
+      throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
     await this.workflow.validate(r);
     return this.open().schedule(
       {
@@ -118,7 +120,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
           seed.campaignRevision !== input.campaignRevision ||
           seed.scheduledAt !== instant(input.requestedAt) ||
           document(seed.run).projectVersion !== input.projectVersion ||
-          canonicalJson(seed.localImage) !== canonicalJson(input.localImage)
+          canonicalJson(seed.localImage) !== canonicalJson(input.localImage) ||
+          (seed.selectionMode ?? 'FIXED') !== (input.selectionMode ?? 'FIXED')
         )
           throw new CampaignError('CAMPAIGN_RECURRENCE_CONFLICT');
         return this.open().configureRecurrence(
@@ -130,13 +133,22 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       }
     }
     const request = await this.workflow.localRequest(value);
-    if (enabled === undefined) return this.schedule(request);
-    await this.workflow.validate(request);
+    const catalog =
+      request.selectionMode === 'CATALOG'
+        ? (previous: string | null) =>
+            this.workflow.freezeCatalogRequest(request, previous)
+        : undefined;
+    if (enabled === undefined)
+      return catalog
+        ? this.open().scheduleCatalog(request, this.now(), catalog)
+        : this.schedule(request);
+    if (!catalog) await this.workflow.validate(request);
     return this.open().configureRecurrence(
       request,
       enabled,
       String(input.requestId),
       this.now(),
+      catalog,
     );
   }
   async operatorReview(id: string, actor: string) {
@@ -279,6 +291,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         ? String(history.at(-1)?.evidence.code ?? last?.evidence.code ?? '')
         : null;
     const messages: Record<string, string> = {
+      CATALOG_PRODUCT_REQUIRED:
+        'Nenhum produto elegível no catálogo. Cadastre uma revisão com link, evidências e imagem autorizada para as próximas ocorrências.',
       REAL_VIDEO_MEDIA_REQUIRED: 'Associe um vídeo autorizado para cada cena.',
       MEDIA_SELECTION_REQUIRED:
         'Selecione a versão do vídeo que deve ser utilizada.',
@@ -327,6 +341,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     };
     return {
       ...execution,
+      selectionMode: history[0].evidence.selectionMode ?? 'FIXED',
+      productSelection: history[0].evidence.catalogSelection ?? null,
       provenance:
         history[0].event_type === 'LEGACY_RECOVERY'
           ? history[0].evidence.legacyRecovery
@@ -670,7 +686,16 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
           config.request,
           this.now(),
         );
-        if (request) store.scheduleRecurring(config, request, this.now());
+        if (request)
+          store.scheduleRecurring(
+            config,
+            request,
+            this.now(),
+            request.selectionMode === 'CATALOG'
+              ? (previous) =>
+                  this.workflow.freezeCatalogRequest(request, previous)
+              : undefined,
+          );
       } catch (error) {
         // Report a failed configuration without starving other scheduled campaigns.
         this.logger.error(

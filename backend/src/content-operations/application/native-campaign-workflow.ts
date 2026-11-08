@@ -1,4 +1,5 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import { freezeCatalogRequest } from '../domain/product-rotation.js';
 import { instagramCaption } from '../../publishing/domain/social-publication-contracts.js';
 import type { InstagramEditorialService } from '../../publishing/application/instagram-editorial.service.js';
 import { PRODUCT_FRAMING_STRATEGY } from '../../media/domain/product-framing.js';
@@ -62,11 +63,20 @@ export function localRequestInput(value: unknown) {
   const input = document(value);
   localRecurrence(input);
   if (
+    input.selectionMode !== undefined &&
+    input.selectionMode !== 'FIXED' &&
+    input.selectionMode !== 'CATALOG'
+  )
+    throw new CampaignError('INVALID_SELECTION_MODE');
+  const catalog = input.selectionMode === 'CATALOG';
+  if (
     Object.keys(input)
-      .filter((key) => key !== 'recurrence')
+      .filter((key) => !['recurrence', 'selectionMode'].includes(key))
       .sort()
       .join(',') !==
-      'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt' ||
+      (catalog
+        ? 'campaignId,campaignRevision,projectVersion,requestId,requestedAt'
+        : 'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt') ||
     !Number.isSafeInteger(input.projectVersion) ||
     Number(input.projectVersion) < 1 ||
     !Number.isSafeInteger(input.campaignRevision) ||
@@ -76,7 +86,7 @@ export function localRequestInput(value: unknown) {
   identifier(input.campaignId);
   identifier(input.requestId);
   instant(input.requestedAt);
-  document(input.localImage);
+  if (!catalog) document(input.localImage);
   return input;
 }
 
@@ -134,9 +144,17 @@ export function campaignRequest(raw: unknown) {
     'sceneMediaAssetIds',
     'legacyRecovery',
     'localImage',
+    'selectionMode',
+    'catalogSelection',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+  if (
+    r.selectionMode !== undefined &&
+    r.selectionMode !== 'FIXED' &&
+    r.selectionMode !== 'CATALOG'
+  )
+    throw new CampaignError('INVALID_SELECTION_MODE');
   for (const k of [
     'campaignId',
     'runId',
@@ -182,7 +200,7 @@ export function campaignRequest(raw: unknown) {
     (r.videoProduction && document(r.videoProduction).mode === 'LOCAL_IMAGES')
   ) {
     if (
-      !r.localImage ||
+      (!r.localImage && r.selectionMode !== 'CATALOG') ||
       !r.videoProduction ||
       document(r.videoProduction).mode !== 'LOCAL_IMAGES' ||
       [
@@ -196,7 +214,7 @@ export function campaignRequest(raw: unknown) {
       ].some((key) => r[key] !== undefined)
     )
       throw new CampaignError('LOCAL_IMAGE_REQUEST_REQUIRED');
-    document(r.localImage);
+    if (r.localImage !== undefined) document(r.localImage);
   }
   if (r.sceneMediaAssetIds !== undefined) {
     if (
@@ -243,7 +261,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       AffiliateService,
       'getCampaign' | 'getBriefing'
     > &
-      Partial<Pick<AffiliateService, 'createBriefing'>>,
+      Partial<
+        Pick<
+          AffiliateService,
+          'createBriefing' | 'catalogCandidates' | 'createCatalogBriefing'
+        >
+      >,
     private readonly binding: AffiliateRunContext,
     private readonly research: ResearchReader,
     private readonly editorial: Pick<EditorialFlowService, 'generate'>,
@@ -365,8 +388,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const briefing = await this.affiliate.getBriefing(String(r.briefingId));
     if (
       !briefing ||
-      briefing.campaignId !== e.campaign_id ||
-      briefing.campaignRevision !== e.campaign_revision
+      briefing.campaignId !== this.briefingCampaign(r).campaignId ||
+      briefing.campaignRevision !== this.briefingCampaign(r).revision
     )
       throw new CampaignError('SOCIAL_CAPTION_CONTEXT_REQUIRED');
     const script = document(document(done.EDITORIAL).script);
@@ -852,7 +875,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const source = r.localImage as LocalImageSource;
     if (
       !brief ||
-      brief.campaignId !== e.campaign_id ||
+      brief.campaignId !== this.briefingCampaign(r).campaignId ||
       !brief.mediaRefs.includes(source.mediaReference)
     )
       throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
@@ -885,6 +908,29 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       String(r.campaignId),
       Number(r.campaignRevision),
     );
+    if (r.selectionMode === 'CATALOG') {
+      if (!r.catalogSelection)
+        throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
+      const selection = document(r.catalogSelection);
+      const source = await this.affiliate.getCampaign(
+        String(selection.sourceCampaignId),
+        Number(selection.sourceCampaignRevision),
+      );
+      if (!campaign || !source || campaign.projectId !== source.projectId)
+        throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      const brief = await this.affiliate.getBriefing(String(r.briefingId));
+      if (
+        !brief ||
+        brief.campaignId !== source.campaignId ||
+        brief.campaignRevision !== source.revision ||
+        brief.productId !== selection.productId ||
+        brief.productRevision !== selection.productRevision ||
+        brief.contentHash !== selection.briefingHash ||
+        brief.affiliateUrl !== selection.affiliateUrl
+      )
+        throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      return campaign;
+    }
     const brief = await this.affiliate.getBriefing(String(r.briefingId));
     if (!campaign || !brief)
       throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
@@ -894,6 +940,28 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     )
       throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
     return campaign;
+  }
+  private briefingCampaign(r: Record<string, unknown>) {
+    const selection =
+      r.selectionMode === 'CATALOG' && r.catalogSelection
+        ? document(r.catalogSelection)
+        : null;
+    return {
+      campaignId: selection?.sourceCampaignId ?? r.campaignId,
+      revision: selection?.sourceCampaignRevision ?? r.campaignRevision,
+    };
+  }
+  freezeCatalogRequest(
+    request: Record<string, unknown>,
+    previous: string | null,
+  ) {
+    if (!this.affiliate.catalogCandidates)
+      throw new CampaignError('CATALOG_READER_REQUIRED');
+    return freezeCatalogRequest(
+      request,
+      this.affiliate.catalogCandidates(String(document(request.run).projectId)),
+      previous,
+    );
   }
   async localRequest(value: unknown) {
     const input = localRequestInput(value);
@@ -911,12 +979,13 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     }).slice(0, 32);
     const briefingId = `brief_${key}`,
       runId = `run_${key}`;
-    await this.affiliate.createBriefing({
-      idempotencyKey: `brief_${key}`,
-      briefingId,
-      campaignId: campaign.campaignId,
-      campaignRevision: campaign.revision,
-    });
+    if (input.selectionMode !== 'CATALOG')
+      await this.affiliate.createBriefing({
+        idempotencyKey: `brief_${key}`,
+        briefingId,
+        campaignId: campaign.campaignId,
+        campaignRevision: campaign.revision,
+      });
     return campaignRequest({
       campaignId: campaign.campaignId,
       campaignRevision: campaign.revision,
@@ -927,7 +996,14 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       researchShortlistId: null,
       mode: 'LOCAL_VALIDATION',
       videoProduction: { mode: 'LOCAL_IMAGES' },
-      localImage: input.localImage,
+      ...(input.selectionMode === 'CATALOG'
+        ? { selectionMode: 'CATALOG' }
+        : {
+            localImage: input.localImage,
+            ...(input.selectionMode
+              ? { selectionMode: input.selectionMode }
+              : {}),
+          }),
       run: {
         schemaVersion: 'pipeline-handoff/1.0.0',
         pipelineRunId: runId,
@@ -940,6 +1016,15 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   async recurringRequest(seed: Record<string, unknown>, now: string) {
     const at = dailyOccurrence(String(seed.scheduledAt), now);
     if (!at) return null;
+    if (seed.selectionMode === 'CATALOG')
+      return this.localRequest({
+        campaignId: seed.campaignId,
+        campaignRevision: seed.campaignRevision,
+        projectVersion: document(seed.run).projectVersion,
+        selectionMode: 'CATALOG',
+        requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+        requestedAt: at,
+      });
     try {
       await this.validate(seed);
     } catch (error) {
@@ -1092,6 +1177,23 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     ))
       this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
+      if (r.selectionMode === 'CATALOG') {
+        if (!r.catalogSelection)
+          throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
+        const selected = this.briefingCampaign(r);
+        if (!this.affiliate.createCatalogBriefing)
+          throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
+        const brief = await this.affiliate.createCatalogBriefing(
+          {
+            briefingId: String(r.briefingId),
+            campaignId: String(selected.campaignId),
+            campaignRevision: Number(selected.revision),
+          },
+          String(document(r.catalogSelection).briefingHash),
+        );
+        if (brief.contentHash !== document(r.catalogSelection).briefingHash)
+          throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      }
       const campaign = await this.validate(r);
       if (
         r.researchShortlistId !== null &&

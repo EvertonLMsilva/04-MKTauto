@@ -53,6 +53,44 @@ export class AffiliateService {
     @Inject(PROJECT_SNAPSHOT_READER)
     private readonly projects: ProjectSnapshotReader,
   ) {}
+  catalogCandidates(projectId: string) {
+    affiliateIdentifier(projectId, 'projectId');
+    const repo = this.persistence.open(true);
+    try {
+      return repo.catalogCandidates(projectId);
+    } finally {
+      repo.close();
+    }
+  }
+  async createCatalogBriefing(
+    value: { briefingId: string; campaignId: string; campaignRevision: number },
+    expectedHash: string,
+  ) {
+    validateBriefingInput(value);
+    if (!/^[a-f0-9]{64}$/.test(expectedHash))
+      throw new AffiliateRepositoryError(
+        'INVALID_AFFILIATE_INPUT',
+        'expectedHash',
+      );
+    return this.withRepository(false, async (repo) => {
+      const campaign = repo.getCampaign(
+        value.campaignId,
+        value.campaignRevision,
+      );
+      if (!campaign)
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_CAMPAIGN_NOT_FOUND',
+          'campaignId',
+        );
+      await this.verifyProject(campaign);
+      return repo.createCatalogBriefing(
+        value,
+        `catalog_${value.briefingId}`,
+        true,
+        expectedHash,
+      );
+    });
+  }
   // No repository, source adapter, or project reads. Candidate metadata is never evidence.
   evaluateShopeeSelection(
     selection: ShopeeOfferSelection,

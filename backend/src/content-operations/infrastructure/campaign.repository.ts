@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+type CatalogResolver = (
+  previousProduct: string | null,
+) => Record<string, unknown>;
 import type { DatabaseSync } from 'node:sqlite';
 import {
   CampaignError,
@@ -104,6 +107,100 @@ export class CampaignRepository {
   }
   schedule(input: ScheduleIdentity, request: unknown, now: string) {
     return this.tx(() => this.persistSchedule(input, request, now));
+  }
+  scheduleCatalog(
+    request: Record<string, unknown>,
+    now: string,
+    catalog: CatalogResolver,
+  ) {
+    return this.tx(() => this.persistCatalogSchedule(request, now, catalog));
+  }
+  private persistCatalogSchedule(
+    request: Record<string, unknown>,
+    now: string,
+    catalog: CatalogResolver,
+  ) {
+    const campaignId = String(request.campaignId),
+      day = productionDate(String(request.scheduledAt));
+    const existing = this.db
+      .prepare(
+        'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
+      )
+      .get(campaignId, day);
+    if (existing) {
+      const execution = this.get(String(existing.execution_id));
+      const seed = this.history(execution.execution_id)[0].evidence;
+      if (
+        seed.selectionMode !== 'CATALOG' ||
+        execution.campaign_revision !== request.campaignRevision ||
+        execution.scheduled_at !== request.scheduledAt ||
+        canonicalJson((seed.run as Record<string, unknown>)?.projectVersion) !==
+          canonicalJson(
+            (request.run as Record<string, unknown>)?.projectVersion,
+          )
+      )
+        throw new CampaignError('CAMPAIGN_DAY_CONFLICT');
+      return execution;
+    }
+    const prior = this.db
+      .prepare(
+        `SELECT h.evidence_json FROM campaign_execution_events h
+      JOIN campaign_executions e ON e.execution_id=h.execution_id
+      WHERE e.campaign_id=? AND e.production_date<? AND h.event_type='PRODUCT_SELECTED'
+      ORDER BY e.production_date DESC LIMIT 1`,
+      )
+      .get(campaignId, day);
+    const previous = prior
+      ? (JSON.parse(String(prior.evidence_json)) as { productId: string })
+      : null;
+    const latest = this.db
+      .prepare(
+        `SELECT h.evidence_json FROM campaign_execution_events h
+      JOIN campaign_executions e ON e.execution_id=h.execution_id
+      WHERE e.campaign_id=? AND e.production_date<? AND h.event_type='SCHEDULED'
+      ORDER BY e.production_date DESC LIMIT 1`,
+      )
+      .get(campaignId, day);
+    const lastRequest = latest
+      ? (JSON.parse(String(latest.evidence_json)) as {
+          selectionMode?: string;
+          briefingId?: string;
+        })
+      : null;
+    const fixedBrief =
+      lastRequest?.selectionMode !== 'CATALOG' && lastRequest?.briefingId
+        ? this.db
+            .prepare(
+              'SELECT content_json FROM affiliate_briefings WHERE briefing_id=?',
+            )
+            .get(lastRequest.briefingId)
+        : null;
+    const previousProduct = fixedBrief
+      ? (JSON.parse(String(fixedBrief.content_json)) as { productId: string })
+          .productId
+      : (previous?.productId ?? null);
+    // BEGIN IMMEDIATE protects the catalog snapshot, cursor and campaign/day reservation together.
+    const frozen = catalog(previousProduct);
+    const execution = this.persistSchedule(
+      {
+        campaignId,
+        campaignRevision: Number(request.campaignRevision),
+        runId: String(request.runId),
+        scheduledAt: String(request.scheduledAt),
+      },
+      frozen,
+      now,
+    );
+    if (frozen.catalogSelection)
+      this.event(
+        execution.execution_id,
+        'PRODUCT_SELECTED',
+        execution.status,
+        execution.status,
+        now,
+        frozen.catalogSelection,
+      );
+    return execution;
   }
   private persistSchedule(
     input: ScheduleIdentity,
@@ -217,6 +314,7 @@ export class CampaignRepository {
     enabled: boolean,
     commandId: string,
     now: string,
+    catalog?: CatalogResolver,
   ) {
     identifier(commandId);
     return this.tx(() => {
@@ -238,22 +336,28 @@ export class CampaignRepository {
         .get(campaignId, productionDate(String(request.scheduledAt)));
       const execution = prior
         ? this.get(String(prior.execution_id))
-        : this.persistSchedule(
-            {
-              campaignId,
-              campaignRevision: Number(request.campaignRevision),
-              runId: String(request.runId),
-              scheduledAt: String(request.scheduledAt),
-            },
-            request,
-            now,
-          );
+        : request.selectionMode === 'CATALOG' && catalog
+          ? this.persistCatalogSchedule(request, now, catalog)
+          : this.persistSchedule(
+              {
+                campaignId,
+                campaignRevision: Number(request.campaignRevision),
+                runId: String(request.runId),
+                scheduledAt: String(request.scheduledAt),
+              },
+              request,
+              now,
+            );
       // Configuration commands may reuse today's master, but never rewrite it.
       const seed = this.history(execution.execution_id)[0].evidence;
       if (
         execution.campaign_revision !== request.campaignRevision ||
         execution.scheduled_at !== request.scheduledAt ||
-        canonicalJson(seed.localImage) !== canonicalJson(request.localImage) ||
+        (seed.selectionMode ?? 'FIXED') !==
+          (request.selectionMode ?? 'FIXED') ||
+        (request.selectionMode !== 'CATALOG' &&
+          canonicalJson(seed.localImage) !==
+            canonicalJson(request.localImage)) ||
         canonicalJson(
           seed.run && (seed.run as Record<string, unknown>).projectVersion,
         ) !==
@@ -282,6 +386,7 @@ export class CampaignRepository {
     config: CampaignRecurrence,
     request: Record<string, unknown>,
     now: string,
+    catalog?: CatalogResolver,
   ) {
     return this.tx(() => {
       const current = this.recurrences().find(
@@ -296,6 +401,8 @@ export class CampaignRepository {
         )
         .get(campaignId, day);
       if (existing) return this.get(String(existing.execution_id));
+      if (request.selectionMode === 'CATALOG' && catalog)
+        return this.persistCatalogSchedule(request, now, catalog);
       return this.persistSchedule(
         {
           campaignId,
