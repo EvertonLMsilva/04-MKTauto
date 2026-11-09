@@ -13,15 +13,38 @@ const fail = (code: string): never => {
 export class OllamaEditorialProvider implements EditorialProvider {
   readonly mode = 'LOCAL' as const;
   readonly configurationVersion: string;
+  private readonly endpoint: string;
   constructor(
     private readonly model: string,
     private readonly send: typeof fetch = globalThis.fetch,
+    baseUrl = 'http://127.0.0.1:11434',
+    // The production factory uses only 11434. Tests explicitly grant their disposable port.
+    allowedPorts: readonly number[] = [11434],
   ) {
     if (
       typeof model !== 'string' ||
       !/^[a-zA-Z0-9][a-zA-Z0-9._:/-]{0,149}$/.test(model)
     )
       fail('OLLAMA_MODEL_REQUIRED');
+    const origin =
+      typeof baseUrl === 'string' && baseUrl === baseUrl.trim()
+        ? /^http:\/\/(127\.0\.0\.1|localhost|\[::1\]|host\.docker\.internal)(?::([1-9]\d{0,4}))?\/?$/.exec(
+            baseUrl,
+          )
+        : null;
+    const port = origin?.[2] ? Number(origin[2]) : 80;
+    if (
+      !origin ||
+      !Array.isArray(allowedPorts) ||
+      !allowedPorts.length ||
+      allowedPorts.some(
+        (value) => !Number.isInteger(value) || value < 1 || value > 65535,
+      ) ||
+      !allowedPorts.includes(port) ||
+      port > 65535
+    )
+      fail('OLLAMA_BASE_URL_INVALID');
+    this.endpoint = `${baseUrl.replace(/\/$/, '')}/api/generate`;
     this.configurationVersion =
       'ollama-grounded/2:' +
       createHash('sha256').update(model).digest('hex').slice(0, 16);
@@ -43,7 +66,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
     );
     let response: Response;
     try {
-      response = await this.send('http://127.0.0.1:11434/api/generate', {
+      response = await this.send(this.endpoint, {
         method: 'POST',
         redirect: 'error',
         signal: AbortSignal.timeout(90000),
@@ -82,7 +105,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
     } catch {
       fail('OLLAMA_UNAVAILABLE');
     }
-    if (!response!.ok) fail('OLLAMA_UNAVAILABLE');
+    if (!response!.ok || response!.redirected) fail('OLLAMA_UNAVAILABLE');
     let value: any;
     try {
       const raw = await response!.text();

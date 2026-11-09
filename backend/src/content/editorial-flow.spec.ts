@@ -253,6 +253,33 @@ describe('Nest editorial production', () => {
       s.close();
     }
   });
+  it('recovers an unavailable provider with the same generation identity without duplicating research or script', async () => {
+    const ideas = vi
+      .spyOn(f.provider, 'ideas')
+      .mockRejectedValueOnce(new Error('offline transport unavailable'));
+    const scripts = vi.spyOn(f.provider, 'script');
+    await expect(f.flow().generate(f.input)).rejects.toMatchObject({
+      code: 'EDITORIAL_PROVIDER_UNAVAILABLE',
+    });
+    const recovered = await f.flow().generate(f.input);
+    const replay = await f.flow().generate(f.input);
+    expect(recovered.script.pipelineRunId).toBe(f.input.pipelineRunId);
+    expect(replay.script.contentHash).toBe(recovered.script.contentHash);
+    expect(ideas).toHaveBeenCalledTimes(2);
+    expect(scripts).toHaveBeenCalledTimes(1);
+    const session = f.operations.open(true);
+    try {
+      const attempts = session.stages.listAttempts(f.input.pipelineRunId);
+      expect(attempts.filter((a) => a.stage === 'RESEARCH')).toHaveLength(1);
+      expect(
+        attempts
+          .filter((a) => a.stage === 'IDEA_GENERATION')
+          .map((a) => a.state),
+      ).toEqual(['FAILED', 'SUCCEEDED']);
+    } finally {
+      session.close();
+    }
+  });
   it('rejects malformed script responses explicitly', async () => {
     vi.spyOn(f.provider, 'script').mockResolvedValue(undefined as never);
     await expect(f.flow().generate(f.input)).rejects.toMatchObject({

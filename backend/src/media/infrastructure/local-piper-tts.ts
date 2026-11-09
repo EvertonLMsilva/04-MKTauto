@@ -35,20 +35,26 @@ function adaptNarration(
   )
     localFail('NARRATION_DURATION_REQUIRED');
   const paragraphs = retainParagraphs
-    ? original.trim().replace(/\r\n?/g, '\n').split(/\n\s*\n+/u)
+    ? original
+        .trim()
+        .replace(/\r\n?/g, '\n')
+        .split(/\n\s*\n+/u)
     : [original.trim()];
   const seen = new Set<string>();
   const narration = paragraphs
-    .map((paragraph) => paragraph.replace(/\s+/g, ' ')
-      .split(/(?<=[.!?])\s+/u)
-      .map((s) => s.trim())
-      .filter((s) => {
-        if (s.length < 15) return true;
-        if (seen.has(s)) return false;
-        seen.add(s);
-        return true;
-      })
-      .join(' '))
+    .map((paragraph) =>
+      paragraph
+        .replace(/\s+/g, ' ')
+        .split(/(?<=[.!?])\s+/u)
+        .map((s) => s.trim())
+        .filter((s) => {
+          if (s.length < 15) return true;
+          if (seen.has(s)) return false;
+          seen.add(s);
+          return true;
+        })
+        .join(' '),
+    )
     .filter(Boolean)
     .join(retainParagraphs ? '\n\n' : ' ');
   // Never infer a product claim, delete a qualifier or rewrite an approved claim.
@@ -78,12 +84,15 @@ export type LocalSpeechEvidence = {
   narration: string;
   targetDurationMs: number;
   speechDurationMs: number;
-  adaptation: 'literal-deduplication/1' | 'paragraph-preserving-deduplication/2';
+  adaptation:
+    'literal-deduplication/1' | 'paragraph-preserving-deduplication/2';
 };
 export class LocalPiperTts {
   constructor(
     private readonly env: NodeJS.ProcessEnv,
     private readonly runner: ProcessRunner = runProcess,
+    private readonly platform: NodeJS.Platform = process.platform,
+    private readonly architecture: string = process.arch,
   ) {}
   private file(path: unknown, expected: unknown, max: number) {
     if (
@@ -120,22 +129,23 @@ export class LocalPiperTts {
             this.env.LOCAL_TTS_HISTORICAL_MANIFESTS ?? '{}',
           );
           if (
-            !history || typeof history !== 'object' || Array.isArray(history) ||
+            !history ||
+            typeof history !== 'object' ||
+            Array.isArray(history) ||
             Object.keys(history).length > 32 ||
             !Object.hasOwn(history, expectedHash)
-          ) localFail('LOCAL_TTS_LICENSE_REQUIRED');
-          const original: unknown = (history as Record<string, unknown>)[expectedHash];
+          )
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          const original: unknown = (history as Record<string, unknown>)[
+            expectedHash
+          ];
           if (typeof original !== 'string' || !isAbsolute(original))
             localFail('LOCAL_TTS_LICENSE_REQUIRED');
           manifestPath = original;
           manifestHash = expectedHash;
         }
       }
-      const bytes = this.file(
-        manifestPath,
-        manifestHash,
-        65536,
-      );
+      const bytes = this.file(manifestPath, manifestHash, 65536);
       const m = JSON.parse(bytes.toString());
       let historicalFiles: Record<string, string> | undefined;
       if (
@@ -143,13 +153,22 @@ export class LocalPiperTts {
         expectedHash !== this.env.LOCAL_TTS_MANIFEST_SHA256 &&
         this.env.LOCAL_TTS_HISTORICAL_FILES
       ) {
-        const locations: unknown = JSON.parse(this.env.LOCAL_TTS_HISTORICAL_FILES);
+        const locations: unknown = JSON.parse(
+          this.env.LOCAL_TTS_HISTORICAL_FILES,
+        );
         if (
-          !locations || typeof locations !== 'object' || Array.isArray(locations) ||
+          !locations ||
+          typeof locations !== 'object' ||
+          Array.isArray(locations) ||
           Object.keys(locations).length > 64 ||
-          Object.entries(locations).some(([hash, location]) =>
-            !/^[a-f0-9]{64}$/.test(hash) || typeof location !== 'string' || !isAbsolute(location))
-        ) localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          Object.entries(locations).some(
+            ([hash, location]) =>
+              !/^[a-f0-9]{64}$/.test(hash) ||
+              typeof location !== 'string' ||
+              !isAbsolute(location),
+          )
+        )
+          localFail('LOCAL_TTS_LICENSE_REQUIRED');
         historicalFiles = locations as Record<string, string>;
       }
       // Relocate original bytes by their pinned hash, never by substituting a
@@ -197,7 +216,9 @@ export class LocalPiperTts {
         if (
           m.modelId !== 'espeak-ng/pt-br' ||
           !isAbsolute(m.dataRoot ?? '') ||
-          inventory.schemaVersion !== 'espeak-native/1' ||
+          !['espeak-native/1', 'espeak-native/2'].includes(
+            inventory.schemaVersion,
+          ) ||
           inventory.voice !== 'pt-br' ||
           inventory.type !== 'FORMANT_RULES' ||
           !inventory.files ||
@@ -205,7 +226,6 @@ export class LocalPiperTts {
           Array.isArray(inventory.files) ||
           Object.keys(inventory.files).length > 2000 ||
           [
-            'espeak-ng.dll',
             'espeak-ng-data/lang/roa/pt-BR',
             ...[
               'phondata',
@@ -217,6 +237,33 @@ export class LocalPiperTts {
           ].some((name) => !inventory.files[name])
         )
           localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        if (inventory.schemaVersion === 'espeak-native/1') {
+          // Original Windows receipts remain verifiable, including relocated historical bytes.
+          if (!inventory.files['espeak-ng.dll'] || m.native !== undefined)
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        } else {
+          const native = m.native;
+          if (
+            !native ||
+            typeof native !== 'object' ||
+            Array.isArray(native) ||
+            Object.keys(native).sort().join(',') !==
+              'architecture,executablePath,executableSha256,libraryPath,librarySha256,platform,version' ||
+            native.platform !== 'linux' ||
+            inventory.platform !== native.platform ||
+            native.architecture !== inventory.architecture ||
+            !['x64', 'arm64'].includes(native.architecture) ||
+            native.version !== m.modelVersion ||
+            inventory.version !== m.modelVersion ||
+            inventory.library?.path !== native.libraryPath ||
+            inventory.library?.sha256 !== native.librarySha256 ||
+            inventory.executable?.path !== native.executablePath ||
+            inventory.executable?.sha256 !== native.executableSha256
+          )
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          readPinned(native.libraryPath, native.librarySha256, 536870912);
+          readPinned(native.executablePath, native.executableSha256, 536870912);
+        }
         for (const [name, hash] of Object.entries(inventory.files)) {
           if (
             !name ||
@@ -319,6 +366,14 @@ export class LocalPiperTts {
     const config = this.configuration(),
       e = this.env;
     if (
+      config.engine === 'espeak-ng' &&
+      (config.native
+        ? config.native.platform !== this.platform ||
+          config.native.architecture !== this.architecture
+        : this.platform !== 'win32')
+    )
+      localFail('LOCAL_TTS_LICENSE_REQUIRED');
+    if (
       !e.FFMPEG_PATH ||
       !isAbsolute(e.FFMPEG_PATH) ||
       !existsSync(e.FFMPEG_PATH)
@@ -342,9 +397,10 @@ export class LocalPiperTts {
     durationMs: number,
   ): Promise<{ bytes: Buffer; evidence: LocalSpeechEvidence }> {
     const m = this.preflight();
-    const narration = m.engine === 'kokoro'
-      ? adaptKokoroNarration(original, durationMs)
-      : adaptLocalNarration(original, durationMs);
+    const narration =
+      m.engine === 'kokoro'
+        ? adaptKokoroNarration(original, durationMs)
+        : adaptLocalNarration(original, durationMs);
     const root = await mkdtemp(join(tmpdir(), 'mktauto-local-tts-'));
     const raw = join(root, 'raw.wav'),
       speech = join(root, 'speech.wav'),
@@ -377,6 +433,7 @@ export class LocalPiperTts {
                 raw,
                 m.nativeVoice,
                 String(m.nativeRate),
+                ...(m.native ? [JSON.stringify(m.native)] : []),
               ]
             : [
                 '--model',
@@ -452,9 +509,10 @@ export class LocalPiperTts {
         narration,
         targetDurationMs: durationMs,
         speechDurationMs,
-        adaptation: m.engine === 'kokoro'
-          ? 'paragraph-preserving-deduplication/2'
-          : 'literal-deduplication/1',
+        adaptation:
+          m.engine === 'kokoro'
+            ? 'paragraph-preserving-deduplication/2'
+            : 'literal-deduplication/1',
       };
       return { bytes, evidence };
     } catch (error) {
