@@ -32,8 +32,20 @@ export class CommercialMeasurementRepository {
     let packageHash: string;
     let mode: string = 'manual';
     if (target.kind === 'execution') {
-      const reservations = hasTable('multi_network_publication_reservations')
-        ? new DestinationReservationsRepository(db).list(target.id)
+      const destinations = hasTable('multi_network_publication_reservations')
+        ? new DestinationReservationsRepository(db)
+        : null;
+      const reservations = destinations
+        ? destinations
+            .list(target.id)
+            .map(
+              (reservation) =>
+                destinations.activeForExecution(
+                  target.id,
+                  reservation.network,
+                  reservation.accountId,
+                ) ?? fail('DISTRIBUTION_PUBLICATION_SCOPE_MISMATCH'),
+            )
         : hasTable('instagram_publication_reservations')
           ? [
               new InstagramPublicationRepository(db).forExecution(target.id),

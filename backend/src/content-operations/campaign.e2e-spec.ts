@@ -1,4 +1,5 @@
 import { provisionQcReviewer } from '../publishing/application/local-qc-identity.js';
+import { instagramCaption } from '../publishing/domain/social-publication-contracts.js';
 import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
 import { execFileSync } from 'node:child_process';
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -1411,7 +1412,30 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             200,
           );
           expect(captionStatus.body.captionHistory).toHaveLength(2);
-          expect(captionStatus.body.caption.envelope).toContain('Publicidade');
+          const captionCatalog = new SqliteAffiliatePersistence(f.database).open();
+          try {
+            const briefing = captionCatalog.getBriefing(String(body.briefingId))!;
+            expect(briefing).not.toBeNull();
+            const caption = captionStatus.body.caption;
+            expect(caption.text).not.toContain(briefing.disclosure);
+            expect(caption.envelope).toBe(
+              [caption.text, briefing.cta, briefing.disclosure, briefing.affiliateUrl]
+                .join('\n\n'),
+            );
+            expect(caption.envelope).toContain('Publicidade');
+            for (const disclosure of [undefined, '']) {
+              expect(() =>
+                instagramCaption({
+                  caption: caption.text,
+                  cta: briefing.cta,
+                  disclosure,
+                  link: briefing.affiliateUrl,
+                }),
+              ).toThrow('DISTRIBUTION_INVALID_TEXT');
+            }
+          } finally {
+            captionCatalog.close();
+          }
           const originalGet = media.get.bind(media);
           const scopedRights = vi
             .spyOn(media, 'get')
