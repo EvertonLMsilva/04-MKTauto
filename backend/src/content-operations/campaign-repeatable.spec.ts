@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { provisionSchema } from '../administration/schema-provisioner.js';
 import { CampaignRepository } from './infrastructure/campaign.repository.js';
 import {
@@ -54,6 +55,10 @@ function recurringFixture() {
     configuration: () => ({ mode: 'live' }),
     execute: vi.fn(),
   };
+  const publishing = {
+    approvals: () => [],
+    coordinatePackage: undefined as ReturnType<typeof vi.fn> | undefined,
+  };
   const workflow = new NativeCampaignWorkflow(
     affiliate as any,
     {} as any,
@@ -79,7 +84,7 @@ function recurringFixture() {
       }),
     } as any,
     {} as any,
-    { approvals: () => [] } as any,
+    publishing as any,
     instagram as any,
   );
   const original = workflow.execute.bind(workflow);
@@ -111,6 +116,7 @@ function recurringFixture() {
     workflow,
     produce,
     instagram,
+    publishing,
     get admin() {
       return admin;
     },
@@ -142,6 +148,105 @@ test('historical and explicitly disabled local requests stay single-shot', async
     await f.admin.tick();
     expect(f.admin.list()).toHaveLength(1);
     expect(f.admin.get(first.execution_id).status).toBe('WAITING_INPUT');
+  } finally {
+    await f.close();
+  }
+});
+
+test('legacy local handoff still works without a destination; explicit daily package requires configuration', async () => {
+  const f = recurringFixture();
+  try {
+    const e = await f.admin.startLocal(f.input);
+    const qc = { result: 'PASS', reportId: 'qc_legacy' };
+    const done = {
+      EDITORIAL: { script: {} },
+      BURN: { videoRenderId: 'render_legacy' },
+      QC: qc,
+      PREVIEW: {},
+      APPROVAL: {
+        decision: 'APPROVED',
+        videoRenderId: 'render_legacy',
+        videoRenderContentHash: hash,
+        videoRenderRevision: 1,
+        pipelineRunId: e.run_id,
+        qualityControlReportId: qc.reportId,
+        qualityControlReportContentHash: createHash('sha256')
+          .update(JSON.stringify(qc))
+          .digest('hex'),
+      },
+    };
+    const request = executionRequest(f.admin.history(e.execution_id));
+    f.publishing.coordinatePackage = vi.fn();
+    await expect(
+      f.workflow.execute('HANDOFF', e, request, done),
+    ).resolves.toMatchObject({ publication: 'MANUAL_HANDOFF' });
+    await expect(
+      f.workflow.execute(
+        'HANDOFF',
+        e,
+        {
+          ...request,
+          schedule: {
+            schemaVersion: 'campaign-daily-schedule/1.0.0',
+            time: '09:00',
+            timeZone: 'America/Sao_Paulo',
+          },
+        },
+        done,
+      ),
+    ).rejects.toThrow('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+    expect(f.publishing.coordinatePackage).not.toHaveBeenCalled();
+  } finally {
+    await f.close();
+  }
+});
+
+test('explicit FIXED time/zone persist across restart and define the campaign civil date', async () => {
+  const f = recurringFixture();
+  try {
+    const input = {
+      ...f.input,
+      requestedAt: '2026-11-07T23:00:00Z',
+      selectionMode: 'FIXED',
+      recurrence: { enabled: true, time: '09:30', timeZone: 'Asia/Tokyo' },
+    };
+    const first = await f.admin.startLocal(input);
+    expect(first.scheduled_at).toBe('2026-11-08T00:30:00.000Z');
+    expect(first.production_date).toBe('2026-11-08');
+    expect(await f.admin.startLocal(input)).toEqual(first);
+    await expect(
+      f.admin.startLocal({
+        ...input,
+        recurrence: { ...input.recurrence, time: '10:30' },
+      }),
+    ).rejects.toThrow('CAMPAIGN_RECURRENCE_CONFLICT');
+    await f.restart();
+    f.setTime('2026-11-09T00:29:59Z');
+    await f.admin.tick();
+    expect(f.admin.list()).toHaveLength(1);
+    f.setTime('2026-11-09T00:30:00Z');
+    await Promise.all([f.admin.tick(), f.admin.tick()]);
+    expect(
+      f.admin
+        .list()
+        .map((e) => e.production_date)
+        .sort(),
+    ).toEqual(['2026-11-08', '2026-11-09']);
+    for (const e of f.admin.list())
+      expect(f.admin.history(e.execution_id)[0].evidence.schedule).toEqual({
+        schemaVersion: 'campaign-daily-schedule/1.0.0',
+        time: '09:30',
+        timeZone: 'Asia/Tokyo',
+      });
+    await f.admin.startLocal({
+      ...input,
+      requestId: 'disable_explicit_schedule',
+      recurrence: { ...input.recurrence, enabled: false },
+    });
+    await f.restart();
+    f.setTime('2026-11-10T00:30:00Z');
+    await f.admin.tick();
+    expect(f.admin.list()).toHaveLength(2);
   } finally {
     await f.close();
   }

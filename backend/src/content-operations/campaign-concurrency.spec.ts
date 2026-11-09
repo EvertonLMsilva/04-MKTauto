@@ -16,12 +16,15 @@ test.each(['FIXED', 'CATALOG'])(
       provisionSchema(db);
       for (const [source, target] of [
         ['domain/campaign', 'campaign'],
+        ['domain/campaign-schedule', 'campaign-schedule'],
         ['infrastructure/campaign.repository', 'campaign.repository'],
       ]) {
         const code = readFileSync(
           new URL(`./${source}.ts`, import.meta.url),
           'utf8',
-        ).replace('../domain/campaign.js', './campaign.js');
+        )
+          .replace('../domain/campaign.js', './campaign.js')
+          .replace('../domain/campaign-schedule.js', './campaign-schedule.mjs');
         writeFileSync(
           join(directory, `${target}.mjs`),
           transpileModule(code, {
@@ -43,11 +46,11 @@ test.each(['FIXED', 'CATALOG'])(
    const barrier=new Int32Array(workerData.barrier);
    parentPort.postMessage({ready:true});Atomics.wait(barrier,0,0);
    try {
-    const now='2026-10-15T12:00:00.000Z';
+    const now='2026-10-15T00:30:00.000Z';
     const input={campaignId:'camp_001',campaignRevision:1,scheduledAt:now,runId:'run_campaign_workers'};
     const e=workerData.mode==='CATALOG'
       ? r.scheduleCatalog({...input,selectionMode:'CATALOG'},now,()=>({...input,selectionMode:'CATALOG',catalogSelection:{productId:workerData.productId}}))
-      : r.schedule(input, {},now);
+      : r.schedule(input, {...input,schedule:{schemaVersion:'campaign-daily-schedule/1.0.0',time:'09:30',timeZone:'Asia/Tokyo'}},now);
     parentPort.postMessage({id:e.execution_id,claimed:!!r.claim(e.execution_id,now,60000)});
    }finally{db.close();}
   `,
@@ -91,6 +94,11 @@ test.each(['FIXED', 'CATALOG'])(
         const output = await Promise.all(results);
         expect(new Set(output.map((o) => o.id)).size).toBe(1);
         expect(output.filter((o) => o.claimed)).toHaveLength(1);
+        if (mode === 'FIXED')
+          expect(
+            db.prepare('SELECT production_date FROM campaign_executions').get()
+              ?.production_date,
+          ).toBe('2026-10-15');
         if (mode === 'CATALOG')
           expect(
             db

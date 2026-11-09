@@ -1,4 +1,6 @@
 import { randomUUID } from 'node:crypto';
+import { dailySchedule } from '../domain/campaign-schedule.js';
+
 import type {
   CampaignOperationsStore,
   CampaignOperationalEvent,
@@ -25,6 +27,12 @@ export interface CampaignRecurrence {
   enabled: boolean;
   commandId: string;
   request: Record<string, unknown>;
+}
+function requestDay(request: Record<string, unknown>): string {
+  return productionDate(
+    String(request.scheduledAt),
+    request.schedule ? dailySchedule(request.schedule).timeZone : undefined,
+  );
 }
 import type {
   CampaignExecution,
@@ -291,7 +299,7 @@ export class CampaignRepository implements CampaignOperationsStore {
     catalog: CatalogResolver,
   ) {
     const campaignId = String(request.campaignId),
-      day = productionDate(String(request.scheduledAt));
+      day = requestDay(request);
     const existing = this.db
       .prepare(
         'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
@@ -385,7 +393,10 @@ export class CampaignRepository implements CampaignOperationsStore {
     )
       throw new CampaignError('INVALID_CAMPAIGN_REVISION');
     const at = instant(input.scheduledAt),
-      day = productionDate(at);
+      day = requestDay({
+        ...(request as Record<string, unknown>),
+        scheduledAt: at,
+      });
     now = instant(now);
     const prior = this.db
       .prepare(
@@ -503,7 +514,7 @@ export class CampaignRepository implements CampaignOperationsStore {
         .prepare(
           'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',
         )
-        .get(campaignId, productionDate(String(request.scheduledAt)));
+        .get(campaignId, requestDay(request));
       const execution = prior
         ? this.get(String(prior.execution_id))
         : request.selectionMode === 'CATALOG' && catalog
@@ -564,7 +575,7 @@ export class CampaignRepository implements CampaignOperationsStore {
       );
       if (!current || current.config.revision !== config.revision) return null;
       const campaignId = String(request.campaignId),
-        day = productionDate(String(request.scheduledAt));
+        day = requestDay(request);
       const existing = this.db
         .prepare(
           'SELECT execution_id FROM campaign_executions WHERE campaign_id=? AND production_date=?',

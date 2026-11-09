@@ -19,6 +19,7 @@ import {
   campaignRequest,
   document,
   localRecurrence,
+  localSchedule,
   localRequestInput,
 } from './native-campaign-workflow.js';
 import {
@@ -28,6 +29,7 @@ import {
   canonicalJson,
 } from '../domain/campaign.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
+import { initialOccurrence } from '../domain/campaign-schedule.js';
 export const CAMPAIGN_DATABASE = Symbol('CAMPAIGN_DATABASE');
 export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   private db?: DatabaseSync;
@@ -117,10 +119,15 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         .find((e) => e.config.request.campaignId === input.campaignId);
       if (existing) {
         const seed = existing.config.request;
+        const schedule = localSchedule(input);
         // Stopping production must remain possible after catalog eligibility is lost.
         if (
           seed.campaignRevision !== input.campaignRevision ||
-          seed.scheduledAt !== instant(input.requestedAt) ||
+          seed.scheduledAt !==
+            (schedule
+              ? initialOccurrence(instant(input.requestedAt), schedule)
+              : instant(input.requestedAt)) ||
+          canonicalJson(seed.schedule) !== canonicalJson(schedule) ||
           document(seed.run).projectVersion !== input.projectVersion ||
           canonicalJson(seed.localImage) !== canonicalJson(input.localImage) ||
           (seed.selectionMode ?? 'FIXED') !== (input.selectionMode ?? 'FIXED')
@@ -344,6 +351,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return {
       ...execution,
       selectionMode: history[0].evidence.selectionMode ?? 'FIXED',
+      schedule: history[0].evidence.schedule ?? null,
       productSelection: history[0].evidence.catalogSelection ?? null,
       provenance:
         history[0].event_type === 'LEGACY_RECOVERY'

@@ -56,6 +56,7 @@ export class CampaignOrchestrator {
               'BURN',
               'QC',
               'PREVIEW',
+              'HANDOFF',
             ].includes(String(last.evidence.step))
           )
             continue;

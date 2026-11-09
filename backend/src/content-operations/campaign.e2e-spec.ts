@@ -1411,7 +1411,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             200,
           );
           expect(captionStatus.body.captionHistory).toHaveLength(2);
-          expect(captionStatus.body.caption.text).toContain('Publicidade');
+          expect(captionStatus.body.caption.envelope).toContain('Publicidade');
           const originalGet = media.get.bind(media);
           const scopedRights = vi
             .spyOn(media, 'get')

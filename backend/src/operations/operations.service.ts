@@ -320,6 +320,9 @@ export class OperationsService {
       script: context.completed.EDITORIAL
         ? document(context.completed.EDITORIAL).script
         : null,
+      package: context.completed.HANDOFF
+        ? (document(context.completed.HANDOFF).package ?? null)
+        : null,
       media: assets
         .filter(
           (asset) =>
