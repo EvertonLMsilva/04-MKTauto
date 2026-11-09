@@ -106,6 +106,11 @@ export class CommercialMeasurementService {
     const unknownCosts = [
       { component: 'LOCAL_COMPUTE', ...unknownValue('NO_REAL_MEASUREMENT') },
     ];
+    if (identity.operationId)
+      unknownCosts.push({
+        component: identity.operationId,
+        ...unknownValue('PUBLICATION_COST_UNKNOWN'),
+      });
     if (!ledger)
       unknownCosts.push({
         component: 'FINANCE',
