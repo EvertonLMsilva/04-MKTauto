@@ -1,3 +1,8 @@
+import {
+  assertSupersessionEligible,
+  assertSupersessionObservation,
+} from '../domain/facebook-supersession.js';
+import type { FacebookLineageEvidence } from '../domain/facebook-supersession.js';
 import { requireSocialPublisherPort } from '../application/ports/social-publisher-port.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { createHash, randomUUID } from 'node:crypto';
@@ -24,6 +29,7 @@ export class SocialPublicationService {
     media,
     transferVerifier,
     allowLivePosts = false,
+    operationalAuthorization,
     authorize = (_op: any) => {},
     now = (): any => new Date().toISOString(),
   }: any) {
@@ -52,6 +58,7 @@ export class SocialPublicationService {
       media,
       transferVerifier,
       authorize,
+      operationalAuthorization,
       now,
     });
   }
@@ -155,14 +162,62 @@ export class SocialPublicationService {
       this.now(),
     );
   }
-  #transition(op: any, allowed: any, patch: any): any {
+  #transition(
+    op: any,
+    allowed: any,
+    patch: any,
+    evidence?: FacebookLineageEvidence,
+  ): any {
     return this.repository.transition(
       op.operationId,
       op.version,
       allowed,
       patch,
-      this.now(),
+      () => this.now(),
+      this.operationalAuthorization,
+      evidence,
     );
+  }
+  async inspectSupersessionLineage(
+    id: string,
+    includeCurrent = false,
+  ): Promise<FacebookLineageEvidence> {
+    if (!this.publisher.inspectUploadSession)
+      socialFail('SOCIAL_SUPERSESSION_OBSERVATION_INVALID');
+    const nodes = this.repository.resolveSupersessionLineage(id);
+    const ancestors = includeCurrent ? nodes : nodes.slice(0, -1);
+    const evidence = [];
+    // Remote reads stay outside BEGIN IMMEDIATE. Fresh observations cannot
+    // eliminate a remote race; local snapshots are checked again at intent.
+    for (const { operation, history } of ancestors) {
+      assertSupersessionEligible(operation, history, operation.version);
+      const observation = await this.publisher.inspectUploadSession(
+        operation.containerId,
+      );
+      assertSupersessionObservation(
+        observation,
+        operation,
+        history,
+        this.now(),
+      );
+      evidence.push({
+        operationId: operation.operationId,
+        version: operation.version,
+        contentHash: operation.contentHash,
+        observation,
+      });
+    }
+    this.repository.validateSupersessionLineage(
+      id,
+      evidence,
+      this.now(),
+      includeCurrent,
+    );
+    return evidence;
+  }
+  async #successorPreflight(op: any) {
+    if (!op.supersession) return;
+    return this.inspectSupersessionLineage(op.operationId);
   }
   async #post(
     op: any,
@@ -175,16 +230,32 @@ export class SocialPublicationService {
     this.#mutationAllowed();
     this.manual.validateForPublication(op.packageHash);
     this.authorize(op);
-    this.repository.authorizePublication(op, this.now());
-    const claim: any = this.#transition(op, [op.state], {
-      state: intent,
-      errorCode: null,
-      ...extra,
-    });
+    this.repository.authorizePublication(
+      op,
+      this.now(),
+      this.operationalAuthorization,
+    );
+    const evidence = await this.#successorPreflight(op);
+    const claim: any = this.#transition(
+      op,
+      [op.state],
+      {
+        state: intent,
+        errorCode: null,
+        ...extra,
+      },
+      evidence,
+    );
     if (!claim.claimed) return claim.value;
     let patch: any;
     try {
       const receipt: any = await action();
+      if (
+        stage === 'CREATE' &&
+        op.supersession &&
+        evidence?.some((e) => e.observation.videoId === receipt?.containerId)
+      )
+        socialFail('SOCIAL_SESSION_ID_CONFLICT');
       accountId(stage === 'CREATE' ? receipt?.containerId : receipt?.mediaId);
       patch = result(receipt);
     } catch (error: any) {
@@ -218,6 +289,7 @@ export class SocialPublicationService {
   }
   async createContainer(id: any, transfer?: any): Promise<any> {
     const op: any = this.#get(id);
+    this.repository.assertNotSuperseded?.(op.operationId);
     if (op.state !== 'PREPARED') return op;
     const { caption } = await this.#gate(op.packageHash, op.accountId);
     if (op.publicationFlowVersion === 2) {
@@ -271,6 +343,7 @@ export class SocialPublicationService {
   }
   async upload(id: string, bytes: Buffer) {
     const op = this.#get(id);
+    this.repository.assertNotSuperseded?.(op.operationId);
     if (
       op.publicationFlowVersion !== 2 ||
       op.state !== 'PROCESSING' ||
@@ -310,28 +383,43 @@ export class SocialPublicationService {
     }
     await this.#gate(op.packageHash, op.accountId);
     this.authorize(op);
-    this.repository.authorizePublication(op, this.now());
-    const claim = this.#transition(op, ['PROCESSING'], {
-      state: 'PROCESSING',
-      uploadStage: 'UPLOADING',
-    });
+    this.repository.authorizePublication(
+      op,
+      this.now(),
+      this.operationalAuthorization,
+    );
+    const evidence = await this.#successorPreflight(op);
+    const claim = this.#transition(
+      op,
+      ['PROCESSING'],
+      {
+        state: 'PROCESSING',
+        uploadStage: 'UPLOADING',
+      },
+      evidence,
+    );
     if (!claim.claimed) return claim.value;
     let current = claim.value;
     let auditPersistenceFailed = false;
     const attemptId = randomUUID();
     const observe = (event: UploadTransportEvent) => {
       try {
-        const appended = this.#transition(current, ['PROCESSING'], {
-          uploadAudit: [
-            ...(current.uploadAudit ?? []),
-            {
-              ...event,
-              attemptId,
-              operationId: op.operationId,
-              videoId: op.containerId,
-            },
-          ],
-        });
+        const appended = this.#transition(
+          current,
+          ['PROCESSING'],
+          {
+            uploadAudit: [
+              ...(current.uploadAudit ?? []),
+              {
+                ...event,
+                attemptId,
+                operationId: op.operationId,
+                videoId: op.containerId,
+              },
+            ],
+          },
+          evidence,
+        );
         if (!appended.claimed) throw new Error('SOCIAL_AUDIT_CONFLICT');
         current = appended.value;
       } catch (error) {
@@ -392,6 +480,7 @@ export class SocialPublicationService {
   }
   async publish(id: any): Promise<any> {
     const op: any = this.#get(id);
+    this.repository.assertNotSuperseded?.(op.operationId);
     if (op.state !== 'READY') return op;
     await this.#gate(op.packageHash, op.accountId);
     this.#mutationAllowed();
@@ -447,6 +536,7 @@ export class SocialPublicationService {
   // upload or publish, and never labels a documented endpoint as an original.
   async recoverUploadSession(id: string, ack: FacebookCreateAcknowledgement) {
     const op = this.#get(id);
+    this.repository.assertNotSuperseded?.(op.operationId);
     if (
       this.publisher.network !== 'FACEBOOK_REELS' ||
       !this.publisher.inspectUploadSession ||
@@ -472,6 +562,7 @@ export class SocialPublicationService {
       end - start > 60000
     )
       socialFail('SOCIAL_SESSION_EVIDENCE_INVALID');
+    this.repository.assertSessionNotInAncestors(id, ack.videoId);
     const recovered = op.sessionEvidence?.source === 'DOCUMENTED_RECOVERY';
     if (recovered) {
       if (
@@ -560,6 +651,7 @@ export class SocialPublicationService {
   }
   async reconcile(id: any): Promise<any> {
     let op: any = this.#get(id);
+    this.repository.assertNotSuperseded?.(op.operationId);
     if (
       op.publicationFlowVersion === 2 &&
       op.state === 'PROCESSING' &&
@@ -584,7 +676,11 @@ export class SocialPublicationService {
         try {
           await this.#gate(op.packageHash, op.accountId);
           this.authorize(op);
-          this.repository.authorizePublication(op, this.now());
+          this.repository.authorizePublication(
+            op,
+            this.now(),
+            this.operationalAuthorization,
+          );
         } catch {
           return op;
         }
@@ -632,7 +728,11 @@ export class SocialPublicationService {
         try {
           await this.#gate(op.packageHash, op.accountId);
           this.authorize(op);
-          this.repository.authorizePublication(op, this.now());
+          this.repository.authorizePublication(
+            op,
+            this.now(),
+            this.operationalAuthorization,
+          );
         } catch {
           return this.#transition(op, ['UNCERTAIN'], {
             providerStatus: status,

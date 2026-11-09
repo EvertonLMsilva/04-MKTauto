@@ -38,6 +38,22 @@ export class DestinationReservationsRepository implements DestinationReservation
       ) ?? null
     );
   }
+  activeForExecution(id: string, network: PublicationNetwork, account: string) {
+    const historical = this.forExecution(id, network, account);
+    if (
+      !historical ||
+      Number(this.db.prepare('PRAGMA user_version').get()?.user_version) < 44
+    )
+      return historical;
+    const owner = this.db
+      .prepare(
+        'SELECT * FROM publication_active_ownership WHERE execution_id=? AND network=? AND account_id=?',
+      )
+      .get(id, network, account);
+    if (!owner || owner.reservation_operation_id !== historical.operationId)
+      socialFail('SOCIAL_RESERVATION_CONFLICT');
+    return { ...historical, operationId: String(owner.active_operation_id) };
+  }
   reserve(id: string, op: any, pkg: any, review: string, at: string) {
     const network: PublicationNetwork = op.network ?? 'INSTAGRAM';
     const account =
@@ -90,19 +106,74 @@ export class DestinationReservationsRepository implements DestinationReservation
     }
   }
   authorize(op: any, at: string) {
+    let reservationId = op.operationId;
+    let owner;
+    if (
+      Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 44
+    ) {
+      if (
+        this.db
+          .prepare(
+            'SELECT 1 FROM publication_supersessions WHERE predecessor_id=?',
+          )
+          .get(op.operationId)
+      )
+        socialFail('SOCIAL_OPERATION_SUPERSEDED');
+      owner = this.db
+        .prepare(
+          'SELECT * FROM publication_active_ownership WHERE active_operation_id=?',
+        )
+        .get(op.operationId);
+      const lineage = this.db
+        .prepare(
+          'SELECT root_operation_id,supersession_revision FROM social_publication_operations WHERE operation_id=?',
+        )
+        .get(op.operationId);
+      if (
+        !owner ||
+        !lineage ||
+        owner.reservation_operation_id !==
+          (lineage.root_operation_id ?? op.operationId) ||
+        owner.active_operation_id !== op.operationId ||
+        owner.revision !== lineage.supersession_revision ||
+        owner.network !== (op.network ?? 'INSTAGRAM') ||
+        owner.account_id !==
+          (op.network === 'FACEBOOK_REELS'
+            ? op.accountId.replace(/^facebook_reels:/, '')
+            : op.accountId) ||
+        owner.artifact_hash !== op.mediaHash
+      )
+        socialFail('SOCIAL_RESERVATION_CONFLICT');
+      reservationId = String(owner.reservation_operation_id);
+    }
     const row = this.db
       .prepare(
         'SELECT * FROM multi_network_publication_reservations WHERE operation_id=?',
       )
-      .get(op.operationId);
-    if (!row)
-      return new InstagramPublicationRepository(this.db).authorize(op, at);
+      .get(reservationId);
+    if (!row) {
+      const legacy = new InstagramPublicationRepository(this.db).authorize(
+        op,
+        at,
+      );
+      if (
+        owner &&
+        (owner.execution_id !== legacy.execution_id ||
+          owner.campaign_id !== legacy.campaign_id)
+      )
+        socialFail('SOCIAL_RESERVATION_CONFLICT');
+      return legacy;
+    }
     const review = this.db
       .prepare(
         "SELECT content_hash,payload_json FROM manual_distribution_records WHERE kind='REVIEW' AND record_id=?",
       )
       .get(op.packageHash);
     if (
+      (owner &&
+        ['execution_id', 'campaign_id', 'network', 'account_id'].some(
+          (k) => owner[k] !== row[k],
+        )) ||
       row.package_hash !== op.packageHash ||
       row.artifact_hash !== op.mediaHash ||
       row.destination !==

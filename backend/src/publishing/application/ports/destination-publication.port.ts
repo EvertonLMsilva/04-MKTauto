@@ -3,6 +3,11 @@ import type { ManualDistributionService } from '../manual-distribution.service.j
 import type { FacebookSessionObservation } from '../../domain/facebook-upload-session.js';
 export type PublicationNetwork = 'INSTAGRAM' | 'FACEBOOK_REELS';
 export interface DestinationReservations {
+  activeForExecution?(
+    id: string,
+    network: PublicationNetwork,
+    account: string,
+  ): { operationId: string } | null;
   forExecution(
     id: string,
     network: PublicationNetwork,

@@ -23,6 +23,7 @@ import { adaptationHash } from '../../src/media/domain/media-hash.js';
 export async function facebookPublicationFixture(
   localQc = false,
   uploadVersion = 'v25.0',
+  distinctSessions = false,
 ) {
   const f = p2EditorialFixture();
   provisionSchema(f.base.db, 42);
@@ -262,6 +263,8 @@ export async function facebookPublicationFixture(
   };
   provisionSchema(f.base.db, 43);
   const posts: string[] = [];
+  let sessionCount = 0,
+    latestVideoId = '987654321';
   let processing = true,
     published = false,
     receiptVisible = true,
@@ -290,14 +293,18 @@ export async function facebookPublicationFixture(
             ? 'create'
             : 'publish';
       posts.push(step);
+      if (step === 'create')
+        latestVideoId = distinctSessions
+          ? String(987654321 + sessionCount++)
+          : '987654321';
       if (step === 'publish') published = true;
       if (fail === step) throw Error('SIMULATED_UNKNOWN_REMOTE_RESULT');
       return new Response(
         JSON.stringify(
           step === 'create'
             ? {
-                video_id: '987654321',
-                upload_url: `https://rupload.facebook.com/video-upload/${uploadVersion}/987654321`,
+                video_id: latestVideoId,
+                upload_url: `https://rupload.facebook.com/video-upload/${uploadVersion}/${latestVideoId}`,
               }
             : { success: true },
         ),
@@ -305,10 +312,11 @@ export async function facebookPublicationFixture(
     }
     return new Response(
       JSON.stringify({
-        id: '987654321',
+        id: u.pathname.split('/').at(-1),
         from: { id: '1355505384315575' },
         created_time: at,
-        permalink_url: 'https://www.facebook.com/reel/987654321/',
+        permalink_url:
+          'https://www.facebook.com/reel/' + u.pathname.split('/').at(-1) + '/',
         status: u.searchParams.get('fields')?.includes('from')
           ? {
               video_status: 'uploading',
@@ -362,14 +370,14 @@ export async function facebookPublicationFixture(
     },
     verifyConnection: () => publisher.verifyConnection(),
   };
-  const reopen = () =>
+  const reopen = (now = () => at) =>
     new DestinationPublicationService(
       store,
       campaignPort,
       ports,
       finance,
       undefined,
-      () => at,
+      now,
     );
   return {
     f,
