@@ -163,11 +163,89 @@ export class DestinationPublicationService {
       s.close();
     }
   }
+  async authorizeFacebookSuccessor(
+    id: string,
+    account: string,
+    expectedVersion: number,
+    raw: FacebookSuccessorAuthorization,
+  ) {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 0)
+      socialFail('SOCIAL_SUPERSESSION_INVALID');
+    if (!raw || typeof raw !== 'object')
+      socialFail('SOCIAL_SUCCESSOR_AUTHORIZATION_REQUIRED');
+    const authorization = structuredClone(raw),
+      ports = this.facebook;
+    if (!ports || ports.publisher.accountId !== 'facebook_reels:' + account)
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    const s = this.store.openDestination(ports.publisher.mode);
+    try {
+      const op = s.social.get(authorization.operationId);
+      if (!op) socialFail('SOCIAL_SUCCESSOR_AUTHORIZATION_REQUIRED');
+      s.social.assertNotSuperseded(op.operationId);
+      if (
+        !op.supersession ||
+        op.accountId !== ports.publisher.accountId ||
+        ['PUBLISHED', 'FAILED', 'EXPIRED'].includes(op.state)
+      )
+        socialFail('SOCIAL_SUPERSESSION_INELIGIBLE');
+      const revalidate = () => {
+        const current = s.social.get(op.operationId);
+        if (
+          current?.version !== expectedVersion ||
+          current.contentHash !== op.contentHash
+        )
+          socialFail('SOCIAL_SUPERSESSION_CONFLICT');
+        const active = s.reservations.activeForExecution?.(
+          id,
+          'FACEBOOK_REELS',
+          account,
+        );
+        if (!active || active.operationId !== current.operationId)
+          socialFail('SOCIAL_RESERVATION_CONFLICT');
+        const { execution, request } = this.context(id);
+        if (execution.status === 'RUNNING')
+          socialFail('SOCIAL_SUPERSESSION_ACTIVE_CLAIM');
+        s.manual.validateForPublication(current.packageHash, execution);
+        const recovery = request.legacyRecovery as
+          { financialOperationIds?: string[] } | undefined;
+        for (const financialId of recovery?.financialOperationIds ??
+          [request.generationRequestId].filter(
+            (v): v is string => typeof v === 'string',
+          ))
+          if (this.finance.getGlobalOperation(financialId)?.state === 'UNKNOWN')
+            socialFail('SOCIAL_FINANCE_RECONCILIATION_REQUIRED');
+        s.social.authorizePublication(current, this.now(), authorization);
+      };
+      revalidate();
+      const engine = new SocialPublicationService({
+        repository: s.social,
+        manual: s.manual,
+        publisher: ports.publisher,
+        media: ports.media,
+        transferVerifier: ports.verifier,
+        now: this.now,
+      });
+      await engine.inspectSupersessionLineage(op.operationId);
+      revalidate();
+      // The existing scoped grant is returned for explicit execution. No local
+      // authorization is persisted here; intent records it before external I/O.
+      return {
+        operationId: op.operationId,
+        state: op.state,
+        version: op.version,
+        contentHash: op.contentHash,
+        authorization,
+      };
+    } finally {
+      s.close();
+    }
+  }
   async execute(
     id: string,
     network: PublicationNetwork,
     account: string,
     operationalAuthorization?: FacebookSuccessorAuthorization,
+    expectedVersion?: number,
   ) {
     if (network !== 'FACEBOOK_REELS' || !this.facebook)
       socialFail('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
@@ -183,11 +261,30 @@ export class DestinationPublicationService {
           s.reservations.forExecution(id, network, account),
         previous = prior ? s.social.get(prior.operationId) : null;
       if (
+        operationalAuthorization &&
+        operationalAuthorization.operationId !== previous?.operationId
+      )
+        socialFail('SOCIAL_SUCCESSOR_AUTHORIZATION_REQUIRED');
+      if (
         previous?.state === 'PUBLISHED' &&
         previous.remoteReceipt &&
         !previous.requiresReconciliation
-      )
+      ) {
+        if (operationalAuthorization)
+          s.social.authorizePublication(
+            previous,
+            this.now(),
+            operationalAuthorization,
+          );
         return this.result(previous);
+      }
+      if (
+        expectedVersion !== undefined &&
+        (!Number.isSafeInteger(expectedVersion) ||
+          expectedVersion < 0 ||
+          previous?.version !== expectedVersion)
+      )
+        socialFail('SOCIAL_SUPERSESSION_CONFLICT');
       if (
         previous &&
         s.social.lineage(previous.operationId)?.supersession_revision > 0
