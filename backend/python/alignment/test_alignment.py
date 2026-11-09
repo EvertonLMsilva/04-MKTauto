@@ -7,6 +7,20 @@ from pathlib import Path
 
 
 class AlignmentTests(unittest.TestCase):
+    def test_portuguese_written_numbers_and_separators_preserve_exact_offsets(self):
+        text = 'Kit 7 e 14. Publicidade · Cena ilustrativa · material_declarado: plástico.'
+        vocab = {c: i for i, c in enumerate('abcdefghijklmnopqrstuvwxyzáéíóúâêôãõç|')}
+        ids, words = script_tokens(text, vocab, 'pt-br-written/1')
+        acoustic = ''.join(list(vocab)[i] for i in ids)
+        self.assertIn('kit|sete|e|catorze', acoustic)
+        self.assertIn('material|declarado', acoustic)
+        result = segments(text, words, [(i, i + 1) for i in range(len(ids))], 20)
+        self.assertEqual(' '.join(s['text'] for s in result), text)
+        with self.assertRaisesRegex(ValueError, 'UNSUPPORTED'):
+            script_tokens('Kit 7', vocab)
+        with self.assertRaisesRegex(ValueError, 'UNSUPPORTED'):
+            script_tokens('Kit 1234', vocab, 'pt-br-written/1')
+
     def test_acoustic_path_and_repeated_labels(self):
         emissions = [[math.log(x) for x in row] for row in
                      [[.1, .9, .0 + 1e-8], [.9, .1, 1e-8], [.1, .9, 1e-8], [.9, .1, 1e-8]]]

@@ -1,3 +1,4 @@
+import { DestinationReservationsRepository } from './destination-reservations.repository.js';
 import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
@@ -28,13 +29,19 @@ export class PublishingPersistence implements PublishingStore {
     try {
       db.exec('PRAGMA busy_timeout=5000');
       if (
-        ![39, 40, 41, 42].includes(
+        ![39, 40, 41, 42, 43, 44].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(db.prepare('PRAGMA user_version').get()?.user_version) >= 41 &&
           db
             .prepare('SELECT name FROM schema_migrations WHERE version=41')
             .get()?.name !== '041_campaign_orchestration')
+      )
+        throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
+      if (
+        Number(db.prepare('PRAGMA user_version').get()?.user_version) === 44 &&
+        db.prepare('SELECT name FROM schema_migrations WHERE version=44').get()
+          ?.name !== '044_facebook_publication_supersession'
       )
         throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
       if (!readOnly) {
@@ -92,7 +99,9 @@ export class PublishingPersistence implements PublishingStore {
     let session: ReturnType<PublishingPersistence['open']> | undefined;
     try {
       if (
-        db.prepare('PRAGMA user_version').get()?.user_version !== 42 ||
+        ![42, 43, 44].includes(
+          Number(db.prepare('PRAGMA user_version').get()?.user_version),
+        ) ||
         db.prepare('SELECT name FROM schema_migrations WHERE version=42').get()
           ?.name !== '042_instagram_publication'
       )
@@ -123,6 +132,44 @@ export class PublishingPersistence implements PublishingStore {
       session?.close();
       db.close();
       throw error;
+    }
+  }
+  openDestination(mode: 'fake' | 'live') {
+    const session = this.openInstagram(mode);
+    if (
+      ![43, 44].includes(
+        Number(
+          session.social.db.prepare('PRAGMA user_version').get()?.user_version,
+        ),
+      )
+    ) {
+      session.close();
+      throw new Error('SOCIAL_SCHEMA_43_REQUIRED');
+    }
+    return {
+      ...session,
+      reservations: new DestinationReservationsRepository(session.social.db),
+    };
+  }
+  readDestinations(id: string) {
+    const db = this.database(this.path, true);
+    try {
+      const mode = db
+        .prepare(
+          'SELECT execution_mode FROM social_publication_context WHERE singleton=1',
+        )
+        .get()?.execution_mode;
+      if (mode !== 'fake' && mode !== 'live')
+        throw new Error('SOCIAL_LIVE_PROVENANCE_REQUIRED');
+      const social = new SocialPublicationRepository(
+        { db },
+        { mode, readOnly: true },
+      );
+      return new DestinationReservationsRepository(db)
+        .list(id)
+        .map((r) => ({ ...r, operation: social.get(r.operationId) }));
+    } finally {
+      db.close();
     }
   }
   social<T>(action: (repository: SocialPublicationRepository) => T): T {

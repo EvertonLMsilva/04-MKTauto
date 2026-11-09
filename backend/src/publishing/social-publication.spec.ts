@@ -262,6 +262,10 @@ test('fluxo HTTP fake completo, intenção antes do POST e reinício', (): any =
   fixture(async (f: any): Promise<any> => {
     const op: any = await f.prepare();
     assert.equal(op.state, 'PREPARED');
+    const preview: any = new PublishingController(
+      { package: () => f.manual.getPackage(op.packageHash) } as any,
+      {} as any,
+    ).package(op.packageHash);
     f.setHandler(({ method, url, body, headers }: any): any => {
       assert.equal(headers.Authorization, 'Bearer FAKE_PRIVATE_TOKEN');
       if (method === 'POST') {
@@ -270,7 +274,8 @@ test('fluxo HTTP fake completo, intenção antes do POST e reinício', (): any =
           persisted.state,
           url.endsWith('media_publish') ? 'PUBLISHING' : 'CREATING_CONTAINER',
         );
-        if (!url.endsWith('media_publish'))
+        if (!url.endsWith('media_publish')) {
+          assert.equal(body.caption, preview.finalCaption);
           assert.equal(
             body.caption,
             [
@@ -280,6 +285,7 @@ test('fluxo HTTP fake completo, intenção antes do POST e reinício', (): any =
               campaign().affiliateUrl,
             ].join('\n\n'),
           );
+        }
         return {
           ok: true,
           status: 200,
@@ -1209,7 +1215,6 @@ test('P5 NativeCampaignWorkflow delegates PUBLICATION and reconciliation through
     }),
   ).toThrow();
 });
-
 test('P5 known processing continues via scheduler without human retry or duplicated create', () =>
   fixture(async (f: any) => {
     const { r, e, input, handoff } = scheduleP5(f);

@@ -1,9 +1,21 @@
+import type { MediaAsset } from '../domain/media.types.js';
+export type LocalImageSource = Pick<
+  MediaAsset,
+  'mediaReference' | 'contentHash' | 'origin' | 'provider' | 'rights'
+>;
+export interface LocalMediaScope {
+  pipelineRunId: string;
+  scriptId: string;
+  scriptContentHash: string;
+  createdAt: string;
+}
 export interface AuthorizedLocalAudio {
   voiceTrackId: string;
   contentHash: string;
   durationMilliseconds: number;
 }
 export interface LocalAudiovisualPort {
+  prepareImage?(scope: LocalMediaScope, source: LocalImageSource): MediaAsset;
   audioBytes?(
     runId: string,
     scriptId: string,

@@ -2,6 +2,8 @@ import {
   accountId,
   socialFail,
 } from '../domain/social-publication-contracts.js';
+import { createHash } from 'node:crypto';
+import { readFile, stat } from 'node:fs/promises';
 
 export interface InstagramGraphConfiguration {
   accountId: string;
@@ -134,6 +136,64 @@ export class InstagramGraphAdapter {
     });
     if (!/^[1-9]\d{4,63}$/.test(data?.id)) socialFail('SOCIAL_RECEIPT_INVALID');
     return { containerId: String(data.id) };
+  }
+  async createResumableContainer(input: { accountId: string; caption: string }) {
+    this.destination(input.accountId);
+    if (typeof input.caption !== 'string' || Array.from(input.caption).length > 2200)
+      socialFail('SOCIAL_TRANSFER_INVALID');
+    const data = await this.request(`${this.accountId}/media`, 'POST', {
+      media_type: 'REELS', upload_type: 'resumable', caption: input.caption,
+    });
+    accountId(data?.id);
+    const uploadUri = this.validUploadUri(data?.uri);
+    return { containerId: String(data.id), uploadUri };
+  }
+  private validUploadUri(value: unknown): string {
+    if (typeof value !== 'string') socialFail('SOCIAL_TRANSFER_INVALID');
+    let url: URL;
+    try { url = new URL(value); } catch { return socialFail('SOCIAL_TRANSFER_INVALID'); }
+    if (url.protocol !== 'https:' || url.hostname !== 'rupload.facebook.com' ||
+      url.port || url.username || url.password || url.search || url.hash ||
+      !/^\/ig-api-upload\/(?:v\d+\.\d+\/)?[1-9]\d{4,63}$/.test(url.pathname))
+      socialFail('SOCIAL_TRANSFER_INVALID');
+    return url.toString();
+  }
+  async uploadResumableFile(uploadUri: string, path: string, expectedHash: string) {
+    this.assertMutationAllowed();
+    this.validUploadUri(uploadUri);
+    if (!/^[a-f0-9]{64}$/.test(expectedHash)) socialFail('SOCIAL_TRANSFER_INVALID');
+    const info = await stat(path);
+    if (!info.isFile() || info.size < 1 || info.size > 1_000_000_000)
+      socialFail('SOCIAL_TRANSFER_INVALID');
+    const bytes = await readFile(path);
+    if (createHash('sha256').update(bytes).digest('hex') !== expectedHash)
+      socialFail('SOCIAL_MEDIA_INCOMPATIBLE');
+    return this.uploadResumableBytes(uploadUri, bytes);
+  }
+  async uploadResumableBytes(uploadUri: string, bytes: Buffer) {
+    this.assertMutationAllowed();
+    const url = this.validUploadUri(uploadUri);
+    if (!Buffer.isBuffer(bytes) || bytes.length < 1 || bytes.length > 1_000_000_000)
+      socialFail('SOCIAL_TRANSFER_INVALID');
+    const token = this.#config.getAccessToken();
+    if (typeof token !== 'string' || !token || /[\s\r\n]/.test(token))
+      socialFail('SOCIAL_AUTH_REQUIRED');
+    let response: Response;
+    try {
+      response = await this.#config.fetch(url, {
+        method: 'POST',
+        headers: { Authorization: `OAuth ${token}`, offset: '0', file_size: String(bytes.length) },
+        body: Uint8Array.from(bytes),
+        redirect: 'error',
+        signal: AbortSignal.timeout(this.#config.timeoutMs ?? 15000),
+      });
+    } catch { return socialFail('SOCIAL_NETWORK_UNCERTAIN'); }
+    let result: unknown;
+    try { result = await response.json(); } catch { return socialFail('SOCIAL_RESPONSE_UNCERTAIN'); }
+    if (!response.ok || !result || typeof result !== 'object' ||
+      (result as { success?: unknown }).success !== true)
+      socialFail('SOCIAL_RESPONSE_UNCERTAIN');
+    return { uploaded: true as const };
   }
   async getContainerStatus(input: { containerId: string }) {
     accountId(input.containerId);

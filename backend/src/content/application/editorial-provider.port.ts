@@ -14,7 +14,7 @@ export const EDITORIAL_PROVIDER = Symbol('EDITORIAL_PROVIDER');
 export interface EditorialProviderInput {
   campaignSource: AffiliateCampaignSourceV1 | null;
   briefing: AffiliateBriefing;
-  shortlist: ResearchShortlist;
+  shortlist: ResearchShortlist | null;
   references: ReferenceInsight | null;
   projectSnapshot: ProjectSnapshot;
 }

@@ -15,7 +15,12 @@ export function accountId(value: any): any {
 export function validateSocialPrepare(value: any): any {
   exact(value, ['packageHash', 'accountId']);
   hashValue(value.packageHash, 'packageHash');
-  accountId(value.accountId);
+  accountId(
+    typeof value.accountId === 'string' &&
+      value.accountId.startsWith('facebook_reels:')
+      ? value.accountId.slice('facebook_reels:'.length)
+      : value.accountId,
+  );
   return value;
 }
 export function instagramCaption(p: any): any {
@@ -32,6 +37,17 @@ export function instagramCaption(p: any): any {
     (caption.match(/@[\p{L}\p{N}_.]+/gu) || []).length > 20
   )
     socialFail('SOCIAL_CAPTION_INVALID');
+  return caption;
+}
+export function facebookCaption(p: any): string {
+  const caption = [p.caption, p.cta, p.disclosure, p.link]
+    .map((v, i) =>
+      i === 0
+        ? captionText(v, 'caption', 5000)
+        : publicText(v, 'caption', 5000),
+    )
+    .join('\n\n');
+  if (Array.from(caption).length > 5000) socialFail('SOCIAL_CAPTION_INVALID');
   return caption;
 }
 // Signed URLs are transient capabilities: never include them in persisted state.

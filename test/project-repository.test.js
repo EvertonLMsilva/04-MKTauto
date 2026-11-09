@@ -1,6 +1,6 @@
 import test from "node:test";
 // Run `npm run build` before this Node suite: all behavior uses NestJS contracts.
-const PROJECT_SCHEMA_VERSION = 42;
+const PROJECT_SCHEMA_VERSION = 43;
 import assert from "node:assert/strict";
 import { withTemporarySqlite } from "./sqlite-test-fixture.js";
 import { DatabaseSync } from "node:sqlite";

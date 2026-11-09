@@ -1,4 +1,6 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import { freezeCatalogRequest } from '../domain/product-rotation.js';
+import { instagramCaption } from '../../publishing/domain/social-publication-contracts.js';
 import type { InstagramEditorialService } from '../../publishing/application/instagram-editorial.service.js';
 import { PRODUCT_FRAMING_STRATEGY } from '../../media/domain/product-framing.js';
 import type { VideoProductionPreparationService } from '../../media/application/video-production-preparation.service.js';
@@ -20,18 +22,103 @@ import type { ContentOperationsService } from './content-operations.service.js';
 import type { CampaignWorkflow } from './campaign-orchestrator.js';
 import { executionRequest, completedContext } from './campaign-orchestrator.js';
 import type { CampaignEvent, CampaignExecution } from '../domain/campaign.js';
-import { CampaignError, identifier, instant } from '../domain/campaign.js';
+import {
+  CampaignError,
+  identifier,
+  instant,
+  productionDate,
+} from '../domain/campaign.js';
 import { usdUnits } from '../../finance/domain/video-financial-contracts.js';
 import { createHash } from 'node:crypto';
 import { adaptationHash } from '../../media/domain/media-hash.js';
 import { compositionPlanContentHash } from '../../media/domain/composition-plan-contracts.js';
 import { videoCompositionRequestHash } from '../../media/domain/video-composition-contracts.js';
 import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
+import type { LocalImageSource } from '../../media/application/local-flow.port.js';
 
 export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
   return value as Record<string, unknown>;
+}
+
+// Optional command on POST .../local. Absence preserves single-shot semantics.
+export function localRecurrence(
+  input: Record<string, unknown>,
+): boolean | undefined {
+  if (!Object.hasOwn(input, 'recurrence')) return undefined;
+  const value = input.recurrence;
+  if (
+    !value ||
+    typeof value !== 'object' ||
+    Array.isArray(value) ||
+    Object.keys(value).join(',') !== 'enabled' ||
+    typeof (value as { enabled?: unknown }).enabled !== 'boolean'
+  )
+    throw new CampaignError('INVALID_CAMPAIGN_RECURRENCE');
+  return (value as { enabled: boolean }).enabled;
+}
+
+export function localRequestInput(value: unknown) {
+  const input = document(value);
+  localRecurrence(input);
+  if (
+    input.selectionMode !== undefined &&
+    input.selectionMode !== 'FIXED' &&
+    input.selectionMode !== 'CATALOG'
+  )
+    throw new CampaignError('INVALID_SELECTION_MODE');
+  const catalog = input.selectionMode === 'CATALOG';
+  if (
+    Object.keys(input)
+      .filter((key) => !['recurrence', 'selectionMode'].includes(key))
+      .sort()
+      .join(',') !==
+      (catalog
+        ? 'campaignId,campaignRevision,projectVersion,requestId,requestedAt'
+        : 'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt') ||
+    !Number.isSafeInteger(input.projectVersion) ||
+    Number(input.projectVersion) < 1 ||
+    !Number.isSafeInteger(input.campaignRevision) ||
+    Number(input.campaignRevision) < 1
+  )
+    throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+  identifier(input.campaignId);
+  identifier(input.requestId);
+  instant(input.requestedAt);
+  if (!catalog) document(input.localImage);
+  return input;
+}
+
+// Only materialize today's due occurrence; never backfill an unattended backlog.
+function dailyOccurrence(seed: string, now: string): string | null {
+  const day = productionDate(now);
+  if (day <= productionDate(seed)) return null;
+  const clock = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/Sao_Paulo',
+    hourCycle: 'h23',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  });
+  const localTime = clock.format(new Date(seed));
+  const millis = new Date(seed)
+    .getUTCMilliseconds()
+    .toString()
+    .padStart(3, '0');
+  const target = Date.parse(`${day}T${localTime}.${millis}Z`);
+  let candidate = target;
+  // Convert civil time using the zone database, rather than a fixed UTC offset.
+  for (let i = 0; i < 3; i++) {
+    const observed = Date.parse(
+      `${productionDate(new Date(candidate).toISOString())}T${clock.format(new Date(candidate))}.${millis}Z`,
+    );
+    candidate += target - observed;
+  }
+  const at = new Date(candidate).toISOString();
+  if (productionDate(at) !== day || clock.format(new Date(at)) !== localTime)
+    return null; // Nonexistent civil time at a timezone transition.
+  return at <= instant(now) ? at : null;
 }
 export function campaignRequest(raw: unknown) {
   const r = document(raw);
@@ -56,14 +143,28 @@ export function campaignRequest(raw: unknown) {
     'videoProduction',
     'sceneMediaAssetIds',
     'legacyRecovery',
+    'localImage',
+    'selectionMode',
+    'catalogSelection',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+  if (
+    r.selectionMode !== undefined &&
+    r.selectionMode !== 'FIXED' &&
+    r.selectionMode !== 'CATALOG'
+  )
+    throw new CampaignError('INVALID_SELECTION_MODE');
   for (const k of [
     'campaignId',
     'runId',
     'briefingId',
-    ...(r.legacyRecovery ? [] : ['researchShortlistId', 'generationRequestId']),
+    ...(r.legacyRecovery
+      ? []
+      : [
+          'generationRequestId',
+          ...(r.researchShortlistId === null ? [] : ['researchShortlistId']),
+        ]),
   ])
     identifier(r[k]);
   instant(r.scheduledAt);
@@ -86,11 +187,34 @@ export function campaignRequest(raw: unknown) {
     const video = document(r.videoProduction);
     if (
       Object.keys(video).join(',') !== 'mode' ||
-      !['OFFLINE', 'ASSISTED_LOCAL'].includes(String(video.mode)) ||
+      !['OFFLINE', 'ASSISTED_LOCAL', 'LOCAL_IMAGES'].includes(
+        String(video.mode),
+      ) ||
       r.mode !== 'LOCAL_VALIDATION' ||
-      r.publication !== undefined
+      (r.publication !== undefined && video.mode !== 'LOCAL_IMAGES')
     )
       throw new CampaignError('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+  }
+  if (
+    r.localImage !== undefined ||
+    (r.videoProduction && document(r.videoProduction).mode === 'LOCAL_IMAGES')
+  ) {
+    if (
+      (!r.localImage && r.selectionMode !== 'CATALOG') ||
+      !r.videoProduction ||
+      document(r.videoProduction).mode !== 'LOCAL_IMAGES' ||
+      [
+        'sceneMediaAssetIds',
+        'voiceTrackId',
+        'audio',
+        'alignment',
+        'composition',
+        'scriptId',
+        'legacyRecovery',
+      ].some((key) => r[key] !== undefined)
+    )
+      throw new CampaignError('LOCAL_IMAGE_REQUEST_REQUIRED');
+    if (r.localImage !== undefined) document(r.localImage);
   }
   if (r.sceneMediaAssetIds !== undefined) {
     if (
@@ -136,7 +260,13 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     private readonly affiliate: Pick<
       AffiliateService,
       'getCampaign' | 'getBriefing'
-    >,
+    > &
+      Partial<
+        Pick<
+          AffiliateService,
+          'createBriefing' | 'catalogCandidates' | 'createCatalogBriefing'
+        >
+      >,
     private readonly binding: AffiliateRunContext,
     private readonly research: ResearchReader,
     private readonly editorial: Pick<EditorialFlowService, 'generate'>,
@@ -159,11 +289,18 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       ContentOperationsService,
       'start' | 'get'
     >,
-    private readonly publishing: Pick<PublishingService, 'approvals'>,
+    private readonly publishing: Pick<PublishingService, 'approvals'> &
+      Partial<
+        Pick<
+          PublishingService,
+          'coordinatePackage' | 'validatePackage' | 'packageReview' | 'review'
+        >
+      >,
     private readonly instagram?: Pick<
       InstagramPublicationService,
       'execute' | 'reconcile'
-    >,
+    > &
+      Partial<Pick<InstagramPublicationService, 'configuration' | 'status'>>,
     private readonly production?: {
       preparations: Pick<VideoProductionPreparationService, 'prepare'>;
       generation: Pick<VideoGenerationService, 'submit' | 'poll' | 'recover'>;
@@ -177,6 +314,72 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     },
     private readonly captioning?: InstagramEditorialService,
   ) {}
+  coordinatedPackage(e: CampaignExecution, done: Record<string, unknown>) {
+    if (!done.HANDOFF) return null;
+    const destination = this.instagram?.configuration?.().accountId;
+    if (!destination)
+      throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+    if (!this.publishing.coordinatePackage)
+      throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+    const handoff = document(done.HANDOFF),
+      script = document(document(done.EDITORIAL).script);
+    const pkg = this.publishing.coordinatePackage(e.run_id, {
+      campaignId: e.campaign_id,
+      campaignRevision: e.campaign_revision,
+      videoRenderId: String(handoff.videoRenderId),
+      qualityControlReportId: String(document(done.QC).reportId),
+      platform: 'instagram',
+      account: destination,
+      caption: String(script.fullNarration),
+    });
+    if (pkg.identity.videoRenderContentHash !== handoff.contentHash)
+      throw new CampaignError('SOCIAL_HANDOFF_MISMATCH');
+    return pkg;
+  }
+  async operatorReview(e: CampaignExecution, done: Record<string, unknown>) {
+    const evidence = await this.approvalEvidence(e, done);
+    const pkg = this.coordinatedPackage(e, done);
+    const identity = {
+      projectId: evidence.render.projectId,
+      projectVersion: evidence.render.projectVersion,
+      pipelineRunId: e.run_id,
+      videoRenderId: evidence.render.videoRenderId,
+      videoRenderRevision: evidence.render.revision,
+      videoRenderContentHash: evidence.render.contentHash,
+      qualityControlReportId: evidence.qc.qualityControlReportId,
+      qualityControlReportContentHash: evidence.qc.contentHash,
+    };
+    return {
+      identity,
+      render: evidence.render,
+      qc: evidence.qc,
+      preview: done.PREVIEW,
+      finalCaption: pkg
+        ? instagramCaption(pkg)
+        : document(document(done.EDITORIAL).script).fullNarration,
+      package: pkg,
+      destination: this.instagram?.configuration?.().accountId ?? null,
+      renderApproval: done.APPROVAL ?? null,
+      packageApproval: pkg
+        ? this.publishing.packageReview?.(pkg.contentHash)
+        : null,
+      publication: (await this.instagram?.status?.(e.execution_id)) ?? null,
+    };
+  }
+  reviewOperatorPackage(
+    hash: string,
+    decision: string,
+    actor: string,
+    justification: unknown,
+    key: string,
+  ) {
+    if (!this.publishing.review)
+      throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+    return this.publishing.review(
+      { packageHash: hash, decision, actor, justification },
+      key,
+    );
+  }
   async captionContext(
     e: CampaignExecution,
     r: Record<string, unknown>,
@@ -185,8 +388,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const briefing = await this.affiliate.getBriefing(String(r.briefingId));
     if (
       !briefing ||
-      briefing.campaignId !== e.campaign_id ||
-      briefing.campaignRevision !== e.campaign_revision
+      briefing.campaignId !== this.briefingCampaign(r).campaignId ||
+      briefing.campaignRevision !== this.briefingCampaign(r).revision
     )
       throw new CampaignError('SOCIAL_CAPTION_CONTEXT_REQUIRED');
     const script = document(document(done.EDITORIAL).script);
@@ -528,7 +731,17 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const reports = document(done.MEDIA_QC).reports as {
       identity: { mediaAssetId: string; contentHash: string };
     }[];
+    const images = document(r.videoProduction).mode === 'LOCAL_IMAGES';
     const assets = reports.map(({ identity }) => {
+      if (images) {
+        const asset = this.prepareImage(e, r, script);
+        if (
+          asset.mediaAssetId !== identity.mediaAssetId ||
+          asset.contentHash !== identity.contentHash
+        )
+          throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+        return asset;
+      }
       this.compositionRights(
         this.production?.media.get(identity.mediaAssetId) ?? null,
         e,
@@ -555,7 +768,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return asset;
     });
     const durations = assets.map((a) =>
-      Number(a.technicalProperties.durationMilliseconds),
+      images
+        ? voice.durationMilliseconds
+        : Number(a.technicalProperties.durationMilliseconds),
     );
     const total = durations.reduce((sum, value) => sum + value, 0);
     if (
@@ -582,12 +797,12 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         mediaAssetContentHash: asset.contentHash,
         startMilliseconds: cursor,
         endMilliseconds: end,
-        mediaType: 'VIDEO',
+        mediaType: images ? 'IMAGE' : 'VIDEO',
         sourceStartMilliseconds: 0,
         playbackMode: 'TRIM',
         originalAudioMuted: true,
         framingStrategy: PRODUCT_FRAMING_STRATEGY,
-        movementRequirement: 'REAL_MOTION_REQUIRED',
+        movementRequirement: images ? 'STATIC_ALLOWED' : 'REAL_MOTION_REQUIRED',
         transition: {
           policyVersion: 'composition-transition/1.0.0',
           type: 'CUT',
@@ -648,6 +863,32 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   compositionPlan(id: string) {
     return this.media.getCompositionPlan(id);
   }
+  private prepareImage(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    script: Record<string, unknown>,
+  ) {
+    const brief = this.binding.resolveRunBriefing(
+      e.run_id,
+      String(r.briefingId),
+    );
+    const source = r.localImage as LocalImageSource;
+    if (
+      !brief ||
+      brief.campaignId !== this.briefingCampaign(r).campaignId ||
+      !brief.mediaRefs.includes(source.mediaReference)
+    )
+      throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+    return this.local.prepareImage(
+      {
+        pipelineRunId: e.run_id,
+        scriptId: String(script.scriptId),
+        scriptContentHash: String(script.contentHash),
+        createdAt: e.scheduled_at,
+      },
+      source,
+    );
+  }
   private compositionRights(
     asset: ReturnType<MediaService['get']>,
     e: CampaignExecution,
@@ -667,6 +908,29 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       String(r.campaignId),
       Number(r.campaignRevision),
     );
+    if (r.selectionMode === 'CATALOG') {
+      if (!r.catalogSelection)
+        throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
+      const selection = document(r.catalogSelection);
+      const source = await this.affiliate.getCampaign(
+        String(selection.sourceCampaignId),
+        Number(selection.sourceCampaignRevision),
+      );
+      if (!campaign || !source || campaign.projectId !== source.projectId)
+        throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      const brief = await this.affiliate.getBriefing(String(r.briefingId));
+      if (
+        !brief ||
+        brief.campaignId !== source.campaignId ||
+        brief.campaignRevision !== source.revision ||
+        brief.productId !== selection.productId ||
+        brief.productRevision !== selection.productRevision ||
+        brief.contentHash !== selection.briefingHash ||
+        brief.affiliateUrl !== selection.affiliateUrl
+      )
+        throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      return campaign;
+    }
     const brief = await this.affiliate.getBriefing(String(r.briefingId));
     if (!campaign || !brief)
       throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
@@ -676,6 +940,151 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     )
       throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
     return campaign;
+  }
+  private briefingCampaign(r: Record<string, unknown>) {
+    const selection =
+      r.selectionMode === 'CATALOG' && r.catalogSelection
+        ? document(r.catalogSelection)
+        : null;
+    return {
+      campaignId: selection?.sourceCampaignId ?? r.campaignId,
+      revision: selection?.sourceCampaignRevision ?? r.campaignRevision,
+    };
+  }
+  freezeCatalogRequest(
+    request: Record<string, unknown>,
+    previous: string | null,
+  ) {
+    if (!this.affiliate.catalogCandidates)
+      throw new CampaignError('CATALOG_READER_REQUIRED');
+    return freezeCatalogRequest(
+      request,
+      this.affiliate.catalogCandidates(String(document(request.run).projectId)),
+      previous,
+    );
+  }
+  async localRequest(value: unknown) {
+    const input = localRequestInput(value);
+    const requestId = identifier(input.requestId),
+      at = instant(input.requestedAt);
+    const campaign = await this.affiliate.getCampaign(
+      identifier(input.campaignId),
+      Number(input.campaignRevision),
+    );
+    if (!campaign || !this.affiliate.createBriefing)
+      throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
+    const key = adaptationHash({
+      campaignId: campaign.campaignId,
+      requestId,
+    }).slice(0, 32);
+    const briefingId = `brief_${key}`,
+      runId = `run_${key}`;
+    if (input.selectionMode !== 'CATALOG')
+      await this.affiliate.createBriefing({
+        idempotencyKey: `brief_${key}`,
+        briefingId,
+        campaignId: campaign.campaignId,
+        campaignRevision: campaign.revision,
+      });
+    return campaignRequest({
+      campaignId: campaign.campaignId,
+      campaignRevision: campaign.revision,
+      scheduledAt: at,
+      runId,
+      briefingId,
+      generationRequestId: `editorial_${key}`,
+      researchShortlistId: null,
+      mode: 'LOCAL_VALIDATION',
+      videoProduction: { mode: 'LOCAL_IMAGES' },
+      ...(input.selectionMode === 'CATALOG'
+        ? { selectionMode: 'CATALOG' }
+        : {
+            localImage: input.localImage,
+            ...(input.selectionMode
+              ? { selectionMode: input.selectionMode }
+              : {}),
+          }),
+      run: {
+        schemaVersion: 'pipeline-handoff/1.0.0',
+        pipelineRunId: runId,
+        projectId: campaign.projectId,
+        projectVersion: input.projectVersion,
+        startedAt: at,
+      },
+    });
+  }
+  async recurringRequest(seed: Record<string, unknown>, now: string) {
+    const at = dailyOccurrence(String(seed.scheduledAt), now);
+    if (!at) return null;
+    if (seed.selectionMode === 'CATALOG')
+      return this.localRequest({
+        campaignId: seed.campaignId,
+        campaignRevision: seed.campaignRevision,
+        projectVersion: document(seed.run).projectVersion,
+        selectionMode: 'CATALOG',
+        requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+        requestedAt: at,
+      });
+    try {
+      await this.validate(seed);
+    } catch (error) {
+      if (
+        error instanceof CampaignError &&
+        error.code === 'CAMPAIGN_CONTEXT_NOT_FOUND'
+      )
+        return null;
+      throw error;
+    }
+    const brief = await this.affiliate.getBriefing(String(seed.briefingId));
+    if (
+      !brief?.mediaRefs.includes(
+        String(document(seed.localImage).mediaReference),
+      )
+    )
+      return null;
+    return this.localRequest({
+      campaignId: seed.campaignId,
+      campaignRevision: seed.campaignRevision,
+      projectVersion: document(seed.run).projectVersion,
+      requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+      requestedAt: at,
+      localImage: seed.localImage,
+    });
+  }
+  async result(
+    e: CampaignExecution,
+    r: Record<string, unknown>,
+    done: Record<string, unknown>,
+  ) {
+    const briefing = await this.affiliate.getBriefing(String(r.briefingId));
+    const script = done.EDITORIAL
+      ? document(document(done.EDITORIAL).script)
+      : null;
+    const localPackage =
+      r.videoProduction && document(r.videoProduction).mode === 'LOCAL_IMAGES';
+    return {
+      executionId: e.execution_id,
+      status: e.status,
+      preview: done.PREVIEW ?? null,
+      script: done.EDITORIAL ? document(done.EDITORIAL).script : null,
+      subtitles: done.SUBTITLES ?? null,
+      qc: done.QC ?? null,
+      caption:
+        localPackage && script
+          ? {
+              text: script.fullNarration,
+              source: 'VALIDATED_EDITORIAL_SCRIPT',
+              scriptContentHash: script.contentHash,
+              humanReview: 'REQUIRED',
+            }
+          : (this.captioning?.history(e.execution_id).at(-1) ?? null),
+      cta: briefing?.cta ?? null,
+      affiliateUrl: briefing?.affiliateUrl ?? null,
+      format: r.localImage ? 'AUTHORIZED_STATIC_IMAGE' : 'VIDEO',
+      publication:
+        done.PUBLICATION ?? (r.publication ? 'REQUESTED' : 'NOT_REQUESTED'),
+      cost: { status: 'UNKNOWN', amount: null },
+    };
   }
   private financeGate(r: Record<string, unknown>, at: string) {
     const operationIds = r.legacyRecovery
@@ -706,9 +1115,59 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     done: Record<string, unknown>,
   ): Promise<unknown> {
     if (step === 'PUBLICATION') {
-      if (!r.publication) return { publication: 'MANUAL_HANDOFF' };
+      if (
+        !r.publication &&
+        done.HANDOFF &&
+        this.publishing.coordinatePackage &&
+        (done.OPERATOR_FLOW ||
+          this.instagram?.configuration?.().mode === 'live')
+      ) {
+        const pkg = this.coordinatedPackage(e, done);
+        if (!pkg)
+          throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+        this.publishing.validatePackage!(pkg.contentHash);
+        r = {
+          ...r,
+          publication: { packageHash: pkg.contentHash, accountId: pkg.account },
+        };
+      }
+      if (!r.publication) {
+        if (
+          r.videoProduction &&
+          document(r.videoProduction).mode === 'LOCAL_IMAGES' &&
+          this.instagram?.configuration?.().mode === 'live'
+        )
+          throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+        return { publication: 'MANUAL_HANDOFF' };
+      }
       if (!this.instagram)
         throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+      const previous = await this.instagram.status?.(e.execution_id);
+      const operation = previous?.operation;
+      if (
+        operation &&
+        ([
+          'UNCERTAIN',
+          'CREATING_CONTAINER',
+          'PUBLISHING',
+          'PUBLISHED',
+        ].includes(operation.state) ||
+          operation.requiresReconciliation)
+      ) {
+        const proof = await this.instagram.reconcile(e.execution_id);
+        if (proof?.verified && proof.step === 'PUBLICATION')
+          return proof.result;
+        const current = await this.instagram.status?.(e.execution_id);
+        if (
+          !proof?.verified ||
+          !current?.operation ||
+          !['PREPARED', 'PROCESSING', 'READY'].includes(
+            current.operation.state,
+          ) ||
+          current.operation.requiresReconciliation
+        )
+          throw new CampaignError('SOCIAL_RECONCILIATION_REQUIRED');
+      }
       return this.instagram.execute(e, r.publication, done.HANDOFF);
     }
     // No paid transport is reachable from this workflow. Unknown charges stay unknown.
@@ -718,8 +1177,29 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     ))
       this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
+      if (r.selectionMode === 'CATALOG') {
+        if (!r.catalogSelection)
+          throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
+        const selected = this.briefingCampaign(r);
+        if (!this.affiliate.createCatalogBriefing)
+          throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
+        const brief = await this.affiliate.createCatalogBriefing(
+          {
+            briefingId: String(r.briefingId),
+            campaignId: String(selected.campaignId),
+            campaignRevision: Number(selected.revision),
+          },
+          String(document(r.catalogSelection).briefingHash),
+        );
+        if (brief.contentHash !== document(r.catalogSelection).briefingHash)
+          throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      }
       const campaign = await this.validate(r);
-      if (!this.research.getShortlist(String(r.researchShortlistId)))
+      if (
+        r.researchShortlistId !== null &&
+        (typeof r.researchShortlistId !== 'string' ||
+          !this.research.getShortlist(r.researchShortlistId))
+      )
         throw new CampaignError('RESEARCH_REQUIRED');
       if (r.run) {
         const run = document(r.run);
@@ -774,6 +1254,64 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       });
     }
     const script = document(document(done.EDITORIAL).script);
+    if (
+      r.videoProduction &&
+      document(r.videoProduction).mode === 'LOCAL_IMAGES' &&
+      ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC', 'AUDIO'].includes(step)
+    ) {
+      const asset = this.prepareImage(e, r, script);
+      if (step === 'SCENES')
+        return {
+          mode: 'LOCAL_IMAGES',
+          mediaAssetId: asset.mediaAssetId,
+          contentHash: asset.contentHash,
+        };
+      if (step === 'VIDEO_GENERATION')
+        return {
+          mode: 'LOCAL_IMAGES',
+          generation: 'NOT_REQUESTED',
+          materialization: 'AUTHORIZED_IMAGE',
+        };
+      if (step === 'MEDIA_QC')
+        return {
+          mode: 'LOCAL_IMAGES',
+          reports: [
+            {
+              identity: {
+                mediaAssetId: asset.mediaAssetId,
+                contentHash: asset.contentHash,
+              },
+              result: 'PASS',
+              checks: [
+                'PHYSICAL_SHA256',
+                'PNG_DECODE',
+                'PROCESSING_RIGHTS',
+                'SCRIPT_BINDING',
+              ],
+              motion: 'NOT_APPLICABLE',
+              humanReview: 'PENDING_FINAL_PREVIEW',
+            },
+          ],
+        };
+      if (!done.MEDIA_QC) throw new CampaignError('MEDIA_QC_REQUIRED');
+      const run = this.operations.get(e.run_id);
+      const durationMs = run.projectSnapshot.channel.minDurationSeconds * 1000;
+      const voice = await this.local.automaticAudio(
+        {
+          pipelineRunId: e.run_id,
+          scriptId: String(script.scriptId),
+          scriptContentHash: String(script.contentHash),
+          createdAt: e.scheduled_at,
+        },
+        durationMs,
+      );
+      return {
+        voiceTrackId: voice.voiceTrackId,
+        voiceTrackContentHash: voice.contentHash,
+        durationMilliseconds: voice.durationMilliseconds,
+        cost: { status: 'UNKNOWN', amount: null },
+      };
+    }
     if (r.legacyRecovery && step === 'MEDIA_QC') {
       const verified = await this.recoverLegacy({
         campaignId: e.campaign_id,
@@ -1079,6 +1617,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       )
         throw new CampaignError('CAMPAIGN_COMPOSITION_MISMATCH');
       if (r.videoProduction) {
+        const images = document(r.videoProduction).mode === 'LOCAL_IMAGES';
         const value = document(plan),
           segments = value.segments as Record<string, unknown>[];
         const reports = document(done.MEDIA_QC).reports as {
@@ -1089,7 +1628,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           !Array.isArray(segments) ||
           segments.some(
             (segment) =>
-              segment.movementRequirement !== 'REAL_MOTION_REQUIRED' ||
+              (images
+                ? segment.mediaType !== 'IMAGE' ||
+                  segment.movementRequirement !== 'STATIC_ALLOWED'
+                : segment.movementRequirement !== 'REAL_MOTION_REQUIRED') ||
               !reports.some(
                 (report) =>
                   report.identity.mediaAssetId === segment.mediaAssetId &&
@@ -1118,7 +1660,15 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       if (report.result === 'UNKNOWN')
         throw new CampaignError('QC_INPUT_REQUIRED');
       if (report.result !== 'PASS') throw new CampaignError('QC_FAILED');
-      if (this.captioning)
+      // A local video package has no Instagram publication operation. Its caption
+      // is the already validated editorial text; publication retains its own gates.
+      if (
+        this.captioning &&
+        !(
+          r.videoProduction &&
+          document(r.videoProduction).mode === 'LOCAL_IMAGES'
+        )
+      )
         await this.captioning.ensure(
           e.execution_id,
           await this.captionContext(e, r, { ...done, QC: report }),
@@ -1271,8 +1821,48 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const publication = history
       .filter((h) => h.event_type === 'STEP_STARTED')
       .at(-1);
-    if (publication?.evidence.step === 'PUBLICATION' && this.instagram)
-      return this.instagram.reconcile(e.execution_id);
+    if (publication?.evidence.step === 'PUBLICATION' && this.instagram) {
+      const proof = await this.instagram.reconcile(e.execution_id);
+      if (proof?.verified) return proof;
+      const status = await this.instagram.status?.(e.execution_id);
+      const op = status?.operation;
+      const request = executionRequest(history);
+      if (!request.publication && this.publishing.coordinatePackage) {
+        const pkg = this.coordinatedPackage(e, completedContext(history));
+        if (pkg)
+          request.publication = {
+            packageHash: pkg.contentHash,
+            accountId: pkg.account,
+          };
+      }
+      const handoff = completedContext(history).HANDOFF as
+        Record<string, unknown> | undefined;
+      if (
+        e.status === 'WAITING_RECONCILIATION' &&
+        (this.instagram.configuration?.().mode === 'live' ||
+          completedContext(history).OPERATOR_FLOW === true) &&
+        op?.state === 'UNCERTAIN' &&
+        op.executionMode === this.instagram.configuration?.().mode &&
+        op.publicationFlowVersion === 2 &&
+        op.uncertainStage === 'UPLOAD' &&
+        op.providerStatus === 'FINISHED' &&
+        op.uploadStage === 'UPLOADING' &&
+        op.containerId &&
+        !op.mediaId &&
+        request.publication &&
+        op.packageHash === document(request.publication).packageHash &&
+        op.accountId === document(request.publication).accountId &&
+        op.mediaHash === handoff?.contentHash
+      )
+        return {
+          verified: true,
+          reason: 'META_CONTAINER_FINISHED',
+          operationId: op.operationId,
+          containerId: op.containerId,
+          providerStatus: 'FINISHED',
+        };
+      return null;
+    }
     const lastFailure = history
       .filter((h) => h.event_type === 'STEP_FAILED')
       .at(-1);
@@ -1321,7 +1911,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (
       request.videoProduction &&
       request.mode === 'LOCAL_VALIDATION' &&
-      ['OFFLINE', 'ASSISTED_LOCAL'].includes(
+      ['OFFLINE', 'ASSISTED_LOCAL', 'LOCAL_IMAGES'].includes(
         String(document(request.videoProduction).mode),
       ) &&
       ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'].includes(

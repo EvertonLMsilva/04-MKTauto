@@ -1,0 +1,48 @@
+services:
+  mktauto:
+    image: mktauto:local
+    build: .
+    restart: unless-stopped
+    init: true
+    env_file:
+      - path: .env
+        format: raw
+      - path: ${MKTAUTO_RUNTIME_ENV:-private/kate-mkt/instagram-live/docker-runtime.env}
+    environment:
+      TZ: America/Sao_Paulo
+      CAMPAIGN_SCHEDULER_ENABLED: "true"
+      INSTAGRAM_LIVE_POSTS_ENABLED: "false"
+      INSTAGRAM_SCHEDULER_ENABLED: "false"
+      PROJECT_API_DATABASE: /data/live/kate-mkt-live.sqlite
+      SOCIAL_HISTORY_DATABASE: /data/live/kate-mkt-live.sqlite
+      PORT: "3000"
+    ports:
+      - "127.0.0.1:${MKTAUTO_PORT:-3123}:3000"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - type: bind
+        source: ${MKTAUTO_LIVE_DIR:-./private/kate-mkt/instagram-live}
+        target: /data/live
+        bind:
+          create_host_path: false
+      - ./private/kate-mkt/mvp01-nestjs-20261106/final/media:/data/media:ro
+      - ./private/kate-mkt/mvp02-daily-20261106/render:/data/render
+      - ./private/kate-mkt/mvp02-daily-20261106/voice:/data/voice
+      - ./private/kate-mkt/mvp02-daily-20261106/evidence:/data/evidence
+      - ./private/kate-mkt/instagram-live/docker-kokoro-license.json:/config/docker-kokoro-license.json:ro
+      - ./private/kate-mkt/mvp01-nestjs-20261106/dora-natural.json:/licenses/dora-natural.json:ro
+      - ./private/kate-mkt/campanha-001/voice-improvement/samples-manifest.json:/licenses/samples-manifest.json:ro
+      - ${MKTAUTO_KOKORO_MODELS:-${USERPROFILE}/.kate-tts/kokoro}:/models/kokoro:ro
+      - ${MKTAUTO_ALIGNMENT_MODELS:-D:/04-Projetos/MKTauto-runtime/p77-audio-closure/alignment-model}:/models/alignment:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

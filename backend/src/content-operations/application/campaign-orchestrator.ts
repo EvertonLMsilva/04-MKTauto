@@ -286,6 +286,8 @@ export function completedContext(
   for (const event of history) {
     if (event.event_type === 'STEP_DONE')
       completed[String(event.evidence.step)] = event.evidence.result;
+    else if (event.event_type === 'OPERATOR_REVIEW_PRESENTED')
+      completed.OPERATOR_FLOW = true;
     else if (event.event_type === 'HUMAN_APPROVAL')
       completed.APPROVAL = event.evidence;
     else if (event.event_type === 'COMPOSITION_AUTHORIZED')
@@ -304,6 +306,12 @@ export function completedContext(
       completed.COMPOSITION_REVISION = event.evidence;
     } else if (event.event_type === 'SCRIPT_REVISED') {
       for (const step of narrationDependents) delete completed[step];
+      if (
+        (history[0].evidence.videoProduction as { mode?: string } | undefined)
+          ?.mode === 'LOCAL_IMAGES'
+      )
+        for (const step of ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'])
+          delete completed[step];
       completed.EDITORIAL = { script: event.evidence.script };
     }
   }

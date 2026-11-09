@@ -49,7 +49,7 @@ export async function provisionTtsReadiness(
   try {
     db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000');
     if (
-      ![40, 41, 42].includes(
+      ![40, 41, 42, 43, 44].includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       )
     )

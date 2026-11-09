@@ -171,7 +171,7 @@ describe('preserve both applied 031/032 histories', () => {
             .all()
             .slice(0, historicalVersion),
         ).toEqual(before);
-        expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(42);
+        expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(43);
         expect(db.prepare('SELECT * FROM trend_runs').all()).toEqual(
           dataBefore,
         );

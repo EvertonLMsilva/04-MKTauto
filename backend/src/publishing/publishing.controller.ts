@@ -19,6 +19,10 @@ import {
 } from '@nestjs/common';
 import { PublishingService } from './application/publishing.service.js';
 import { exact } from './domain/manual-distribution-contracts.js';
+import {
+  instagramCaption,
+  facebookCaption,
+} from './domain/social-publication-contracts.js';
 @Controller('publishing')
 export class PublishingController {
   constructor(
@@ -73,7 +77,18 @@ export class PublishingController {
     );
   }
   @Get('packages/:hash') package(@Param('hash') hash: string) {
-    return this.respond(() => this.publishing.package(hash));
+    return this.respond(() => {
+      const value = this.publishing.package(hash);
+      return value
+        ? {
+            ...value,
+            finalCaption:
+              value.platform === 'facebook'
+                ? facebookCaption(value)
+                : instagramCaption(value),
+          }
+        : null;
+    });
   }
   @Post('reviews') review(@Body() value: unknown) {
     return this.command(value, (input, key) =>
@@ -100,6 +115,63 @@ export class PublishingController {
   @Post('results') recordResults(@Body() value: unknown) {
     return this.command(value, (input, key) =>
       this.publishing.recordResults(input, key),
+    );
+  }
+  @Post('executions/:id/commercial-results') recordExecutionResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'execution', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('executions/:id/commercial-results') executionSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'execution', id }),
+    );
+  }
+  @Post('social-operations/:id/commercial-results') recordOperationResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'operation', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('social-operations/:id/commercial-results') operationSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'operation', id }),
+    );
+  }
+  @Post('manual-publications/:id/commercial-results') recordPublicationResults(
+    @Param('id') id: string,
+    @Body() value: unknown,
+  ) {
+    return this.command(value, (input, key) =>
+      this.publishing.recordCommercialResults(
+        { kind: 'publication', id },
+        input,
+        key,
+      ),
+    );
+  }
+  @Get('manual-publications/:id/commercial-results') publicationSummary(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() =>
+      this.publishing.commercialSummary({ kind: 'publication', id }),
     );
   }
   @Get('manual-publications/:id/results') results(@Param('id') id: string) {

@@ -1,3 +1,4 @@
+import { DestinationReservationsRepository } from './destination-reservations.repository.js';
 import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { publicText } from '../domain/manual-distribution-contracts.js';
@@ -19,6 +20,8 @@ const transitions: any = {
   EXPIRED: [],
 };
 const patchFields: any = new Set([
+  'sessionEvidence',
+  'uploadAudit',
   'state',
   'containerId',
   'mediaId',
@@ -175,7 +178,10 @@ export class SocialPublicationRepository {
     if (
       Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
     )
-      new InstagramPublicationRepository(this.db).authorize(operation, at);
+      (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 43
+        ? new DestinationReservationsRepository(this.db)
+        : new InstagramPublicationRepository(this.db)
+      ).authorize(operation, at);
   }
   history(id: string): any[] {
     const operation = this.get(id);
@@ -245,7 +251,7 @@ export class SocialPublicationRepository {
         });
         this.db
           .prepare(
-            'INSERT INTO social_publication_operations VALUES (?,?,?,?,?,?)',
+            'INSERT INTO social_publication_operations(operation_id,package_hash,account_id,request_hash,payload_json,version) VALUES (?,?,?,?,?,?)',
           )
           .run(
             id,
@@ -279,17 +285,45 @@ export class SocialPublicationRepository {
         !allowed.includes(previous.state)
       )
         return { claimed: false, value: previous };
-      const direct: any =
-        previous.uploadStrategy === 'facebook-login-resumable/experimental';
+      const direct: any = [
+        'facebook-login-resumable/experimental',
+        'facebook-reels-local/1',
+      ].includes(previous.uploadStrategy);
       const next: any = patch.state ?? previous.state;
+      const sessionRecovery =
+        previous.network === 'FACEBOOK_REELS' &&
+        previous.state === 'UNCERTAIN' &&
+        previous.uncertainStage === 'CREATE' &&
+        !previous.containerId &&
+        !previous.uploadUri &&
+        previous.uploadStage === undefined &&
+        next === 'PROCESSING' &&
+        patch.uploadStage === 'PENDING' &&
+        patch.sessionEvidence?.source === 'DOCUMENTED_RECOVERY' &&
+        patch.sessionEvidence.originalUrlRecovered === false &&
+        patch.sessionEvidence.videoId === patch.containerId &&
+        patch.sessionEvidence.pageId ===
+          previous.accountId.replace(/^facebook_reels:/, '');
       const directTransition: any =
         direct &&
         ((previous.state === 'PROCESSING' && next === 'UNCERTAIN') ||
-          (previous.state === 'UNCERTAIN' && next === 'READY'));
+          (previous.state === 'UNCERTAIN' && next === 'READY') ||
+          sessionRecovery);
       if (
         Object.keys(patch).some((k: any): any => !patchFields.has(k)) ||
         (!transitions[previous.state]?.includes(next) && !directTransition) ||
-        (direct && next === 'PUBLISHING')
+        (direct &&
+          next === 'PUBLISHING' &&
+          (previous.publicationFlowVersion !== 2 ||
+            previous.state !== 'READY' ||
+            previous.uploadStage !== 'ACKNOWLEDGED' ||
+            previous.providerStatus !== 'FINISHED' ||
+            !previous.uploadUri ||
+            previous.uncertainStage ||
+            previous.requiresReconciliation ||
+            previous.transferEvidence?.operationId !== previous.operationId ||
+            previous.transferEvidence?.containerId !== previous.containerId ||
+            previous.transferEvidence?.contentHash !== previous.mediaHash))
       )
         socialFail('SOCIAL_TRANSITION_INVALID');
       if (
@@ -302,6 +336,7 @@ export class SocialPublicationRepository {
         const stage: any = previous.uploadStage;
         const validStage: any =
           patch.uploadStage === undefined ||
+          sessionRecovery ||
           (patch.uploadStage === 'PENDING' &&
             previous.state === 'CREATING_CONTAINER' &&
             next === 'PROCESSING' &&
@@ -335,9 +370,11 @@ export class SocialPublicationRepository {
         (!direct ||
           previous.uploadUri ||
           typeof patch.uploadUri !== 'string' ||
-          !/^https:\/\/rupload\.facebook\.com\/ig-api-upload\/v\d+\.\d+\/\d{5,64}$/.test(
-            patch.uploadUri,
-          ) ||
+          !(
+            previous.network === 'FACEBOOK_REELS'
+              ? /^https:\/\/rupload\.facebook\.com\/video-upload\/v\d+\.0\/\d{5,64}$/
+              : /^https:\/\/rupload\.facebook\.com\/ig-api-upload\/(?:v\d+\.\d+\/)?\d{5,64}$/
+          ).test(patch.uploadUri) ||
           patch.uploadUri.split('/').at(-1) !==
             (patch.containerId ?? previous.containerId))
       )
@@ -348,6 +385,20 @@ export class SocialPublicationRepository {
           (typeof patch[k] !== 'string' || !/^\d{5,64}$/.test(patch[k]))
         )
           socialFail('SOCIAL_RECEIPT_INVALID');
+      if (
+        previous.network === 'FACEBOOK_REELS' &&
+        previous.containerId &&
+        patch.containerId !== undefined &&
+        patch.containerId !== previous.containerId
+      )
+        socialFail('SOCIAL_SESSION_ID_CONFLICT');
+      if (
+        previous.sessionEvidence &&
+        patch.sessionEvidence &&
+        affiliateHash(previous.sessionEvidence) !==
+          affiliateHash(patch.sessionEvidence)
+      )
+        socialFail('SOCIAL_SESSION_EVIDENCE_IMMUTABLE');
       if (
         patch.errorCode !== undefined &&
         patch.errorCode !== null &&
@@ -374,6 +425,87 @@ export class SocialPublicationRepository {
         !['PUBLISH_ACK', 'CONTAINER_STATUS'].includes(patch.confirmationSource)
       )
         socialFail('SOCIAL_TRANSITION_INVALID');
+      if (patch.uploadAudit !== undefined) {
+        const old = previous.uploadAudit ?? [],
+          audit = patch.uploadAudit;
+        if (
+          previous.network !== 'FACEBOOK_REELS' ||
+          !Array.isArray(audit) ||
+          audit.length !== old.length + 1 ||
+          affiliateHash(audit.slice(0, -1)) !== affiliateHash(old)
+        )
+          socialFail('SOCIAL_AUDIT_INVALID');
+        const e = audit.at(-1),
+          prior = old.at(-1);
+        const keys = [
+          'requestType',
+          'kind',
+          'at',
+          'method',
+          'destination',
+          'payloadSize',
+          'httpStatus',
+          'error',
+          'attemptId',
+          'operationId',
+          'videoId',
+        ];
+        if (
+          !e ||
+          Object.keys(e).some((k) => !keys.includes(k)) ||
+          e.operationId !== previous.operationId ||
+          e.videoId !== previous.containerId ||
+          !/^[a-f0-9-]{36}$/.test(e.attemptId) ||
+          !Number.isFinite(Date.parse(e.at)) ||
+          e.method !== 'POST' ||
+          e.requestType !== 'UPLOAD' ||
+          e.destination !== previous.uploadUri ||
+          !Number.isSafeInteger(e.payloadSize) ||
+          e.payloadSize < 1 ||
+          (e.kind === 'HTTP_RESPONSE' && !Number.isInteger(e.httpStatus)) ||
+          (e.httpStatus !== undefined &&
+            (!Number.isInteger(e.httpStatus) ||
+              e.httpStatus < 100 ||
+              e.httpStatus > 599)) ||
+          (e.error !== undefined &&
+            ![
+              'TIMEOUT',
+              'NETWORK',
+              'INVALID_RESPONSE',
+              'HTTP_REJECTED',
+              'UNCONFIRMED',
+            ].includes(e.error)) ||
+          ![
+            'ATTEMPT_STARTED',
+            'HTTP_RESPONSE',
+            'RESPONSE_UNKNOWN',
+            'OBSERVED_FAILURE',
+            'TRANSFER_CONFIRMED',
+          ].includes(e.kind) ||
+          (e.kind === 'ATTEMPT_STARTED'
+            ? old.length !== 0
+            : !prior ||
+              prior.attemptId !== e.attemptId ||
+              e.payloadSize !== prior.payloadSize ||
+              Date.parse(e.at) < Date.parse(prior.at) ||
+              Date.parse(e.at) < Date.parse(old[0].at) ||
+              !(prior.kind === 'ATTEMPT_STARTED'
+                ? ['HTTP_RESPONSE', 'RESPONSE_UNKNOWN'].includes(e.kind)
+                : prior.kind === 'HTTP_RESPONSE' &&
+                  [
+                    'RESPONSE_UNKNOWN',
+                    'OBSERVED_FAILURE',
+                    'TRANSFER_CONFIRMED',
+                  ].includes(e.kind))) ||
+          (e.kind === 'TRANSFER_CONFIRMED' &&
+            (prior?.kind !== 'HTTP_RESPONSE' ||
+              !Number.isInteger(prior.httpStatus) ||
+              prior.httpStatus < 200 ||
+              prior.httpStatus > 299)) ||
+          previous.uploadStage !== 'UPLOADING'
+        )
+          socialFail('SOCIAL_AUDIT_INVALID');
+      }
       if (patch.transferEvidence !== undefined) {
         const { evidenceHash, ...proof } = patch.transferEvidence ?? {};
         if (
@@ -402,9 +534,12 @@ export class SocialPublicationRepository {
           next !== 'PUBLISHED' ||
           r?.mediaId !== previous.mediaId ||
           Object.keys(r).sort().join(',') !== 'mediaId,permalink,publishedAt' ||
-          !/^https:\/\/(www\.)?instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+\/$/.test(
-            r.permalink,
-          ) ||
+          !(previous.network === 'FACEBOOK_REELS'
+            ? r.permalink === null ||
+              /^https:\/\/www\.facebook\.com\/reel\/\d+\/?$/.test(r.permalink)
+            : /^https:\/\/(www\.)?instagram\.com\/(reel|p)\/[A-Za-z0-9_-]+\/$/.test(
+                r.permalink,
+              )) ||
           !Number.isFinite(Date.parse(r.publishedAt))
         )
           socialFail('SOCIAL_RECEIPT_INVALID');

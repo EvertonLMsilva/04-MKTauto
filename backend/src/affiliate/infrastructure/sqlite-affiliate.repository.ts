@@ -16,6 +16,8 @@ import type {
   AffiliateBriefing,
 } from '../domain/affiliate-contracts.js';
 import { AffiliateRepositoryError } from '../domain/affiliate.errors.js';
+import { ContractValidationError } from '../domain/affiliate.errors.js';
+import type { AffiliateCatalogCandidate } from '../domain/affiliate-catalog.js';
 import type {
   AffiliateRepository,
   CreateBriefingInput,
@@ -37,7 +39,7 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40, 41, 42].includes(
+        ![39, 40, 41, 42, 43, 44].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=
@@ -64,6 +66,39 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
   }
   close() {
     this.db.close();
+  }
+  catalogCandidates(projectId: string): AffiliateCatalogCandidate[] {
+    affiliateIdentifier(projectId, 'projectId');
+    const rows = this.db
+      .prepare(
+        `SELECT c.campaign_id,c.revision FROM affiliate_campaign_revisions c
+      WHERE c.project_id=? AND c.revision=(SELECT MAX(n.revision) FROM affiliate_campaign_revisions n WHERE n.campaign_id=c.campaign_id)
+      AND c.product_revision=(SELECT MAX(p.revision) FROM affiliate_product_revisions p WHERE p.product_id=c.product_id)
+      ORDER BY c.product_id,c.product_revision,c.campaign_id`,
+      )
+      .all(projectId);
+    const candidates = new Map<string, AffiliateCatalogCandidate>();
+    for (const row of rows) {
+      try {
+        const campaign = this.getCampaign(
+          String(row.campaign_id),
+          Number(row.revision),
+        )!;
+        const product = this.getProduct(
+          campaign.productId,
+          campaign.productRevision,
+        )!;
+        if (!candidates.has(product.productId))
+          candidates.set(product.productId, { campaign, product });
+      } catch (error) {
+        if (!(
+          error instanceof ContractValidationError ||
+          error instanceof AffiliateRepositoryError
+        ))
+          throw error;
+      }
+    }
+    return [...candidates.values()];
   }
   registerProduct(value: unknown, key: string) {
     const product = validateAffiliateProduct(value);
@@ -190,6 +225,59 @@ export class SqliteAffiliateRepository implements AffiliateRepository {
         JSON.stringify(briefing),
       );
     return briefing;
+  }
+
+  createCatalogBriefing(
+    value: CreateBriefingInput,
+    key: string,
+    projectExists: boolean,
+    expectedHash: string,
+  ) {
+    validateBriefingInput(value);
+    return this.command('BRIEFING', { ...value, expectedHash }, key, () => {
+      const briefing = this.storeBriefing(value, projectExists);
+      if (briefing.contentHash !== expectedHash)
+        throw failure('AFFILIATE_HASH_MISMATCH', 'briefingId');
+      if (
+        Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
+      ) {
+        const row = this.db
+          .prepare(
+            `SELECT source_id,revision,briefing_id FROM affiliate_campaign_sources_v1
+          WHERE campaign_id=? AND campaign_revision=? ORDER BY revision DESC LIMIT 1`,
+          )
+          .get(value.campaignId, value.campaignRevision);
+        if (row && row.briefing_id !== briefing.briefingId) {
+          const source = this.getCampaignSource(
+            String(row.source_id),
+            Number(row.revision),
+          )!;
+          // Existing provenance may be rebound only to a new immutable briefing of
+          // the same product/offer. No discovery, verification or external effect.
+          const next = validateAffiliateCampaignSource({
+            ...source,
+            revision: source.revision + 1,
+            briefingId: briefing.briefingId,
+          });
+          this.db
+            .prepare(
+              'INSERT INTO affiliate_campaign_sources_v1 VALUES(?,?,?,?,?,?,?,?,?)',
+            )
+            .run(
+              next.sourceId,
+              next.revision,
+              next.campaignId,
+              next.campaignRevision,
+              next.productId,
+              next.productRevision,
+              next.briefingId,
+              affiliateHash(next),
+              JSON.stringify(next),
+            );
+        }
+      }
+      return briefing;
+    });
   }
 
   getBriefing(id: string): AffiliateBriefing | null {

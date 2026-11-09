@@ -129,7 +129,7 @@ test('authorized local media produces QC/preview and exact human approved handof
       research,
       editorial,
       new FakeEditorialProvider(),
-      { getScript: () => f.script },
+      { getScript: () => f.script, listScripts: () => [f.script] },
       new LocalFlowService(f.flow),
       media,
       finance,

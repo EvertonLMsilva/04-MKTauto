@@ -12,6 +12,19 @@ export function adaptLocalNarration(
   original: string,
   durationMs: number,
 ): string {
+  return adaptNarration(original, durationMs, false);
+}
+export function adaptKokoroNarration(
+  original: string,
+  durationMs: number,
+): string {
+  return adaptNarration(original, durationMs, true);
+}
+function adaptNarration(
+  original: string,
+  durationMs: number,
+  retainParagraphs: boolean,
+): string {
   if (
     typeof original !== 'string' ||
     !original.trim() ||
@@ -21,18 +34,23 @@ export function adaptLocalNarration(
     durationMs > 60000
   )
     localFail('NARRATION_DURATION_REQUIRED');
-  const text = original.trim().replace(/\s+/g, ' ');
-  const sentences = text.split(/(?<=[.!?])\s+/u);
+  const paragraphs = retainParagraphs
+    ? original.trim().replace(/\r\n?/g, '\n').split(/\n\s*\n+/u)
+    : [original.trim()];
   const seen = new Set<string>();
-  const narration = sentences
-    .map((s) => s.trim())
-    .filter((s) => {
-      if (s.length < 15) return true;
-      if (seen.has(s)) return false;
-      seen.add(s);
-      return true;
-    })
-    .join(' ');
+  const narration = paragraphs
+    .map((paragraph) => paragraph.replace(/\s+/g, ' ')
+      .split(/(?<=[.!?])\s+/u)
+      .map((s) => s.trim())
+      .filter((s) => {
+        if (s.length < 15) return true;
+        if (seen.has(s)) return false;
+        seen.add(s);
+        return true;
+      })
+      .join(' '))
+    .filter(Boolean)
+    .join(retainParagraphs ? '\n\n' : ' ');
   // Never infer a product claim, delete a qualifier or rewrite an approved claim.
   // If literal deduplication is insufficient, human editorial review is necessary.
   if (
@@ -60,7 +78,7 @@ export type LocalSpeechEvidence = {
   narration: string;
   targetDurationMs: number;
   speechDurationMs: number;
-  adaptation: 'literal-deduplication/1';
+  adaptation: 'literal-deduplication/1' | 'paragraph-preserving-deduplication/2';
 };
 export class LocalPiperTts {
   constructor(
@@ -86,19 +104,67 @@ export class LocalPiperTts {
     if (digest(bytes) !== expected) localFail('LOCAL_TTS_LICENSE_REQUIRED');
     return bytes;
   }
-  configuration() {
+  configuration(expectedHash?: string) {
     if (!this.env.LOCAL_TTS_MANIFEST || !this.env.LOCAL_TTS_MANIFEST_SHA256)
       localFail('LOCAL_TTS_CONFIGURATION_REQUIRED');
     try {
+      let manifestPath = this.env.LOCAL_TTS_MANIFEST;
+      let manifestHash = this.env.LOCAL_TTS_MANIFEST_SHA256;
+      if (expectedHash !== undefined) {
+        if (!/^[a-f0-9]{64}$/.test(expectedHash))
+          localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        if (expectedHash !== manifestHash) {
+          // Explicit original manifests only; the persisted synthesis hash pins
+          // their exact bytes. All original dependencies are verified below.
+          const history: unknown = JSON.parse(
+            this.env.LOCAL_TTS_HISTORICAL_MANIFESTS ?? '{}',
+          );
+          if (
+            !history || typeof history !== 'object' || Array.isArray(history) ||
+            Object.keys(history).length > 32 ||
+            !Object.hasOwn(history, expectedHash)
+          ) localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          const original: unknown = (history as Record<string, unknown>)[expectedHash];
+          if (typeof original !== 'string' || !isAbsolute(original))
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          manifestPath = original;
+          manifestHash = expectedHash;
+        }
+      }
       const bytes = this.file(
-        this.env.LOCAL_TTS_MANIFEST,
-        this.env.LOCAL_TTS_MANIFEST_SHA256,
+        manifestPath,
+        manifestHash,
         65536,
       );
       const m = JSON.parse(bytes.toString());
+      let historicalFiles: Record<string, string> | undefined;
+      if (
+        expectedHash !== undefined &&
+        expectedHash !== this.env.LOCAL_TTS_MANIFEST_SHA256 &&
+        this.env.LOCAL_TTS_HISTORICAL_FILES
+      ) {
+        const locations: unknown = JSON.parse(this.env.LOCAL_TTS_HISTORICAL_FILES);
+        if (
+          !locations || typeof locations !== 'object' || Array.isArray(locations) ||
+          Object.keys(locations).length > 64 ||
+          Object.entries(locations).some(([hash, location]) =>
+            !/^[a-f0-9]{64}$/.test(hash) || typeof location !== 'string' || !isAbsolute(location))
+        ) localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        historicalFiles = locations as Record<string, string>;
+      }
+      // Relocate original bytes by their pinned hash, never by substituting a
+      // current executable/model. New synthesis never uses historical locations.
+      const readPinned = (location: unknown, hash: unknown, max: number) => {
+        if (historicalFiles) {
+          if (typeof hash !== 'string' || !Object.hasOwn(historicalFiles, hash))
+            localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          location = historicalFiles[hash];
+        }
+        return this.file(location, hash, max);
+      };
       if (
         m.schemaVersion !== 'local-tts-license/1' ||
-        !['piper', 'espeak-ng'].includes(m.engine) ||
+        !['piper', 'espeak-ng', 'kokoro'].includes(m.engine) ||
         m.language !== 'pt-BR' ||
         typeof m.modelId !== 'string' ||
         !/^[a-zA-Z0-9_.:/-]{3,150}$/.test(m.modelId) ||
@@ -123,10 +189,10 @@ export class LocalPiperTts {
         !/^https:\/\/[^\s@]+$/.test(m.licenseSource)
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
-      this.file(m.modelPath, m.modelSha256, 536870912);
+      readPinned(m.modelPath, m.modelSha256, 536870912);
       if (m.engine === 'espeak-ng') {
         const inventory = JSON.parse(
-          this.file(m.modelPath, m.modelSha256, 1048576).toString(),
+          readPinned(m.modelPath, m.modelSha256, 1048576).toString(),
         );
         if (
           m.modelId !== 'espeak-ng/pt-br' ||
@@ -159,9 +225,9 @@ export class LocalPiperTts {
             /[:\\]/.test(name)
           )
             localFail('LOCAL_TTS_LICENSE_REQUIRED');
-          this.file(join(m.dataRoot, name), hash, 16777216);
+          readPinned(join(m.dataRoot, name), hash, 16777216);
         }
-        this.file(
+        readPinned(
           fileURLToPath(
             new URL('../../../python/tts/espeak.py', import.meta.url),
           ),
@@ -170,15 +236,40 @@ export class LocalPiperTts {
         );
       }
       const metadata = JSON.parse(
-        this.file(m.configPath, m.configSha256, 1048576).toString(),
+        readPinned(m.configPath, m.configSha256, 1048576).toString(),
       );
+      if (m.engine === 'kokoro') {
+        if (
+          m.modelId !== 'kokoro/pf_dora' ||
+          m.license !== 'Apache-2.0' ||
+          metadata.voice !== 'pf_dora' ||
+          metadata.speed !== 1 ||
+          metadata.sentencePause !== 0.25 ||
+          metadata.language?.code !== 'pt_BR'
+        )
+          localFail('LOCAL_TTS_LICENSE_REQUIRED');
+        readPinned(m.voicesPath, m.voicesSha256, 536870912);
+        readPinned(
+          fileURLToPath(
+            new URL('../../../python/tts/kokoro.py', import.meta.url),
+          ),
+          m.adapterSha256,
+          65536,
+        );
+      }
       if (
         metadata.language?.code !== 'pt_BR' ||
-        !(m.engine === 'espeak-ng'
-          ? ['pt-br', 'pt-br+m1', 'pt-br+m3', 'pt-br+f2', 'pt-br+f3'].includes(
-              metadata.espeak?.voice,
-            )
-          : metadata.espeak?.voice === 'pt-br') ||
+        !(m.engine === 'kokoro'
+          ? metadata.voice === 'pf_dora'
+          : m.engine === 'espeak-ng'
+            ? [
+                'pt-br',
+                'pt-br+m1',
+                'pt-br+m3',
+                'pt-br+f2',
+                'pt-br+f3',
+              ].includes(metadata.espeak?.voice)
+            : metadata.espeak?.voice === 'pt-br') ||
         /edresson|ryan/i.test(metadata.dataset ?? '')
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
@@ -186,7 +277,7 @@ export class LocalPiperTts {
       if (m.engine === 'espeak-ng' && metadata.espeak.voice.includes('+')) {
         const variant = `espeak-ng-data/voices/!v/${metadata.espeak.voice.split('+')[1]}`;
         const inventory = JSON.parse(
-          this.file(m.modelPath, m.modelSha256, 1048576).toString(),
+          readPinned(m.modelPath, m.modelSha256, 1048576).toString(),
         );
         if (!inventory.files[variant]) localFail('LOCAL_TTS_LICENSE_REQUIRED');
       }
@@ -202,12 +293,12 @@ export class LocalPiperTts {
         licenseURL.hash
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
-      this.file(m.executablePath, m.executableSha256, 536870912);
-      this.file(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
+      readPinned(m.executablePath, m.executableSha256, 536870912);
+      readPinned(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
       return {
         ...m,
-        nativeVoice: metadata.espeak.voice,
-        nativeRate: metadata.espeak.rate ?? 150,
+        nativeVoice: metadata.espeak?.voice ?? metadata.voice,
+        nativeRate: metadata.espeak?.rate ?? 150,
         configurationHash: digest(bytes),
       };
     } catch (error) {
@@ -251,7 +342,9 @@ export class LocalPiperTts {
     durationMs: number,
   ): Promise<{ bytes: Buffer; evidence: LocalSpeechEvidence }> {
     const m = this.preflight();
-    const narration = adaptLocalNarration(original, durationMs);
+    const narration = m.engine === 'kokoro'
+      ? adaptKokoroNarration(original, durationMs)
+      : adaptLocalNarration(original, durationMs);
     const root = await mkdtemp(join(tmpdir(), 'mktauto-local-tts-'));
     const raw = join(root, 'raw.wav'),
       speech = join(root, 'speech.wav'),
@@ -264,25 +357,35 @@ export class LocalPiperTts {
     try {
       await this.runner(
         m.executablePath,
-        m.engine === 'espeak-ng'
+        m.engine === 'kokoro'
           ? [
               '-B',
               fileURLToPath(
-                new URL('../../../python/tts/espeak.py', import.meta.url),
+                new URL('../../../python/tts/kokoro.py', import.meta.url),
               ),
-              m.dataRoot,
-              raw,
-              m.nativeVoice,
-              String(m.nativeRate),
-            ]
-          : [
-              '--model',
               m.modelPath,
-              '--config',
-              m.configPath,
-              '--output_file',
+              m.voicesPath,
               raw,
-            ],
+            ]
+          : m.engine === 'espeak-ng'
+            ? [
+                '-B',
+                fileURLToPath(
+                  new URL('../../../python/tts/espeak.py', import.meta.url),
+                ),
+                m.dataRoot,
+                raw,
+                m.nativeVoice,
+                String(m.nativeRate),
+              ]
+            : [
+                '--model',
+                m.modelPath,
+                '--config',
+                m.configPath,
+                '--output_file',
+                raw,
+              ],
         { ...options, outputPath: raw, stdin: narration + '\n' },
       );
       await this.runner(
@@ -349,7 +452,9 @@ export class LocalPiperTts {
         narration,
         targetDurationMs: durationMs,
         speechDurationMs,
-        adaptation: 'literal-deduplication/1',
+        adaptation: m.engine === 'kokoro'
+          ? 'paragraph-preserving-deduplication/2'
+          : 'literal-deduplication/1',
       };
       return { bytes, evidence };
     } catch (error) {

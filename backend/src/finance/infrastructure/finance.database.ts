@@ -1,3 +1,4 @@
+import { FINANCE_SCHEMA_VERSIONS } from './finance-schema-compatibility.js';
 import { DatabaseSync } from 'node:sqlite';
 import { isAbsolute } from 'node:path';
 import { createHash } from 'node:crypto';
@@ -50,7 +51,7 @@ export class FinanceDatabase {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40, 41, 42].includes(
+        !FINANCE_SCHEMA_VERSIONS.includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=

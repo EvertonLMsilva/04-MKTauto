@@ -49,6 +49,8 @@ export interface ProductBody {
   attributes: AffiliateAttribute[];
   media: AffiliateMedia[];
   evidence: AffiliateEvidence[];
+  status?: 'ACTIVE' | 'ARCHIVED';
+  localImage?: import('../../media/application/local-flow.port.js').LocalImageSource;
 }
 export type AffiliateProduct = ProductBody &
   (
@@ -175,7 +177,11 @@ export function validateAffiliateProduct(value: unknown): AffiliateProduct {
   return immutable(value) as AffiliateProduct;
 }
 function checkProduct(value: unknown, check: Check) {
-  check(() => exact(value, PRODUCT_FIELDS, 'product', check));
+  const fields = [...PRODUCT_FIELDS];
+  for (const field of ['status', 'localImage'])
+    if (value && typeof value === 'object' && Object.hasOwn(value, field))
+      fields.push(field);
+  check(() => exact(value, fields, 'product', check));
   if (!value || typeof value !== 'object' || Array.isArray(value)) return;
   const product = value as Record<string, unknown>;
   const isV2 = product.schemaVersion === AFFILIATE_PRODUCT_V2_VERSION;
@@ -184,6 +190,13 @@ function checkProduct(value: unknown, check: Check) {
   check(() => affiliateIdentifier(product.productId, 'productId'));
   check(() => revision(product.revision, 'revision'));
   check(() => text(product.name, 'name'));
+  if (
+    Object.hasOwn(product, 'status') &&
+    !['ACTIVE', 'ARCHIVED'].includes(String(product.status))
+  )
+    check(() => fail('INVALID_AFFILIATE_PRODUCT_STATUS', 'status'));
+  if (Object.hasOwn(product, 'localImage'))
+    check(() => checkLocalImage(product.localImage));
   if (!isV2) check(() => text(product.brand, 'brand'));
   const evidence = validateEvidence(product.evidence, check);
   if (isV2) check(() => validateBrand(product.brand, evidence, check));
@@ -203,6 +216,44 @@ function checkProduct(value: unknown, check: Check) {
         `media.${index}`,
       );
     });
+}
+function checkLocalImage(value: unknown) {
+  exact(
+    value,
+    ['mediaReference', 'contentHash', 'origin', 'provider', 'rights'],
+    'localImage',
+  );
+  text(value.mediaReference, 'mediaReference');
+  if (
+    typeof value.contentHash !== 'string' ||
+    !/^[a-f0-9]{64}$/.test(value.contentHash) ||
+    ![
+      'OPERATOR_OWNED',
+      'AUTHORIZED_THIRD_PARTY',
+      'PROVIDER_GENERATED',
+      'PROVIDER_LICENSED',
+    ].includes(String(value.origin))
+  )
+    fail('INVALID_AFFILIATE_MEDIA_SOURCE', 'localImage');
+  if (value.provider !== null) text(value.provider, 'provider');
+  if (
+    String(value.origin).startsWith('PROVIDER_') !==
+    (value.provider !== null)
+  )
+    fail('INVALID_AFFILIATE_MEDIA_SOURCE', 'provider');
+  exact(
+    value.rights,
+    ['usageBasis', 'commercialUseAllowed', 'evidence'],
+    'rights',
+  );
+  if (
+    !['OWNED', 'LICENSED', 'EXPLICIT_PERMISSION', 'PROVIDER_TERMS'].includes(
+      String(value.rights.usageBasis),
+    ) ||
+    typeof value.rights.commercialUseAllowed !== 'boolean'
+  )
+    fail('INVALID_AFFILIATE_MEDIA_SOURCE', 'rights');
+  validateEvidence(value.rights.evidence);
 }
 export function affiliateBrandName(product?: AffiliateProduct | null) {
   return product?.schemaVersion === AFFILIATE_PRODUCT_V2_VERSION

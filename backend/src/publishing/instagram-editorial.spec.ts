@@ -9,6 +9,7 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { captionText } from './domain/manual-distribution-contracts.js';
+import { instagramCaption } from './domain/social-publication-contracts.js';
 const context: any = {
   briefing: {
     productName: 'Travesseiro anatômico',
@@ -36,13 +37,59 @@ const context: any = {
 };
 it('grounds conversion copy in safe documented facts and validates the complete Instagram envelope', () => {
   const c = buildCaption(context);
-  expect(c.text).toContain('Publicidade');
+  expect(c.text).not.toContain(context.briefing.disclosure);
   expect(c.text).toContain('Material: Espuma');
   expect(c.text).not.toContain('Cura');
   expect(c.envelope).toContain(context.briefing.affiliateUrl);
   expect(c.model).toBeNull();
   expect(c.inferencePerformed).toBe(false);
   expect(c.evidenceRefs).toContain('spec_1');
+});
+it('accepts the authorized organizers product and preserves its illustrative-scene disclosure', () => {
+  const caption = buildCaption({
+    ...context,
+    briefing: {
+      ...context.briefing,
+      productName: 'Kit 7 e Kit 14 Organizadores Multiuso',
+      disclosure: 'Publicidade · Cena ilustrativa · Link de afiliado',
+    },
+  });
+  expect(caption.text).toContain('Organizadores Multiuso');
+  expect(caption.envelope).toContain('Cena ilustrativa');
+});
+it('presents grounded seller facts without technical keys or a manufacturer claim', () => {
+  const briefing = {
+    ...context.briefing,
+    productName: 'Kit 7 e Kit 14 Organizadores Multiuso',
+    disclosure: 'Publicidade · Cena ilustrativa · Link de afiliado',
+    cta: 'Confira os detalhes no link de afiliado!',
+    affiliateUrl: 'https://s.shopee.com.br/80DP2wpxVD',
+    attributes: [
+      { name: 'loja_declarada', value: 'MULTIORIENTAL', evidenceRef: 'spec_1' },
+      { name: 'material_declarado', value: 'plástico', evidenceRef: 'spec_1' },
+      { name: 'organizacao_declarada', value: 'modular e compactável', evidenceRef: 'spec_1' },
+      { name: 'variantes_declaradas', value: 'kits de 7 ou 14 peças', evidenceRef: 'spec_1' },
+    ],
+  };
+  const caption = buildCaption({ ...context, briefing });
+  expect(caption.text).toBe([
+    'Conheça os kits de 7 ou 14 organizadores multiuso anunciados pela loja MULTIORIENTAL.',
+    'Segundo a descrição do vendedor, são de plástico, com organização modular e compactável.',
+    '#organizadores #multiuso',
+  ].join('\n\n'));
+  expect(caption.envelope).toBe([
+    caption.text, briefing.cta, briefing.disclosure, briefing.affiliateUrl,
+  ].join('\n\n'));
+  expect(caption.text).not.toMatch(/loja_declarada|material_declarado|organizacao_declarada|marca|fabricante/u);
+  for (const value of [briefing.cta, briefing.disclosure, briefing.affiliateUrl])
+    expect(caption.envelope.split(value)).toHaveLength(2);
+  expect(caption.evidenceRefs).toEqual(['spec_1', 'spec_1', 'spec_1', 'spec_1']);
+  expect(validateCaptionEdit(caption.text, caption)).toBe(caption.text);
+  const incomplete = buildCaption({ ...context, briefing: {
+    ...briefing,
+    attributes: briefing.attributes.filter((a: { name: string }) => a.name !== 'variantes_declaradas'),
+  } });
+  expect(incomplete.text).not.toMatch(/loja_declarada|material_declarado|organizacao_declarada/u);
 });
 it.each([
   'Cura todas as dores!',
@@ -91,6 +138,16 @@ it('allows caption paragraphs while retaining control-character and secret prote
     'Produto\nhttps://example.test/?token=private',
   ])
     expect(() => captionText(text)).toThrow();
+});
+it('keeps legitimate repetitions in the body when assembling the final caption', () => {
+  const final = instagramCaption({
+    caption: 'Produto autorizado. Produto autorizado.',
+    cta: context.briefing.cta,
+    disclosure: context.briefing.disclosure,
+    link: context.briefing.affiliateUrl,
+  });
+  expect(final).toContain('Produto autorizado. Produto autorizado.');
+  expect(final.split(context.briefing.cta)).toHaveLength(2);
 });
 it('persists versions, preserves immutable history, rejects stale changes and resumes idempotently', () => {
   const root = mkdtempSync(join(tmpdir(), 'ig-editorial-')),

@@ -35,13 +35,18 @@ import {
   documentBytes,
   LocalEvidenceStorage,
 } from './local-evidence-storage.js';
-import { inspectMvpWav } from './physical-media-inspection.js';
+import { inspectMvpWav, inspectMvpPng } from './physical-media-inspection.js';
 import { LocalVideoStorage, hashFile } from './local-video-storage.js';
 import { runProcess, type ProcessRunner } from './ffmpeg-process.js';
-import type { LocalAudiovisualPort } from '../application/local-flow.port.js';
+import type {
+  LocalAudiovisualPort,
+  LocalMediaScope,
+  LocalImageSource,
+} from '../application/local-flow.port.js';
 import {
   LocalPiperTts,
   adaptLocalNarration,
+  adaptKokoroNarration,
   type LocalSpeechEvidence,
 } from './local-piper-tts.js';
 type SubtitleDocument = {
@@ -54,7 +59,132 @@ type SubtitleDocument = {
   srtHash: string;
   assHash: string;
 };
+export function publicationSourceReview(
+  asset: NonNullable<ReturnType<MediaService['get']>>,
+  media: Pick<MediaService, 'temporalReview'>,
+  root: string,
+): { reviewHash: string; sourceKind: 'STATIC_IMAGE' | 'TEMPORAL_VIDEO' } {
+  if (!asset.rights.commercialUseAllowed)
+    localFail('PUBLICATION_RIGHTS_REQUIRED');
+  if (asset.assetType === 'VIDEO') {
+    const review = media.temporalReview(asset.mediaAssetId) as {
+      result: string;
+      contentHash: string;
+    } | null;
+    if (review?.result !== 'PASS')
+      localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+    new LocalEvidenceStorage(resolve(root)).read(
+      asset.contentHash,
+      asset.technicalProperties.format,
+      33554432,
+    );
+    return { reviewHash: review.contentHash, sourceKind: 'TEMPORAL_VIDEO' };
+  }
+  if (asset.assetType !== 'IMAGE')
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  const properties = asset.technicalProperties;
+  if (
+    asset.mediaReference !== `media:sha256_${asset.contentHash}` ||
+    properties.format !== 'png' ||
+    properties.mimeType !== 'image/png' ||
+    !Number.isSafeInteger(properties.widthPixels) ||
+    !Number.isSafeInteger(properties.heightPixels) ||
+    properties.durationMilliseconds !== null ||
+    properties.hasAudio !== null
+  )
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  const bytes = new LocalEvidenceStorage(resolve(root)).read(
+    asset.contentHash,
+    'png',
+    33554432,
+  );
+  let inspected: ReturnType<typeof inspectMvpPng>;
+  try {
+    inspected = inspectMvpPng(bytes, {
+      widthPixels: properties.widthPixels,
+      heightPixels: properties.heightPixels,
+    });
+  } catch {
+    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  }
+  return {
+    reviewHash: adaptationHash({
+      schemaVersion: 'static-image-publication-inspection/1.0.0',
+      mediaAssetId: asset.mediaAssetId,
+      mediaReference: asset.mediaReference,
+      contentHash: asset.contentHash,
+      technicalProperties: inspected,
+    }),
+    sourceKind: 'STATIC_IMAGE',
+  };
+}
 export class LocalFlowRuntime {
+  prepareImage(scope: LocalMediaScope, source: LocalImageSource) {
+    const script = this.session((r) => r.getScript(scope.scriptId));
+    if (
+      !script ||
+      script.pipelineRunId !== scope.pipelineRunId ||
+      script.contentHash !== scope.scriptContentHash ||
+      script.visualDirections.length !== 1
+    )
+      localFail('LOCAL_SCRIPT_BINDING_INVALID');
+    assertMediaProcessingRights(
+      source.rights.evidence,
+      {
+        mediaRef: source.mediaReference,
+        contentHash: source.contentHash,
+      },
+      null,
+    );
+    if (!this.env.FFMPEG_MEDIA_ROOT)
+      localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
+    const bytes = new LocalEvidenceStorage(
+      resolve(this.env.FFMPEG_MEDIA_ROOT!),
+    ).read(source.contentHash, 'png', 20971520);
+    const technical = inspectMvpPng(bytes);
+    // A physical alias preserves the authorized bytes. Original identity and
+    // authorization remain in the immutable campaign request.
+    const mediaReference = `media:sha256_${source.contentHash}`;
+    const rights = {
+      ...source.rights,
+      evidence: source.rights.evidence?.map((e) => ({
+        ...e,
+        ...(e.mediaAuthorization
+          ? {
+              mediaAuthorization: {
+                ...e.mediaAuthorization,
+                mediaRef: mediaReference,
+              },
+            }
+          : {}),
+      })),
+    };
+    return this.media.register({
+      schemaVersion: 'media-asset/2.0.0',
+      mediaAssetId: `image_auto:${adaptationHash({ scope, source })}`,
+      pipelineRunId: scope.pipelineRunId,
+      projectId: script.projectId,
+      projectVersion: script.projectVersion,
+      scriptId: scope.scriptId,
+      scriptContentHash: scope.scriptContentHash,
+      visualDirectionPosition: script.visualDirections[0].position,
+      assetType: 'IMAGE',
+      technicalProperties: {
+        ...technical,
+        mimeType: 'image/png',
+        hasAudio: null,
+      },
+      contentHash: source.contentHash,
+      mediaReference,
+      origin: source.origin,
+      provider: source.provider,
+      rights,
+      source: null,
+      createdAt: scope.createdAt,
+      revision: 1,
+      supersedesMediaAssetId: null,
+    });
+  }
   audioBytes(
     runId: string,
     scriptId: string,
@@ -286,7 +416,11 @@ export class LocalFlowRuntime {
           storageReference: `object:voice/sha256/${hash}`,
           origin: 'SYNTHETIC_TTS',
           provider:
-            config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
+            config.engine === 'kokoro'
+              ? 'local_kokoro'
+              : config.engine === 'espeak-ng'
+                ? 'local_espeak_ng'
+                : 'local_piper',
           rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
           createdAt: scope.createdAt,
           revision: 1,
@@ -359,7 +493,9 @@ export class LocalFlowRuntime {
     }
     if (
       voice.origin !== 'SYNTHETIC_TTS' ||
-      !['local_piper', 'local_espeak_ng'].includes(voice.provider)
+      !['local_piper', 'local_espeak_ng', 'local_kokoro'].includes(
+        voice.provider,
+      )
     )
       return script.fullNarration;
     if (voice.rights.usageBasis !== 'LICENSED')
@@ -370,26 +506,43 @@ export class LocalFlowRuntime {
       this.files(),
     );
     const evidence = doc.synthesis,
-      config = new LocalPiperTts(this.env, this.runner).configuration();
+      config = new LocalPiperTts(this.env, this.runner).configuration(
+        evidence?.configurationHash,
+      );
     if (
       !evidence ||
       evidence.schemaVersion !== 'local-tts-evidence/1' ||
       evidence.configurationHash !== config.configurationHash ||
       voice.provider !==
-        (config.engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper') ||
+        (config.engine === 'kokoro'
+          ? 'local_kokoro'
+          : config.engine === 'espeak-ng'
+            ? 'local_espeak_ng'
+            : 'local_piper') ||
       evidence.modelSha256 !== config.modelSha256 ||
       evidence.licenseEvidenceSha256 !== config.licenseEvidenceSha256 ||
       evidence.modelId !== config.modelId ||
       evidence.modelVersion !== config.modelVersion ||
+      evidence.executableSha256 !== config.executableSha256 ||
       evidence.license !== config.license ||
+      evidence.licenseSource !== config.licenseSource ||
+      evidence.attribution !== config.attribution ||
+      evidence.approvedBy !== config.approvedBy ||
+      evidence.approvedAt !== config.approvedAt ||
       evidence.targetDurationMs !== voice.durationMilliseconds ||
       evidence.speechDurationMs > evidence.targetDurationMs ||
-      evidence.adaptation !== 'literal-deduplication/1' ||
+      !['literal-deduplication/1', 'paragraph-preserving-deduplication/2']
+        .includes(evidence.adaptation) ||
       evidence.narration !==
-        adaptLocalNarration(script.fullNarration, voice.durationMilliseconds)
+        (evidence.adaptation === 'paragraph-preserving-deduplication/2'
+          ? adaptKokoroNarration(script.fullNarration, voice.durationMilliseconds)
+          : adaptLocalNarration(script.fullNarration, voice.durationMilliseconds))
     )
       localFail('LOCAL_TTS_LICENSE_REQUIRED');
-    return evidence.narration;
+    // CTC keeps its existing canonical text; Kokoro receives paragraph breaks.
+    return evidence.adaptation === 'paragraph-preserving-deduplication/2'
+      ? adaptLocalNarration(script.fullNarration, voice.durationMilliseconds)
+      : evidence.narration;
   }
   async ingestRecording(
     scope: Parameters<NonNullable<LocalAudiovisualPort['ingestRecording']>>[0],
@@ -487,9 +640,12 @@ export class LocalFlowRuntime {
         voice.scriptId !== scriptId ||
         voice.scriptContentHash !== scriptHash ||
         (voice.origin === 'SYNTHETIC_TTS'
-          ? !['local_piper', 'local_espeak_ng', 'openai'].includes(
-              voice.provider,
-            )
+          ? ![
+              'local_piper',
+              'local_espeak_ng',
+              'local_kokoro',
+              'openai',
+            ].includes(voice.provider)
           : voice.provider !== null) ||
         !(voice.provider === 'openai'
           ? voice.rights.usageBasis === 'PROVIDER_TERMS'
@@ -708,9 +864,12 @@ export class LocalFlowRuntime {
           'SYNTHETIC_TTS',
         ].includes(voice.origin) ||
         (voice.origin === 'SYNTHETIC_TTS' &&
-          !['local_piper', 'local_espeak_ng', 'openai'].includes(
-            voice.provider,
-          )) ||
+          ![
+            'local_piper',
+            'local_espeak_ng',
+            'local_kokoro',
+            'openai',
+          ].includes(voice.provider)) ||
         !r.getArtifact(id)?.generationMetadata
       )
         localFail('LOCAL_AUTHORIZED_AUDIO_REQUIRED');
@@ -1143,19 +1302,17 @@ export class LocalFlowRuntime {
             },
             null,
           );
-        const review: any = this.media.temporalReview(asset!.mediaAssetId);
-        if (review?.result !== 'PASS')
-          localFail('PUBLICATION_SOURCE_QC_REQUIRED');
-        new LocalEvidenceStorage(resolve(this.env.FFMPEG_MEDIA_ROOT!)).read(
-          asset!.contentHash,
-          asset!.technicalProperties.format,
-          33554432,
+        const source = publicationSourceReview(
+          asset!,
+          this.media,
+          this.env.FFMPEG_MEDIA_ROOT!,
         );
         return {
           id: asset!.mediaAssetId,
           contentHash: asset!.contentHash,
           rightsHash: adaptationHash(asset!.rights),
-          reviewHash: review.contentHash,
+          reviewHash: source.reviewHash,
+          sourceKind: source.sourceKind,
         };
       });
       const voice = r.getVoiceTrack(audio.voiceTrackId) as any;

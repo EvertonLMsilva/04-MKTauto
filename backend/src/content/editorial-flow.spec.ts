@@ -68,6 +68,18 @@ describe('Nest editorial production', () => {
     f = editorialFixture();
   });
   afterEach(() => f.cleanup());
+  it('uses product evidence without entertainment research and replays after reopening', async () => {
+    const ideas = vi.spyOn(f.provider, 'ideas');
+    const scripts = vi.spyOn(f.provider, 'script');
+    const input = { ...f.input, researchShortlistId: null };
+    const first = await f.flow().generate(input);
+    expect(ideas.mock.calls[0][0].shortlist).toBeNull();
+    expect(f.research.getShortlist).not.toHaveBeenCalled();
+    expect(first.script.fullNarration).toContain('Publicidade');
+    expect(await f.flow().generate(input)).toEqual(first);
+    expect(scripts).toHaveBeenCalledTimes(1);
+    expect(f.base.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
   it('passes exact Shopee provenance and commercial revisions to the existing flow, replays and detects source changes', async () => {
     provisionSchema(f.base.db, 42);
     const repo = new SqliteAffiliatePersistence(f.database).open();

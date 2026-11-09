@@ -7,6 +7,7 @@ import { digest } from './infrastructure/local-evidence-storage.js';
 import {
   LocalPiperTts,
   adaptLocalNarration,
+  adaptKokoroNarration,
 } from './infrastructure/local-piper-tts.js';
 import { LocalFlowRuntime } from './infrastructure/local-flow.runtime.js';
 import { LocalFlowRepository } from './infrastructure/local-flow.repository.js';
@@ -162,6 +163,81 @@ function espeakFixture(f: ReturnType<typeof fixture>) {
   f.manifest.modelSha256 = digest(readFileSync(f.manifest.modelPath));
   f.save();
 }
+function kokoroFixture(f: ReturnType<typeof fixture>) {
+  Object.assign(f.manifest, {
+    engine: 'kokoro',
+    modelId: 'kokoro/pf_dora',
+    license: 'Apache-2.0',
+    voicesPath: f.manifest.modelPath,
+    voicesSha256: f.manifest.modelSha256,
+    adapterSha256: digest(
+      readFileSync(
+        fileURLToPath(new URL('../../python/tts/kokoro.py', import.meta.url)),
+      ),
+    ),
+  });
+  writeFileSync(
+    f.manifest.configPath,
+    JSON.stringify({
+      language: { code: 'pt_BR' },
+      voice: 'pf_dora',
+      speed: 1,
+      sentencePause: 0.25,
+    }),
+  );
+  f.manifest.configSha256 = digest(readFileSync(f.manifest.configPath));
+  f.save();
+}
+
+test('Kokoro pins Dora natural, voices and adapter; never falls back or changes speed', async () => {
+  const f = fixture();
+  try {
+    Object.assign(f.manifest, {
+      engine: 'kokoro',
+      modelId: 'kokoro/pf_dora',
+      license: 'Apache-2.0',
+      voicesPath: f.manifest.modelPath,
+      voicesSha256: f.manifest.modelSha256,
+      adapterSha256: digest(
+        readFileSync(
+          fileURLToPath(new URL('../../python/tts/kokoro.py', import.meta.url)),
+        ),
+      ),
+    });
+    writeFileSync(
+      f.manifest.configPath,
+      JSON.stringify({
+        language: { code: 'pt_BR' },
+        voice: 'pf_dora',
+        speed: 1,
+        sentencePause: 0.25,
+      }),
+    );
+    f.manifest.configSha256 = digest(readFileSync(f.manifest.configPath));
+    f.save();
+    const result = await new LocalPiperTts(f.env, f.runner).synthesize(
+      'Publicidade. Cena ilustrativa.',
+      20000,
+    );
+    expect(result.evidence.modelId).toBe('kokoro/pf_dora');
+    expect(result.evidence.adaptation).toBe('paragraph-preserving-deduplication/2');
+    expect(f.runner.mock.calls[0][1]).toEqual([
+      '-B',
+      expect.stringContaining('kokoro.py'),
+      f.manifest.modelPath,
+      f.manifest.modelPath,
+      expect.any(String),
+    ]);
+    expect(f.runner.mock.calls[0][2].stdin).toContain('Cena ilustrativa.');
+    expect(f.runner.mock.calls.flat().join(' ')).not.toContain('atempo');
+    writeFileSync(f.manifest.modelPath, 'changed voice');
+    expect(() => new LocalPiperTts(f.env).configuration()).toThrow(
+      'LOCAL_TTS_LICENSE_REQUIRED',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
 
 test('native pt-BR formant speech requires GPL evidence and a complete pinned local inventory, without a sampled voice', async () => {
   const f = fixture();
@@ -205,6 +281,11 @@ test('conservative adaptation removes literal repetition without adding or dropp
       10000,
     ),
   ).toBe('Dose autorizada: 0.5 ml. Não exceda essa dose.');
+});
+test('Dora input retains Portuguese accents, sentence marks and paragraph pauses', () => {
+  const text = 'Você conhece a organização em plástico?\n\nA avó e o avô aprovam.';
+  expect(adaptKokoroNarration(text, 20000)).toBe(text);
+  expect(adaptLocalNarration(text, 20000)).toBe(text.replace('\n\n', ' '));
 });
 test('missing local authorization blocks before any process; manual audio is unaffected', async () => {
   const run = vi.fn();
@@ -300,12 +381,13 @@ test('actual speech that exceeds available duration is never cropped or accepted
   }
 });
 
-test.each(['piper', 'espeak-ng'])(
+test.each(['piper', 'espeak-ng', 'kokoro'])(
   'native SQLite preserves synthetic provenance, replay and adapted alignment for %s',
   async (engine) => {
     const f = fixture(),
       native = p2EditorialFixture();
     if (engine === 'espeak-ng') espeakFixture(f);
+    if (engine === 'kokoro') kokoroFixture(f);
     const db = new DatabaseSync(native.database);
     provisionSchema(db);
     db.close();
@@ -411,6 +493,10 @@ test.each(['piper', 'espeak-ng'])(
       ]);
       expect(a).toEqual(b);
       expect(f.runner).toHaveBeenCalledTimes(3);
+      if (engine === 'kokoro')
+        expect(f.runner.mock.calls[0][2].stdin).toBe(
+          adaptKokoroNarration(script.fullNarration, 60000) + '\n',
+        );
       expect(await make().automaticAudio(scope, 60000)).toEqual(a);
       expect(f.runner).toHaveBeenCalledTimes(3);
       const repository = open();
@@ -424,7 +510,12 @@ test.each(['piper', 'espeak-ng'])(
       expect(ids).toEqual([a.voiceTrackId]);
       expect(voice).toMatchObject({
         origin: 'SYNTHETIC_TTS',
-        provider: engine === 'espeak-ng' ? 'local_espeak_ng' : 'local_piper',
+        provider:
+          engine === 'kokoro'
+            ? 'local_kokoro'
+            : engine === 'espeak-ng'
+              ? 'local_espeak_ng'
+              : 'local_piper',
         rights: { usageBasis: 'LICENSED', commercialUseAllowed: true },
       });
       expect(
@@ -451,6 +542,32 @@ test.each(['piper', 'espeak-ng'])(
       );
       expect(await make().alignAudio(a.voiceTrackId)).toEqual(alignment);
       expect(aligner.align).toHaveBeenCalledTimes(1);
+      const historicalHash = f.env.LOCAL_TTS_MANIFEST_SHA256!;
+      const historicalPath = join(f.root, 'original-manifest.json');
+      writeFileSync(historicalPath, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
+      const upgradedExecutable = join(f.root, 'upgraded-executable');
+      writeFileSync(upgradedExecutable, 'TEST_UPDATED_RUNTIME');
+      f.manifest.executablePath = upgradedExecutable;
+      f.manifest.executableSha256 = digest(readFileSync(upgradedExecutable));
+      f.save();
+      Object.assign(env, {
+        LOCAL_TTS_MANIFEST_SHA256: f.env.LOCAL_TTS_MANIFEST_SHA256,
+        LOCAL_TTS_HISTORICAL_MANIFESTS: JSON.stringify({
+          [historicalHash]: historicalPath,
+        }),
+      });
+      expect(make().authorizedAudio('run_001', script.scriptId, script.contentHash))
+        .toEqual(a);
+      expect(await make().automaticAudio(scope, 60000)).toEqual(a);
+      expect(f.runner).toHaveBeenCalledTimes(3);
+      expect(make().authorizedAudio('run_other', script.scriptId, script.contentHash))
+        .toBeNull();
+      const audioPath = join(env.FFMPEG_VOICE_ROOT, 'sha256', a.contentHash.slice(0, 2), `${a.contentHash}.wav`);
+      const originalAudio = readFileSync(audioPath);
+      writeFileSync(audioPath, 'TEST_TAMPERED_AUDIO');
+      expect(() => make().authorizedAudio('run_001', script.scriptId, script.contentHash))
+        .toThrow('LOCAL_FILE_HASH_MISMATCH');
+      writeFileSync(audioPath, originalAudio);
       writeFileSync(f.manifest.licenseEvidencePath, 'changed TEST license');
       expect(() =>
         make().authorizedAudio('run_001', script.scriptId, script.contentHash),
@@ -464,3 +581,63 @@ test.each(['piper', 'espeak-ng'])(
   },
   15000,
 );
+
+test.each(['valid', 'tampered-manifest', 'model', 'license', 'voice', 'unregistered', 'new-generation'])(
+  'historical TTS manifest remains pinned after runtime upgrade: %s',
+  async (kind) => {
+    const f = fixture();
+    try {
+      if (kind === 'voice') kokoroFixture(f);
+      const originalHash = f.env.LOCAL_TTS_MANIFEST_SHA256!;
+      const originalPath = join(f.root, 'original-manifest.json');
+      writeFileSync(originalPath, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
+      const upgraded = join(f.root, 'new-executable');
+      writeFileSync(upgraded, 'TEST_NEW_RUNTIME');
+      f.manifest.executablePath = upgraded;
+      f.manifest.executableSha256 = digest(readFileSync(upgraded));
+      f.save();
+      f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({ [originalHash]: originalPath });
+      if (kind === 'tampered-manifest') writeFileSync(originalPath, '{}');
+      if (kind === 'model') writeFileSync(f.manifest.modelPath, 'TEST_CHANGED_MODEL');
+      if (kind === 'license') writeFileSync(f.manifest.licenseEvidencePath, 'TEST_CHANGED_LICENSE');
+      if (kind === 'voice') writeFileSync((f.manifest as any).voicesPath, 'TEST_CHANGED_VOICE');
+      if (kind === 'unregistered') delete f.env.LOCAL_TTS_HISTORICAL_MANIFESTS;
+      const tts = new LocalPiperTts(f.env, f.runner);
+      if (kind === 'valid') {
+        expect(tts.configuration(originalHash).configurationHash).toBe(originalHash);
+        expect(tts.configuration().executableSha256).toBe(f.manifest.executableSha256);
+      } else if (kind === 'new-generation') {
+        writeFileSync(upgraded, 'TEST_TAMPERED_CURRENT_EXECUTABLE');
+        expect(tts.configuration(originalHash).configurationHash).toBe(originalHash);
+        await expect(tts.synthesize('Olá.', 4000)).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+        expect(f.runner).not.toHaveBeenCalled();
+      } else {
+        expect(() => tts.configuration(originalHash)).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+      }
+    } finally { f.cleanup(); }
+  },
+);
+
+test.each([false, true])('historical Windows paths use explicitly pinned Docker files; tampered=%s', (tampered) => {
+  const f = fixture();
+  try {
+    const files: Record<string, string> = {};
+    for (const name of ['model', 'config', 'executable', 'licenseEvidence'] as const) {
+      const hash = f.manifest[`${name}Sha256`];
+      files[hash] = f.manifest[`${name}Path`];
+      f.manifest[`${name}Path`] = `C:\\historical\\${name}`;
+    }
+    f.save();
+    const historicalHash = f.env.LOCAL_TTS_MANIFEST_SHA256!;
+    const original = join(f.root, 'original.json');
+    writeFileSync(original, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
+    // The active runtime remains independent; historical bytes are not rewritten.
+    f.env.LOCAL_TTS_MANIFEST_SHA256 = 'f'.repeat(64);
+    f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({ [historicalHash]: original });
+    f.env.LOCAL_TTS_HISTORICAL_FILES = JSON.stringify(files);
+    if (tampered) writeFileSync(files[f.manifest.executableSha256], 'TEST_TAMPERED_EXECUTABLE');
+    const read = () => new LocalPiperTts(f.env).configuration(historicalHash);
+    if (tampered) expect(read).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+    else expect(read().configurationHash).toBe(historicalHash);
+  } finally { f.cleanup(); }
+});

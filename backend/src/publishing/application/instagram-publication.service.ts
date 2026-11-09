@@ -1,4 +1,5 @@
 import { Logger } from '@nestjs/common';
+import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
 import type { InstagramPublicationPorts } from './ports/instagram-publication.port.js';
 import type {
@@ -15,7 +16,15 @@ export class InstagramPublicationService {
     private readonly now = () => new Date().toISOString(),
     private readonly schedulerEnabled = false,
     private readonly finance?: Pick<FinanceService, 'getGlobalOperation'>,
+    private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
   ) {}
+  private signalNotifications() {
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
+  }
   private readonly logger = new Logger(InstagramPublicationService.name);
   private timer?: ReturnType<typeof setInterval>;
   private pending?: Promise<void>;
@@ -227,10 +236,26 @@ export class InstagramPublicationService {
         pkg.identity.videoRenderId !== handoff.videoRenderId
       )
         socialFail('SOCIAL_HANDOFF_MISMATCH');
+      const existing = reservations.forExecution(execution.execution_id);
+      const previous = existing
+        ? (s.social as any).get(existing.operationId)
+        : null;
+      const source = previous
+        ? previous.publicationFlowVersion === 2
+          ? 'local'
+          : 'url'
+        : this.ports!.localBytes
+          ? 'local'
+          : 'url';
+      if (source === 'local' && !this.ports!.localBytes)
+        socialFail('SOCIAL_EXECUTION_STRATEGY_MISMATCH');
       let op = await service.prepare(
         { packageHash: raw.packageHash, accountId: raw.accountId },
         `instagram:${execution.execution_id}`,
+        source,
       );
+      if (previous && op.operationId !== previous.operationId)
+        socialFail('SOCIAL_IDEMPOTENCY_CONFLICT');
       reservations.reserve(
         execution.execution_id,
         op,
@@ -241,11 +266,32 @@ export class InstagramPublicationService {
       reservations.authorize(op, this.now());
       if (['UNCERTAIN', 'CREATING_CONTAINER', 'PUBLISHING'].includes(op.state))
         socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+      if (['PREPARED', 'PROCESSING', 'READY'].includes(op.state))
+        await this.ports!.verifyConnection?.();
       if (op.state === 'PREPARED')
-        op = await service.createContainer(
-          op.operationId,
-          await this.ports!.transfer(op.packageHash),
+        op =
+          op.publicationFlowVersion === 2
+            ? await service.createContainer(op.operationId)
+            : await service.createContainer(
+                op.operationId,
+                await this.ports!.transfer(op.packageHash),
+              );
+      if (op.requiresReconciliation)
+        socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+      if (
+        op.publicationFlowVersion === 2 &&
+        op.state === 'PROCESSING' &&
+        op.uploadStage === 'PENDING'
+      ) {
+        const bytes = await this.ports!.localBytes!(
+          op.packageHash,
+          pkg.identity.videoRenderId,
+          op.mediaHash,
         );
+        op = await service.upload(op.operationId, bytes);
+      }
+      if (op.state === 'UNCERTAIN' || op.uploadStage === 'UPLOADING')
+        socialFail('SOCIAL_RECONCILIATION_REQUIRED');
       if (op.requiresReconciliation)
         socialFail('SOCIAL_RECONCILIATION_REQUIRED');
       if (op.state === 'PROCESSING') op = await service.process(op.operationId);
@@ -270,7 +316,9 @@ export class InstagramPublicationService {
         receipt: op.remoteReceipt,
         cost: { status: 'UNKNOWN', amount: null },
       };
-    }, execution.claim_token ?? undefined);
+    }, execution.claim_token ?? undefined).finally(() =>
+      this.signalNotifications(),
+    );
   }
   async reconcile(executionId: string) {
     return this.session(async (s, service) => {
@@ -300,9 +348,11 @@ export class InstagramPublicationService {
           cost: { status: 'UNKNOWN', amount: null },
         },
       };
-    });
+    }).finally(() => this.signalNotifications());
   }
   async receipt(id: string) {
-    return this.session(async (_s, service) => service.receipt(id));
+    return this.session(async (_s, service) => service.receipt(id)).finally(
+      () => this.signalNotifications(),
+    );
   }
 }

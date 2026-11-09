@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { CampaignError } from './domain/campaign.js';
 import {
   compositionScope,
   compositionGrant,

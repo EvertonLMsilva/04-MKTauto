@@ -1,0 +1,17 @@
+**
+!Dockerfile
+!docker/
+!docker/*.lock
+!backend/
+!backend/package.json
+!backend/package-lock.json
+!backend/tsconfig.json
+!backend/tsconfig.build.json
+!backend/nest-cli.json
+!backend/src/
+!backend/src/**
+!backend/python/
+!backend/python/**
+backend/src/**/*.spec.ts
+backend/python/**/test_*.py
+backend/python/**/__pycache__/

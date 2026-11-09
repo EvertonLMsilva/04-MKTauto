@@ -1,5 +1,7 @@
 import { HumanApprovalService } from './human-approval.service.js';
 import { validateHumanApprovalIdentity } from '../domain/human-approval-contracts.js';
+import type { CampaignOperationalFacts } from '../../content-operations/application/campaign-operations.port.js';
+import { assertPackageApprovalBinding, assertPublicationHandoff } from './publication-handoff.js';
 import {
   affiliateHash,
   rejectAffiliateDynamicPrice,
@@ -242,9 +244,9 @@ export class ManualDistributionService {
   revokeApproval(value: unknown) {
     return this.repository.revokeApproval(value, this.now());
   }
-  validateForPublication(hash: any): any {
+  validateForPublication(hash: any, handoff?: CampaignOperationalFacts): any {
     const p: any = this.#package(hash);
-    this.#gate(p);
+    const { q } = this.#gate(p);
     const review = this.getReview(hash);
     if (
       Number(
@@ -256,6 +258,8 @@ export class ManualDistributionService {
       fail('DISTRIBUTION_APPROVAL_REVOKED');
     if (review?.mediaDecision.decision !== 'APPROVED')
       fail('DISTRIBUTION_APPROVAL_REQUIRED');
+    assertPackageApprovalBinding(p, review);
+    if (handoff) assertPublicationHandoff(handoff, p, q);
     return p;
   }
   recordPublication(raw: any, key: any): any {

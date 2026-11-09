@@ -11,6 +11,9 @@ export interface CreateBriefingInput {
   campaignRevision: number;
 }
 export interface AffiliateRepository {
+  catalogCandidates(
+    projectId: string,
+  ): import('../../domain/affiliate-catalog.js').AffiliateCatalogCandidate[];
   resolveBriefingSource(id: string): AffiliateCampaignSourceV1 | null;
   close(): void;
   getCampaignSource(
@@ -39,6 +42,12 @@ export interface AffiliateRepository {
     value: CreateBriefingInput,
     key: string,
     projectExists: boolean,
+  ): AffiliateBriefing;
+  createCatalogBriefing(
+    value: CreateBriefingInput,
+    key: string,
+    projectExists: boolean,
+    expectedHash: string,
   ): AffiliateBriefing;
   getBriefing(id: string): AffiliateBriefing | null;
 }

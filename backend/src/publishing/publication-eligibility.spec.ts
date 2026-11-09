@@ -14,6 +14,22 @@ it('keeps local technical QC distinct and rejects missing rights/lineage evidenc
   );
   expect(adapter.report('qc_existing')).toEqual({ result: 'PASS' });
 });
+it('rejects a local render with failed QC even when source evidence is present', () => {
+  const hash = 'a'.repeat(64);
+  const proof: any = {
+    qc: { result: 'FAIL', approvalBlocked: true, videoRenderContentHash: hash },
+    render: { contentHash: hash },
+    assets: [{ id: 'image_001', reviewHash: hash, sourceKind: 'STATIC_IMAGE' }],
+    audio: { contentHash: hash },
+    planHash: hash,
+  };
+  const adapter = publishingEvidence({} as any,
+    { publicationEvidence: () => proof } as any);
+  expect(() => adapter.report('local_qc:fixture')).toThrow('SOCIAL_ELIGIBILITY_REQUIRED');
+  proof.qc = { result: 'PASS', approvalBlocked: false,
+    videoRenderContentHash: 'b'.repeat(64) };
+  expect(() => adapter.report('local_qc:fixture')).toThrow('SOCIAL_ELIGIBILITY_REQUIRED');
+});
 it('seals the verified local proof without modifying it or manufacturing human approval', () => {
   const hash = 'a'.repeat(64),
     proof = {

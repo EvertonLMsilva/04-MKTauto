@@ -1,6 +1,14 @@
-import type { LocalAudiovisualPort } from './local-flow.port.js';
+import type {
+  LocalAudiovisualPort,
+  LocalMediaScope,
+  LocalImageSource,
+} from './local-flow.port.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
+  prepareImage(scope: LocalMediaScope, source: LocalImageSource) {
+    if (!this.runtime.prepareImage) throw new Error('LOCAL_MEDIA_UNAVAILABLE');
+    return this.runtime.prepareImage(scope, source);
+  }
   audioBytes(
     runId: string,
     scriptId: string,

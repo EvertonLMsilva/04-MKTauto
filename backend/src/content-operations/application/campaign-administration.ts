@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import { PRODUCT_FRAMING_POLICY } from '../../media/domain/product-framing.js';
 import {
   compositionScope,
@@ -17,8 +18,15 @@ import {
   NativeCampaignWorkflow,
   campaignRequest,
   document,
+  localRecurrence,
+  localRequestInput,
 } from './native-campaign-workflow.js';
-import { CampaignError, identifier } from '../domain/campaign.js';
+import {
+  CampaignError,
+  identifier,
+  instant,
+  canonicalJson,
+} from '../domain/campaign.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
 export const CAMPAIGN_DATABASE = Symbol('CAMPAIGN_DATABASE');
 export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
@@ -32,6 +40,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     private readonly path: string | null,
     readonly workflow: NativeCampaignWorkflow,
     private readonly enabled = false,
+    private readonly now = () => new Date().toISOString(),
+    private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
   ) {}
   private open() {
     if (this.store) return this.store;
@@ -40,7 +50,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     const db = new DatabaseSync(this.path, { readOnly: true });
     try {
       if (
-        ![41, 42].includes(
+        ![41, 42, 43, 44].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         )
       )
@@ -51,7 +61,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     this.db = new DatabaseSync(this.path);
     this.db.exec('PRAGMA foreign_keys=ON');
     this.store = new CampaignRepository(this.db);
-    this.runner = new CampaignOrchestrator(this.store, this.workflow);
+    this.runner = new CampaignOrchestrator(this.store, this.workflow, this.now);
     return this.store;
   }
   onModuleInit() {
@@ -84,6 +94,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (document(value).legacyRecovery)
       throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
     const r = campaignRequest(value);
+    if (r.selectionMode === 'CATALOG' || Object.hasOwn(r, 'catalogSelection'))
+      throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
     await this.workflow.validate(r);
     return this.open().schedule(
       {
@@ -94,6 +106,159 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       },
       r,
       new Date().toISOString(),
+    );
+  }
+  async startLocal(value: unknown) {
+    const input = localRequestInput(value),
+      enabled = localRecurrence(input);
+    if (enabled === false) {
+      const existing = this.open()
+        .recurrences(true)
+        .find((e) => e.config.request.campaignId === input.campaignId);
+      if (existing) {
+        const seed = existing.config.request;
+        // Stopping production must remain possible after catalog eligibility is lost.
+        if (
+          seed.campaignRevision !== input.campaignRevision ||
+          seed.scheduledAt !== instant(input.requestedAt) ||
+          document(seed.run).projectVersion !== input.projectVersion ||
+          canonicalJson(seed.localImage) !== canonicalJson(input.localImage) ||
+          (seed.selectionMode ?? 'FIXED') !== (input.selectionMode ?? 'FIXED')
+        )
+          throw new CampaignError('CAMPAIGN_RECURRENCE_CONFLICT');
+        return this.open().configureRecurrence(
+          seed,
+          false,
+          String(input.requestId),
+          this.now(),
+        );
+      }
+    }
+    const request = await this.workflow.localRequest(value);
+    const catalog =
+      request.selectionMode === 'CATALOG'
+        ? (previous: string | null) =>
+            this.workflow.freezeCatalogRequest(request, previous)
+        : undefined;
+    if (enabled === undefined)
+      return catalog
+        ? this.open().scheduleCatalog(request, this.now(), catalog)
+        : this.schedule(request);
+    if (!catalog) await this.workflow.validate(request);
+    return this.open().configureRecurrence(
+      request,
+      enabled,
+      String(input.requestId),
+      this.now(),
+      catalog,
+    );
+  }
+  async operatorReview(id: string, actor: string) {
+    const store = this.open(),
+      e = store.get(id);
+    const snapshot = await this.workflow.operatorReview(
+      e,
+      completedContext(store.history(id)),
+    );
+    const reviewId = store.presentOperatorReview(
+      id,
+      e.version,
+      actor,
+      snapshot,
+      this.now(),
+    );
+    return { executionId: id, reviewId, ...snapshot };
+  }
+  async operatorDecision(
+    id: string,
+    kind: 'render' | 'package',
+    input: unknown,
+  ) {
+    const v = document(input);
+    if (
+      Object.keys(v).sort().join(',') !==
+        'actor,decision,justification,reviewId' ||
+      !['APPROVED', 'REJECTED'].includes(String(v.decision))
+    )
+      throw new CampaignError('INVALID_REVIEW_DECISION');
+    const store = this.open(),
+      e = store.get(id),
+      history = store.history(id);
+    const view = history.find(
+      (h) =>
+        h.event_type === 'OPERATOR_REVIEW_PRESENTED' &&
+        h.evidence.reviewId === v.reviewId,
+    )?.evidence;
+    if (!view || view.actor !== v.actor)
+      throw new CampaignError('REVIEW_OWNERSHIP_CONFLICT');
+    const receipt = history.find(
+      (h) =>
+        h.event_type === 'OPERATOR_REVIEW_DECIDED' &&
+        h.evidence.reviewId === v.reviewId &&
+        h.evidence.kind === kind,
+    )?.evidence;
+    if (receipt) {
+      if (
+        receipt.decision !== v.decision ||
+        receipt.justification !== v.justification
+      )
+        throw new CampaignError('REVIEW_DECISION_CONFLICT');
+      return receipt.result;
+    }
+    const current = await this.workflow.operatorReview(
+      e,
+      completedContext(history),
+    );
+    const shown = document(view.snapshot);
+    if (
+      store.get(id).version !== e.version ||
+      e.version !== view.version ||
+      canonicalJson(current.identity) !== canonicalJson(shown.identity) ||
+      current.destination !== shown.destination ||
+      canonicalJson(current.package) !== canonicalJson(shown.package)
+    )
+      throw new CampaignError('STALE_REVIEW_CONFLICT');
+    const result =
+      kind === 'render'
+        ? await this.approve(id, {
+            ...current.identity,
+            actor: v.actor,
+            decision: v.decision,
+            justification: v.justification,
+          })
+        : current.package
+          ? this.workflow.reviewOperatorPackage(
+              current.package.contentHash,
+              String(v.decision),
+              String(v.actor),
+              v.justification,
+              `operator_review_${String(v.reviewId)}`,
+            )
+          : (() => {
+              throw new CampaignError('PACKAGE_REVIEW_REQUIRED');
+            })();
+    store.administrativeEvent(
+      id,
+      store.get(id).version,
+      this.now(),
+      'OPERATOR_REVIEW_DECIDED',
+      {
+        reviewId: v.reviewId,
+        kind,
+        decision: v.decision,
+        justification: v.justification,
+        result,
+      },
+    );
+    return result;
+  }
+  result(id: string) {
+    const store = this.open(),
+      history = store.history(id);
+    return this.workflow.result(
+      store.get(id),
+      executionRequest(history),
+      completedContext(history),
     );
   }
   async recoverLegacy(value: unknown) {
@@ -128,6 +293,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         ? String(history.at(-1)?.evidence.code ?? last?.evidence.code ?? '')
         : null;
     const messages: Record<string, string> = {
+      CATALOG_PRODUCT_REQUIRED:
+        'Nenhum produto elegível no catálogo. Cadastre uma revisão com link, evidências e imagem autorizada para as próximas ocorrências.',
       REAL_VIDEO_MEDIA_REQUIRED: 'Associe um vídeo autorizado para cada cena.',
       MEDIA_SELECTION_REQUIRED:
         'Selecione a versão do vídeo que deve ser utilizada.',
@@ -176,6 +343,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     };
     return {
       ...execution,
+      selectionMode: history[0].evidence.selectionMode ?? 'FIXED',
+      productSelection: history[0].evidence.catalogSelection ?? null,
       provenance:
         history[0].event_type === 'LEGACY_RECOVERY'
           ? history[0].evidence.legacyRecovery
@@ -271,6 +440,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   }
   async resume(id: string, value?: unknown) {
     const store = this.open();
+    if (
+      (!value || Object.keys(document(value)).length === 0) &&
+      ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(store.get(id).status) &&
+      store
+        .history(id)
+        .some((event) => event.event_type === 'OPERATOR_REVIEW_PRESENTED')
+    )
+      return this.get(id);
     if (
       value !== undefined &&
       value !== null &&
@@ -504,8 +681,39 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.get(id);
   }
   async tick() {
-    this.open();
+    const store = this.open();
+    for (const { config } of store.recurrences()) {
+      try {
+        const request = await this.workflow.recurringRequest(
+          config.request,
+          this.now(),
+        );
+        if (request)
+          store.scheduleRecurring(
+            config,
+            request,
+            this.now(),
+            request.selectionMode === 'CATALOG'
+              ? (previous) =>
+                  this.workflow.freezeCatalogRequest(request, previous)
+              : undefined,
+          );
+      } catch (error) {
+        // Report a failed configuration without starving other scheduled campaigns.
+        this.logger.error(
+          error instanceof CampaignError
+            ? error.code
+            : 'CAMPAIGN_RECURRENCE_FAILED',
+        );
+      }
+    }
     await this.runner!.tick();
+    // Notification failures never change the completed campaign transition.
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
   }
   async approve(id: string, value: unknown) {
     const r = this.open(),
@@ -542,6 +750,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       },
     });
     const decision = service.decide(value) as Record<string, unknown>;
+    if (
+      events.some(
+        (event) =>
+          event.event_type === 'HUMAN_APPROVAL' &&
+          event.evidence.contentHash === decision.contentHash,
+      )
+    )
+      return decision;
     r.administrativeEvent(
       id,
       e.version,
@@ -549,6 +765,11 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       'HUMAN_APPROVAL',
       decision,
     );
+    try {
+      void this.notifications?.scan().catch(() => {});
+    } catch {
+      /* Operational only. */
+    }
     return decision;
   }
 }

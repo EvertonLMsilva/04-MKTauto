@@ -30,7 +30,7 @@ export class CampaignController {
           : 'CAMPAIGN_OPERATION_FAILED';
       const status = code.endsWith('NOT_FOUND')
         ? 404
-        : /CONFLICT|CLAIM_LOST|TERMINAL|RECONCILIATION_REQUIRED|NOT_RECOVERABLE/.test(
+        : /CONFLICT|AMBIGUOUS|SCOPE_MISMATCH|CLAIM_LOST|TERMINAL|RECONCILIATION_REQUIRED|NOT_RECOVERABLE/.test(
               code,
             )
           ? 409
@@ -43,6 +43,12 @@ export class CampaignController {
   @Post() schedule(@Body() value: unknown) {
     return this.respond(() => this.campaigns.schedule(value));
   }
+  @Post('local') startLocal(@Body() value: unknown) {
+    return this.respond(() => this.campaigns.startLocal(value));
+  }
+  @Get(':id/result') result(@Param('id') id: string) {
+    return this.respond(() => this.campaigns.result(id));
+  }
   @Post('legacy-recovery')
   @UseGuards(LocalQcGuard)
   recoverLegacy(@Body() value: unknown) {
@@ -53,6 +59,26 @@ export class CampaignController {
   }
   @Get(':id/history') history(@Param('id') id: string) {
     return this.respond(() => this.campaigns.history(id));
+  }
+  @Get(':id/review')
+  @UseGuards(LocalQcGuard)
+  review(@Param('id') id: string, @Req() request: any) {
+    const identity = serverApprovalRequest({}, request[QC_REVIEWER_CONTEXT]);
+    return this.respond(() =>
+      this.campaigns.operatorReview(id, identity.actor),
+    );
+  }
+  @Post(':id/package-approvals')
+  @UseGuards(LocalQcGuard)
+  packageApproval(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: any,
+  ) {
+    const input = serverApprovalRequest(value, request[QC_REVIEWER_CONTEXT]);
+    return this.respond(() =>
+      this.campaigns.operatorDecision(id, 'package', input),
+    );
   }
   @Post(':id/resume') resume(@Param('id') id: string, @Body() value?: unknown) {
     return this.respond(() => this.campaigns.resume(id, value));
@@ -68,6 +94,10 @@ export class CampaignController {
     @Req() request: any,
   ) {
     const input = serverApprovalRequest(value, request[QC_REVIEWER_CONTEXT]);
-    return this.respond(() => this.campaigns.approve(id, input));
+    return this.respond(() =>
+      Object.hasOwn(input, 'reviewId')
+        ? this.campaigns.operatorDecision(id, 'render', input)
+        : this.campaigns.approve(id, input),
+    );
   }
 }
