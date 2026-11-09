@@ -20,6 +20,24 @@ export const operationsPage = `<!doctype html>
 <pre id="instagram-package-preview"></pre>
 <form id="instagram-schedule-form" hidden><label>Data e hora local<input name="scheduledAt" type="datetime-local" required></label><label class="check"><input name="confirm" type="checkbox" required>Revisei o MP4 final e o pacote acima e autorizo esta publicação simulada nesta conta e horário.</label><button>Autorizar e agendar simulação</button></form>
 <button id="instagram-refresh" class="quiet">Verificar publicação</button><button id="instagram-cancel" class="quiet" hidden>Cancelar agendamento</button></section>
+<section id="commercial-panel" class="card"><div class="title-row"><h2>06 / Resultados comerciais</h2><button id="commercial-refresh" class="quiet" type="button">Atualizar resultados</button></div>
+<p>Consulte uma publicação confirmada e registre os dados do seu relatório. Esta seção não inicia publicações.</p>
+<label id="commercial-selection" hidden>Publicação confirmada<select id="commercial-publication" aria-label="Publicação para medir"></select></label>
+<p id="commercial-error" role="alert" hidden></p><div id="commercial-summary" aria-live="polite"></div>
+<details id="commercial-content-panel" hidden><summary>Conteúdo publicado</summary><pre id="commercial-content"></pre></details>
+<form id="commercial-form" hidden><h3 id="commercial-form-title">Registrar resultados</h3>
+<p>Informe o período no horário local deste navegador. Campo numérico em branco significa desconhecido; informe 0 somente quando conhecido. Os registros são individuais por período, fonte e atribuição; períodos diferentes não são somados.</p>
+<label>Início do período<input name="periodStart" type="datetime-local" step="0.001" required></label>
+<label>Fim do período<input name="periodEnd" type="datetime-local" step="0.001" required></label>
+<label>Fonte das métricas<input name="sourceReference" required maxlength="2000" placeholder="Relatório, exportação ou evidência autorizada"></label>
+<label>Atribuição<select name="attribution"><option value="DIRECT_PUBLICATION">Direta a esta publicação</option><option value="CAMPAIGN_REPORTED">Total informado pela campanha</option><option value="UNATTRIBUTED">Sem atribuição comprovada</option></select></label>
+<p>Totais de campanha e valores sem atribuição ficam no histórico; não viram resultados diretos desta publicação.</p>
+<label>Cliques<input name="clicks" type="number" min="0" step="1"></label><label>Vendas<input name="sales" type="number" min="0" step="1"></label>
+<label>Receita<input name="revenue" inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,39})(?:[.][0-9]{1,18})?" placeholder="Ex.: 12.50"></label><label>Moeda da receita<input name="revenueCurrency" pattern="[A-Z]{3}" maxlength="3" placeholder="BRL"></label>
+<label>Comissão<input name="commissions" inputmode="decimal" pattern="(?:0|[1-9][0-9]{0,39})(?:[.][0-9]{1,18})?" placeholder="Ex.: 2.50"></label><label>Moeda da comissão<input name="commissionsCurrency" pattern="[A-Z]{3}" maxlength="3" placeholder="BRL"></label>
+<label id="commercial-correction" hidden>Justificativa da correção<textarea name="correctionReason" maxlength="2000"></textarea></label>
+<div class="actions"><button id="commercial-save" type="submit">Registrar resultados</button><button id="commercial-new" type="button" class="quiet">Novo período ou fonte</button></div></form>
+<h3>Histórico de registros e correções</h3><div id="commercial-history"></div></section>
 </article></div></div></main><footer>Controle humano em cada aprovação. Direitos e proveniência preservados.</footer></body></html>`;
 
 export const operationsStyles = `
@@ -403,6 +421,154 @@ export const operationsScript = String.raw`
   let instagramPackageHash = "";
   let instagramCaption=null,instagramRightsScope=null;
   let lastTts = null;
+  let commercialActor = "", commercialVersion = 0, commercialPath = "";
+  let commercialEditing = null, commercialPending = null;
+  let commercialBusy = false;
+  const commercialRoute = (kind, id) => "/publishing/" + kind + "/" + encodeURIComponent(id) + "/commercial-results";
+  const commercialAttribution = (value) => ({ DIRECT_PUBLICATION: "Direta à publicação", CAMPAIGN_REPORTED: "Informada pela campanha", UNATTRIBUTED: "Sem atribuição" }[value] || value);
+  function commercialValue(value, empty = false) {
+    if (value?.status === "KNOWN") return value.amount !== undefined ? value.amount + " " + value.currency : String(value.value);
+    return empty ? "Ainda não registrado" : value?.reason === "NOT_DIRECTLY_ATTRIBUTED" ? "Sem atribuição direta à publicação" : "Desconhecido";
+  }
+  function commercialError(error) {
+    const messages = {
+      DISTRIBUTION_PUBLICATION_AMBIGUOUS: "Selecione explicitamente a publicação que deseja medir.",
+      DISTRIBUTION_CONFIRMED_PUBLICATION_REQUIRED: "A publicação precisa estar confirmada, com recibo coerente e sem reconciliação pendente.",
+      DISTRIBUTION_PERIOD_INVALID: "Confira o período: o fim deve ser posterior ao início.",
+      DISTRIBUTION_INVALID_TIMESTAMP: "Confira as datas do período.",
+      DISTRIBUTION_METRIC_INVALID: "Cliques e vendas devem ser inteiros não negativos.",
+      DISTRIBUTION_MONEY_INVALID: "Confira o valor com ponto decimal e a moeda de três letras maiúsculas.",
+      DISTRIBUTION_RESULTS_CONFLICT: "Já existe um registro diferente para este período, fonte e atribuição. Use Corrigir registro.",
+      DISTRIBUTION_REVISION_CONFLICT: "O histórico mudou. Atualize os resultados antes de corrigir.",
+    };
+    const message = error.field === "correctionReason" ? "Informe a justificativa da correção." : messages[error.code];
+    $("commercial-error").textContent = message || "Não foi possível consultar ou registrar os resultados. Confira os campos e tente atualizar. " + (/^[A-Z_]+$/.test(error.code || "") ? error.code : "");
+    $("commercial-error").hidden = false;
+    if (error.status === 401) fail(error);
+  }
+  function commercialNew() {
+    commercialEditing = null;
+    const form = $("commercial-form");
+    form.reset();
+    for (const field of ["periodStart", "periodEnd", "sourceReference"]) form.elements[field].readOnly = false;
+    form.elements.attribution.disabled = false;
+    form.elements.correctionReason.required = false;
+    $("commercial-correction").hidden = true;
+    $("commercial-form-title").textContent = "Registrar resultados";
+  }
+  function commercialClear() {
+    commercialPath = "";
+    $("commercial-form").hidden = true;
+    $("commercial-content-panel").hidden = true;
+    $("commercial-summary").replaceChildren();
+    $("commercial-history").replaceChildren();
+    $("commercial-content").textContent = "";
+    $("commercial-error").hidden = true;
+    commercialNew();
+  }
+  function commercialEdit(record) {
+    if (commercialBusy) return;
+    commercialNew();
+    commercialEditing = record;
+    const fields = $("commercial-form").elements;
+    const localDate = (value) => {
+      const date = new Date(value);
+      return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, -1);
+    };
+    fields.periodStart.value = localDate(record.periodStart);
+    fields.periodEnd.value = localDate(record.periodEnd);
+    fields.sourceReference.value = record.sourceReference;
+    fields.attribution.value = record.attribution;
+    for (const field of ["periodStart", "periodEnd", "sourceReference"]) fields[field].readOnly = true;
+    fields.attribution.disabled = true;
+    for (const field of ["clicks", "sales"]) fields[field].value = record[field]?.status === "KNOWN" ? String(record[field].value) : "";
+    for (const field of ["revenue", "commissions"]) {
+      fields[field].value = record[field]?.status === "KNOWN" ? record[field].amount : "";
+      fields[field + "Currency"].value = record[field]?.currency || "";
+    }
+    fields.correctionReason.required = true;
+    $("commercial-correction").hidden = false;
+    $("commercial-form-title").textContent = "Corrigir registro · próxima revisão " + (record.revision + 1);
+  }
+  function commercialRender(summary, pkg) {
+    const id = summary.identity, scope = summary.observationScope, empty = !summary.history.length;
+    const lines = [
+      "Campanha: " + id.campaignId + " · revisão " + id.campaignRevision,
+      "Produto: " + id.productName + " · revisão " + id.productRevision,
+      "Rede: " + (id.platform === "facebook" ? "Facebook Reels" : id.platform === "instagram" ? "Instagram" : id.platform) + " · conta " + id.account,
+      "Publicação: " + (id.remoteMediaId || id.publicationId) + " · PUBLISHED · confirmada em " + new Date(id.publishedAt).toLocaleString("pt-BR"),
+      "Link: " + (id.permalink || "Desconhecido / não fornecido pela rede"),
+      empty ? "Nenhum resultado registrado" : "Registro mais recente · período: " + new Date(scope.periodStart).toLocaleString("pt-BR") + " até " + new Date(scope.periodEnd).toLocaleString("pt-BR") + " · Fonte: " + scope.sourceReference + " · " + commercialAttribution(scope.attribution),
+      "Cliques: " + commercialValue(summary.clicks, empty),
+      "Vendas: " + commercialValue(summary.sales, empty),
+      "Receita: " + commercialValue(summary.grossRevenue, empty),
+      "Comissão: " + commercialValue(summary.commission, empty),
+      "Custos conhecidos da execução: " + (summary.knownCostsByCurrency.length ? summary.knownCostsByCurrency.map((c) => c.amount + " " + c.currency).join("; ") : "Desconhecido"),
+      "Custo compartilhado da execução: não somar entre publicações. Não há conversão entre moedas.",
+      "Custos desconhecidos: " + summary.unknownCosts.map((c) => ({ LOCAL_COMPUTE: "processamento local", PUBLICATION_COST_UNKNOWN: "publicação", FINANCE_UNAVAILABLE: "Finance indisponível", FINANCE_RECONCILIATION_REQUIRED: "reconciliação financeira", WORKFLOW_COST_UNKNOWN: "etapa da produção" }[c.reason] || (c.component === "LOCAL_COMPUTE" ? "processamento local" : c.reason))).join("; "),
+      "Saldo parcial (comissão menos custos monetários registrados da execução): " + commercialValue(summary.knownNetResult),
+      "Lucro completo indisponível: existem custos não medidos.",
+    ];
+    $("commercial-summary").replaceChildren(...lines.map((line) => text("p", line)));
+    $("commercial-content").textContent = ["Vídeo publicado: " + pkg.identity.videoRenderId, "Versão: " + pkg.identity.videoRenderRevision, "Hash do conteúdo: " + pkg.identity.videoRenderContentHash, "Legenda publicada:", pkg.finalCaption || pkg.caption].join("\n");
+    $("commercial-content-panel").hidden = false;
+    $("commercial-history").replaceChildren();
+    if (empty) $("commercial-history").append(text("p", "Nenhum registro anterior."));
+    for (const record of summary.history) {
+      const row = text("article", "");
+      row.append(text("h3", "Revisão " + record.revision + " · " + new Date(record.recordedAt).toLocaleString("pt-BR")));
+      row.append(text("p", "Período: " + new Date(record.periodStart).toLocaleString("pt-BR") + " até " + new Date(record.periodEnd).toLocaleString("pt-BR") + " · Fonte: " + record.sourceReference + " · " + commercialAttribution(record.attribution)));
+      row.append(text("p", "Cliques: " + commercialValue(record.clicks) + " · Vendas: " + commercialValue(record.sales) + " · Receita: " + commercialValue(record.revenue) + " · Comissão: " + commercialValue(record.commissions)));
+      row.append(text("p", "Operador: " + (record.actor || "Não informado no registro legado") + (record.correctionReason ? " · Justificativa: " + record.correctionReason : "")));
+      if (summary.observations.some((o) => o.contentHash === record.contentHash)) {
+        const button = text("button", "Corrigir registro"); button.type = "button"; button.className = "quiet";
+        button.addEventListener("click", () => commercialEdit(record)); row.append(button);
+      }
+      $("commercial-history").append(row);
+    }
+    $("commercial-form").hidden = false;
+  }
+  async function commercialRead(path, version, supplied) {
+    const summary = supplied || await api(path);
+    const pkg = await api("/publishing/packages/" + encodeURIComponent(summary.identity.packageHash));
+    if (version !== commercialVersion) return;
+    if (!pkg) throw { code: "DISTRIBUTION_PACKAGE_NOT_FOUND" };
+    commercialPath = summary.identity.operationId
+      ? commercialRoute("social-operations", summary.identity.operationId)
+      : commercialRoute("manual-publications", summary.identity.publicationId);
+    commercialRender(summary, pkg);
+  }
+  async function commercialLoad() {
+    const version = ++commercialVersion, execution = selected;
+    commercialClear();
+    $("commercial-selection").hidden = true;
+    $("commercial-publication").replaceChildren();
+    if (!execution) return;
+    try {
+      const path = commercialRoute("executions", execution);
+      const summary = await api(path);
+      await commercialRead(path, version, summary);
+    } catch (error) {
+      if (version !== commercialVersion) return;
+      if (error.code === "DISTRIBUTION_PUBLICATION_AMBIGUOUS") {
+        try {
+          const destinations = await api("/publishing/executions/" + encodeURIComponent(execution) + "/destinations");
+          if (version !== commercialVersion) return;
+          const select = $("commercial-publication");
+          const placeholder = text("option", "Selecione uma publicação"); placeholder.value = ""; select.append(placeholder);
+          for (const destination of destinations) {
+            const op = destination.operation;
+            if (op?.state !== "PUBLISHED" || op.requiresReconciliation || !op.remoteReceipt || op.remoteReceipt.mediaId !== op.mediaId) continue;
+            const option = text("option", (destination.network === "FACEBOOK_REELS" ? "Facebook Reels" : "Instagram") + " · conta " + destination.accountId + " · publicação " + op.mediaId);
+            option.value = op.operationId; select.append(option);
+          }
+          select.value = "";
+          $("commercial-selection").hidden = false;
+        } catch (selectionError) { commercialError(selectionError); return; }
+      }
+      commercialError(error);
+    }
+  }
   function renderTts(data) {
     if (!lastTts || lastTts.requestHash !== data?.requestHash) $("tts-accept-risk").checked = false;
     lastTts = data;
@@ -570,6 +736,9 @@ export const operationsScript = String.raw`
       csrf = "";
       selected = "";
       context = null;
+      commercialVersion++;
+      commercialClear();
+      commercialActor = "";
       $("source-video").removeAttribute("src");
       $("final-video").removeAttribute("src");
       $("source-image").removeAttribute("src");
@@ -798,6 +967,8 @@ export const operationsScript = String.raw`
   }
   async function open(id) {
     generation++;
+    commercialVersion++;
+    commercialClear();
     clearTimeout(timer);
     selected = id;
     instagramPackageHash="";
@@ -811,6 +982,7 @@ export const operationsScript = String.raw`
     notice("");
     await poll(generation);
     await list();
+    await commercialLoad();
   }
   function reviewPresentation(data) {
     const evidence = data.review?.evidence;
@@ -888,6 +1060,7 @@ export const operationsScript = String.raw`
   }
   async function start(session) {
     csrf = session.csrfToken;
+    commercialActor = session.operatorId;
     $("session-label").textContent = session.operatorId;
     $("logout").hidden = false;
     $("login-panel").hidden = true;
@@ -1103,6 +1276,59 @@ export const operationsScript = String.raw`
   });
   $("instagram-refresh").addEventListener("click",async()=>{try{await post(base()+"/instagram/refresh",{});await instagramStatus();}catch(error){fail(error);}});
   $("instagram-cancel").addEventListener("click",async()=>{try{await post(base()+"/instagram/cancel",{});await instagramStatus();}catch(error){fail(error);}});
+  $("commercial-refresh").addEventListener("click", async () => {
+    if (!commercialBusy) await commercialLoad();
+  });
+  $("commercial-new").addEventListener("click", () => {
+    if (!commercialBusy) commercialNew();
+  });
+  $("commercial-publication").addEventListener("change", async () => {
+    const version = ++commercialVersion, id = $("commercial-publication").value;
+    commercialClear();
+    if (!id) return;
+    // Values originate exclusively from the server's destination list.
+    if (![...$("commercial-publication").children].some((option) => option.value === id)) return;
+    try { await commercialRead(commercialRoute("social-operations", id), version); }
+    catch (error) { if (version === commercialVersion) commercialError(error); }
+  });
+  $("commercial-form").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    if (commercialBusy || !commercialPath || !commercialActor) return;
+    const version = commercialVersion, path = commercialPath;
+    commercialBusy = true;
+    $("commercial-save").disabled = true;
+    $("commercial-publication").disabled = true;
+    $("commercial-error").hidden = true;
+    try {
+      const form = new FormData(event.target), previous = commercialEditing;
+      const unknown = (field) => previous?.[field]?.status === "UNKNOWN" ? previous[field] : { status: "UNKNOWN", reason: "NOT_REPORTED" };
+      const count = (field) => String(form.get(field) ?? "").trim() === "" ? unknown(field) : { status: "KNOWN", value: Number(form.get(field)) };
+      const money = (field) => String(form.get(field) ?? "").trim() === "" ? unknown(field) : { status: "KNOWN", amount: String(form.get(field)).trim(), currency: String(form.get(field + "Currency") || "").trim() };
+      const input = {
+        actor: commercialActor,
+        periodStart: previous?.periodStart || new Date(form.get("periodStart")).toISOString(),
+        periodEnd: previous?.periodEnd || new Date(form.get("periodEnd")).toISOString(),
+        sourceReference: previous?.sourceReference || String(form.get("sourceReference") || "").trim(),
+        attribution: previous?.attribution || form.get("attribution"),
+        expectedRevision: previous?.revision || 0,
+        correctionReason: previous ? String(form.get("correctionReason") || "").trim() : null,
+        ...(previous?.metrics ? { metrics: previous.metrics } : {}),
+        clicks: count("clicks"), sales: count("sales"), revenue: money("revenue"), commissions: money("commissions"),
+      };
+      const signature = JSON.stringify({ path, input });
+      if (commercialPending?.signature !== signature) commercialPending = { signature, key: "commercial_ui_" + crypto.randomUUID() };
+      await post(path, { input, idempotencyKey: commercialPending.key });
+      if (version !== commercialVersion) return;
+      commercialNew();
+      await commercialRead(path, version);
+    } catch (error) {
+      if (version === commercialVersion) commercialError(error);
+    } finally {
+      commercialBusy = false;
+      $("commercial-save").disabled = false;
+      $("commercial-publication").disabled = false;
+    }
+  });
   api("/operations/session")
     .then(start)
     .catch((error) => {
