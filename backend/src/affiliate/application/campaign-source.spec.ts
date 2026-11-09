@@ -487,19 +487,19 @@ describe('additive campaign source migration', () => {
     const directory = mkdtempSync(join(tmpdir(), 'source-migration-'));
     const db = new DatabaseSync(join(directory, 'test.sqlite'));
     try {
-      provisionSchema(db);
+      provisionSchema(db, 42);
       // Recreate the pre-extension state of an already provisioned schema 42.
       db.exec(
         "DROP TABLE affiliate_campaign_sources_v1; DELETE FROM schema_lineage_extensions_v1 WHERE lineage='affiliate-campaign-source';",
       );
       const before = db.prepare('SELECT * FROM schema_migrations').all();
-      provisionSchema(db);
+      provisionSchema(db, 42);
       expect(db.prepare('SELECT * FROM schema_migrations').all()).toEqual(
         before,
       );
       expect(db.prepare('PRAGMA user_version').get()?.user_version).toBe(42);
       db.exec('DROP TRIGGER affiliate_campaign_sources_v1_no_update');
-      expect(() => provisionSchema(db)).toThrow(
+      expect(() => provisionSchema(db, 42)).toThrow(
         'SCHEMA_EXTENSION_INCOMPATIBLE',
       );
     } finally {
