@@ -120,7 +120,10 @@ function fixture() {
   };
 }
 
-function espeakFixture(f: ReturnType<typeof fixture>) {
+function espeakFixture(
+  f: ReturnType<typeof fixture>,
+  windows = process.platform === 'win32',
+) {
   Object.assign(f.manifest, {
     engine: 'espeak-ng',
     modelId: 'espeak-ng/pt-br',
@@ -162,7 +165,133 @@ function espeakFixture(f: ReturnType<typeof fixture>) {
   );
   f.manifest.modelSha256 = digest(readFileSync(f.manifest.modelPath));
   f.save();
+  if (!windows) linuxEspeakFixture(f);
 }
+function linuxEspeakFixture(f: ReturnType<typeof fixture>) {
+  espeakFixture(f, true);
+  const libraryPath = join(f.root, 'libespeak-ng.so.1.1.51');
+  const executablePath = join(f.root, 'espeak-ng');
+  writeFileSync(libraryPath, 'TEST_LINUX_LIBRARY_NOT_EXECUTABLE');
+  writeFileSync(executablePath, 'TEST_LINUX_EXECUTABLE_NOT_EXECUTABLE');
+  const native = {
+    platform: 'linux',
+    architecture: process.arch,
+    version: '1.51',
+    libraryPath,
+    librarySha256: digest(readFileSync(libraryPath)),
+    executablePath,
+    executableSha256: digest(readFileSync(executablePath)),
+  };
+  const inventory = JSON.parse(readFileSync(f.manifest.modelPath, 'utf8'));
+  delete inventory.files['espeak-ng.dll'];
+  inventory.files['libespeak-ng.so.1.1.51'] = native.librarySha256;
+  inventory.files['espeak-ng'] = native.executableSha256;
+  Object.assign(inventory, {
+    schemaVersion: 'espeak-native/2',
+    platform: native.platform,
+    architecture: native.architecture,
+    version: native.version,
+    library: { path: libraryPath, sha256: native.librarySha256 },
+    executable: { path: executablePath, sha256: native.executableSha256 },
+  });
+  const saveInventory = () => {
+    writeFileSync(f.manifest.modelPath, JSON.stringify(inventory));
+    f.manifest.modelSha256 = digest(readFileSync(f.manifest.modelPath));
+    f.save();
+  };
+  Object.assign(f.manifest, { modelVersion: '1.51', native });
+  saveInventory();
+  return { native, inventory, saveInventory };
+}
+
+test('Linux espeak requires its explicit platform, version, library, executable and pt-br inventory without selecting Kokoro', async () => {
+  const f = fixture();
+  try {
+    const { native } = linuxEspeakFixture(f);
+    const tts = new LocalPiperTts(f.env, f.runner, 'linux');
+    await tts.synthesize('Olá. Veja os detalhes do produto.', 5184);
+    const args = f.runner.mock.calls[0][1];
+    expect(args[1]).toContain('espeak.py');
+    expect(args.slice(4, 6)).toEqual(['pt-br', '150']);
+    expect(JSON.parse(args[6])).toEqual(native);
+    expect(JSON.stringify(f.runner.mock.calls)).not.toContain('kokoro.py');
+  } finally {
+    f.cleanup();
+  }
+});
+
+test.each([
+  'libraryHash',
+  'executableHash',
+  'version',
+  'platform',
+  'architecture',
+  'hostArchitecture',
+  'missingNative',
+  'missingExecutable',
+  'unlistedLibrary',
+  'missingVoice',
+  'kokoroFallback',
+])('Linux espeak rejects %s before starting any process', async (kind) => {
+  const f = fixture();
+  try {
+    const { native, inventory, saveInventory } = linuxEspeakFixture(f);
+    if (kind === 'libraryHash') writeFileSync(native.libraryPath, 'TAMPERED');
+    if (kind === 'executableHash')
+      writeFileSync(native.executablePath, 'TAMPERED');
+    if (kind === 'version') inventory.version = '1.52';
+    if (kind === 'platform') inventory.platform = 'win32';
+    if (kind === 'architecture')
+      inventory.architecture = process.arch === 'x64' ? 'arm64' : 'x64';
+    if (kind === 'hostArchitecture') {
+      native.architecture = process.arch === 'x64' ? 'arm64' : 'x64';
+      inventory.architecture = native.architecture;
+    }
+    if (kind === 'missingNative')
+      Object.assign(f.manifest, { native: undefined });
+    if (kind === 'missingExecutable') inventory.executable = undefined;
+    if (kind === 'unlistedLibrary')
+      inventory.library.path = join(f.root, 'unapproved.so');
+    if (kind === 'missingVoice')
+      delete inventory.files['espeak-ng-data/lang/roa/pt-BR'];
+    if (kind === 'kokoroFallback')
+      Object.assign(f.manifest, { engine: 'kokoro' });
+    saveInventory();
+    await expect(
+      new LocalPiperTts(f.env, f.runner, 'linux').synthesize('Olá.', 4000),
+    ).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+    expect(f.runner).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a Linux manifest cannot authorize synthesis on Windows', async () => {
+  const f = fixture();
+  try {
+    linuxEspeakFixture(f);
+    await expect(
+      new LocalPiperTts(f.env, f.runner, 'win32').synthesize('Olá.', 4000),
+    ).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+    expect(f.runner).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('a Windows manifest cannot authorize synthesis on Linux', async () => {
+  const f = fixture();
+  try {
+    espeakFixture(f, true);
+    await expect(
+      new LocalPiperTts(f.env, f.runner, 'linux').synthesize('Olá.', 4000),
+    ).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+    expect(f.runner).not.toHaveBeenCalled();
+  } finally {
+    f.cleanup();
+  }
+});
+
 function kokoroFixture(f: ReturnType<typeof fixture>) {
   Object.assign(f.manifest, {
     engine: 'kokoro',
@@ -220,7 +349,9 @@ test('Kokoro pins Dora natural, voices and adapter; never falls back or changes 
       20000,
     );
     expect(result.evidence.modelId).toBe('kokoro/pf_dora');
-    expect(result.evidence.adaptation).toBe('paragraph-preserving-deduplication/2');
+    expect(result.evidence.adaptation).toBe(
+      'paragraph-preserving-deduplication/2',
+    );
     expect(f.runner.mock.calls[0][1]).toEqual([
       '-B',
       expect.stringContaining('kokoro.py'),
@@ -242,8 +373,8 @@ test('Kokoro pins Dora natural, voices and adapter; never falls back or changes 
 test('native pt-BR formant speech requires GPL evidence and a complete pinned local inventory, without a sampled voice', async () => {
   const f = fixture();
   try {
-    espeakFixture(f);
-    await new LocalPiperTts(f.env, f.runner).synthesize(
+    espeakFixture(f, true);
+    await new LocalPiperTts(f.env, f.runner, 'win32').synthesize(
       'Conheça este travesseiro anatômico. Veja os detalhes do produto.',
       5184,
     );
@@ -283,7 +414,8 @@ test('conservative adaptation removes literal repetition without adding or dropp
   ).toBe('Dose autorizada: 0.5 ml. Não exceda essa dose.');
 });
 test('Dora input retains Portuguese accents, sentence marks and paragraph pauses', () => {
-  const text = 'Você conhece a organização em plástico?\n\nA avó e o avô aprovam.';
+  const text =
+    'Você conhece a organização em plástico?\n\nA avó e o avô aprovam.';
   expect(adaptKokoroNarration(text, 20000)).toBe(text);
   expect(adaptLocalNarration(text, 20000)).toBe(text.replace('\n\n', ' '));
 });
@@ -556,17 +688,29 @@ test.each(['piper', 'espeak-ng', 'kokoro'])(
           [historicalHash]: historicalPath,
         }),
       });
-      expect(make().authorizedAudio('run_001', script.scriptId, script.contentHash))
-        .toEqual(a);
+      expect(
+        make().authorizedAudio('run_001', script.scriptId, script.contentHash),
+      ).toEqual(a);
       expect(await make().automaticAudio(scope, 60000)).toEqual(a);
       expect(f.runner).toHaveBeenCalledTimes(3);
-      expect(make().authorizedAudio('run_other', script.scriptId, script.contentHash))
-        .toBeNull();
-      const audioPath = join(env.FFMPEG_VOICE_ROOT, 'sha256', a.contentHash.slice(0, 2), `${a.contentHash}.wav`);
+      expect(
+        make().authorizedAudio(
+          'run_other',
+          script.scriptId,
+          script.contentHash,
+        ),
+      ).toBeNull();
+      const audioPath = join(
+        env.FFMPEG_VOICE_ROOT,
+        'sha256',
+        a.contentHash.slice(0, 2),
+        `${a.contentHash}.wav`,
+      );
       const originalAudio = readFileSync(audioPath);
       writeFileSync(audioPath, 'TEST_TAMPERED_AUDIO');
-      expect(() => make().authorizedAudio('run_001', script.scriptId, script.contentHash))
-        .toThrow('LOCAL_FILE_HASH_MISMATCH');
+      expect(() =>
+        make().authorizedAudio('run_001', script.scriptId, script.contentHash),
+      ).toThrow('LOCAL_FILE_HASH_MISMATCH');
       writeFileSync(audioPath, originalAudio);
       writeFileSync(f.manifest.licenseEvidencePath, 'changed TEST license');
       expect(() =>
@@ -582,7 +726,15 @@ test.each(['piper', 'espeak-ng', 'kokoro'])(
   15000,
 );
 
-test.each(['valid', 'tampered-manifest', 'model', 'license', 'voice', 'unregistered', 'new-generation'])(
+test.each([
+  'valid',
+  'tampered-manifest',
+  'model',
+  'license',
+  'voice',
+  'unregistered',
+  'new-generation',
+])(
   'historical TTS manifest remains pinned after runtime upgrade: %s',
   async (kind) => {
     const f = fixture();
@@ -596,48 +748,81 @@ test.each(['valid', 'tampered-manifest', 'model', 'license', 'voice', 'unregiste
       f.manifest.executablePath = upgraded;
       f.manifest.executableSha256 = digest(readFileSync(upgraded));
       f.save();
-      f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({ [originalHash]: originalPath });
+      f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({
+        [originalHash]: originalPath,
+      });
       if (kind === 'tampered-manifest') writeFileSync(originalPath, '{}');
-      if (kind === 'model') writeFileSync(f.manifest.modelPath, 'TEST_CHANGED_MODEL');
-      if (kind === 'license') writeFileSync(f.manifest.licenseEvidencePath, 'TEST_CHANGED_LICENSE');
-      if (kind === 'voice') writeFileSync((f.manifest as any).voicesPath, 'TEST_CHANGED_VOICE');
+      if (kind === 'model')
+        writeFileSync(f.manifest.modelPath, 'TEST_CHANGED_MODEL');
+      if (kind === 'license')
+        writeFileSync(f.manifest.licenseEvidencePath, 'TEST_CHANGED_LICENSE');
+      if (kind === 'voice')
+        writeFileSync((f.manifest as any).voicesPath, 'TEST_CHANGED_VOICE');
       if (kind === 'unregistered') delete f.env.LOCAL_TTS_HISTORICAL_MANIFESTS;
       const tts = new LocalPiperTts(f.env, f.runner);
       if (kind === 'valid') {
-        expect(tts.configuration(originalHash).configurationHash).toBe(originalHash);
-        expect(tts.configuration().executableSha256).toBe(f.manifest.executableSha256);
+        expect(tts.configuration(originalHash).configurationHash).toBe(
+          originalHash,
+        );
+        expect(tts.configuration().executableSha256).toBe(
+          f.manifest.executableSha256,
+        );
       } else if (kind === 'new-generation') {
         writeFileSync(upgraded, 'TEST_TAMPERED_CURRENT_EXECUTABLE');
-        expect(tts.configuration(originalHash).configurationHash).toBe(originalHash);
-        await expect(tts.synthesize('Olá.', 4000)).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+        expect(tts.configuration(originalHash).configurationHash).toBe(
+          originalHash,
+        );
+        await expect(tts.synthesize('Olá.', 4000)).rejects.toThrow(
+          'LOCAL_TTS_LICENSE_REQUIRED',
+        );
         expect(f.runner).not.toHaveBeenCalled();
       } else {
-        expect(() => tts.configuration(originalHash)).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+        expect(() => tts.configuration(originalHash)).toThrow(
+          'LOCAL_TTS_LICENSE_REQUIRED',
+        );
       }
-    } finally { f.cleanup(); }
+    } finally {
+      f.cleanup();
+    }
   },
 );
 
-test.each([false, true])('historical Windows paths use explicitly pinned Docker files; tampered=%s', (tampered) => {
-  const f = fixture();
-  try {
-    const files: Record<string, string> = {};
-    for (const name of ['model', 'config', 'executable', 'licenseEvidence'] as const) {
-      const hash = f.manifest[`${name}Sha256`];
-      files[hash] = f.manifest[`${name}Path`];
-      f.manifest[`${name}Path`] = `C:\\historical\\${name}`;
+test.each([false, true])(
+  'historical Windows paths use explicitly pinned Docker files; tampered=%s',
+  (tampered) => {
+    const f = fixture();
+    try {
+      const files: Record<string, string> = {};
+      for (const name of [
+        'model',
+        'config',
+        'executable',
+        'licenseEvidence',
+      ] as const) {
+        const hash = f.manifest[`${name}Sha256`];
+        files[hash] = f.manifest[`${name}Path`];
+        f.manifest[`${name}Path`] = `C:\\historical\\${name}`;
+      }
+      f.save();
+      const historicalHash = f.env.LOCAL_TTS_MANIFEST_SHA256!;
+      const original = join(f.root, 'original.json');
+      writeFileSync(original, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
+      // The active runtime remains independent; historical bytes are not rewritten.
+      f.env.LOCAL_TTS_MANIFEST_SHA256 = 'f'.repeat(64);
+      f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({
+        [historicalHash]: original,
+      });
+      f.env.LOCAL_TTS_HISTORICAL_FILES = JSON.stringify(files);
+      if (tampered)
+        writeFileSync(
+          files[f.manifest.executableSha256],
+          'TEST_TAMPERED_EXECUTABLE',
+        );
+      const read = () => new LocalPiperTts(f.env).configuration(historicalHash);
+      if (tampered) expect(read).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+      else expect(read().configurationHash).toBe(historicalHash);
+    } finally {
+      f.cleanup();
     }
-    f.save();
-    const historicalHash = f.env.LOCAL_TTS_MANIFEST_SHA256!;
-    const original = join(f.root, 'original.json');
-    writeFileSync(original, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
-    // The active runtime remains independent; historical bytes are not rewritten.
-    f.env.LOCAL_TTS_MANIFEST_SHA256 = 'f'.repeat(64);
-    f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({ [historicalHash]: original });
-    f.env.LOCAL_TTS_HISTORICAL_FILES = JSON.stringify(files);
-    if (tampered) writeFileSync(files[f.manifest.executableSha256], 'TEST_TAMPERED_EXECUTABLE');
-    const read = () => new LocalPiperTts(f.env).configuration(historicalHash);
-    if (tampered) expect(read).toThrow('LOCAL_TTS_LICENSE_REQUIRED');
-    else expect(read().configurationHash).toBe(historicalHash);
-  } finally { f.cleanup(); }
-});
+  },
+);

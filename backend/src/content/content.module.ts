@@ -45,7 +45,11 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
         process.env.CONTENT_EDITORIAL_PROVIDER === 'fake'
           ? new FakeEditorialProvider()
           : process.env.CONTENT_EDITORIAL_PROVIDER === 'ollama'
-            ? new OllamaEditorialProvider(process.env.OLLAMA_MODEL ?? '')
+            ? new OllamaEditorialProvider(
+                process.env.OLLAMA_MODEL ?? '',
+                globalThis.fetch,
+                process.env.OLLAMA_BASE_URL,
+              )
             : new UnavailableEditorialProvider(),
     },
     {
