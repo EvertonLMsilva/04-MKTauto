@@ -1,3 +1,12 @@
+import {
+  validateSupersessionRequest,
+  assertSupersessionObservation,
+  observationFingerprint,
+} from '../domain/facebook-supersession.js';
+import type {
+  FacebookSupersessionRequest,
+  FacebookSuccessorAuthorization,
+} from '../domain/facebook-supersession.js';
 import type { CampaignOperationsPort } from '../../content-operations/application/campaign-operations.port.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
 import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
@@ -48,11 +57,9 @@ export class DestinationPublicationService {
     const { execution } = this.context(id);
     const s = this.store.openDestination(ports.publisher.mode);
     try {
-      const reservation = s.reservations.forExecution(
-        id,
-        'FACEBOOK_REELS',
-        account,
-      );
+      const reservation =
+        s.reservations.activeForExecution?.(id, 'FACEBOOK_REELS', account) ??
+        s.reservations.forExecution(id, 'FACEBOOK_REELS', account);
       if (!reservation || reservation.operationId !== ack.operationId)
         socialFail('SOCIAL_SESSION_EVIDENCE_INVALID');
       const op = s.social.get(ack.operationId);
@@ -73,7 +80,95 @@ export class DestinationPublicationService {
       s.close();
     }
   }
-  async execute(id: string, network: PublicationNetwork, account: string) {
+  async prepareFacebookSupersession(
+    id: string,
+    account: string,
+    raw: FacebookSupersessionRequest,
+  ) {
+    const command = validateSupersessionRequest(raw),
+      ports = this.facebook;
+    if (
+      !ports?.publisher.inspectUploadSession ||
+      ports.publisher.accountId !== 'facebook_reels:' + account
+    )
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    const s = this.store.openDestination(ports.publisher.mode);
+    try {
+      const op = s.social.get(command.originalOperationId);
+      if (!op || op.accountId !== ports.publisher.accountId)
+        socialFail('SOCIAL_DESTINATION_INVALID');
+      const lineage = s.social.lineage(op.operationId),
+        rootId = lineage?.root_operation_id ?? op.operationId;
+      const reservation = s.reservations.forExecution(
+        id,
+        'FACEBOOK_REELS',
+        account,
+      );
+      if (!reservation || reservation.operationId !== rootId)
+        socialFail('SOCIAL_RESERVATION_CONFLICT');
+      const replay = s.social.supersessionReplay(command);
+      if (replay) return replay;
+      const revalidate = () => {
+        const { execution, request } = this.context(id);
+        if (execution.status === 'RUNNING')
+          socialFail('SOCIAL_SUPERSESSION_ACTIVE_CLAIM');
+        s.manual.validateForPublication(op.packageHash, execution);
+        const recovery = request.legacyRecovery as
+          { financialOperationIds?: string[] } | undefined;
+        for (const financialId of recovery?.financialOperationIds ??
+          [request.generationRequestId].filter(
+            (v): v is string => typeof v === 'string',
+          ))
+          if (this.finance.getGlobalOperation(financialId)?.state === 'UNKNOWN')
+            socialFail('SOCIAL_FINANCE_RECONCILIATION_REQUIRED');
+      };
+      revalidate();
+      const engine = new SocialPublicationService({
+        repository: s.social,
+        manual: s.manual,
+        publisher: ports.publisher,
+        media: ports.media,
+        transferVerifier: ports.verifier,
+        now: this.now,
+      });
+      const evidence = await engine.inspectSupersessionLineage(
+        op.operationId,
+        true,
+      );
+      const remote = evidence.at(-1)!.observation;
+      assertSupersessionObservation(
+        command.remoteObservation,
+        op,
+        s.social.history(op.operationId),
+        this.now(),
+      );
+      assertSupersessionObservation(
+        remote,
+        op,
+        s.social.history(op.operationId),
+        this.now(),
+      );
+      if (
+        observationFingerprint(command.remoteObservation) !==
+        observationFingerprint(remote)
+      )
+        socialFail('SOCIAL_SUPERSESSION_OBSERVATION_CHANGED');
+      return s.social.prepareSupersession(
+        command,
+        () => this.now(),
+        revalidate,
+        evidence,
+      );
+    } finally {
+      s.close();
+    }
+  }
+  async execute(
+    id: string,
+    network: PublicationNetwork,
+    account: string,
+    operationalAuthorization?: FacebookSuccessorAuthorization,
+  ) {
     if (network !== 'FACEBOOK_REELS' || !this.facebook)
       socialFail('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
     const ports = this.facebook,
@@ -83,7 +178,9 @@ export class DestinationPublicationService {
     const { execution: e, request } = this.context(id),
       s = this.store.openDestination(ports.publisher.mode);
     try {
-      const prior = s.reservations.forExecution(id, network, account),
+      const prior =
+          s.reservations.activeForExecution?.(id, network, account) ??
+          s.reservations.forExecution(id, network, account),
         previous = prior ? s.social.get(prior.operationId) : null;
       if (
         previous?.state === 'PUBLISHED' &&
@@ -91,6 +188,15 @@ export class DestinationPublicationService {
         !previous.requiresReconciliation
       )
         return this.result(previous);
+      if (
+        previous &&
+        s.social.lineage(previous.operationId)?.supersession_revision > 0
+      )
+        s.social.authorizePublication(
+          previous,
+          this.now(),
+          operationalAuthorization,
+        );
       const packages = s.manual.repository
         .list('PACKAGE')
         .filter(
@@ -131,21 +237,26 @@ export class DestinationPublicationService {
         media: ports.media,
         transferVerifier: ports.verifier,
         allowLivePosts: ports.allowLivePosts ?? false,
+        operationalAuthorization,
         now: this.now,
         authorize: (op: any) => s.reservations.authorize(op, this.now()),
       });
-      let op = await engine.prepare(
-        { packageHash: pkg.contentHash, accountId: canonical },
-        `facebook_reels:${id}:${account}`,
-        'local',
-      );
-      s.reservations.reserve(
-        id,
-        op,
-        pkg,
-        s.manual.getReview(pkg.contentHash).contentHash,
-        this.now(),
-      );
+      let op = previous?.supersession
+        ? previous
+        : await engine.prepare(
+            { packageHash: pkg.contentHash, accountId: canonical },
+            `facebook_reels:${id}:${account}`,
+            'local',
+          );
+      if (previous?.supersession) s.reservations.authorize(op, this.now());
+      else
+        s.reservations.reserve(
+          id,
+          op,
+          pkg,
+          s.manual.getReview(pkg.contentHash).contentHash,
+          this.now(),
+        );
       if (
         ['CREATING_CONTAINER', 'PUBLISHING', 'UNCERTAIN'].includes(op.state) ||
         op.requiresReconciliation

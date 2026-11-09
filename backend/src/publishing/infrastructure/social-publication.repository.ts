@@ -1,3 +1,14 @@
+import {
+  validateSupersessionRequest,
+  assertSupersessionEligible,
+  assertSupersessionObservation,
+  assertSuccessorAuthorization,
+} from '../domain/facebook-supersession.js';
+import type {
+  FacebookSupersessionRequest,
+  FacebookSuccessorAuthorization,
+  FacebookLineageEvidence,
+} from '../domain/facebook-supersession.js';
 import { DestinationReservationsRepository } from './destination-reservations.repository.js';
 import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
@@ -21,6 +32,7 @@ const transitions: any = {
 };
 const patchFields: any = new Set([
   'sessionEvidence',
+  'executionAuthorization',
   'uploadAudit',
   'state',
   'containerId',
@@ -174,7 +186,358 @@ export class SocialPublicationRepository {
       socialFail('SOCIAL_PERSISTED_INTEGRITY');
     return Object.freeze(value);
   }
-  authorizePublication(operation: any, at: string) {
+  assertNotSuperseded(id: string) {
+    if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) < 44)
+      return;
+    if (
+      this.db
+        .prepare(
+          'SELECT 1 FROM publication_supersessions WHERE predecessor_id=?',
+        )
+        .get(id)
+    )
+      socialFail('SOCIAL_OPERATION_SUPERSEDED');
+  }
+  lineage(id: string) {
+    if (Number(this.db.prepare('PRAGMA user_version').get()?.user_version) < 44)
+      return null;
+    return this.db
+      .prepare(
+        'SELECT root_operation_id,predecessor_id,supersession_revision FROM social_publication_operations WHERE operation_id=?',
+      )
+      .get(id);
+  }
+  assertSessionNotInAncestors(id: string, videoId: string) {
+    if (!(this.lineage(id)?.supersession_revision > 0)) return;
+    const ancestors = this.resolveSupersessionLineage(id).slice(0, -1);
+    if (ancestors.some(({ operation }) => operation.containerId === videoId))
+      socialFail('SOCIAL_SESSION_ID_CONFLICT');
+  }
+  resolveSupersessionLineage(id: string) {
+    const nodes: { operation: any; history: any[]; row: any }[] = [];
+    const seen = new Set<string>();
+    let cursor: string | null = id;
+    while (cursor !== null) {
+      if (seen.has(cursor)) socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      seen.add(cursor);
+      const operation = this.get(cursor);
+      const row: any = this.db
+        .prepare(
+          'SELECT root_operation_id,predecessor_id,supersession_revision,supersession_id FROM social_publication_operations WHERE operation_id=?',
+        )
+        .get(cursor);
+      if (
+        !operation ||
+        !row ||
+        !Number.isSafeInteger(row.supersession_revision) ||
+        row.supersession_revision < 0
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      const history = this.history(cursor);
+      if (
+        history.length !== operation.version + 1 ||
+        history.some((e, i) => e.version !== i) ||
+        history.at(-1)?.contentHash !== operation.contentHash
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      nodes.unshift({ operation, history, row });
+      cursor = row.predecessor_id;
+    }
+    const root = nodes[0].operation;
+    if (
+      root.operationId !== `social_publication:${root.requestHash}` ||
+      root.network !== 'FACEBOOK_REELS'
+    )
+      socialFail('SOCIAL_PERSISTED_INTEGRITY');
+    const owner = this.db
+      .prepare(
+        'SELECT * FROM publication_active_ownership WHERE reservation_operation_id=?',
+      )
+      .get(root.operationId);
+    if (
+      !owner ||
+      owner.active_operation_id !== id ||
+      owner.revision !== nodes.length - 1 ||
+      owner.network !== root.network ||
+      'facebook_reels:' + owner.account_id !== root.accountId ||
+      owner.artifact_hash !== root.mediaHash
+    )
+      socialFail('SOCIAL_RESERVATION_CONFLICT');
+    const videoIds = new Set<string>();
+    for (const [revision, node] of nodes.entries()) {
+      const { operation: op, row } = node;
+      if (op.containerId) {
+        if (videoIds.has(op.containerId))
+          socialFail('SOCIAL_SESSION_ID_CONFLICT');
+        videoIds.add(op.containerId);
+      }
+      if (
+        row.supersession_revision !== revision ||
+        [
+          'packageHash',
+          'accountId',
+          'requestHash',
+          'mediaHash',
+          'caption',
+          'network',
+          'publicationFlowVersion',
+          'uploadStrategy',
+        ].some((k) => op[k] !== root[k])
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      const children = this.db
+        .prepare(
+          'SELECT operation_id FROM social_publication_operations WHERE predecessor_id=?',
+        )
+        .all(op.operationId);
+      const ledgerChildren = this.db
+        .prepare(
+          'SELECT successor_id FROM publication_supersessions WHERE predecessor_id=?',
+        )
+        .all(op.operationId);
+      const next = nodes[revision + 1]?.operation.operationId;
+      if (
+        children.length !== (next ? 1 : 0) ||
+        ledgerChildren.length !== children.length ||
+        (next &&
+          (children[0].operation_id !== next ||
+            ledgerChildren[0].successor_id !== next))
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      if (revision === 0) {
+        if (
+          row.root_operation_id !== null ||
+          row.predecessor_id !== null ||
+          row.supersession_id !== null ||
+          op.supersession
+        )
+          socialFail('SOCIAL_PERSISTED_INTEGRITY');
+        continue;
+      }
+      const prior = nodes[revision - 1];
+      const s = op.supersession;
+      const record = this.db
+        .prepare('SELECT * FROM publication_supersessions WHERE successor_id=?')
+        .get(op.operationId);
+      if (
+        !s ||
+        !record ||
+        op.operationId !==
+          `${root.operationId}:supersession:${revision}:${root.requestHash}` ||
+        row.root_operation_id !== root.operationId ||
+        row.predecessor_id !== prior.operation.operationId ||
+        row.supersession_id !== op.operationId ||
+        s.rootOperationId !== root.operationId ||
+        s.predecessorId !== prior.operation.operationId ||
+        s.predecessorVideoId !== prior.operation.containerId ||
+        s.revision !== revision ||
+        s.executionAuthorizationRequired !== true ||
+        record.root_operation_id !== root.operationId ||
+        record.predecessor_id !== prior.operation.operationId ||
+        record.revision !== revision ||
+        record.reason !== s.reason ||
+        record.authorization_id !== s.decisionId ||
+        record.superseded_at !== s.preparedAt
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      const decision = validateSupersessionRequest({
+        originalOperationId: s.predecessorId,
+        revision,
+        decisionId: s.decisionId,
+        actor: s.actor,
+        reason: s.reason,
+        remoteObservation: s.remoteObservation,
+        acceptResidualRisk: s.acceptResidualRisk,
+        expectedVersion: prior.operation.version,
+      });
+      if (affiliateHash(decision) !== s.decisionHash)
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      assertSupersessionObservation(
+        s.remoteObservation,
+        prior.operation,
+        prior.history,
+        s.preparedAt,
+      );
+    }
+    return nodes;
+  }
+  validateSupersessionLineage(
+    id: string,
+    evidence: FacebookLineageEvidence | undefined,
+    now: string,
+    includeCurrent = false,
+  ) {
+    const nodes = this.resolveSupersessionLineage(id);
+    const ancestors = includeCurrent ? nodes : nodes.slice(0, -1);
+    if (!Array.isArray(evidence) || evidence.length !== ancestors.length)
+      socialFail('SOCIAL_SUPERSESSION_OBSERVATION_INVALID');
+    for (const [index, { operation, history }] of ancestors.entries()) {
+      const captured = evidence![index];
+      if (
+        !captured ||
+        captured.operationId !== operation.operationId ||
+        captured.version !== operation.version ||
+        captured.contentHash !== operation.contentHash
+      )
+        socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      assertSupersessionEligible(operation, history, captured.version);
+      assertSupersessionObservation(
+        captured.observation,
+        operation,
+        history,
+        now,
+      );
+    }
+  }
+  supersessionReplay(raw: FacebookSupersessionRequest) {
+    const command = validateSupersessionRequest(raw);
+    if (
+      Number(this.db.prepare('PRAGMA user_version').get()?.user_version) !== 44
+    )
+      socialFail('SOCIAL_SCHEMA_44_REQUIRED');
+    const key = `facebook_supersession:${command.originalOperationId}:${command.revision}`;
+    publicText(key, 'idempotencyKey', 200);
+    const prior = this.db
+      .prepare(
+        'SELECT request_hash,operation_id FROM social_publication_commands WHERE idempotency_key=?',
+      )
+      .get(key);
+    if (!prior) return null;
+    if (prior.request_hash !== affiliateHash(command))
+      socialFail('SOCIAL_SUPERSESSION_CONFLICT');
+    const saved = this.get(prior.operation_id);
+    if (!saved || saved.supersession?.decisionHash !== prior.request_hash)
+      socialFail('SOCIAL_PERSISTED_INTEGRITY');
+    return saved;
+  }
+  prepareSupersession(
+    raw: FacebookSupersessionRequest,
+    now: string | (() => string),
+    revalidate: () => void,
+    evidence?: FacebookLineageEvidence,
+  ) {
+    const command = validateSupersessionRequest(raw);
+    return this.#transaction(() => {
+      const at = typeof now === 'function' ? now() : now;
+      const replay = this.supersessionReplay(command);
+      if (replay) return replay;
+      const op = this.get(command.originalOperationId);
+      if (!op) socialFail('SOCIAL_OPERATION_NOT_FOUND');
+      this.assertNotSuperseded(op.operationId);
+      const history = this.history(op.operationId);
+      assertSupersessionEligible(op, history, command.expectedVersion);
+      this.validateSupersessionLineage(op.operationId, evidence, at, true);
+      assertSupersessionObservation(command.remoteObservation, op, history, at);
+      const lineage = this.lineage(op.operationId),
+        rootId = lineage.root_operation_id ?? op.operationId;
+      if (command.revision !== lineage.supersession_revision + 1)
+        socialFail('SOCIAL_SUPERSESSION_CONFLICT');
+      const owner = this.db
+        .prepare(
+          'SELECT * FROM publication_active_ownership WHERE active_operation_id=?',
+        )
+        .get(op.operationId);
+      if (
+        !owner ||
+        owner.reservation_operation_id !== rootId ||
+        owner.revision !== lineage.supersession_revision
+      )
+        socialFail('SOCIAL_RESERVATION_CONFLICT');
+      if (typeof revalidate !== 'function' || revalidate() !== undefined)
+        socialFail('SOCIAL_SUPERSESSION_INELIGIBLE');
+      new DestinationReservationsRepository(this.db).authorize(op, at);
+      const root = this.get(rootId),
+        id = `${rootId}:supersession:${command.revision}:${root.requestHash}`;
+      publicText(id, 'operationId', 200);
+      const decisionHash = affiliateHash(command);
+      const value = this.#seal({
+        packageHash: op.packageHash,
+        accountId: op.accountId,
+        requestHash: root.requestHash,
+        network: op.network,
+        mediaHash: op.mediaHash,
+        caption: op.caption,
+        publicationFlowVersion: op.publicationFlowVersion,
+        uploadStrategy: op.uploadStrategy,
+        executionMode: this.mode,
+        databaseId: this.databaseId,
+        state: 'PREPARED',
+        version: 0,
+        operationId: id,
+        containerId: null,
+        mediaId: null,
+        uncertainStage: null,
+        errorCode: null,
+        providerStatus: null,
+        confirmationSource: null,
+        transferEvidence: null,
+        updatedAt: at,
+        supersession: {
+          rootOperationId: rootId,
+          predecessorId: op.operationId,
+          predecessorVideoId: op.containerId,
+          revision: command.revision,
+          decisionId: command.decisionId,
+          actor: command.actor,
+          reason: command.reason,
+          acceptResidualRisk: true,
+          remoteObservation: command.remoteObservation,
+          decisionHash,
+          preparedAt: at,
+          executionAuthorizationRequired: true,
+        },
+      });
+      this.db
+        .prepare(
+          'INSERT INTO social_publication_operations(operation_id,package_hash,account_id,request_hash,payload_json,version,supersession_revision,root_operation_id,predecessor_id,supersession_id) VALUES(?,?,?,?,?,0,?,?,?,?)',
+        )
+        .run(
+          id,
+          value.packageHash,
+          value.accountId,
+          value.requestHash,
+          JSON.stringify(value),
+          command.revision,
+          rootId,
+          op.operationId,
+          id,
+        );
+      this.db
+        .prepare('INSERT INTO publication_supersessions VALUES(?,?,?,?,?,?,?)')
+        .run(
+          id,
+          rootId,
+          op.operationId,
+          command.revision,
+          command.reason,
+          command.decisionId,
+          at,
+        );
+      this.#event(value);
+      this.db
+        .prepare('INSERT INTO social_publication_commands VALUES(?,?,?)')
+        .run(
+          `facebook_supersession:${op.operationId}:${command.revision}`,
+          decisionHash,
+          id,
+        );
+      return value;
+    });
+  }
+  authorizePublication(
+    operation: any,
+    at: string,
+    grant?: FacebookSuccessorAuthorization,
+  ) {
+    this.assertNotSuperseded(operation.operationId);
+    if (this.lineage(operation.operationId)?.supersession_revision > 0) {
+      this.resolveSupersessionLineage(operation.operationId);
+      const record = this.db
+        .prepare('SELECT * FROM publication_supersessions WHERE successor_id=?')
+        .get(operation.operationId);
+      if (!record) socialFail('SOCIAL_PERSISTED_INTEGRITY');
+      assertSuccessorAuthorization(operation, record, grant, at);
+    }
     if (
       Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
     )
@@ -276,8 +639,11 @@ export class SocialPublicationRepository {
     allowed: any,
     patch: any,
     now: any,
+    grant?: FacebookSuccessorAuthorization,
+    evidence?: FacebookLineageEvidence,
   ): any {
     return this.#transaction((): any => {
+      const at = typeof now === 'function' ? now() : now;
       const previous: any = this.get(id);
       if (!previous) socialFail('SOCIAL_OPERATION_NOT_FOUND');
       if (
@@ -285,6 +651,17 @@ export class SocialPublicationRepository {
         !allowed.includes(previous.state)
       )
         return { claimed: false, value: previous };
+      if (
+        ['CREATING_CONTAINER', 'PUBLISHING'].includes(patch.state) ||
+        patch.uploadStage === 'UPLOADING' ||
+        patch.uploadAudit?.at(-1)?.kind === 'ATTEMPT_STARTED'
+      ) {
+        this.authorizePublication(previous, at, grant);
+        if (this.lineage(id)?.supersession_revision > 0) {
+          this.validateSupersessionLineage(id, evidence, at);
+          patch = { ...patch, executionAuthorization: grant };
+        }
+      }
       const direct: any = [
         'facebook-login-resumable/experimental',
         'facebook-reels-local/1',
@@ -304,6 +681,12 @@ export class SocialPublicationRepository {
         patch.sessionEvidence.videoId === patch.containerId &&
         patch.sessionEvidence.pageId ===
           previous.accountId.replace(/^facebook_reels:/, '');
+      if (patch.containerId !== undefined)
+        this.assertSessionNotInAncestors(id, patch.containerId);
+      if (sessionRecovery) {
+        this.assertNotSuperseded(id);
+        new DestinationReservationsRepository(this.db).authorize(previous, at);
+      }
       const directTransition: any =
         direct &&
         ((previous.state === 'PROCESSING' && next === 'UNCERTAIN') ||
@@ -548,7 +931,7 @@ export class SocialPublicationRepository {
         ...previous,
         ...patch,
         version: previous.version + 1,
-        updatedAt: now,
+        updatedAt: at,
       });
       this.db
         .prepare(

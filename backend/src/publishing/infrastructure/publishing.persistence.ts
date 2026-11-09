@@ -165,9 +165,25 @@ export class PublishingPersistence implements PublishingStore {
         { db },
         { mode, readOnly: true },
       );
-      return new DestinationReservationsRepository(db)
-        .list(id)
-        .map((r) => ({ ...r, operation: social.get(r.operationId) }));
+      const reservations = new DestinationReservationsRepository(db);
+      return reservations.list(id).flatMap((r) => {
+        const active = reservations.activeForExecution(
+          id,
+          r.network,
+          r.accountId,
+        );
+        const original = { ...r, operation: social.get(r.operationId) };
+        return active && active.operationId !== r.operationId
+          ? [
+              original,
+              {
+                ...r,
+                operationId: active.operationId,
+                operation: social.get(active.operationId),
+              },
+            ]
+          : [original];
+      });
     } finally {
       db.close();
     }
