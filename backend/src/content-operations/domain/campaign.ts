@@ -35,9 +35,12 @@ export function instant(value: unknown): string {
     throw new CampaignError('INVALID_TIMESTAMP');
   return new Date(value).toISOString();
 }
-export function productionDate(value: string): string {
+export function productionDate(
+  value: string,
+  timeZone = 'America/Sao_Paulo',
+): string {
   return new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Sao_Paulo',
+    timeZone,
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

@@ -1,5 +1,7 @@
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { CampaignRepository } from '../../content-operations/infrastructure/campaign.repository.js';
+import { DestinationReservationsRepository } from './destination-reservations.repository.js';
+import { InstagramPublicationRepository } from './instagram-publication.repository.js';
 import { SocialPublicationRepository } from './social-publication.repository.js';
 import type { ManualDistributionRepository } from './manual-distribution.repository.js';
 import {
@@ -29,31 +31,53 @@ export class CommercialMeasurementRepository {
     let executionId = target.kind === 'execution' ? target.id : null;
     let packageHash: string;
     let mode: string = 'manual';
-    if (
-      target.kind === 'execution' &&
-      hasTable('instagram_publication_reservations')
-    ) {
-      const reservation = db
-        .prepare(
-          'SELECT operation_id FROM instagram_publication_reservations WHERE execution_id=?',
-        )
-        .get(target.id);
-      if (reservation)
-        operation = this.operation(String(reservation.operation_id));
+    if (target.kind === 'execution') {
+      const destinations = hasTable('multi_network_publication_reservations')
+        ? new DestinationReservationsRepository(db)
+        : null;
+      const reservations = destinations
+        ? destinations
+            .list(target.id)
+            .map(
+              (reservation) =>
+                destinations.activeForExecution(
+                  target.id,
+                  reservation.network,
+                  reservation.accountId,
+                ) ?? fail('DISTRIBUTION_PUBLICATION_SCOPE_MISMATCH'),
+            )
+        : hasTable('instagram_publication_reservations')
+          ? [
+              new InstagramPublicationRepository(db).forExecution(target.id),
+            ].filter((r) => r !== null)
+          : [];
+      const operations = [...new Set(reservations.map((r) => r.operationId))]
+        .map((id) => this.operation(id))
+        .filter((op) => this.confirmed(op));
+      const execution = new CampaignRepository(db).get(target.id);
+      const publications = this.records
+        .list('PUBLICATION')
+        .filter(
+          (p) =>
+            p.state === 'PUBLISHED' &&
+            this.records.get('PACKAGE', p.packageHash)?.identity
+              .pipelineRunId === execution.run_id,
+        );
+      if (operations.length + publications.length > 1)
+        fail('DISTRIBUTION_PUBLICATION_AMBIGUOUS');
+      operation = operations[0] ?? null;
+      publication = publications[0] ?? null;
     } else if (target.kind === 'operation')
       operation = this.operation(target.id);
     if (operation) {
       const receipt = operation.remoteReceipt;
-      if (
-        operation.state !== 'PUBLISHED' ||
-        !operation.mediaId ||
-        operation.requiresReconciliation ||
-        !receipt ||
-        receipt.mediaId !== operation.mediaId
-      )
+      if (!this.confirmed(operation))
         fail('DISTRIBUTION_CONFIRMED_PUBLICATION_REQUIRED');
       timestamp(receipt.publishedAt, 'publishedAt');
-      https(receipt.permalink, 'permalink');
+      if (!(
+        operation.network === 'FACEBOOK_REELS' && receipt.permalink === null
+      ))
+        https(receipt.permalink, 'permalink');
       publication = {
         publicationId: operation.operationId,
         operationId: operation.operationId,
@@ -68,20 +92,7 @@ export class CommercialMeasurementRepository {
     else if (target.kind === 'publication') {
       publication = this.records.get('PUBLICATION', target.id);
       packageHash = publication?.packageHash;
-    } else {
-      const execution = new CampaignRepository(db).get(target.id);
-      const publications = this.records
-        .list('PUBLICATION')
-        .filter(
-          (p) =>
-            p.state === 'PUBLISHED' &&
-            this.records.get('PACKAGE', p.packageHash)?.identity
-              .pipelineRunId === execution.run_id,
-        );
-      if (publications.length > 1) fail('DISTRIBUTION_PUBLICATION_AMBIGUOUS');
-      publication = publications[0];
-      packageHash = publication?.packageHash;
-    }
+    } else packageHash = publication?.packageHash;
     if (!publication || (!operation && publication.state !== 'PUBLISHED'))
       fail('DISTRIBUTION_CONFIRMED_PUBLICATION_REQUIRED');
     const pkg = this.records.get('PACKAGE', packageHash!);
@@ -128,7 +139,11 @@ export class CommercialMeasurementRepository {
       fail('DISTRIBUTION_PRODUCT_SCOPE_MISMATCH');
     if (
       operation &&
-      (operation.accountId !== pkg.account ||
+      ((operation.network === 'FACEBOOK_REELS'
+        ? operation.accountId !== `facebook_reels:${pkg.account}` ||
+          pkg.platform !== 'facebook'
+        : operation.accountId !== pkg.account ||
+          pkg.platform !== 'instagram') ||
         operation.mediaHash !== pkg.identity.videoRenderContentHash)
     )
       fail('DISTRIBUTION_PUBLICATION_SCOPE_MISMATCH');
@@ -182,6 +197,16 @@ export class CommercialMeasurementRepository {
         ]
       ).filter((id: unknown) => typeof id === 'string') as string[],
     };
+  }
+  private confirmed(operation: any): boolean {
+    return !!(
+      operation &&
+      operation.state === 'PUBLISHED' &&
+      operation.mediaId &&
+      !operation.requiresReconciliation &&
+      operation.remoteReceipt &&
+      operation.remoteReceipt.mediaId === operation.mediaId
+    );
   }
   private operation(id: string): any {
     const db = this.records.db;

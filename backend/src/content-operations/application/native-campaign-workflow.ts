@@ -35,6 +35,12 @@ import { compositionPlanContentHash } from '../../media/domain/composition-plan-
 import { videoCompositionRequestHash } from '../../media/domain/video-composition-contracts.js';
 import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
 import type { LocalImageSource } from '../../media/application/local-flow.port.js';
+import {
+  dailySchedule,
+  dailyOccurrence,
+  initialOccurrence,
+} from '../domain/campaign-schedule.js';
+import type { DailySchedule } from '../domain/campaign-schedule.js';
 
 export function document(value: unknown): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value))
@@ -52,11 +58,28 @@ export function localRecurrence(
     !value ||
     typeof value !== 'object' ||
     Array.isArray(value) ||
-    Object.keys(value).join(',') !== 'enabled' ||
+    !['enabled', 'enabled,time,timeZone'].includes(
+      Object.keys(value).sort().join(','),
+    ) ||
     typeof (value as { enabled?: unknown }).enabled !== 'boolean'
   )
     throw new CampaignError('INVALID_CAMPAIGN_RECURRENCE');
+  if (Object.hasOwn(value, 'time'))
+    dailySchedule({
+      time: (value as DailySchedule).time,
+      timeZone: (value as DailySchedule).timeZone,
+    });
   return (value as { enabled: boolean }).enabled;
+}
+
+export function localSchedule(
+  input: Record<string, unknown>,
+): DailySchedule | undefined {
+  localRecurrence(input);
+  const r = input.recurrence as Partial<DailySchedule> | undefined;
+  return r?.time !== undefined
+    ? dailySchedule({ time: r.time, timeZone: r.timeZone })
+    : undefined;
 }
 
 export function localRequestInput(value: unknown) {
@@ -90,36 +113,6 @@ export function localRequestInput(value: unknown) {
   return input;
 }
 
-// Only materialize today's due occurrence; never backfill an unattended backlog.
-function dailyOccurrence(seed: string, now: string): string | null {
-  const day = productionDate(now);
-  if (day <= productionDate(seed)) return null;
-  const clock = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'America/Sao_Paulo',
-    hourCycle: 'h23',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
-  const localTime = clock.format(new Date(seed));
-  const millis = new Date(seed)
-    .getUTCMilliseconds()
-    .toString()
-    .padStart(3, '0');
-  const target = Date.parse(`${day}T${localTime}.${millis}Z`);
-  let candidate = target;
-  // Convert civil time using the zone database, rather than a fixed UTC offset.
-  for (let i = 0; i < 3; i++) {
-    const observed = Date.parse(
-      `${productionDate(new Date(candidate).toISOString())}T${clock.format(new Date(candidate))}.${millis}Z`,
-    );
-    candidate += target - observed;
-  }
-  const at = new Date(candidate).toISOString();
-  if (productionDate(at) !== day || clock.format(new Date(at)) !== localTime)
-    return null; // Nonexistent civil time at a timezone transition.
-  return at <= instant(now) ? at : null;
-}
 export function campaignRequest(raw: unknown) {
   const r = document(raw);
   const allowed = [
@@ -146,9 +139,11 @@ export function campaignRequest(raw: unknown) {
     'localImage',
     'selectionMode',
     'catalogSelection',
+    'schedule',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
+  if (r.schedule !== undefined) dailySchedule(r.schedule);
   if (
     r.selectionMode !== undefined &&
     r.selectionMode !== 'FIXED' &&
@@ -335,6 +330,34 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (pkg.identity.videoRenderContentHash !== handoff.contentHash)
       throw new CampaignError('SOCIAL_HANDOFF_MISMATCH');
     return pkg;
+  }
+  private exactApproval(e: CampaignExecution, done: Record<string, unknown>) {
+    const video = String(document(done.BURN).videoRenderId);
+    const render = this.media.getVideoRender(video),
+      qc = document(done.QC);
+    if (
+      !render ||
+      qc.result !== 'PASS' ||
+      this.media.verifyMedia(render.logicalReference) !== render.contentHash
+    )
+      throw new CampaignError('HANDOFF_MEDIA_CHANGED');
+    const approvals = [
+      ...(done.APPROVAL ? [document(done.APPROVAL)] : []),
+      ...this.publishing.approvals(e.run_id),
+    ];
+    const approval = approvals.find(
+      (a: Record<string, unknown>) =>
+        a.decision === 'APPROVED' &&
+        a.videoRenderId === video &&
+        a.videoRenderContentHash === render.contentHash &&
+        a.videoRenderRevision === render.revision &&
+        a.pipelineRunId === e.run_id &&
+        a.qualityControlReportId === qc.reportId &&
+        a.qualityControlReportContentHash ===
+          createHash('sha256').update(JSON.stringify(qc)).digest('hex'),
+    );
+    if (!approval) throw new CampaignError('EXACT_HUMAN_APPROVAL_REQUIRED');
+    return { render, approval };
   }
   async operatorReview(e: CampaignExecution, done: Record<string, unknown>) {
     const evidence = await this.approvalEvidence(e, done);
@@ -965,8 +988,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   }
   async localRequest(value: unknown) {
     const input = localRequestInput(value);
+    const schedule = localSchedule(input);
     const requestId = identifier(input.requestId),
-      at = instant(input.requestedAt);
+      at = schedule
+        ? initialOccurrence(instant(input.requestedAt), schedule)
+        : instant(input.requestedAt);
     const campaign = await this.affiliate.getCampaign(
       identifier(input.campaignId),
       Number(input.campaignRevision),
@@ -990,6 +1016,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       campaignId: campaign.campaignId,
       campaignRevision: campaign.revision,
       scheduledAt: at,
+      ...(schedule ? { schedule } : {}),
       runId,
       briefingId,
       generationRequestId: `editorial_${key}`,
@@ -1014,7 +1041,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     });
   }
   async recurringRequest(seed: Record<string, unknown>, now: string) {
-    const at = dailyOccurrence(String(seed.scheduledAt), now);
+    const schedule = seed.schedule ? dailySchedule(seed.schedule) : undefined;
+    const at = dailyOccurrence(String(seed.scheduledAt), now, schedule);
     if (!at) return null;
     if (seed.selectionMode === 'CATALOG')
       return this.localRequest({
@@ -1022,8 +1050,17 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         campaignRevision: seed.campaignRevision,
         projectVersion: document(seed.run).projectVersion,
         selectionMode: 'CATALOG',
-        requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+        requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at, schedule?.timeZone) }).slice(0, 32)}`,
         requestedAt: at,
+        ...(schedule
+          ? {
+              recurrence: {
+                enabled: true,
+                time: schedule.time,
+                timeZone: schedule.timeZone,
+              },
+            }
+          : {}),
       });
     try {
       await this.validate(seed);
@@ -1046,9 +1083,19 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       campaignId: seed.campaignId,
       campaignRevision: seed.campaignRevision,
       projectVersion: document(seed.run).projectVersion,
-      requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at) }).slice(0, 32)}`,
+      requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at, schedule?.timeZone) }).slice(0, 32)}`,
       requestedAt: at,
       localImage: seed.localImage,
+      ...(seed.selectionMode ? { selectionMode: seed.selectionMode } : {}),
+      ...(schedule
+        ? {
+            recurrence: {
+              enabled: true,
+              time: schedule.time,
+              timeZone: schedule.timeZone,
+            },
+          }
+        : {}),
     });
   }
   async result(
@@ -1069,6 +1116,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       script: done.EDITORIAL ? document(done.EDITORIAL).script : null,
       subtitles: done.SUBTITLES ?? null,
       qc: done.QC ?? null,
+      package: done.HANDOFF ? (document(done.HANDOFF).package ?? null) : null,
       caption:
         localPackage && script
           ? {
@@ -1681,30 +1729,8 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return preview;
     }
     if (step === 'HANDOFF') {
-      const render = this.media.getVideoRender(video),
-        qc = document(done.QC);
-      if (
-        !render ||
-        this.media.verifyMedia(render.logicalReference) !== render.contentHash
-      )
-        throw new CampaignError('HANDOFF_MEDIA_CHANGED');
-      const approvals = [
-        ...(done.APPROVAL ? [document(done.APPROVAL)] : []),
-        ...this.publishing.approvals(e.run_id),
-      ];
-      const approval = approvals.find(
-        (a: Record<string, unknown>) =>
-          a.decision === 'APPROVED' &&
-          a.videoRenderId === video &&
-          a.videoRenderContentHash === render.contentHash &&
-          a.videoRenderRevision === render.revision &&
-          a.pipelineRunId === e.run_id &&
-          a.qualityControlReportId === qc.reportId &&
-          a.qualityControlReportContentHash ===
-            createHash('sha256').update(JSON.stringify(qc)).digest('hex'),
-      );
-      if (!approval) throw new CampaignError('EXACT_HUMAN_APPROVAL_REQUIRED');
-      return {
+      const { render, approval } = this.exactApproval(e, done);
+      const handoff = {
         videoRenderId: video,
         contentHash: render.contentHash,
         approvalId: approval.humanApprovalDecisionId,
@@ -1713,6 +1739,17 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         publication: 'MANUAL_HANDOFF',
         cost: { status: 'UNKNOWN', amount: null },
       };
+      // Preparation persists a draft; commercial/package approval and publishing
+      // remain separate gates owned by Publishing. Legacy integrations keep their handoff.
+      if (
+        r.localImage &&
+        this.publishing.coordinatePackage &&
+        (r.schedule || this.instagram?.configuration?.().accountId)
+      ) {
+        const pkg = this.coordinatedPackage(e, { ...done, HANDOFF: handoff });
+        return { ...handoff, package: pkg };
+      }
+      return handoff;
     }
     throw new CampaignError('INVALID_CAMPAIGN_STAGE');
   }
@@ -1758,6 +1795,13 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     if (!done.EDITORIAL) return false;
     const script = document(document(done.EDITORIAL).script);
     try {
+      if (
+        paused?.evidence.step === 'HANDOFF' &&
+        paused.evidence.code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
+      ) {
+        this.exactApproval(e, done);
+        return true;
+      }
       const revision = history
         .filter((h) => h.event_type === 'SCRIPT_REVISED')
         .at(-1);
@@ -1889,7 +1933,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return { verified: true, reason: 'NO_IN_FLIGHT_STAGE' };
     const completed = completedContext(history);
     if (
-      ['AUDIO', 'ALIGNMENT', 'SUBTITLES', 'QC', 'PREVIEW'].includes(
+      ['AUDIO', 'ALIGNMENT', 'SUBTITLES', 'QC', 'PREVIEW', 'HANDOFF'].includes(
         String(last.evidence.step),
       )
     ) {
