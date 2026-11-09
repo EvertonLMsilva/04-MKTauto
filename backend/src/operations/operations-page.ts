@@ -135,6 +135,7 @@ p {
   display: grid;
   grid-template-columns: 255px minmax(0, 1fr);
   gap: 36px;
+  overflow-wrap: anywhere;
 }
 #instagram-connection-status {
   white-space: pre-line;
@@ -375,7 +376,7 @@ footer {
     display: none;
   }
   .workspace {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
     gap: 22px;
   }
   #execution-list {
