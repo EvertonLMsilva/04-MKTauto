@@ -36,6 +36,8 @@ export interface FacebookSessionObservation {
   processingStatus: string;
   publicationStatus: string;
   bytesTransferred: number | null;
+  progress: 'CONSISTENT' | 'CONFLICT' | 'UNKNOWN';
+  fields: Record<string, RemoteField<unknown>>;
 }
 
 // Captured operational CREATE acknowledgement, not a reconstructed Meta body.
@@ -52,4 +54,44 @@ export interface FacebookCreateAcknowledgement {
   publicationSubmissions: 0;
   httpStatus: 200;
   evidenceHash: string;
+}
+
+export type RemoteField<T> =
+  { present: false } | { present: true; value: T | null };
+export type UploadTransportEvent = {
+  kind:
+    | 'ATTEMPT_STARTED'
+    | 'HTTP_RESPONSE'
+    | 'RESPONSE_UNKNOWN'
+    | 'OBSERVED_FAILURE'
+    | 'TRANSFER_CONFIRMED';
+  at: string;
+  method: 'POST';
+  requestType: 'UPLOAD';
+  destination: string;
+  payloadSize: number;
+  httpStatus?: number;
+  error?:
+    | 'TIMEOUT'
+    | 'NETWORK'
+    | 'INVALID_RESPONSE'
+    | 'HTTP_REJECTED'
+    | 'UNCONFIRMED';
+};
+export type UploadTransportObserver = (
+  event: UploadTransportEvent,
+) => void | Promise<void>;
+
+// No audit means no observed transport attempt; it is not proof of remote zero bytes.
+export function classifyUploadAudit(
+  events: readonly Pick<UploadTransportEvent, 'kind'>[] = [],
+):
+  | 'NOT_ATTEMPTED'
+  | 'ATTEMPT_STARTED'
+  | 'RESPONSE_UNKNOWN'
+  | 'OBSERVED_FAILURE'
+  | 'TRANSFER_CONFIRMED' {
+  const last = events.at(-1)?.kind;
+  if (!last) return 'NOT_ATTEMPTED';
+  return last === 'HTTP_RESPONSE' ? 'RESPONSE_UNKNOWN' : last;
 }

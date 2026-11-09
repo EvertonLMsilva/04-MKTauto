@@ -1,6 +1,7 @@
 import { requireSocialPublisherPort } from '../application/ports/social-publisher-port.js';
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
+import type { UploadTransportEvent } from '../domain/facebook-upload-session.js';
 import {
   FACEBOOK_LOCAL_UPLOAD_CONTRACT,
   type FacebookCreateAcknowledgement,
@@ -280,6 +281,33 @@ export class SocialPublicationService {
     )
       socialFail('SOCIAL_MEDIA_INCOMPATIBLE');
     this.#mutationAllowed();
+    if (op.network === 'FACEBOOK_REELS') {
+      if (
+        op.uploadAudit?.length ||
+        !['META_CREATE_RESPONSE', 'DOCUMENTED_RECOVERY'].includes(
+          op.sessionEvidence?.source,
+        )
+      )
+        socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+      if (op.sessionEvidence?.source === 'DOCUMENTED_RECOVERY') {
+        const observation = await this.publisher.inspectUploadSession?.(
+          op.containerId,
+        );
+        if (
+          !observation ||
+          observation.progress !== 'CONSISTENT' ||
+          observation.bytesTransferred !== 0 ||
+          observation.videoStatus !== 'uploading' ||
+          (observation.fields?.sourceFileSize?.present &&
+            observation.fields.sourceFileSize.value !== null &&
+            observation.fields.sourceFileSize.value !== bytes.length) ||
+          observation.processingStatus !== 'not_started' ||
+          observation.publicationStatus !== 'not_started' ||
+          !['not_started', 'in_progress'].includes(observation.uploadStatus)
+        )
+          socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+      }
+    }
     await this.#gate(op.packageHash, op.accountId);
     this.authorize(op);
     this.repository.authorizePublication(op, this.now());
@@ -288,16 +316,41 @@ export class SocialPublicationService {
       uploadStage: 'UPLOADING',
     });
     if (!claim.claimed) return claim.value;
+    let current = claim.value;
+    let auditPersistenceFailed = false;
+    const attemptId = randomUUID();
+    const observe = (event: UploadTransportEvent) => {
+      try {
+        const appended = this.#transition(current, ['PROCESSING'], {
+          uploadAudit: [
+            ...(current.uploadAudit ?? []),
+            {
+              ...event,
+              attemptId,
+              operationId: op.operationId,
+              videoId: op.containerId,
+            },
+          ],
+        });
+        if (!appended.claimed) throw new Error('SOCIAL_AUDIT_CONFLICT');
+        current = appended.value;
+      } catch (error) {
+        auditPersistenceFailed = true;
+        throw error;
+      }
+    };
     try {
       if (this.publisher.network === 'FACEBOOK_REELS')
         await this.publisher.uploadResumableBytes(
           op.uploadUri,
           bytes,
           op.containerId,
+          observe,
         );
       else await this.publisher.uploadResumableBytes(op.uploadUri, bytes);
     } catch (error: any) {
-      return this.#transition(claim.value, ['PROCESSING'], {
+      if (auditPersistenceFailed) throw error;
+      return this.#transition(current, ['PROCESSING'], {
         state: 'UNCERTAIN',
         uncertainStage: 'UPLOAD',
         errorCode: /^SOCIAL_[A-Z_]+$/.test(error?.code ?? '')
@@ -318,7 +371,12 @@ export class SocialPublicationService {
     } catch {
       requiresReconciliation = true;
     }
-    return this.#transition(claim.value, ['PROCESSING'], {
+    if (
+      op.network === 'FACEBOOK_REELS' &&
+      current.uploadAudit?.at(-1)?.kind !== 'TRANSFER_CONFIRMED'
+    )
+      socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+    return this.#transition(current, ['PROCESSING'], {
       state: 'PROCESSING',
       uploadStage: 'ACKNOWLEDGED',
       transferEvidence: { ...proof, evidenceHash: affiliateHash(proof) },
@@ -442,6 +500,8 @@ export class SocialPublicationService {
     this.manual.validateForPublication(op.packageHash);
     this.authorize(op);
     const observation = await this.publisher.inspectUploadSession(ack.videoId);
+    if (observation.progress === 'CONFLICT')
+      socialFail('SOCIAL_SESSION_RECOVERY_BLOCKED');
     if (observation.videoStatus === 'expired')
       socialFail('SOCIAL_SESSION_EXPIRED');
     const created = Date.parse(observation.createdAt);

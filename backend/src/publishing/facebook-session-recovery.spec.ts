@@ -1,3 +1,4 @@
+import { FacebookReelsAdapter } from './infrastructure/facebook-reels.adapter.js';
 import { facebookPublicationFixture } from '../../test/support/facebook-publication.fixture.js';
 import type { FacebookCreateAcknowledgement } from './domain/facebook-upload-session.js';
 
@@ -84,9 +85,13 @@ test('documented recovery preserves the remote session across restart without an
           ack,
         ),
     ).toEqual(recovered);
-    await f.execute(f.reopen());
-    await f.execute(f.reopen());
-    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    await expect(f.execute(f.reopen())).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    await expect(f.execute(f.reopen())).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(f.posts).toEqual(['create']);
     expect(f.publishing.packageReview(f.facebookPackage.contentHash)).toEqual(
       review,
     );
@@ -149,3 +154,95 @@ test.each([
     }
   },
 );
+
+test('documented recovery only sends after a fresh verified zero-byte observation', async () => {
+  const { f, op, ack } = await interrupted();
+  try {
+    await f
+      .reopen()
+      .reconcileFacebookSession(f.execution.execution_id, ack.pageId, ack);
+    const observer = new FacebookReelsAdapter({
+      pageId: ack.pageId,
+      apiVersion: 'v26.0',
+      mode: 'fake',
+      getAccessToken: () => 'fixture',
+      getAppAccessToken: () => 'fixture',
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            id: ack.videoId,
+            from: { id: ack.pageId },
+            created_time: f.at,
+            status: {
+              video_status: 'uploading',
+              uploading_phase: {
+                status: 'in_progress',
+                bytes_transferred: 0,
+                bytes_transfered: 0,
+              },
+              processing_phase: { status: 'not_started' },
+              publishing_phase: { status: 'not_started' },
+            },
+          }),
+        ),
+    });
+    vi.spyOn(f.ports.publisher, 'inspectUploadSession').mockImplementation(
+      (id) => observer.inspectUploadSession(id),
+    );
+    await f.execute(f.reopen());
+    await f.execute(f.reopen());
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    const current = f
+      .reopen()
+      .status(f.execution.execution_id)
+      .find((x) => x.network === 'FACEBOOK_REELS')!.operation;
+    expect(current.operationId).toBe(op.operationId);
+    expect(current.sessionEvidence.originalUrlRecovered).toBe(false);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test.each([
+  { bytes_transferred: 0, bytes_transfered: 100 },
+  { bytes_transferred: 100, bytes_transfered: 0 },
+  { bytes_transferred: 100, bytes_transfered: 100 },
+  {},
+])('raw progress cannot authorize resend %j', async (fields) => {
+  const { f, ack } = await interrupted();
+  try {
+    await f
+      .reopen()
+      .reconcileFacebookSession(f.execution.execution_id, ack.pageId, ack);
+    const adapter = new FacebookReelsAdapter({
+      pageId: ack.pageId,
+      apiVersion: 'v26.0',
+      mode: 'fake',
+      getAccessToken: () => 'fixture',
+      getAppAccessToken: () => 'fixture',
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            id: ack.videoId,
+            from: { id: ack.pageId },
+            created_time: f.at,
+            status: {
+              video_status: 'uploading',
+              uploading_phase: { status: 'in_progress', ...fields },
+              processing_phase: { status: 'not_started' },
+              publishing_phase: { status: 'not_started' },
+            },
+          }),
+        ),
+    });
+    vi.spyOn(f.ports.publisher, 'inspectUploadSession').mockImplementation(
+      (id) => adapter.inspectUploadSession(id),
+    );
+    await expect(f.execute(f.reopen())).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(f.posts).toEqual(['create']);
+  } finally {
+    f.cleanup();
+  }
+});

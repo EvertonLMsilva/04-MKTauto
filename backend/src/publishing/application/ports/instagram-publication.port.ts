@@ -1,3 +1,4 @@
+import type { UploadTransportObserver } from '../../domain/facebook-upload-session.js';
 export interface InstagramPublicationPorts {
   publisher: {
     mode: 'fake' | 'live';
@@ -8,6 +9,7 @@ export interface InstagramPublicationPorts {
       uri: string,
       bytes: Buffer,
       videoId?: string,
+      observer?: UploadTransportObserver,
     ): Promise<any>;
     getContainerStatus(input: any): Promise<any>;
     publish(input: any): Promise<any>;

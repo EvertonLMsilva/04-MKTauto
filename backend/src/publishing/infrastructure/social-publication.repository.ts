@@ -21,6 +21,7 @@ const transitions: any = {
 };
 const patchFields: any = new Set([
   'sessionEvidence',
+  'uploadAudit',
   'state',
   'containerId',
   'mediaId',
@@ -424,6 +425,87 @@ export class SocialPublicationRepository {
         !['PUBLISH_ACK', 'CONTAINER_STATUS'].includes(patch.confirmationSource)
       )
         socialFail('SOCIAL_TRANSITION_INVALID');
+      if (patch.uploadAudit !== undefined) {
+        const old = previous.uploadAudit ?? [],
+          audit = patch.uploadAudit;
+        if (
+          previous.network !== 'FACEBOOK_REELS' ||
+          !Array.isArray(audit) ||
+          audit.length !== old.length + 1 ||
+          affiliateHash(audit.slice(0, -1)) !== affiliateHash(old)
+        )
+          socialFail('SOCIAL_AUDIT_INVALID');
+        const e = audit.at(-1),
+          prior = old.at(-1);
+        const keys = [
+          'requestType',
+          'kind',
+          'at',
+          'method',
+          'destination',
+          'payloadSize',
+          'httpStatus',
+          'error',
+          'attemptId',
+          'operationId',
+          'videoId',
+        ];
+        if (
+          !e ||
+          Object.keys(e).some((k) => !keys.includes(k)) ||
+          e.operationId !== previous.operationId ||
+          e.videoId !== previous.containerId ||
+          !/^[a-f0-9-]{36}$/.test(e.attemptId) ||
+          !Number.isFinite(Date.parse(e.at)) ||
+          e.method !== 'POST' ||
+          e.requestType !== 'UPLOAD' ||
+          e.destination !== previous.uploadUri ||
+          !Number.isSafeInteger(e.payloadSize) ||
+          e.payloadSize < 1 ||
+          (e.kind === 'HTTP_RESPONSE' && !Number.isInteger(e.httpStatus)) ||
+          (e.httpStatus !== undefined &&
+            (!Number.isInteger(e.httpStatus) ||
+              e.httpStatus < 100 ||
+              e.httpStatus > 599)) ||
+          (e.error !== undefined &&
+            ![
+              'TIMEOUT',
+              'NETWORK',
+              'INVALID_RESPONSE',
+              'HTTP_REJECTED',
+              'UNCONFIRMED',
+            ].includes(e.error)) ||
+          ![
+            'ATTEMPT_STARTED',
+            'HTTP_RESPONSE',
+            'RESPONSE_UNKNOWN',
+            'OBSERVED_FAILURE',
+            'TRANSFER_CONFIRMED',
+          ].includes(e.kind) ||
+          (e.kind === 'ATTEMPT_STARTED'
+            ? old.length !== 0
+            : !prior ||
+              prior.attemptId !== e.attemptId ||
+              e.payloadSize !== prior.payloadSize ||
+              Date.parse(e.at) < Date.parse(prior.at) ||
+              Date.parse(e.at) < Date.parse(old[0].at) ||
+              !(prior.kind === 'ATTEMPT_STARTED'
+                ? ['HTTP_RESPONSE', 'RESPONSE_UNKNOWN'].includes(e.kind)
+                : prior.kind === 'HTTP_RESPONSE' &&
+                  [
+                    'RESPONSE_UNKNOWN',
+                    'OBSERVED_FAILURE',
+                    'TRANSFER_CONFIRMED',
+                  ].includes(e.kind))) ||
+          (e.kind === 'TRANSFER_CONFIRMED' &&
+            (prior?.kind !== 'HTTP_RESPONSE' ||
+              !Number.isInteger(prior.httpStatus) ||
+              prior.httpStatus < 200 ||
+              prior.httpStatus > 299)) ||
+          previous.uploadStage !== 'UPLOADING'
+        )
+          socialFail('SOCIAL_AUDIT_INVALID');
+      }
       if (patch.transferEvidence !== undefined) {
         const { evidenceHash, ...proof } = patch.transferEvidence ?? {};
         if (

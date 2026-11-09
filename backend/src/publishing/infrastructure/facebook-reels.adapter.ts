@@ -2,6 +2,8 @@ import { socialFail } from '../domain/social-publication-contracts.js';
 import {
   validateFacebookUploadUri,
   type FacebookSessionObservation,
+  type UploadTransportObserver,
+  type UploadTransportEvent,
 } from '../domain/facebook-upload-session.js';
 
 export interface FacebookReelsConfiguration {
@@ -48,7 +50,25 @@ export class FacebookReelsAdapter {
     if (!token || /[\s\r\n]/.test(token)) socialFail('SOCIAL_AUTH_REQUIRED');
     return token;
   }
-  private async response(url: URL, init: RequestInit) {
+  private async response(
+    url: URL,
+    init: RequestInit,
+    observe?: UploadTransportObserver,
+  ) {
+    const event = (
+      kind: UploadTransportEvent['kind'],
+      extra: Partial<UploadTransportEvent> = {},
+    ) =>
+      observe?.({
+        kind,
+        at: new Date().toISOString(),
+        method: 'POST',
+        requestType: 'UPLOAD',
+        destination: url.origin + url.pathname,
+        payloadSize: init.body instanceof Uint8Array ? init.body.byteLength : 0,
+        ...extra,
+      });
+    await event('ATTEMPT_STARTED');
     let response: Response;
     try {
       response = await this.#config.fetch(url, {
@@ -56,16 +76,32 @@ export class FacebookReelsAdapter {
         redirect: 'error',
         signal: AbortSignal.timeout(this.#config.timeoutMs ?? 15000),
       });
-    } catch {
+    } catch (error) {
+      await event('RESPONSE_UNKNOWN', {
+        error:
+          error instanceof Error &&
+          ['TimeoutError', 'AbortError'].includes(error.name)
+            ? 'TIMEOUT'
+            : 'NETWORK',
+      });
       socialFail('SOCIAL_NETWORK_UNCERTAIN');
     }
+    await event('HTTP_RESPONSE', { httpStatus: response.status });
     let data: any;
     try {
       data = await response.json();
     } catch {
+      await event('RESPONSE_UNKNOWN', {
+        httpStatus: response.status,
+        error: 'INVALID_RESPONSE',
+      });
       socialFail('SOCIAL_RESPONSE_UNCERTAIN');
     }
     if (!response.ok || data?.error) {
+      await event('OBSERVED_FAILURE', {
+        httpStatus: response.status,
+        error: 'HTTP_REJECTED',
+      });
       const code = Number(data?.error?.code);
       socialFail(
         code === 190 || response.status === 401
@@ -160,22 +196,49 @@ export class FacebookReelsAdapter {
       },
     };
   }
-  async uploadResumableBytes(uri: string, bytes: Buffer, videoId?: string) {
+  async uploadResumableBytes(
+    uri: string,
+    bytes: Buffer,
+    videoId?: string,
+    observer?: UploadTransportObserver,
+  ) {
     this.assertMutationAllowed();
     validateFacebookUploadUri(uri, videoId ?? '', this.#config.apiVersion);
     if (!Buffer.isBuffer(bytes) || !bytes.length)
       socialFail('SOCIAL_UPLOAD_URI_INVALID');
-    const d = await this.response(new URL(uri), {
-      method: 'POST',
-      headers: {
-        Authorization: 'OAuth ' + this.token(),
-        offset: '0',
-        file_size: String(bytes.length),
-        'Content-Type': 'application/octet-stream',
+    let last: UploadTransportEvent | undefined;
+    const observe: UploadTransportObserver = async (e) => {
+      last = e;
+      await observer?.(e);
+    };
+    const d = await this.response(
+      new URL(uri),
+      {
+        method: 'POST',
+        headers: {
+          Authorization: 'OAuth ' + this.token(),
+          offset: '0',
+          file_size: String(bytes.length),
+          'Content-Type': 'application/octet-stream',
+        },
+        body: new Uint8Array(bytes) as unknown as BodyInit,
       },
-      body: new Uint8Array(bytes) as unknown as BodyInit,
+      observe,
+    );
+    if (d.success !== true) {
+      await observe({
+        ...last!,
+        kind: 'RESPONSE_UNKNOWN',
+        at: new Date().toISOString(),
+        error: 'UNCONFIRMED',
+      });
+      socialFail('SOCIAL_RESPONSE_UNCERTAIN');
+    }
+    await observe({
+      ...last!,
+      kind: 'TRANSFER_CONFIRMED',
+      at: new Date().toISOString(),
     });
-    if (d.success !== true) socialFail('SOCIAL_RESPONSE_UNCERTAIN');
     return { uploaded: true };
   }
   documentedUploadEndpoint(videoId: string, uploadVersion: string) {
@@ -207,14 +270,72 @@ export class FacebookReelsAdapter {
       ].some((v) => typeof v !== 'string')
     )
       socialFail('SOCIAL_SESSION_UNVERIFIED');
-    const transferred =
-      s.uploading_phase.bytes_transferred ?? s.uploading_phase.bytes_transfered;
+    const field = (o: any, key: string, numeric = false) => {
+      if (!Object.hasOwn(o, key)) return { present: false as const };
+      const value = o[key];
+      if (
+        numeric &&
+        value !== null &&
+        (!Number.isSafeInteger(value) || value < 0)
+      )
+        socialFail('SOCIAL_SESSION_UNVERIFIED');
+      return { present: true as const, value };
+    };
+    const errors = (o: any) => {
+      const f = field(o, 'errors');
+      if (!f.present || f.value === null) return f;
+      if (!Array.isArray(f.value)) socialFail('SOCIAL_SESSION_UNVERIFIED');
+      return {
+        present: true as const,
+        value: f.value.map((e: any) => {
+          if (!e || typeof e !== 'object')
+            socialFail('SOCIAL_SESSION_UNVERIFIED');
+          return Object.fromEntries(
+            ['code', 'error_subcode']
+              .filter((k) => Number.isSafeInteger(e[k]))
+              .map((k) => [k, e[k]]),
+          );
+        }),
+      };
+    };
+    const fields = {
+      videoStatus: field(s, 'video_status'),
+      uploadStatus: field(s.uploading_phase, 'status'),
+      bytesTransferred: field(s.uploading_phase, 'bytes_transferred', true),
+      bytesTransfered: field(s.uploading_phase, 'bytes_transfered', true),
+      sourceFileSize: field(s.uploading_phase, 'source_file_size', true),
+      uploadErrors: errors(s.uploading_phase),
+      processingErrors: errors(s.processing_phase),
+      publishingErrors: errors(s.publishing_phase),
+      processingStatus: field(s.processing_phase, 'status'),
+      publicationStatus: field(s.publishing_phase, 'status'),
+    };
+    const selected = fields.bytesTransferred.present
+      ? fields.bytesTransferred
+      : fields.bytesTransfered;
+    const conflict =
+      fields.bytesTransferred.present &&
+      fields.bytesTransfered.present &&
+      fields.bytesTransferred.value !== fields.bytesTransfered.value;
+    const transferred = conflict
+      ? undefined
+      : selected.present
+        ? selected.value
+        : undefined;
+    const progress = conflict
+      ? ('CONFLICT' as const)
+      : typeof transferred === 'number'
+        ? ('CONSISTENT' as const)
+        : ('UNKNOWN' as const);
     if (
       transferred !== undefined &&
+      transferred !== null &&
       (!Number.isSafeInteger(transferred) || transferred < 0)
     )
       socialFail('SOCIAL_SESSION_UNVERIFIED');
     return {
+      fields,
+      progress,
       videoId: id,
       pageId: d.from.id,
       createdAt: d.created_time,
