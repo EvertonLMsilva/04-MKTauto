@@ -1,4 +1,8 @@
 import { socialFail } from '../domain/social-publication-contracts.js';
+import {
+  validateFacebookUploadUri,
+  type FacebookSessionObservation,
+} from '../domain/facebook-upload-session.js';
 
 export interface FacebookReelsConfiguration {
   pageId: string;
@@ -139,24 +143,27 @@ export class FacebookReelsAdapter {
       upload_phase: 'start',
     });
     const id = this.id(d.video_id);
-    if (
-      d.upload_url !==
-      `https://rupload.facebook.com/video-upload/${this.#config.apiVersion}/${id}`
-    )
-      socialFail('SOCIAL_UPLOAD_URI_INVALID');
-    return { containerId: id, uploadUri: d.upload_url };
+    const uploadUri = validateFacebookUploadUri(
+      d.upload_url,
+      id,
+      this.#config.apiVersion,
+    );
+    return {
+      containerId: id,
+      uploadUri,
+      sessionEvidence: {
+        source: 'META_CREATE_RESPONSE',
+        graphVersion: this.#config.apiVersion,
+        pageId: this.#config.pageId,
+        videoId: id,
+        originalUrlRecovered: true,
+      },
+    };
   }
-  async uploadResumableBytes(uri: string, bytes: Buffer) {
+  async uploadResumableBytes(uri: string, bytes: Buffer, videoId?: string) {
     this.assertMutationAllowed();
-    if (
-      !new RegExp(
-        '^https://rupload\\.facebook\\.com/video-upload/' +
-          this.#config.apiVersion.replace('.', '\\.') +
-          '/\\d{5,64}$',
-      ).test(uri) ||
-      !Buffer.isBuffer(bytes) ||
-      !bytes.length
-    )
+    validateFacebookUploadUri(uri, videoId ?? '', this.#config.apiVersion);
+    if (!Buffer.isBuffer(bytes) || !bytes.length)
       socialFail('SOCIAL_UPLOAD_URI_INVALID');
     const d = await this.response(new URL(uri), {
       method: 'POST',
@@ -170,6 +177,58 @@ export class FacebookReelsAdapter {
     });
     if (d.success !== true) socialFail('SOCIAL_RESPONSE_UNCERTAIN');
     return { uploaded: true };
+  }
+  documentedUploadEndpoint(videoId: string, uploadVersion: string) {
+    if (!['v26.0', 'v27.0'].includes(uploadVersion))
+      socialFail('SOCIAL_UPLOAD_URI_INVALID');
+    return validateFacebookUploadUri(
+      `https://rupload.facebook.com/video-upload/${uploadVersion}/${this.id(videoId)}`,
+      videoId,
+      this.#config.apiVersion,
+    );
+  }
+  async inspectUploadSession(
+    videoId: string,
+  ): Promise<FacebookSessionObservation> {
+    const id = this.id(videoId);
+    const d = await this.request(id, 'GET', {
+      fields: 'id,status,from,created_time',
+    });
+    const s = d.status;
+    if (
+      d.id !== id ||
+      d.from?.id !== this.#config.pageId ||
+      !Number.isFinite(Date.parse(d.created_time)) ||
+      [
+        s?.video_status,
+        s?.uploading_phase?.status,
+        s?.processing_phase?.status,
+        s?.publishing_phase?.status,
+      ].some((v) => typeof v !== 'string')
+    )
+      socialFail('SOCIAL_SESSION_UNVERIFIED');
+    const transferred =
+      s.uploading_phase.bytes_transferred ?? s.uploading_phase.bytes_transfered;
+    if (
+      transferred !== undefined &&
+      (!Number.isSafeInteger(transferred) || transferred < 0)
+    )
+      socialFail('SOCIAL_SESSION_UNVERIFIED');
+    return {
+      videoId: id,
+      pageId: d.from.id,
+      createdAt: d.created_time,
+      observedAt: new Date().toISOString(),
+      graphVersion: this.#config.apiVersion,
+      videoStatus: s.video_status,
+      uploadStatus: s.uploading_phase.status,
+      processingStatus: s.processing_phase.status,
+      publicationStatus: s.publishing_phase.status,
+      bytesTransferred:
+        Number.isSafeInteger(transferred) && transferred >= 0
+          ? transferred
+          : null,
+    };
   }
   async getContainerStatus(input: { containerId: string }) {
     const d = await this.request(this.id(input.containerId), 'GET', {

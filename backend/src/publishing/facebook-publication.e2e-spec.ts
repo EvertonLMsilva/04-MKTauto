@@ -19,7 +19,7 @@ import {
 import { FakeOperationalNotificationAdapter } from '../notifications/infrastructure/operational-notification.adapter.js';
 
 test('Nest HTTP E2E: existing MP4, independent approvals, two receipts, notifications and restart with zero duplicate submissions', async () => {
-  const f = await facebookPublicationFixture(true);
+  const f = await facebookPublicationFixture(true, 'v27.0');
   const PUBLISHING_EVIDENCE = Reflect.getMetadata(
     MODULE_METADATA.PROVIDERS,
     PublishingModule,

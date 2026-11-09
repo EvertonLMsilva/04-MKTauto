@@ -4,7 +4,11 @@ export interface InstagramPublicationPorts {
     accountId: string;
     createContainer(input: any): Promise<any>;
     createResumableContainer?(input: any): Promise<any>;
-    uploadResumableBytes?(uri: string, bytes: Buffer): Promise<any>;
+    uploadResumableBytes?(
+      uri: string,
+      bytes: Buffer,
+      videoId?: string,
+    ): Promise<any>;
     getContainerStatus(input: any): Promise<any>;
     publish(input: any): Promise<any>;
     getMedia(input: any): Promise<any>;

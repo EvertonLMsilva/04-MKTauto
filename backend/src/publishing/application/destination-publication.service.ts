@@ -8,6 +8,7 @@ import type {
 } from './ports/destination-publication.port.js';
 import { SocialPublicationService } from './social-publication.service.js';
 import { socialFail } from '../domain/social-publication-contracts.js';
+import type { FacebookCreateAcknowledgement } from '../domain/facebook-upload-session.js';
 
 // Explicit distribution of existing, approved media. No timer and no production pipeline.
 export class DestinationPublicationService {
@@ -28,6 +29,46 @@ export class DestinationPublicationService {
       const e = s.facts(id)[0];
       if (!e) socialFail('SOCIAL_EXECUTION_NOT_FOUND');
       return { execution: e, request: s.audit(id)[0]?.evidence ?? {} };
+    } finally {
+      s.close();
+    }
+  }
+  async reconcileFacebookSession(
+    id: string,
+    account: string,
+    ack: FacebookCreateAcknowledgement,
+  ) {
+    const ports = this.facebook;
+    if (
+      !ports ||
+      ports.publisher.accountId !== 'facebook_reels:' + account ||
+      ack.pageId !== account
+    )
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    const { execution } = this.context(id);
+    const s = this.store.openDestination(ports.publisher.mode);
+    try {
+      const reservation = s.reservations.forExecution(
+        id,
+        'FACEBOOK_REELS',
+        account,
+      );
+      if (!reservation || reservation.operationId !== ack.operationId)
+        socialFail('SOCIAL_SESSION_EVIDENCE_INVALID');
+      const op = s.social.get(ack.operationId);
+      if (!op) socialFail('SOCIAL_OPERATION_NOT_FOUND');
+      s.manual.validateForPublication(op.packageHash, execution);
+      const engine = new SocialPublicationService({
+        repository: s.social,
+        manual: s.manual,
+        publisher: ports.publisher,
+        media: ports.media,
+        transferVerifier: ports.verifier,
+        allowLivePosts: false,
+        now: this.now,
+        authorize: (value: any) => s.reservations.authorize(value, this.now()),
+      });
+      return await engine.recoverUploadSession(ack.operationId, ack);
     } finally {
       s.close();
     }

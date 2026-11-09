@@ -20,6 +20,7 @@ const transitions: any = {
   EXPIRED: [],
 };
 const patchFields: any = new Set([
+  'sessionEvidence',
   'state',
   'containerId',
   'mediaId',
@@ -288,10 +289,25 @@ export class SocialPublicationRepository {
         'facebook-reels-local/1',
       ].includes(previous.uploadStrategy);
       const next: any = patch.state ?? previous.state;
+      const sessionRecovery =
+        previous.network === 'FACEBOOK_REELS' &&
+        previous.state === 'UNCERTAIN' &&
+        previous.uncertainStage === 'CREATE' &&
+        !previous.containerId &&
+        !previous.uploadUri &&
+        previous.uploadStage === undefined &&
+        next === 'PROCESSING' &&
+        patch.uploadStage === 'PENDING' &&
+        patch.sessionEvidence?.source === 'DOCUMENTED_RECOVERY' &&
+        patch.sessionEvidence.originalUrlRecovered === false &&
+        patch.sessionEvidence.videoId === patch.containerId &&
+        patch.sessionEvidence.pageId ===
+          previous.accountId.replace(/^facebook_reels:/, '');
       const directTransition: any =
         direct &&
         ((previous.state === 'PROCESSING' && next === 'UNCERTAIN') ||
-          (previous.state === 'UNCERTAIN' && next === 'READY'));
+          (previous.state === 'UNCERTAIN' && next === 'READY') ||
+          sessionRecovery);
       if (
         Object.keys(patch).some((k: any): any => !patchFields.has(k)) ||
         (!transitions[previous.state]?.includes(next) && !directTransition) ||
@@ -319,6 +335,7 @@ export class SocialPublicationRepository {
         const stage: any = previous.uploadStage;
         const validStage: any =
           patch.uploadStage === undefined ||
+          sessionRecovery ||
           (patch.uploadStage === 'PENDING' &&
             previous.state === 'CREATING_CONTAINER' &&
             next === 'PROCESSING' &&
@@ -367,6 +384,20 @@ export class SocialPublicationRepository {
           (typeof patch[k] !== 'string' || !/^\d{5,64}$/.test(patch[k]))
         )
           socialFail('SOCIAL_RECEIPT_INVALID');
+      if (
+        previous.network === 'FACEBOOK_REELS' &&
+        previous.containerId &&
+        patch.containerId !== undefined &&
+        patch.containerId !== previous.containerId
+      )
+        socialFail('SOCIAL_SESSION_ID_CONFLICT');
+      if (
+        previous.sessionEvidence &&
+        patch.sessionEvidence &&
+        affiliateHash(previous.sessionEvidence) !==
+          affiliateHash(patch.sessionEvidence)
+      )
+        socialFail('SOCIAL_SESSION_EVIDENCE_IMMUTABLE');
       if (
         patch.errorCode !== undefined &&
         patch.errorCode !== null &&

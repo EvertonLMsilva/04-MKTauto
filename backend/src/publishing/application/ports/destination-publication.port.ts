@@ -1,5 +1,6 @@
 import type { InstagramPublicationPorts } from './instagram-publication.port.js';
 import type { ManualDistributionService } from '../manual-distribution.service.js';
+import type { FacebookSessionObservation } from '../../domain/facebook-upload-session.js';
 export type PublicationNetwork = 'INSTAGRAM' | 'FACEBOOK_REELS';
 export interface DestinationReservations {
   forExecution(
@@ -20,9 +21,7 @@ export interface DestinationReservations {
   authorize(operation: any, at: string): unknown;
 }
 export interface DestinationPublicationStore {
-  readDestinations(
-    id: string,
-  ): {
+  readDestinations(id: string): {
     operationId: string;
     network: PublicationNetwork;
     accountId: string;
@@ -37,5 +36,9 @@ export interface DestinationPublicationStore {
 }
 export type FacebookPublicationPorts = InstagramPublicationPorts & {
   localBytes: NonNullable<InstagramPublicationPorts['localBytes']>;
+  publisher: InstagramPublicationPorts['publisher'] & {
+    inspectUploadSession?(videoId: string): Promise<FacebookSessionObservation>;
+    documentedUploadEndpoint?(videoId: string, version: string): string;
+  };
 };
 export const FACEBOOK_PUBLICATION_PORTS = Symbol('FACEBOOK_PUBLICATION_PORTS');

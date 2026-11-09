@@ -2,6 +2,10 @@ import { requireSocialPublisherPort } from '../application/ports/social-publishe
 import { affiliateHash } from '../../affiliate/domain/affiliate-contracts.js';
 import { createHash } from 'node:crypto';
 import {
+  FACEBOOK_LOCAL_UPLOAD_CONTRACT,
+  type FacebookCreateAcknowledgement,
+} from '../domain/facebook-upload-session.js';
+import {
   socialFail,
   accountId,
   validateSocialPrepare,
@@ -233,6 +237,9 @@ export class SocialPublicationService {
           uploadUri: receipt.uploadUri,
           uploadStage: 'PENDING',
           uncertainStage: null,
+          ...(receipt.sessionEvidence
+            ? { sessionEvidence: receipt.sessionEvidence }
+            : {}),
         }),
       );
     }
@@ -282,7 +289,13 @@ export class SocialPublicationService {
     });
     if (!claim.claimed) return claim.value;
     try {
-      await this.publisher.uploadResumableBytes(op.uploadUri, bytes);
+      if (this.publisher.network === 'FACEBOOK_REELS')
+        await this.publisher.uploadResumableBytes(
+          op.uploadUri,
+          bytes,
+          op.containerId,
+        );
+      else await this.publisher.uploadResumableBytes(op.uploadUri, bytes);
     } catch (error: any) {
       return this.#transition(claim.value, ['PROCESSING'], {
         state: 'UNCERTAIN',
@@ -370,6 +383,119 @@ export class SocialPublicationService {
     return this.#transition(op, ['PUBLISHED'], {
       remoteReceipt: receipt,
       requiresReconciliation: false,
+    }).value;
+  }
+  // Administrative, read-only remote reconciliation. Never calls CREATE,
+  // upload or publish, and never labels a documented endpoint as an original.
+  async recoverUploadSession(id: string, ack: FacebookCreateAcknowledgement) {
+    const op = this.#get(id);
+    if (
+      this.publisher.network !== 'FACEBOOK_REELS' ||
+      !this.publisher.inspectUploadSession ||
+      !this.publisher.documentedUploadEndpoint ||
+      ack.operationId !== id ||
+      ack.packageHash !== op.packageHash ||
+      'facebook_reels:' + ack.pageId !== op.accountId ||
+      !/^\d{5,64}$/.test(ack.videoId) ||
+      !['v26.0', 'v27.0'].includes(ack.uploadVersion) ||
+      ack.httpStatus !== 200 ||
+      ack.createSubmissions !== 1 ||
+      ack.uploadSubmissions !== 0 ||
+      ack.publicationSubmissions !== 0 ||
+      !/^[a-f0-9]{64}$/.test(ack.evidenceHash)
+    )
+      socialFail('SOCIAL_SESSION_EVIDENCE_INVALID');
+    const start = Date.parse(ack.startedAt),
+      end = Date.parse(ack.acknowledgedAt);
+    if (
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      end < start ||
+      end - start > 60000
+    )
+      socialFail('SOCIAL_SESSION_EVIDENCE_INVALID');
+    const recovered = op.sessionEvidence?.source === 'DOCUMENTED_RECOVERY';
+    if (recovered) {
+      if (
+        op.containerId !== ack.videoId ||
+        op.sessionEvidence.evidenceHash !== ack.evidenceHash
+      )
+        socialFail('SOCIAL_SESSION_ID_CONFLICT');
+    }
+    const history = this.repository.history(id);
+    if (
+      !recovered &&
+      (op.state !== 'UNCERTAIN' ||
+        op.uncertainStage !== 'CREATE' ||
+        op.containerId ||
+        op.uploadUri ||
+        op.mediaId ||
+        op.transferEvidence ||
+        history.filter((e: any) => e.state === 'CREATING_CONTAINER').length !==
+          1 ||
+        history.some(
+          (e: any) =>
+            e.uploadStage || ['PUBLISHING', 'PUBLISHED'].includes(e.state),
+        ))
+    )
+      socialFail('SOCIAL_SESSION_RECOVERY_BLOCKED');
+    this.manual.validateForPublication(op.packageHash);
+    this.authorize(op);
+    const observation = await this.publisher.inspectUploadSession(ack.videoId);
+    if (observation.videoStatus === 'expired')
+      socialFail('SOCIAL_SESSION_EXPIRED');
+    const created = Date.parse(observation.createdAt);
+    if (
+      observation.videoId !== ack.videoId ||
+      observation.pageId !== ack.pageId ||
+      !Number.isFinite(created) ||
+      created < start - 30000 ||
+      created > end + 30000 ||
+      observation.videoStatus !== 'uploading' ||
+      !['not_started', 'in_progress'].includes(observation.uploadStatus) ||
+      observation.processingStatus !== 'not_started' ||
+      observation.publicationStatus !== 'not_started' ||
+      (observation.bytesTransferred !== null &&
+        observation.bytesTransferred !== 0)
+    )
+      socialFail('SOCIAL_SESSION_RECOVERY_BLOCKED');
+    const uploadUri = this.publisher.documentedUploadEndpoint(
+      ack.videoId,
+      ack.uploadVersion,
+    );
+    if (recovered) {
+      if (
+        op.uploadUri !== uploadUri ||
+        op.state !== 'PROCESSING' ||
+        op.uploadStage !== 'PENDING'
+      )
+        socialFail('SOCIAL_SESSION_RECOVERY_BLOCKED');
+      return op;
+    }
+    this.manual.validateForPublication(op.packageHash);
+    this.authorize(op);
+    return this.#transition(op, ['UNCERTAIN'], {
+      state: 'PROCESSING',
+      containerId: ack.videoId,
+      uploadUri,
+      uploadStage: 'PENDING',
+      providerStatus: 'IN_PROGRESS',
+      uncertainStage: null,
+      errorCode: null,
+      requiresReconciliation: false,
+      sessionEvidence: {
+        source: 'DOCUMENTED_RECOVERY',
+        originalUrlRecovered: false,
+        pageId: ack.pageId,
+        videoId: ack.videoId,
+        graphVersion: observation.graphVersion,
+        uploadVersion: ack.uploadVersion,
+        documentedContract: FACEBOOK_LOCAL_UPLOAD_CONTRACT,
+        evidenceHash: ack.evidenceHash,
+        createAcknowledgement: ack,
+        observation,
+        observationHash: affiliateHash(observation),
+      },
     }).value;
   }
   async reconcile(id: any): Promise<any> {

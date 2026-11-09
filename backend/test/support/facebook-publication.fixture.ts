@@ -20,7 +20,10 @@ import type { FacebookPublicationPorts } from '../../src/publishing/application/
 import { publishingEvidence } from '../../src/publishing/application/publication-eligibility.js';
 import { adaptationHash } from '../../src/media/domain/media-hash.js';
 
-export async function facebookPublicationFixture(localQc = false) {
+export async function facebookPublicationFixture(
+  localQc = false,
+  uploadVersion = 'v25.0',
+) {
   const f = p2EditorialFixture();
   provisionSchema(f.base.db, 42);
   // A small MP4 container fixture; codec probing is an explicit simulated Media port.
@@ -59,21 +62,51 @@ export async function facebookPublicationFixture(localQc = false) {
   let historicalQc: any;
   if (localQc) {
     const raw = {
-      policyVersion: 'local-qc/1', videoRenderId: render.videoRenderId,
+      policyVersion: 'local-qc/1',
+      videoRenderId: render.videoRenderId,
       videoRenderContentHash: hash,
-      findings: ['PHYSICAL_HASH', 'VERIFIED_SUBTITLES_LINEAGE', 'STREAMS_FORMAT_DURATION', 'FULL_DECODE']
-        .map(code => ({code, status: 'PASS'})),
-      facts: {streams: [], format: {duration: '20'}}, result: 'PASS', approvalBlocked: false,
-      cost: {status: 'UNKNOWN', amount: null},
+      findings: [
+        'PHYSICAL_HASH',
+        'VERIFIED_SUBTITLES_LINEAGE',
+        'STREAMS_FORMAT_DURATION',
+        'FULL_DECODE',
+      ].map((code) => ({ code, status: 'PASS' })),
+      facts: { streams: [], format: { duration: '20' } },
+      result: 'PASS',
+      approvalBlocked: false,
+      cost: { status: 'UNKNOWN', amount: null },
     };
     const id = 'local_qc:' + adaptationHash(raw);
-    historicalQc = {reportId: id, ...raw};
-    report = publishingEvidence({} as any, {publicationEvidence: () => ({
-      qc: raw, render, planHash: 'c'.repeat(64),
-      audio: {voiceTrackId: 'voice_fixture', contentHash: 'd'.repeat(64), rightsHash: 'e'.repeat(64), authorizationHash: 'f'.repeat(64)},
-      assets: [{id: 'asset_fixture', contentHash: '1'.repeat(64), rightsHash: '2'.repeat(64), reviewHash: '3'.repeat(64)}],
-      publicationAuthorization: {required: false, grant: null, missing: null},
-    })} as any).report(id);
+    historicalQc = { reportId: id, ...raw };
+    report = publishingEvidence(
+      {} as any,
+      {
+        publicationEvidence: () => ({
+          qc: raw,
+          render,
+          planHash: 'c'.repeat(64),
+          audio: {
+            voiceTrackId: 'voice_fixture',
+            contentHash: 'd'.repeat(64),
+            rightsHash: 'e'.repeat(64),
+            authorizationHash: 'f'.repeat(64),
+          },
+          assets: [
+            {
+              id: 'asset_fixture',
+              contentHash: '1'.repeat(64),
+              rightsHash: '2'.repeat(64),
+              reviewHash: '3'.repeat(64),
+            },
+          ],
+          publicationAuthorization: {
+            required: false,
+            grant: null,
+            missing: null,
+          },
+        }),
+      } as any,
+    ).report(id);
   }
   const media = {
     getVideoRender: () => render,
@@ -130,11 +163,17 @@ export async function facebookPublicationFixture(localQc = false) {
   const approval = new HumanApprovalService({
     repository: {
       getVideoRender: () => render,
-      getQualityControlReport: () => localQc ? {
-        ...historicalQc, qualityControlReportId: report.qualityControlReportId,
-        contentHash: identity.qualityControlReportContentHash,
-        pipelineRunId: render.pipelineRunId, projectId: render.projectId, projectVersion: render.projectVersion,
-      } : report,
+      getQualityControlReport: () =>
+        localQc
+          ? {
+              ...historicalQc,
+              qualityControlReportId: report.qualityControlReportId,
+              contentHash: identity.qualityControlReportContentHash,
+              pipelineRunId: render.pipelineRunId,
+              projectId: render.projectId,
+              projectVersion: render.projectVersion,
+            }
+          : report,
       getHumanApprovalDecision: () => null,
       findApprovedHumanApprovalDecision: () => null,
       registerHumanApprovalDecision: (decision: any) => decision,
@@ -258,8 +297,7 @@ export async function facebookPublicationFixture(localQc = false) {
           step === 'create'
             ? {
                 video_id: '987654321',
-                upload_url:
-                  'https://rupload.facebook.com/video-upload/v25.0/987654321',
+                upload_url: `https://rupload.facebook.com/video-upload/${uploadVersion}/987654321`,
               }
             : { success: true },
         ),
@@ -268,22 +306,33 @@ export async function facebookPublicationFixture(localQc = false) {
     return new Response(
       JSON.stringify({
         id: '987654321',
+        from: { id: '1355505384315575' },
         created_time: at,
         permalink_url: 'https://www.facebook.com/reel/987654321/',
-        status: {
-          video_status: processing ? 'ready' : 'processing',
-          uploading_phase: { status: 'complete' },
-          processing_phase: { status: processing ? 'complete' : 'in_progress' },
-          publishing_phase: {
-            status: published && receiptVisible ? 'complete' : 'not_started',
-          },
-        },
+        status: u.searchParams.get('fields')?.includes('from')
+          ? {
+              video_status: 'uploading',
+              uploading_phase: { status: 'in_progress' },
+              processing_phase: { status: 'not_started' },
+              publishing_phase: { status: 'not_started' },
+            }
+          : {
+              video_status: processing ? 'ready' : 'processing',
+              uploading_phase: { status: 'complete' },
+              processing_phase: {
+                status: processing ? 'complete' : 'in_progress',
+              },
+              publishing_phase: {
+                status:
+                  published && receiptVisible ? 'complete' : 'not_started',
+              },
+            },
       }),
     );
   };
   const publisher = new FacebookReelsAdapter({
     pageId: '1355505384315575',
-    apiVersion: 'v25.0',
+    apiVersion: uploadVersion === 'v27.0' ? 'v26.0' : 'v25.0',
     mode: 'fake',
     getAccessToken: () => 'fixture_page',
     getAppAccessToken: () => 'fixture_app',
