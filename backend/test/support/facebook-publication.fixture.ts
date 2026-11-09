@@ -17,8 +17,10 @@ import { DestinationPublicationService } from '../../src/publishing/application/
 import { FacebookReelsAdapter } from '../../src/publishing/infrastructure/facebook-reels.adapter.js';
 import { deterministicInstagramPorts } from '../../src/publishing/infrastructure/instagram-fake.js';
 import type { FacebookPublicationPorts } from '../../src/publishing/application/ports/destination-publication.port.js';
+import { publishingEvidence } from '../../src/publishing/application/publication-eligibility.js';
+import { adaptationHash } from '../../src/media/domain/media-hash.js';
 
-export async function facebookPublicationFixture() {
+export async function facebookPublicationFixture(localQc = false) {
   const f = p2EditorialFixture();
   provisionSchema(f.base.db, 42);
   // A small MP4 container fixture; codec probing is an explicit simulated Media port.
@@ -38,7 +40,7 @@ export async function facebookPublicationFixture() {
     pipelineRunId: 'run_001',
     origin: { rights: { commercialUseAuthorized: true } },
   };
-  const report = {
+  let report: any = {
     qualityControlReportId: 'qc_multi_fixture',
     contentHash: 'b'.repeat(64),
     videoRenderId: render.videoRenderId,
@@ -54,6 +56,25 @@ export async function facebookPublicationFixture() {
       'NARRATION_RIGHTS',
     ].map((code) => ({ code, status: 'PASS' })),
   };
+  let historicalQc: any;
+  if (localQc) {
+    const raw = {
+      policyVersion: 'local-qc/1', videoRenderId: render.videoRenderId,
+      videoRenderContentHash: hash,
+      findings: ['PHYSICAL_HASH', 'VERIFIED_SUBTITLES_LINEAGE', 'STREAMS_FORMAT_DURATION', 'FULL_DECODE']
+        .map(code => ({code, status: 'PASS'})),
+      facts: {streams: [], format: {duration: '20'}}, result: 'PASS', approvalBlocked: false,
+      cost: {status: 'UNKNOWN', amount: null},
+    };
+    const id = 'local_qc:' + adaptationHash(raw);
+    historicalQc = {reportId: id, ...raw};
+    report = publishingEvidence({} as any, {publicationEvidence: () => ({
+      qc: raw, render, planHash: 'c'.repeat(64),
+      audio: {voiceTrackId: 'voice_fixture', contentHash: 'd'.repeat(64), rightsHash: 'e'.repeat(64), authorizationHash: 'f'.repeat(64)},
+      assets: [{id: 'asset_fixture', contentHash: '1'.repeat(64), rightsHash: '2'.repeat(64), reviewHash: '3'.repeat(64)}],
+      publicationAuthorization: {required: false, grant: null, missing: null},
+    })} as any).report(id);
+  }
   const media = {
     getVideoRender: () => render,
     report: () => report,
@@ -102,12 +123,18 @@ export async function facebookPublicationFixture() {
     videoRenderRevision: 1,
     videoRenderContentHash: hash,
     qualityControlReportId: report.qualityControlReportId,
-    qualityControlReportContentHash: report.contentHash,
+    qualityControlReportContentHash: localQc
+      ? createHash('sha256').update(JSON.stringify(historicalQc)).digest('hex')
+      : report.contentHash,
   };
   const approval = new HumanApprovalService({
     repository: {
       getVideoRender: () => render,
-      getQualityControlReport: () => report,
+      getQualityControlReport: () => localQc ? {
+        ...historicalQc, qualityControlReportId: report.qualityControlReportId,
+        contentHash: identity.qualityControlReportContentHash,
+        pipelineRunId: render.pipelineRunId, projectId: render.projectId, projectVersion: render.projectVersion,
+      } : report,
       getHumanApprovalDecision: () => null,
       findApprovedHumanApprovalDecision: () => null,
       registerHumanApprovalDecision: (decision: any) => decision,
@@ -120,7 +147,7 @@ export async function facebookPublicationFixture() {
   });
   for (const [step, result] of [
     ['BURN', { videoRenderId: render.videoRenderId, contentHash: hash }],
-    ['QC', report],
+    ['QC', historicalQc ?? report],
     ['PREVIEW', { ready: true }],
   ])
     campaigns.ownedEvent(

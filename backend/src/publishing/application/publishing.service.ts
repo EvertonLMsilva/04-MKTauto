@@ -3,6 +3,7 @@ import type { OperationalAlertsService } from '../../notifications/application/o
 import { CommercialMeasurementService } from './commercial-measurement.service.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
 import type { MeasurementTarget } from '../domain/commercial-measurement.js';
+import type { CampaignOperationalFacts } from '../../content-operations/application/campaign-operations.port.js';
 import {
   HumanApprovalService,
   validateRequest,
@@ -119,8 +120,8 @@ export class PublishingService {
     if (created) this.signalNotifications();
     return result;
   }
-  validatePackage(hash: string) {
-    return this.session(true, (s) => s.manual.validateForPublication(hash));
+  validatePackage(hash: string, handoff?: CampaignOperationalFacts) {
+    return this.session(true, (s) => s.manual.validateForPublication(hash, handoff));
   }
   package(hash: string) {
     return this.session(true, (s) => s.manual.getPackage(hash));

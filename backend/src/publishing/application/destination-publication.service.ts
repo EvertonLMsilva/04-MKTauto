@@ -66,21 +66,8 @@ export class DestinationPublicationService {
         );
       const pkg = s.manual.validateForPublication(
         previous?.packageHash ?? packages[0].contentHash,
+        e,
       );
-      const approval = e.stage.approval;
-      if (
-        ['CANCELLED', 'FAILED'].includes(e.status) ||
-        approval?.decision !== 'APPROVED' ||
-        approval.videoRenderId !== pkg.identity.videoRenderId ||
-        approval.videoRenderContentHash !==
-          pkg.identity.videoRenderContentHash ||
-        approval.qualityControlReportId !==
-          pkg.identity.qualityControlReportId ||
-        approval.qualityControlReportContentHash !==
-          pkg.identity.qualityControlReportContentHash ||
-        e.stage.render?.videoRenderId !== pkg.identity.videoRenderId
-      )
-        socialFail('SOCIAL_HANDOFF_MISMATCH');
       const recovery = request.legacyRecovery as
         { financialOperationIds?: string[] } | undefined;
       const financialIds =

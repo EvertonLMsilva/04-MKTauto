@@ -5,6 +5,75 @@ import { openNotificationStore } from '../../test/support/operational-notificati
 import { collectOperationalNotifications } from '../notifications/application/operational-alerts.service.js';
 import { Worker } from 'node:worker_threads';
 
+test('local QC approval and verified commercial eligibility retain independent identities across restart', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    await expect(f.execute()).rejects.toMatchObject({code: 'DISTRIBUTION_APPROVAL_REQUIRED'});
+    expect(f.posts).toEqual([]);
+    const igReview = f.publishing.packageReview(f.instagramPackage.contentHash);
+    const fbReview = f.approve(f.facebookPackage);
+    expect(f.approve(f.facebookPackage)).toEqual(fbReview);
+    expect(fbReview.mediaDecision.humanApprovalDecisionId).toBe(igReview.mediaDecision.humanApprovalDecisionId);
+    expect(fbReview.packageHash).toBe(f.facebookPackage.contentHash);
+    expect(fbReview.contentHash).not.toBe(igReview.contentHash);
+    const session = f.campaignPort.open();
+    try {
+      expect(f.publishing.validatePackage(f.facebookPackage.contentHash,
+        session.facts(f.execution.execution_id)[0])).toEqual(f.facebookPackage);
+    } finally { session.close(); }
+    expect(f.posts).toEqual([]);
+    const result = await f.execute();
+    expect(await f.execute(f.reopen())).toEqual(result);
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    expect(f.publishing.package(f.facebookPackage.contentHash)).toEqual(f.facebookPackage);
+    expect(f.publishing.packageReview(f.instagramPackage.contentHash)).toEqual(igReview);
+  } finally { f.cleanup(); }
+});
+
+test.each(['other-render', 'qc-fail', 'altered-qc', 'unknown-policy', 'other-run', 'other-revision', 'commercial-proof', 'commercial-fail'])(
+  'handoff rejects %s before any remote POST', async kind => {
+    const f = await facebookPublicationFixture(true);
+    try {
+      f.approve(f.facebookPackage);
+      const open = f.campaignPort.open.bind(f.campaignPort);
+      vi.spyOn(f.campaignPort, 'open').mockImplementation(() => {
+        const s = open();
+        return {...s, facts: id => s.facts(id).map(e => {
+          const facts = structuredClone(e);
+          if (kind === 'other-render') facts.stage.qualityControl!.videoRenderId = 'other_render';
+          if (kind === 'qc-fail') facts.stage.qualityControl!.result = 'FAIL';
+          if (kind === 'altered-qc') facts.stage.qualityControl!.cost = {status: 'KNOWN', amount: '0'};
+          if (kind === 'unknown-policy') facts.stage.qualityControl!.policyVersion = 'local-qc/999';
+          if (kind === 'other-run') facts.runId = 'run_other';
+          if (kind === 'other-revision') facts.stage.approval!.videoRenderRevision = 2;
+          return facts;
+        })};
+      });
+      if (kind === 'commercial-proof') f.media.report().evidence.audio.contentHash = '9'.repeat(64);
+      if (kind === 'commercial-fail') f.media.report().result = 'FAIL';
+      await expect(f.execute()).rejects.toThrow();
+      expect(f.posts).toEqual([]);
+      expect(f.f.base.db.prepare("SELECT count(*) AS n FROM multi_network_publication_reservations").get()?.n).toBe(0);
+    } finally { f.cleanup(); }
+  },
+);
+
+test('Instagram review envelope cannot authorize Facebook even when media decision IDs coincide', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    f.approve(f.facebookPackage);
+    const foreign = f.publishing.packageReview(f.instagramPackage.contentHash);
+    const open = f.store.openDestination.bind(f.store);
+    vi.spyOn(f.store, 'openDestination').mockImplementation(mode => {
+      const s = open(mode);
+      vi.spyOn(s.manual, 'getReview').mockReturnValue(foreign);
+      return s;
+    });
+    await expect(f.execute()).rejects.toMatchObject({code: 'DISTRIBUTION_APPROVAL_BINDING_MISMATCH'});
+    expect(f.posts).toEqual([]);
+  } finally { f.cleanup(); }
+});
+
 test('independent Facebook approval is mandatory; two destinations retain distinct receipts and historical identities', async () => {
   const f = await facebookPublicationFixture();
   try {
