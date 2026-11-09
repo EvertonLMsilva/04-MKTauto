@@ -251,7 +251,7 @@ export class SocialPublicationRepository {
         });
         this.db
           .prepare(
-            'INSERT INTO social_publication_operations VALUES (?,?,?,?,?,?)',
+            'INSERT INTO social_publication_operations(operation_id,package_hash,account_id,request_hash,payload_json,version) VALUES (?,?,?,?,?,?)',
           )
           .run(
             id,

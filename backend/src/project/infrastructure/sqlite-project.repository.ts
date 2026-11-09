@@ -21,7 +21,7 @@ export class SqliteProjectRepository implements ProjectRepository {
     const preflight = new DatabaseSync(path, { readOnly: true });
     try {
       if (
-        ![39, 40, 41, 42, 43].includes(
+        ![39, 40, 41, 42, 43, 44].includes(
           Number(preflight.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(preflight.prepare('PRAGMA user_version').get()?.user_version) >=

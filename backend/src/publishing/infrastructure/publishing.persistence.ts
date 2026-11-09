@@ -29,13 +29,19 @@ export class PublishingPersistence implements PublishingStore {
     try {
       db.exec('PRAGMA busy_timeout=5000');
       if (
-        ![39, 40, 41, 42, 43].includes(
+        ![39, 40, 41, 42, 43, 44].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         (Number(db.prepare('PRAGMA user_version').get()?.user_version) >= 41 &&
           db
             .prepare('SELECT name FROM schema_migrations WHERE version=41')
             .get()?.name !== '041_campaign_orchestration')
+      )
+        throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
+      if (
+        Number(db.prepare('PRAGMA user_version').get()?.user_version) === 44 &&
+        db.prepare('SELECT name FROM schema_migrations WHERE version=44').get()
+          ?.name !== '044_facebook_publication_supersession'
       )
         throw new Error('PUBLISHING_SCHEMA_VERSION_UNSUPPORTED');
       if (!readOnly) {
@@ -93,7 +99,7 @@ export class PublishingPersistence implements PublishingStore {
     let session: ReturnType<PublishingPersistence['open']> | undefined;
     try {
       if (
-        ![42, 43].includes(
+        ![42, 43, 44].includes(
           Number(db.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         db.prepare('SELECT name FROM schema_migrations WHERE version=42').get()
@@ -131,9 +137,11 @@ export class PublishingPersistence implements PublishingStore {
   openDestination(mode: 'fake' | 'live') {
     const session = this.openInstagram(mode);
     if (
-      Number(
-        session.social.db.prepare('PRAGMA user_version').get()?.user_version,
-      ) !== 43
+      ![43, 44].includes(
+        Number(
+          session.social.db.prepare('PRAGMA user_version').get()?.user_version,
+        ),
+      )
     ) {
       session.close();
       throw new Error('SOCIAL_SCHEMA_43_REQUIRED');

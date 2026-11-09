@@ -76,7 +76,7 @@ test('Finance explicitly rejects future schema versions', () => {
   const db = new DatabaseSync(file);
   try {
     provisionSchema(db, 42);
-    db.exec('PRAGMA user_version=44');
+    db.exec('PRAGMA user_version=45');
     expect(() => new FinanceSession(file)).toThrow(
       'FINANCE_SCHEMA_VERSION_UNSUPPORTED',
     );

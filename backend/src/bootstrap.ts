@@ -18,7 +18,7 @@ export function validateConfiguration(env: NodeJS.ProcessEnv) {
   const db = new DatabaseSync(database, { readOnly: true });
   try {
     if (
-      ![41, 42, 43].includes(
+      ![41, 42, 43, 44].includes(
         Number(db.prepare('PRAGMA user_version').get()?.user_version),
       ) ||
       db.prepare('SELECT name FROM schema_migrations WHERE version=41').get()
@@ -31,7 +31,7 @@ export function validateConfiguration(env: NodeJS.ProcessEnv) {
         ?.name !== '042_instagram_publication'
     )
       throw new Error('SCHEMA_42_REQUIRED');
-    if (db.prepare('PRAGMA user_version').get()?.user_version === 43) {
+    if (Number(db.prepare('PRAGMA user_version').get()?.user_version) >= 43) {
       if (
         db.prepare('SELECT name FROM schema_migrations WHERE version=43').get()
           ?.name !== '043_multi_network_publication_reservations'

@@ -11,7 +11,7 @@ export class SqliteCampaignOperationsPersistence implements CampaignOperationsPe
     const check = new DatabaseSync(this.path, { readOnly: true });
     try {
       if (
-        ![41, 42, 43].includes(
+        ![41, 42, 43, 44].includes(
           Number(check.prepare('PRAGMA user_version').get()?.user_version),
         ) ||
         check
