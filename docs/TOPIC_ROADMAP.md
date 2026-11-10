@@ -1,5 +1,10 @@
 # MKTauto --- roadmap operacional
 
+> Proposta de baseline V2 para revisão humana: [ROADMAP_BASELINE_V2.md](ROADMAP_BASELINE_V2.md).
+> Ela define inventário e indicadores novos sem alterar as decisões históricas
+> abaixo. Permanece `PROPOSED` até aprovação e merge manual pelo usuário;
+> a contagem informal anterior de 31/59 não foi reconciliada.
+
 Este arquivo contém **ordem, dependências, estado atual e critérios de aceite**.
 Histórico detalhado de tópicos concluídos e PRs:
 `docs/history/ROADMAP_HISTORY.md`. Visão do produto:
