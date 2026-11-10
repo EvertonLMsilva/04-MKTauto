@@ -464,12 +464,16 @@ test('two SQLite workers contend for the same notification identity under BEGIN 
   try {
     for (const [source, target] of [
       ['domain/campaign', 'campaign'],
+      ['domain/campaign-schedule', 'campaign-schedule'],
       ['infrastructure/campaign.repository', 'campaign.repository'],
     ]) {
       const sourceText = readFileSync(
         new URL(`../content-operations/${source}.ts`, import.meta.url),
         'utf8',
-      ).replace('../domain/campaign.js', './campaign.mjs');
+      )
+        .replace('../domain/campaign.js', './campaign.mjs')
+        .replace('../domain/campaign-schedule.js', './campaign-schedule.mjs')
+        .replace('./campaign.js', './campaign.mjs');
       writeFileSync(
         join(directory, `${target}.mjs`),
         transpileModule(sourceText, {
@@ -526,11 +530,13 @@ try { parentPort.postMessage(repository.claimNotification(workerData.intent,()=>
         });
       });
     });
-    await Promise.all(ready);
+    // Observe result failures during startup too, before opening the barrier.
+    const completed = Promise.all(results);
+    await Promise.race([Promise.all(ready), completed]);
     Atomics.store(new Int32Array(barrier), 0, 1);
     Atomics.notify(new Int32Array(barrier), 0, 2);
     expect(
-      (await Promise.all(results)).sort((a, b) => Number(a) - Number(b)),
+      (await completed).sort((a, b) => Number(a) - Number(b)),
     ).toEqual([false, true]);
     expect(
       new CampaignRepository(f.base.db)
