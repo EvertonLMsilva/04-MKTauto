@@ -370,7 +370,7 @@ test('empty schema provisions through 44 and new normal Facebook and Instagram p
   }
 });
 
-test('normal Facebook execution still works after structural upgrade without changing Instagram history', async () => {
+test('authorized normal Facebook execution works after structural upgrade without changing Instagram history', async () => {
   const f = await facebookPublicationFixture(true, 'v27.0');
   try {
     const before = f.f.base.db
@@ -378,7 +378,49 @@ test('normal Facebook execution still works after structural upgrade without cha
       .all();
     provisionSchema(f.f.base.db, 44);
     f.approve(f.facebookPackage);
-    await f.execute();
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: prepared.version,
+      authorizationId: 'schema44_occurrence_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    await f
+      .reopen()
+      .authorizeFacebookOccurrence(
+        f.execution.execution_id,
+        grant.accountId,
+        0,
+        grant,
+      );
+    await f
+      .reopen()
+      .execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        grant,
+        0,
+      );
     await f.execute(f.reopen());
     expect(f.posts).toEqual(['create', 'upload', 'publish']);
     expect(

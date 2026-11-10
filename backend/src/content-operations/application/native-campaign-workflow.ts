@@ -8,6 +8,7 @@ import type { VideoGenerationService } from '../../media/application/video-gener
 import type { VideoProductionPreparationV1 } from '../../media/domain/video-production-preparation.js';
 import { validateTemporalReport } from '../../media/domain/p4-qc-contracts.js';
 import type { InstagramPublicationService } from '../../publishing/application/instagram-publication.service.js';
+import type { DestinationPublicationService } from '../../publishing/application/destination-publication.service.js';
 import type { AffiliateService } from '../../affiliate/application/affiliate.service.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
 import type { ResearchReader } from '../../research/application/research-reader.port.js';
@@ -222,13 +223,30 @@ export function campaignRequest(raw: unknown) {
     r.sceneMediaAssetIds.forEach(identifier);
   }
   if (r.publication !== undefined) {
-    const publication = document(r.publication);
+    const destinations = Array.isArray(r.publication)
+      ? r.publication
+      : [r.publication];
     if (
-      Object.keys(publication).sort().join(',') !== 'accountId,packageHash' ||
-      typeof publication.packageHash !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(publication.packageHash) ||
-      typeof publication.accountId !== 'string' ||
-      !/^[1-9]\d{4,63}$/.test(publication.accountId)
+      destinations.length < 1 ||
+      destinations.length > 2 ||
+      destinations.some((value) => {
+        const p = document(value);
+        return (
+          Object.keys(p).sort().join(',') !==
+            (Array.isArray(r.publication)
+              ? 'accountId,network,packageHash'
+              : 'accountId,packageHash') ||
+          (Array.isArray(r.publication) &&
+            !['INSTAGRAM', 'FACEBOOK_REELS'].includes(String(p.network))) ||
+          typeof p.packageHash !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(p.packageHash) ||
+          typeof p.accountId !== 'string' ||
+          !/^[1-9]\d{4,63}$/.test(p.accountId)
+        );
+      }) ||
+      (Array.isArray(r.publication) &&
+        new Set(destinations.map((value) => document(value).network)).size !==
+          destinations.length)
     )
       throw new CampaignError('INVALID_PUBLICATION_REQUEST');
   }
@@ -308,6 +326,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         >;
     },
     private readonly captioning?: InstagramEditorialService,
+    private readonly facebook?: Pick<
+      DestinationPublicationService,
+      'status' | 'prepareFacebookOccurrence'
+    >,
   ) {}
   coordinatedPackage(e: CampaignExecution, done: Record<string, unknown>) {
     if (!done.HANDOFF) return null;
@@ -1190,35 +1212,112 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
         return { publication: 'MANUAL_HANDOFF' };
       }
-      if (!this.instagram)
-        throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
-      const previous = await this.instagram.status?.(e.execution_id);
-      const operation = previous?.operation;
-      if (
-        operation &&
-        ([
-          'UNCERTAIN',
-          'CREATING_CONTAINER',
-          'PUBLISHING',
-          'PUBLISHED',
-        ].includes(operation.state) ||
-          operation.requiresReconciliation)
-      ) {
-        const proof = await this.instagram.reconcile(e.execution_id);
-        if (proof?.verified && proof.step === 'PUBLICATION')
-          return proof.result;
-        const current = await this.instagram.status?.(e.execution_id);
+      const targets = Array.isArray(r.publication)
+        ? r.publication.map((value) => document(value))
+        : [{ ...document(r.publication), network: 'INSTAGRAM' }];
+      const instagramTarget = targets.find(
+        (value) => value.network === 'INSTAGRAM',
+      );
+      const facebookTarget = targets.find(
+        (value) => value.network === 'FACEBOOK_REELS',
+      );
+      let instagramResult: unknown;
+      if (instagramTarget) {
+        if (!this.instagram)
+          throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
+        const previous = await this.instagram.status?.(e.execution_id);
+        const operation = previous?.operation;
         if (
-          !proof?.verified ||
-          !current?.operation ||
-          !['PREPARED', 'PROCESSING', 'READY'].includes(
-            current.operation.state,
-          ) ||
-          current.operation.requiresReconciliation
-        )
-          throw new CampaignError('SOCIAL_RECONCILIATION_REQUIRED');
+          operation &&
+          ([
+            'UNCERTAIN',
+            'CREATING_CONTAINER',
+            'PUBLISHING',
+            'PUBLISHED',
+          ].includes(operation.state) ||
+            operation.requiresReconciliation)
+        ) {
+          const proof = await this.instagram.reconcile(e.execution_id);
+          if (proof?.verified && proof.step === 'PUBLICATION') {
+            instagramResult = proof.result;
+          } else {
+            const current = await this.instagram.status?.(e.execution_id);
+            if (
+              !proof?.verified ||
+              !current?.operation ||
+              !['PREPARED', 'PROCESSING', 'READY'].includes(
+                current.operation.state,
+              ) ||
+              current.operation.requiresReconciliation
+            )
+              throw new CampaignError('SOCIAL_RECONCILIATION_REQUIRED');
+          }
+        }
+        if (!instagramResult)
+          instagramResult = await this.instagram.execute(
+            e,
+            instagramTarget,
+            done.HANDOFF,
+          );
       }
-      return this.instagram.execute(e, r.publication, done.HANDOFF);
+      if (!facebookTarget) return instagramResult;
+      let rows = this.facebook?.status(e.execution_id) ?? [];
+      if (
+        !rows.some(
+          (value) =>
+            value.network === 'FACEBOOK_REELS' &&
+            value.accountId === facebookTarget.accountId,
+        )
+      ) {
+        if (!this.facebook)
+          throw new CampaignError('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
+        const prepared = await this.facebook.prepareFacebookOccurrence(
+          e.execution_id,
+          String(facebookTarget.accountId),
+        );
+        if (prepared.packageHash !== facebookTarget.packageHash)
+          throw new CampaignError('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+        rows = this.facebook.status(e.execution_id);
+      }
+      const row = rows
+        .filter(
+          (value) =>
+            value.network === 'FACEBOOK_REELS' &&
+            value.accountId === facebookTarget.accountId,
+        )
+        .at(-1);
+      const operation = row?.operation;
+      if (!operation)
+        throw new CampaignError('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+      if (operation.packageHash !== facebookTarget.packageHash)
+        throw new CampaignError('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+      if (
+        operation.uncertainStage ||
+        operation.requiresReconciliation ||
+        ['FAILED', 'EXPIRED', 'UNCERTAIN'].includes(operation.state)
+      )
+        throw new CampaignError('SOCIAL_RECONCILIATION_REQUIRED');
+      if (
+        operation.state !== 'PUBLISHED' ||
+        !operation.mediaId ||
+        !operation.remoteReceipt
+      )
+        throw new CampaignError('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+      if (
+        operation.operationId !== row?.operationId ||
+        operation.remoteReceipt.mediaId !== operation.mediaId
+      )
+        throw new CampaignError('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+      return {
+        destinations: {
+          ...(instagramTarget ? { INSTAGRAM: instagramResult } : {}),
+          FACEBOOK_REELS: {
+            operationId: operation.operationId,
+            mediaId: operation.mediaId,
+            receipt: operation.remoteReceipt,
+          },
+        },
+      };
     }
     // No paid transport is reachable from this workflow. Unknown charges stay unknown.
     if (!(
@@ -1791,6 +1890,31 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   async readyToResume(e: CampaignExecution, history: CampaignEvent[]) {
     const paused = history.filter((h) => h.event_type === 'PAUSED').at(-1);
     const r = executionRequest(history);
+    if (
+      paused?.evidence.step === 'PUBLICATION' &&
+      paused.evidence.code === 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED' &&
+      Array.isArray(r.publication)
+    ) {
+      const target = r.publication
+        .map(document)
+        .find((p) => p.network === 'FACEBOOK_REELS');
+      const row = this.facebook
+        ?.status(e.execution_id)
+        .filter(
+          (p) =>
+            p.network === 'FACEBOOK_REELS' && p.accountId === target?.accountId,
+        )
+        .at(-1);
+      const op = row?.operation;
+      return !!(
+        op &&
+        op.packageHash === target?.packageHash &&
+        op.state === 'PUBLISHED' &&
+        !op.requiresReconciliation &&
+        op.mediaId &&
+        op.remoteReceipt?.mediaId === op.mediaId
+      );
+    }
     if (!r.videoProduction || r.mode !== 'LOCAL_VALIDATION' || r.publication)
       return false;
     const done = completedContext(history);

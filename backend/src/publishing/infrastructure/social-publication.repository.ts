@@ -3,10 +3,12 @@ import {
   assertSupersessionEligible,
   assertSupersessionObservation,
   assertSuccessorAuthorization,
+  assertFacebookOccurrenceAuthorization,
 } from '../domain/facebook-supersession.js';
 import type {
   FacebookSupersessionRequest,
   FacebookSuccessorAuthorization,
+  FacebookOccurrenceAuthorization,
   FacebookLineageEvidence,
 } from '../domain/facebook-supersession.js';
 import { DestinationReservationsRepository } from './destination-reservations.repository.js';
@@ -527,7 +529,7 @@ export class SocialPublicationRepository {
   authorizePublication(
     operation: any,
     at: string,
-    grant?: FacebookSuccessorAuthorization,
+    grant?: FacebookSuccessorAuthorization | FacebookOccurrenceAuthorization,
   ) {
     this.assertNotSuperseded(operation.operationId);
     if (this.lineage(operation.operationId)?.supersession_revision > 0) {
@@ -536,7 +538,26 @@ export class SocialPublicationRepository {
         .prepare('SELECT * FROM publication_supersessions WHERE successor_id=?')
         .get(operation.operationId);
       if (!record) socialFail('SOCIAL_PERSISTED_INTEGRITY');
-      assertSuccessorAuthorization(operation, record, grant, at);
+      assertSuccessorAuthorization(
+        operation,
+        record,
+        grant as FacebookSuccessorAuthorization,
+        at,
+      );
+    } else if (operation.executionAuthorizationRequired === true) {
+      const reservation = this.db
+        .prepare(
+          `SELECT r.*,e.campaign_revision FROM multi_network_publication_reservations r
+         JOIN campaign_executions e ON e.execution_id=r.execution_id
+         WHERE r.operation_id=?`,
+        )
+        .get(operation.operationId);
+      assertFacebookOccurrenceAuthorization(
+        operation,
+        reservation,
+        grant as FacebookOccurrenceAuthorization,
+        at,
+      );
     }
     if (
       Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 42
@@ -578,21 +599,35 @@ export class SocialPublicationRepository {
       databaseId: this.databaseId,
     };
     publicText(key, 'idempotencyKey', 200);
-    const requestHash: any = affiliateHash(request),
-      id: any = `social_publication:${requestHash}`;
     return this.#transaction((): any => {
       const prior: any = this.db
         .prepare(
           'SELECT * FROM social_publication_commands WHERE idempotency_key=?',
         )
         .get(key);
-      if (prior && prior.request_hash !== requestHash)
-        socialFail('SOCIAL_IDEMPOTENCY_CONFLICT');
+      // Existing commands retain their original request identity. New schema-44
+      // Facebook operations carry an immutable per-operation authorization gate.
+      const marked =
+        prior &&
+        this.get(prior.operation_id)?.executionAuthorizationRequired === true;
       const destination: any = this.db
         .prepare(
           'SELECT operation_id FROM social_publication_operations WHERE package_hash=? AND account_id=?',
         )
         .get(request.packageHash, request.accountId);
+      const existing = destination && this.get(destination.operation_id);
+      if (
+        (marked ||
+          (!prior &&
+            (!existing || existing.executionAuthorizationRequired === true))) &&
+        request.network === 'FACEBOOK_REELS' &&
+        Number(this.db.prepare('PRAGMA user_version').get()?.user_version) >= 44
+      )
+        request = { ...request, executionAuthorizationRequired: true };
+      const requestHash: any = affiliateHash(request),
+        id: any = `social_publication:${requestHash}`;
+      if (prior && prior.request_hash !== requestHash)
+        socialFail('SOCIAL_IDEMPOTENCY_CONFLICT');
       if (destination && destination.operation_id !== id)
         socialFail('SOCIAL_IDEMPOTENCY_CONFLICT');
       let value: any = this.get(id);
@@ -639,7 +674,7 @@ export class SocialPublicationRepository {
     allowed: any,
     patch: any,
     now: any,
-    grant?: FacebookSuccessorAuthorization,
+    grant?: FacebookSuccessorAuthorization | FacebookOccurrenceAuthorization,
     evidence?: FacebookLineageEvidence,
   ): any {
     return this.#transaction((): any => {
@@ -659,6 +694,8 @@ export class SocialPublicationRepository {
         this.authorizePublication(previous, at, grant);
         if (this.lineage(id)?.supersession_revision > 0) {
           this.validateSupersessionLineage(id, evidence, at);
+          patch = { ...patch, executionAuthorization: grant };
+        } else if (previous.executionAuthorizationRequired === true) {
           patch = { ...patch, executionAuthorization: grant };
         }
       }

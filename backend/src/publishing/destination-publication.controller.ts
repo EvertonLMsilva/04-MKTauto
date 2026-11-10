@@ -22,6 +22,7 @@ import { exact } from './domain/manual-distribution-contracts.js';
 import type {
   FacebookSupersessionRequest,
   FacebookSuccessorAuthorization,
+  FacebookOccurrenceAuthorization,
 } from './domain/facebook-supersession.js';
 @Controller('publishing/executions')
 @UseGuards(LocalQcGuard)
@@ -99,13 +100,60 @@ export class DestinationPublicationController {
       );
     });
   }
+  @Post(':id/facebook-reels/prepare')
+  prepareOccurrence(
+    @Param('id') id: string,
+    @Body() body: { accountId: string },
+  ) {
+    return this.respond(() => {
+      exact(body, ['accountId']);
+      return this.service.prepareFacebookOccurrence(id, body.accountId);
+    });
+  }
+  @Post(':id/facebook-reels/occurrence-authorization')
+  authorizeOccurrence(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      accountId: string;
+      expectedVersion: number;
+      authorization: Omit<FacebookOccurrenceAuthorization, 'actor'>;
+    },
+    @Req() request: any,
+  ) {
+    return this.respond(() => {
+      exact(body, ['accountId', 'expectedVersion', 'authorization']);
+      exact(body.authorization, [
+        'executionId',
+        'operationId',
+        'accountId',
+        'packageHash',
+        'campaignRevision',
+        'expectedVersion',
+        'authorizationId',
+        'authorizedAt',
+        'expiresAt',
+      ]);
+      const authorization = serverApprovalRequest(
+        body.authorization,
+        request[QC_REVIEWER_CONTEXT],
+      );
+      return this.service.authorizeFacebookOccurrence(
+        id,
+        body.accountId,
+        body.expectedVersion,
+        authorization as FacebookOccurrenceAuthorization,
+      );
+    });
+  }
   @Post(':id/facebook-reels') async publish(
     @Param('id') id: string,
     @Body()
     body: {
       accountId: string;
       expectedVersion?: number;
-      authorization?: FacebookSuccessorAuthorization;
+      authorization?:
+        FacebookSuccessorAuthorization | FacebookOccurrenceAuthorization;
     },
     @Req() request: any,
   ) {
@@ -115,16 +163,32 @@ export class DestinationPublicationController {
         return this.service.execute(id, 'FACEBOOK_REELS', body.accountId);
       }
       exact(body, ['accountId', 'expectedVersion', 'authorization']);
-      exact(body.authorization, [
-        'operationId',
-        'packageHash',
-        'preparationDecisionId',
-        'authorizationId',
-        'actor',
-        'authorizedAt',
-        'expiresAt',
-        'acceptResidualRisk',
-      ]);
+      exact(
+        body.authorization,
+        'executionId' in body.authorization!
+          ? [
+              'executionId',
+              'operationId',
+              'accountId',
+              'packageHash',
+              'campaignRevision',
+              'expectedVersion',
+              'authorizationId',
+              'actor',
+              'authorizedAt',
+              'expiresAt',
+            ]
+          : [
+              'operationId',
+              'packageHash',
+              'preparationDecisionId',
+              'authorizationId',
+              'actor',
+              'authorizedAt',
+              'expiresAt',
+              'acceptResidualRisk',
+            ],
+      );
       const { actor, ...input } = body.authorization!;
       const authorization = serverApprovalRequest(
         input,
@@ -141,7 +205,8 @@ export class DestinationPublicationController {
         id,
         'FACEBOOK_REELS',
         body.accountId,
-        authorization as FacebookSuccessorAuthorization,
+        authorization as
+          FacebookSuccessorAuthorization | FacebookOccurrenceAuthorization,
         body.expectedVersion,
       );
     });

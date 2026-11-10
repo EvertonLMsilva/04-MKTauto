@@ -27,7 +27,7 @@ import { DestinationPublicationService } from './application/destination-publica
 import { SocialPublicationService } from './application/social-publication.service.js';
 import { provisionSchema } from '../administration/schema-provisioner.js';
 
-async function supersessionHttpFixture() {
+async function supersessionHttpFixture(withOriginal = true) {
   const f = await facebookPublicationFixture(true, 'v27.0', true);
   const identityDirectory = mkdtempSync(join(tmpdir(), 'supersession-http-'));
   const identityPath = join(identityDirectory, 'identities.json');
@@ -80,7 +80,7 @@ async function supersessionHttpFixture() {
     rmSync(identityDirectory, { recursive: true, force: true });
   };
   try {
-    provisionSchema(f.f.base.db, 44);
+    provisionSchema(f.f.base.db, 43);
     f.approve(f.facebookPackage);
     f.campaigns.ownedEvent(
       f.execution.execution_id,
@@ -90,46 +90,49 @@ async function supersessionHttpFixture() {
       {},
       'SUCCEEDED',
     );
-    const store = f.store.openDestination('fake');
     let original: any;
-    try {
-      const engine = new SocialPublicationService({
-        repository: store.social,
-        manual: store.manual,
-        publisher: f.ports.publisher,
-        media: f.ports.media,
-        transferVerifier: f.ports.verifier,
-        now: () => new Date().toISOString(),
-      });
-      original = await engine.prepare(
-        {
-          packageHash: f.facebookPackage.contentHash,
-          accountId: f.ports.publisher.accountId,
-        },
-        'http_original',
-        'local',
-      );
-      store.reservations.reserve(
-        f.execution.execution_id,
-        original,
-        f.facebookPackage,
-        f.publishing.packageReview(f.facebookPackage.contentHash).contentHash,
-        f.at,
-      );
-      original = await engine.createContainer(original.operationId);
-    } finally {
-      store.close();
+    if (withOriginal) {
+      const store = f.store.openDestination('fake');
+      try {
+        const engine = new SocialPublicationService({
+          repository: store.social,
+          manual: store.manual,
+          publisher: f.ports.publisher,
+          media: f.ports.media,
+          transferVerifier: f.ports.verifier,
+          now: () => new Date().toISOString(),
+        });
+        original = await engine.prepare(
+          {
+            packageHash: f.facebookPackage.contentHash,
+            accountId: f.ports.publisher.accountId,
+          },
+          'http_original',
+          'local',
+        );
+        store.reservations.reserve(
+          f.execution.execution_id,
+          original,
+          f.facebookPackage,
+          f.publishing.packageReview(f.facebookPackage.contentHash).contentHash,
+          f.at,
+        );
+        original = await engine.createContainer(original.operationId);
+      } finally {
+        store.close();
+      }
     }
+    provisionSchema(f.f.base.db, 44);
     const accountId = '1355505384315575';
     const input = {
-      originalOperationId: original.operationId,
+      originalOperationId: original?.operationId,
       revision: 1,
-      expectedVersion: original.version,
+      expectedVersion: original?.version,
       decisionId: 'http_preparation_001',
       reason: 'Explicit replacement with residual risk accepted',
-      remoteObservation: await f.ports.publisher.inspectUploadSession!(
-        original.containerId,
-      ),
+      remoteObservation: original
+        ? await f.ports.publisher.inspectUploadSession!(original.containerId)
+        : null,
       acceptResidualRisk: true,
     };
     const app = await create();
@@ -572,3 +575,427 @@ test('Nest HTTP E2E: existing MP4, independent approvals, two receipts, notifica
     f.cleanup();
   }
 }, 20000);
+
+test('schema 44 new Facebook operation blocks execution before remote effects without a scoped grant', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    await expect(f.execute()).rejects.toMatchObject({
+      code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED',
+    });
+    expect(f.posts).toEqual([]);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('schema 44 Facebook occurrence accepts only its own unexpired grant across restart and replay', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const service = f.reopen();
+    const prepared = await service.prepareFacebookOccurrence(
+      f.execution.execution_id,
+      '1355505384315575',
+    );
+    expect(prepared.state).toBe('PREPARED');
+    expect(f.posts).toEqual([]);
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: prepared.version,
+      authorizationId: 'occurrence_day_1_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    await expect(
+      service.execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        {
+          ...grant,
+          executionId: 'another_execution',
+        },
+        prepared.version,
+      ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED' });
+    await expect(
+      service.execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        {
+          ...grant,
+          expiresAt: f.at,
+        },
+        prepared.version,
+      ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED' });
+    await expect(
+      service.execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        {
+          ...grant,
+          preparationDecisionId: 'supersession_decision',
+          acceptResidualRisk: true,
+        } as any,
+        prepared.version,
+      ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED' });
+    expect(f.posts).toEqual([]);
+    const authorized = await service.authorizeFacebookOccurrence(
+      f.execution.execution_id,
+      grant.accountId,
+      prepared.version,
+      grant,
+    );
+    expect(authorized.authorization.actor).toBe(grant.actor);
+    const result = await f
+      .reopen()
+      .execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        grant,
+        prepared.version,
+      );
+    expect(result.receipt.mediaId).toBe('987654321');
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    const replay = await f
+      .reopen()
+      .execute(f.execution.execution_id, 'FACEBOOK_REELS', grant.accountId);
+    expect(replay.receipt).toEqual(result.receipt);
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('schema 44 persisted CREATE intent rejects a missing Facebook occurrence grant', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    const s = f.store.openDestination('fake');
+    try {
+      expect(() =>
+        s.social.transition(
+          prepared.operationId,
+          prepared.version,
+          ['PREPARED'],
+          { state: 'CREATING_CONTAINER' },
+          f.at,
+        ),
+      ).toThrow('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+      expect(s.social.get(prepared.operationId).version).toBe(0);
+      expect(f.posts).toEqual([]);
+    } finally {
+      s.close();
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('schema 44 persisted UPLOAD and FINISH intents reject a missing occurrence grant', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: 0,
+      authorizationId: 'intent_boundary_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    const s = f.store.openDestination('fake');
+    try {
+      const engine = new SocialPublicationService({
+        repository: s.social,
+        manual: s.manual,
+        publisher: f.ports.publisher,
+        media: f.ports.media,
+        transferVerifier: f.ports.verifier,
+        operationalAuthorization: grant,
+        now: () => f.at,
+        authorize: (op: any) => s.reservations.authorize(op, f.at),
+      });
+      const created = await engine.createContainer(prepared.operationId);
+      expect(() =>
+        s.social.transition(
+          prepared.operationId,
+          created.version,
+          ['PROCESSING'],
+          { uploadStage: 'UPLOADING' },
+          f.at,
+        ),
+      ).toThrow('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+      expect(f.posts).toEqual(['create']);
+      const uploaded = await engine.upload(
+        prepared.operationId,
+        await f.ports.localBytes(
+          f.facebookPackage.contentHash,
+          f.render.videoRenderId,
+          f.hash,
+        ),
+      );
+      expect(uploaded.uploadStage).toBe('ACKNOWLEDGED');
+      const ready = await engine.process(prepared.operationId);
+      expect(ready.state).toBe('READY');
+      expect(() =>
+        s.social.transition(
+          prepared.operationId,
+          ready.version,
+          ['READY'],
+          { state: 'PUBLISHING' },
+          f.at,
+        ),
+      ).toThrow('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+      expect(f.posts).toEqual(['create', 'upload']);
+    } finally {
+      s.close();
+    }
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('schema 44 concurrent authorized workers do not duplicate Facebook remote posts', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: 0,
+      authorizationId: 'concurrent_occurrence_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    await f
+      .reopen()
+      .authorizeFacebookOccurrence(
+        f.execution.execution_id,
+        grant.accountId,
+        0,
+        grant,
+      );
+    const results = await Promise.allSettled([
+      f
+        .reopen()
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          grant,
+        ),
+      f
+        .reopen()
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          grant,
+        ),
+    ]);
+    expect(results.some((r) => r.status === 'fulfilled')).toBe(true);
+    expect(f.posts.filter((p) => p === 'create')).toHaveLength(1);
+    expect(f.posts.filter((p) => p === 'upload')).toHaveLength(1);
+    expect(f.posts.filter((p) => p === 'publish')).toHaveLength(1);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('schema 44 UNKNOWN CREATE never retries a blind Facebook POST', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: 0,
+      authorizationId: 'unknown_occurrence_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    f.fail('create');
+    await expect(
+      f
+        .reopen()
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          grant,
+        ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_RECONCILIATION_REQUIRED' });
+    expect(f.posts).toEqual(['create']);
+    await expect(
+      f
+        .reopen()
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          grant,
+        ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_RECONCILIATION_REQUIRED' });
+    expect(f.posts).toEqual(['create']);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('HTTP recurring Facebook requires an authenticated operation grant before direct execution', async () => {
+  const x = await supersessionHttpFixture(false);
+  try {
+    const prepared = await x
+      .post('/prepare', { accountId: x.accountId })
+      .expect(201);
+    expect(prepared.body.state).toBe('PREPARED');
+    await x.post('', { accountId: x.accountId }).expect(409);
+    expect(x.f.posts).toEqual([]);
+    vi.setSystemTime(Date.parse(x.f.at) + 1000);
+    const authorization = {
+      executionId: x.f.execution.execution_id,
+      operationId: prepared.body.operationId,
+      accountId: x.accountId,
+      packageHash: x.f.facebookPackage.contentHash,
+      campaignRevision: x.f.execution.campaign_revision,
+      expectedVersion: prepared.body.version,
+      authorizationId: 'http_occurrence_grant_001',
+      authorizedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+    await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: { ...authorization, operationId: 'other_operation' },
+      })
+      .expect(409);
+    await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: {
+          ...authorization,
+          expiresAt: authorization.authorizedAt,
+        },
+      })
+      .expect(409);
+    const grant = await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization,
+      })
+      .expect(201);
+    expect(grant.body.authorization.actor).toBe(x.identity.id);
+    expect(x.f.posts).toEqual([]);
+    await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: {
+          ...grant.body.authorization,
+          actor: 'another_reviewer',
+        },
+      })
+      .expect(403);
+    expect(x.f.posts).toEqual([]);
+    const published = await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: grant.body.authorization,
+      })
+      .expect(201);
+    expect(published.body.receipt.mediaId).toBe('987654321');
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    await x.cleanup();
+  }
+});

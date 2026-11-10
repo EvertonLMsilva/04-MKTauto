@@ -6,6 +6,7 @@ import {
 import type {
   FacebookSupersessionRequest,
   FacebookSuccessorAuthorization,
+  FacebookOccurrenceAuthorization,
 } from '../domain/facebook-supersession.js';
 import type { CampaignOperationsPort } from '../../content-operations/application/campaign-operations.port.js';
 import type { FinanceService } from '../../finance/application/finance.service.js';
@@ -242,13 +243,80 @@ export class DestinationPublicationService {
       s.close();
     }
   }
+  async prepareFacebookOccurrence(id: string, account: string) {
+    return this.execute(
+      id,
+      'FACEBOOK_REELS',
+      account,
+      undefined,
+      undefined,
+      true,
+    );
+  }
+  async authorizeFacebookOccurrence(
+    id: string,
+    account: string,
+    expectedVersion: number,
+    authorization: FacebookOccurrenceAuthorization,
+  ) {
+    if (
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0 ||
+      authorization?.expectedVersion !== expectedVersion
+    )
+      socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+    const ports = this.facebook;
+    if (!ports || ports.publisher.accountId !== 'facebook_reels:' + account)
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    const { execution, request } = this.context(id);
+    if (execution.status === 'RUNNING')
+      socialFail('SOCIAL_FACEBOOK_ACTIVE_CLAIM');
+    const s = this.store.openDestination(ports.publisher.mode);
+    try {
+      const reservation =
+        s.reservations.activeForExecution?.(id, 'FACEBOOK_REELS', account) ??
+        s.reservations.forExecution(id, 'FACEBOOK_REELS', account);
+      const op = reservation && s.social.get(reservation.operationId);
+      if (
+        !op ||
+        op.supersession ||
+        op.executionAuthorizationRequired !== true ||
+        op.version !== expectedVersion ||
+        !['PREPARED', 'PROCESSING', 'READY'].includes(op.state) ||
+        op.requiresReconciliation ||
+        op.uncertainStage
+      )
+        socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+      s.manual.validateForPublication(op.packageHash, execution);
+      const recovery = request.legacyRecovery as
+        { financialOperationIds?: string[] } | undefined;
+      for (const financialId of recovery?.financialOperationIds ??
+        [request.generationRequestId].filter(
+          (v): v is string => typeof v === 'string',
+        ))
+        if (this.finance.getGlobalOperation(financialId)?.state === 'UNKNOWN')
+          socialFail('SOCIAL_FINANCE_RECONCILIATION_REQUIRED');
+      s.social.authorizePublication(op, this.now(), authorization);
+      return {
+        operationId: op.operationId,
+        state: op.state,
+        version: op.version,
+        contentHash: op.contentHash,
+        authorization,
+      };
+    } finally {
+      s.close();
+    }
+  }
   async execute(
     id: string,
     network: PublicationNetwork,
     account: string,
-    operationalAuthorization?: FacebookSuccessorAuthorization,
+    operationalAuthorization?:
+      FacebookSuccessorAuthorization | FacebookOccurrenceAuthorization,
     expectedVersion?: number,
-  ) {
+    prepareOnly = false,
+  ): Promise<any> {
     if (network !== 'FACEBOOK_REELS' || !this.facebook)
       socialFail('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
     const ports = this.facebook,
@@ -314,6 +382,17 @@ export class DestinationPublicationService {
         previous?.packageHash ?? packages[0].contentHash,
         e,
       );
+      const recurringTarget = Array.isArray(request.publication)
+        ? request.publication.find(
+            (item: any) => item?.network === 'FACEBOOK_REELS',
+          )
+        : null;
+      if (
+        recurringTarget &&
+        (recurringTarget.accountId !== account ||
+          recurringTarget.packageHash !== pkg.contentHash)
+      )
+        socialFail('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
       const recovery = request.legacyRecovery as
         { financialOperationIds?: string[] } | undefined;
       const financialIds =
@@ -356,6 +435,20 @@ export class DestinationPublicationService {
           s.manual.getReview(pkg.contentHash).contentHash,
           this.now(),
         );
+      if (prepareOnly) {
+        if (op.supersession)
+          socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+        return {
+          operationId: op.operationId,
+          state: op.state,
+          version: op.version,
+          packageHash: op.packageHash,
+          accountId: account,
+        };
+      }
+      s.social.authorizePublication(op, this.now(), operationalAuthorization);
+      if (op.executionAuthorizationRequired === true && e.status === 'RUNNING')
+        socialFail('SOCIAL_FACEBOOK_ACTIVE_CLAIM');
       if (
         ['CREATING_CONTAINER', 'PUBLISHING', 'UNCERTAIN'].includes(op.state) ||
         op.requiresReconciliation
@@ -387,7 +480,7 @@ export class DestinationPublicationService {
     } finally {
       s.close();
       try {
-        await this.notifications?.scan();
+        if (!prepareOnly) await this.notifications?.scan();
       } catch {
         /* Operational delivery cannot change publication outcome. */
       }

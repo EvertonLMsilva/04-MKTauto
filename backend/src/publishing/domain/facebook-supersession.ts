@@ -22,6 +22,18 @@ export interface FacebookSuccessorAuthorization {
   expiresAt: string;
   acceptResidualRisk: true;
 }
+export interface FacebookOccurrenceAuthorization {
+  executionId: string;
+  operationId: string;
+  accountId: string;
+  packageHash: string;
+  campaignRevision: number;
+  expectedVersion: number;
+  authorizationId: string;
+  actor: string;
+  authorizedAt: string;
+  expiresAt: string;
+}
 export type FacebookLineageEvidence = readonly {
   operationId: string;
   version: number;
@@ -237,4 +249,58 @@ export function assertSuccessorAuthorization(
     grant.authorizationId === record.authorization_id
   )
     socialFail('SOCIAL_SUCCESSOR_AUTHORIZATION_REQUIRED');
+}
+
+export function assertFacebookOccurrenceAuthorization(
+  op: any,
+  reservation: any,
+  grant: FacebookOccurrenceAuthorization | undefined,
+  now: string,
+) {
+  if (
+    !grant ||
+    Object.keys(grant).sort().join(',') !==
+      'accountId,actor,authorizationId,authorizedAt,campaignRevision,executionId,expectedVersion,expiresAt,operationId,packageHash' ||
+    op.network !== 'FACEBOOK_REELS' ||
+    op.supersession ||
+    op.executionAuthorizationRequired !== true ||
+    !reservation ||
+    reservation.operation_id !== op.operationId ||
+    reservation.network !== 'FACEBOOK_REELS' ||
+    reservation.execution_id !== grant.executionId ||
+    reservation.account_id !== grant.accountId ||
+    reservation.package_hash !== grant.packageHash ||
+    reservation.campaign_revision !== grant.campaignRevision ||
+    grant.operationId !== op.operationId ||
+    grant.accountId !== op.accountId.replace(/^facebook_reels:/, '') ||
+    grant.packageHash !== op.packageHash ||
+    !Number.isSafeInteger(grant.campaignRevision) ||
+    grant.campaignRevision < 1 ||
+    !Number.isSafeInteger(grant.expectedVersion) ||
+    grant.expectedVersion < 0 ||
+    (grant.expectedVersion !== op.version &&
+      (grant.expectedVersion > op.version ||
+        !op.executionAuthorization ||
+        Object.keys(op.executionAuthorization).length !==
+          Object.keys(grant).length ||
+        !Object.entries(grant).every(
+          ([key, value]) => op.executionAuthorization[key] === value,
+        )))
+  )
+    socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+  text(grant.executionId, 200);
+  text(grant.operationId, 200);
+  text(grant.accountId, 100);
+  text(grant.authorizationId, 200);
+  text(grant.actor, 100);
+  const authorized = Date.parse(grant.authorizedAt);
+  const expires = Date.parse(grant.expiresAt);
+  const at = Date.parse(now);
+  if (
+    ![authorized, expires, at].every(Number.isFinite) ||
+    authorized > at ||
+    expires <= at ||
+    expires - authorized > 600000
+  )
+    socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
 }
