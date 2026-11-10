@@ -162,6 +162,8 @@ export class CommercialMeasurementRepository {
       .map((h) => String(h.evidence.step));
     return {
       identity: {
+        projectId: pkg.identity.projectId,
+        projectVersion: pkg.identity.projectVersion,
         publicationId: publication.publicationId,
         operationId: operation?.operationId ?? null,
         executionId,

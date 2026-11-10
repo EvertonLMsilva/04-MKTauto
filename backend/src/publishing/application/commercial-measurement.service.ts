@@ -92,7 +92,13 @@ export class CommercialMeasurementService {
         a.contentHash.localeCompare(b.contentHash),
     );
     const latest = observations.at(-1);
-    const identity = latest?.identity ?? resolved.identity;
+    // Older V2 observations lack project scope. Enrich only the read projection
+    // from their immutable package; historical hashes and replay receipts stay intact.
+    const identity = {
+      projectId: resolved.identity.projectId,
+      projectVersion: resolved.identity.projectVersion,
+      ...(latest?.identity ?? resolved.identity),
+    };
     const ledger = this.finance?.getLedgerV2ByPipelineRun(
       identity.pipelineRunId,
     );
