@@ -692,6 +692,19 @@ export class SocialPublicationRepository {
         ((previous.state === 'PROCESSING' && next === 'UNCERTAIN') ||
           (previous.state === 'UNCERTAIN' && next === 'READY') ||
           sessionRecovery);
+      const finishEligible =
+        previous.network === 'FACEBOOK_REELS' &&
+        previous.publicationFlowVersion === 2 &&
+        previous.state === 'PROCESSING' &&
+        previous.uploadStage === 'ACKNOWLEDGED' &&
+        next === 'READY' &&
+        patch.providerStatus === 'UPLOAD_COMPLETE' &&
+        !previous.requiresReconciliation &&
+        !previous.uncertainStage &&
+        previous.uploadAudit?.at(-1)?.kind === 'TRANSFER_CONFIRMED' &&
+        previous.transferEvidence?.operationId === previous.operationId &&
+        previous.transferEvidence?.containerId === previous.containerId &&
+        previous.transferEvidence?.contentHash === previous.mediaHash;
       if (
         Object.keys(patch).some((k: any): any => !patchFields.has(k)) ||
         (!transitions[previous.state]?.includes(next) && !directTransition) ||
@@ -700,7 +713,12 @@ export class SocialPublicationRepository {
           (previous.publicationFlowVersion !== 2 ||
             previous.state !== 'READY' ||
             previous.uploadStage !== 'ACKNOWLEDGED' ||
-            previous.providerStatus !== 'FINISHED' ||
+            ![
+              'FINISHED',
+              ...(previous.network === 'FACEBOOK_REELS'
+                ? ['UPLOAD_COMPLETE']
+                : []),
+            ].includes(previous.providerStatus) ||
             !previous.uploadUri ||
             previous.uncertainStage ||
             previous.requiresReconciliation ||
@@ -743,7 +761,7 @@ export class SocialPublicationRepository {
             previous.state === 'PROCESSING' &&
             stage !== 'UPLOADING') ||
           (next === 'READY' &&
-            (patch.providerStatus !== 'FINISHED' ||
+            ((patch.providerStatus !== 'FINISHED' && !finishEligible) ||
               !['UPLOADING', 'ACKNOWLEDGED'].includes(stage)))
         )
           socialFail('SOCIAL_TRANSITION_INVALID');
@@ -798,9 +816,14 @@ export class SocialPublicationRepository {
         socialFail('SOCIAL_TRANSITION_INVALID');
       if (
         patch.providerStatus !== undefined &&
-        !['IN_PROGRESS', 'FINISHED', 'PUBLISHED', 'ERROR', 'EXPIRED'].includes(
-          patch.providerStatus,
-        )
+        ![
+          'IN_PROGRESS',
+          'UPLOAD_COMPLETE',
+          'FINISHED',
+          'PUBLISHED',
+          'ERROR',
+          'EXPIRED',
+        ].includes(patch.providerStatus)
       )
         socialFail('SOCIAL_TRANSITION_INVALID');
       if (

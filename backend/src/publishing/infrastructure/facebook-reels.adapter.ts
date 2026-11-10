@@ -370,9 +370,15 @@ export class FacebookReelsAdapter {
               s.publishing_phase?.status === 'complete'
             ? 'PUBLISHED'
             : s.uploading_phase?.status === 'complete' &&
-                s.processing_phase?.status === 'complete'
-              ? 'FINISHED'
-              : 'IN_PROGRESS';
+                s.publishing_phase?.status === 'not_started' &&
+                s.processing_phase?.status === 'not_started' &&
+                ['upload_complete', 'processing'].includes(s.video_status)
+              ? 'UPLOAD_COMPLETE'
+              : s.uploading_phase?.status === 'complete' &&
+                  s.processing_phase?.status === 'complete' &&
+                  s.publishing_phase?.status === 'not_started'
+                ? 'FINISHED'
+                : 'IN_PROGRESS';
     return { status };
   }
   async publish(input: {

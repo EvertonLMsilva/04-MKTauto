@@ -1111,6 +1111,211 @@ test('complete lineage checks freshness after acquiring the intent writer lock',
   }
 });
 
+async function acknowledgedSuccessorVersionEight() {
+  const x = await fixture();
+  try {
+    const successor = await x.prepare(),
+      grant = grantFor(x, successor),
+      worker = engineFor(x, grant);
+    try {
+      await worker.engine.createContainer(successor.operationId);
+      const bytes = await x.f.ports.localBytes(
+        successor.packageHash,
+        x.f.render.videoRenderId,
+        x.f.hash,
+      );
+      const uploaded = await worker.engine.upload(successor.operationId, bytes);
+      expect(uploaded.version).toBe(7);
+      expect(uploaded.uploadStage).toBe('ACKNOWLEDGED');
+      const status = worker.store.social.transition(
+        successor.operationId,
+        uploaded.version,
+        ['PROCESSING'],
+        { state: 'PROCESSING', providerStatus: 'IN_PROGRESS' },
+        () => new Date().toISOString(),
+        grant,
+      );
+      expect(status.claimed).toBe(true);
+      expect(status.value.version).toBe(8);
+      expect(status.value.state).toBe('PROCESSING');
+    } finally {
+      worker.store.close();
+    }
+    x.f.setProcessing(false);
+    return { ...x, successor, grant };
+  } catch (error) {
+    x.cleanup();
+    throw error;
+  }
+}
+
+test('version 8 successor resumes FINISH on its acknowledged session without another CREATE or UPLOAD', async () => {
+  const x = await acknowledgedSuccessorVersionEight();
+  try {
+    const before = x.f.posts.slice();
+    expect(before).toEqual(['create', 'create', 'upload']);
+    expect(() => {
+      const store = x.f.store.openDestination('fake');
+      try {
+        store.social.assertNotSuperseded(x.original.operationId);
+      } finally {
+        store.close();
+      }
+    }).toThrow('SOCIAL_OPERATION_SUPERSEDED');
+    const execute = () =>
+      x.f
+        .reopen(() => new Date().toISOString())
+        .execute(
+          x.f.execution.execution_id,
+          'FACEBOOK_REELS',
+          '1355505384315575',
+          x.grant,
+          8,
+        );
+    await Promise.allSettled([execute(), execute()]);
+    expect(x.f.posts).toEqual([...before, 'publish']);
+    const store = x.f.store.openDestination('fake');
+    const current = store.social.get(x.successor.operationId);
+    store.close();
+    expect(current.state).toBe('PUBLISHED');
+    expect(current.containerId).not.toBe(x.original.containerId);
+    expect(current.mediaId).toBe(current.containerId);
+    expect(current.remoteReceipt).toBeUndefined();
+    x.f.setProcessing(true);
+    const receipt = await x.f
+      .reopen(() => new Date().toISOString())
+      .execute(
+        x.f.execution.execution_id,
+        'FACEBOOK_REELS',
+        '1355505384315575',
+        x.grant,
+        current.version,
+      );
+    expect(receipt.receipt.mediaId).toBe(current.containerId);
+    expect(await execute()).toEqual(receipt);
+    expect(x.f.posts).toEqual([...before, 'publish']);
+  } finally {
+    x.cleanup();
+  }
+});
+
+test('version 8 successor rejects expired grant and never repeats an uncertain FINISH', async () => {
+  const expired = await acknowledgedSuccessorVersionEight();
+  try {
+    const before = expired.f.posts.slice();
+    vi.setSystemTime(new Date(Date.parse(expired.grant.expiresAt) + 1));
+    await expect(
+      expired.f
+        .reopen(() => new Date().toISOString())
+        .execute(
+          expired.f.execution.execution_id,
+          'FACEBOOK_REELS',
+          '1355505384315575',
+          expired.grant,
+          8,
+        ),
+    ).rejects.toThrow();
+    expect(expired.f.posts).toEqual(before);
+  } finally {
+    expired.cleanup();
+  }
+  const uncertain = await acknowledgedSuccessorVersionEight();
+  try {
+    uncertain.f.fail('publish');
+    uncertain.f.setReceiptVisible(false);
+    const execute = () =>
+      uncertain.f
+        .reopen(() => new Date().toISOString())
+        .execute(
+          uncertain.f.execution.execution_id,
+          'FACEBOOK_REELS',
+          '1355505384315575',
+          uncertain.grant,
+        );
+    await expect(execute()).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    const posts = uncertain.f.posts.slice();
+    expect(posts).toEqual(['create', 'create', 'upload', 'publish']);
+    uncertain.f.fail(undefined);
+    await expect(execute()).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(uncertain.f.posts).toEqual(posts);
+    const store = uncertain.f.store.openDestination('fake');
+    const current = store.social.get(uncertain.successor.operationId);
+    store.close();
+    expect(current.state).toBe('UNCERTAIN');
+    expect(current.uncertainStage).toBe('PUBLISH');
+  } finally {
+    uncertain.cleanup();
+  }
+});
+
+test('published successor without remote receipt can renew a grant for GET-only receipt recovery', async () => {
+  const x = await acknowledgedSuccessorVersionEight();
+  try {
+    const execute = (grant: any, expectedVersion: number) =>
+      x.f
+        .reopen(() => new Date().toISOString())
+        .execute(
+          x.f.execution.execution_id,
+          'FACEBOOK_REELS',
+          '1355505384315575',
+          grant,
+          expectedVersion,
+        );
+    await expect(execute(x.grant, 8)).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    const store = x.f.store.openDestination('fake');
+    const pending = store.social.get(x.successor.operationId);
+    store.close();
+    expect(pending.state).toBe('PUBLISHED');
+    expect(pending.remoteReceipt).toBeUndefined();
+    const posts = x.f.posts.slice();
+    expect(posts).toEqual(['create', 'create', 'upload', 'publish']);
+    const authorizedAt = new Date(
+      Date.parse(x.grant.expiresAt) + 1000,
+    ).toISOString();
+    vi.setSystemTime(authorizedAt);
+    const renewal = {
+      ...x.grant,
+      authorizationId: 'receipt_recovery_decision_003',
+      authorizedAt,
+      expiresAt: new Date(Date.parse(authorizedAt) + 60000).toISOString(),
+    };
+    const issued = await x.f
+      .reopen(() => new Date().toISOString())
+      .authorizeFacebookSuccessor(
+        x.f.execution.execution_id,
+        '1355505384315575',
+        pending.version,
+        renewal,
+      );
+    expect(issued.authorization).toEqual(renewal);
+    x.f.setProcessing(true);
+    const recovered = await execute(renewal, pending.version);
+    expect(recovered.receipt.mediaId).toBe(pending.containerId);
+    expect(x.f.posts).toEqual(posts);
+    const completedStore = x.f.store.openDestination('fake');
+    const completed = completedStore.social.get(x.successor.operationId);
+    completedStore.close();
+    await expect(
+      x.f
+        .reopen(() => new Date().toISOString())
+        .authorizeFacebookSuccessor(
+          x.f.execution.execution_id,
+          '1355505384315575',
+          completed.version,
+          { ...renewal, authorizationId: 'unneeded_decision_004' },
+        ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_SUPERSESSION_INELIGIBLE' });
+  } finally {
+    x.cleanup();
+  }
+});
+
 async function interruptedSuccessor() {
   const x = await lineageFixture();
   const grant = x.authorize(x.successor);
