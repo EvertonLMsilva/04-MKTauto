@@ -26,6 +26,13 @@ export interface DestinationReservations {
   authorize(operation: any, at: string): unknown;
 }
 export interface DestinationPublicationStore {
+  readOperationalQueue(
+    limit: number,
+    offset: number,
+  ): {
+    total: number;
+    items: any[];
+  };
   readDestinations(id: string): {
     operationId: string;
     network: PublicationNetwork;

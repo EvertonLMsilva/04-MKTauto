@@ -19,6 +19,7 @@ import type {
 import { SocialPublicationService } from './social-publication.service.js';
 import { socialFail } from '../domain/social-publication-contracts.js';
 import type { FacebookCreateAcknowledgement } from '../domain/facebook-upload-session.js';
+import { projectOperationalQueue } from './operational-queue.js';
 
 // Explicit distribution of existing, approved media. No timer and no production pipeline.
 export class DestinationPublicationService {
@@ -32,6 +33,22 @@ export class DestinationPublicationService {
   ) {}
   status(id: string) {
     return this.store.readDestinations(id);
+  }
+  queue(limit = 25, offset = 0) {
+    if (
+      !Number.isSafeInteger(limit) ||
+      limit < 1 ||
+      limit > 100 ||
+      !Number.isSafeInteger(offset) ||
+      offset < 0
+    )
+      socialFail('SOCIAL_QUEUE_PAGINATION_INVALID');
+    return projectOperationalQueue(
+      this.store.readOperationalQueue(limit, offset),
+      limit,
+      offset,
+      this.now(),
+    );
   }
   private context(id: string) {
     const s = this.campaigns.open();
