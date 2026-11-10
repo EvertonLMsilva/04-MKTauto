@@ -1,3 +1,6 @@
+> REFERÊNCIA HISTÓRICA: este prompt não é a próxima task vigente. Consulte
+> `TOPIC_ROADMAP.md`; P1 Affiliate-First aguarda aprovação e especificação do Planner.
+
 # Próximo tópico — R02A Contratos e critérios do radar M1
 
 > Executar somente após o merge de V05. Este tópico define o domínio do radar

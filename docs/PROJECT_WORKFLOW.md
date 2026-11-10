@@ -1,74 +1,101 @@
-# Workflow econômico do MKTauto
+# MKTauto --- workflow econômico
 
-## Princípio
+## Objetivo
 
-Usar o **Chat para pensar** e o **Codex para executar** somente quando houver
-uma mudança de repositório aprovada. O processo deve custar menos que o valor da
-decisão ou entrega que produz.
+Maximizar qualidade por token: **ChatGPT especifica; Codex executa**.
 
-## Modos de trabalho
+## Fluxo
 
-Selecionar apenas um:
-
-- **Análise:** problema, viabilidade, reuso, alternativas e decisão; sem código.
-- **Implementação:** menor mudança aprovada, com testes proporcionais.
-- **Validação:** evidência reproduzível; não corrigir no mesmo tópico.
-- **Documentação:** atualizar decisões, operação ou release já comprovados.
-
-Especialidades como IA, frontend, integrações, segurança e backend são critérios
-da tarefa, não personas separadas. Isso evita burocracia e troca desnecessária de
-contexto.
-
-## Estados
-
-`PENDENTE → EM ANÁLISE → APROVADO → EM EXECUÇÃO → PR ABERTO → CONCLUÍDO`.
-
-Usar `BLOQUEADO` somente com impedimento explícito e condição de retomada.
-O próximo tópico só começa após o merge do anterior.
-
-## Fluxo mínimo
-
-1. Definir um problema, resultado e fora de escopo.
-2. No Chat, verificar necessidade, viabilidade, soluções existentes, APIs
-   oficiais, custo, risco e menor corte útil.
-3. Se não houver implementação, registrar somente a decisão documental necessária.
-4. Se houver implementação, aprovar um pacote curto antes de usar o Codex.
-5. No Codex, verificar a base, executar apenas o pacote, testar e revisar o diff.
-6. Registrar decisão, aceite e risco residual; fazer commit, push e abrir PR.
-7. Após a confirmação do merge, registrar e exibir na resposta o prompt completo
-   do próximo tópico sem iniciá-lo. Se nenhum tópico estiver desbloqueado, exibir
-   o prompt de retomada do tópico bloqueado e sua condição de desbloqueio.
-
-## Pacote curto padrão
-
-```markdown
-# <ID — entrega>
-- Resultado e valor:
-- Evidências/decisões:
-- Arquivos e mudanças:
-- Fora de escopo/preservações:
-- Testes e aceite:
-- Dúvida bloqueante: Nenhuma | <pergunta>
+``` text
+ROADMAP
+  ↓
+ChatGPT escolhe o tópico funcional desbloqueado de tamanho útil
+  ↓
+ChatGPT cria/refina TASK com entrega verificável
+  ↓
+READY_FOR_CODEX
+  ↓
+Codex lê AGENTS + TASK + arquivos permitidos
+  ↓
+implementa + testes focados + diff focado
+  ↓
+DONE ou BLOCKED
+  ↓
+evidência mínima
+  ↓
+fechamento Git/PR quando aplicável
+  ↓
+próxima TASK desbloqueada
 ```
 
-Usar pacote ampliado somente para integração externa, migração, dados sensíveis,
-direitos autorais, segurança ou múltiplos módulos. Nesses casos, acrescentar
-base Git exata, riscos, rollback, custos e aprovação externa.
+## Estados de task
 
-## Controles de custo
+`PLANNED → READY_FOR_CODEX → IN_PROGRESS → DONE`
 
-- Não repetir análise, pacote ou evidência já aprovada.
-- Ler símbolos e recortes; carregar documento inteiro somente quando necessário.
-- Agrupar buscas, edições e testes.
-- Uma validação intermediária e uma final normalmente bastam.
-- Dividir quando houver mais de uma entrega independente ou projeção acima de
-  45 chamadas de ferramenta.
-- Não coletar métricas detalhadas enquanto não houver volume que justifique.
-- Testes, segurança, direitos e aceite nunca são reduzidos para economizar.
+Exceções: `BLOCKED` e `CANCELLED`.
 
-## Conclusão
+## Responsabilidade do ChatGPT
 
-Um tópico termina quando entrega valor observável, atende o aceite, registra
-resultado, verificações e riscos residuais e possui PR aberto. O próximo passo é
-preparado após o merge. Métricas ou documentação adicional só são exigidas quando
-realmente aplicáveis.
+Antes do Codex:
+
+-   decidir arquitetura;
+-   reduzir escopo;
+-   identificar dependências;
+-   definir contratos;
+-   definir arquivos prováveis/permitidos;
+-   definir testes;
+-   definir aceite;
+-   declarar explicitamente o que não fazer;
+-   pesquisar APIs/viabilidade quando necessário;
+-   separar entregas independentes, agrupando subtarefas necessárias à mesma entrega;
+-   priorizar reuso e preservar Ports & Adapters e contratos existentes;
+-   especificar autorização e orçamento antes de qualquer LIVE pago.
+
+## Responsabilidade do Codex
+
+-   confirmar somente o mínimo necessário no código;
+-   criar/alterar os arquivos definidos;
+-   implementar a menor mudança;
+-   executar testes focados;
+-   revisar o diff;
+-   parar.
+
+O Codex não deve redesenhar arquitetura, reorganizar roadmap ou escolher
+a próxima prioridade durante uma task de implementação.
+
+## Quando devolver ao ChatGPT
+
+Retornar `BLOCKED` quando:
+
+-   contrato real contradiz a task;
+-   arquivo/símbolo necessário não existe;
+-   decisão arquitetural está ausente;
+-   integração externa exige decisão não especificada;
+-   seria necessário ampliar significativamente o escopo;
+-   teste revela problema fora da responsabilidade da task.
+
+## Validação proporcional
+
+1.  teste(s) diretamente afetado(s);
+2.  integração próxima somente quando necessária;
+3.  suíte completa apenas em gates, mudanças transversais ou quando
+    explicitamente exigida.
+
+Segurança, direitos, idempotência e contratos nunca são reduzidos para
+economizar tokens.
+
+TDD acompanha o risco: domínio, estados, permissões, idempotência e contratos
+exigem testes prévios; documentação exige verificações documentais. Testes comuns
+usam fixtures/mocks. APIs pagas e pipelines LIVE exigem autorização explícita.
+Registre custos conhecidos e custos indisponíveis sem convertê-los em zero.
+Diagnostique a causa antes de corrigir; sem evidência nova, não repita tentativas
+bloqueadas.
+
+## Fechamento
+
+Um tópico pai usa uma branch/PR, com subtarefas em commits úteis, somente quando
+a etapa Git estiver autorizada. Preserve mudanças locais alheias à task.
+
+A evidência de uma task deve ser curta: arquivos alterados, testes
+executados e risco/bloqueio relevante. Histórico detalhado de PRs fica
+em `docs/history/ROADMAP_HISTORY.md`, não no roadmap operacional.

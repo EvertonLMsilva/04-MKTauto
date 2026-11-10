@@ -2,7 +2,7 @@
 
 ## Objetivo
 
-Definir a sequência, os artefatos e as fronteiras do MKTauto Portfolio-First sem
+Definir a sequência, os artefatos e as fronteiras do MKTauto Affiliate-First sem
 acoplar domínio ou aplicação a um fornecedor. Cada etapa recebe um contrato
 validado, produz uma nova versão rastreável e não executa efeitos pertencentes à
 etapa seguinte.
@@ -27,9 +27,19 @@ Scheduling → Publishing → Analytics → Revenue Analytics
 Optimization Recommendation → Portfolio Allocation Recommendation
 ```
 
-No MVP 1 o fluxo termina em `Preview`. Pesquisa existente pode sugerir temas,
-mas o operador também pode informar um tema diretamente. Revenue Analytics,
-experimentos, otimização e alocação são capacidades posteriores.
+O diagrama acima representa a evolução completa. O fluxo comercial vigente
+é produto/campanha manual → briefing → roteiro pela IA existente → cenas fal.ai
+e áudio quando suportados → finalização FFmpeg → QC/revisão comercial →
+aprovação humana → exportação/publicação manual → custos e resultados.
+Pesquisa é apoio; publicação automática não bloqueia campanhas. Experimentos
+avançados, otimização e alocação permanecem posteriores.
+
+Preservar os contratos existentes e versionar somente extensões necessárias.
+O composer atual silencia o áudio dos clipes e recebe voz WAV; preservar áudio
+gerado ou misturar música exige contrato e adaptação explícitos em P2/P3.
+Características e imagens reais autorizadas devem acompanhar produto/campanha
+e revisão comercial; QC técnico não comprova fidelidade do produto.
+Modelo, direitos e orçamento fal.ai devem ser especificados pelo Planner.
 
 ## Fundação de execução e economia
 
@@ -408,8 +418,8 @@ experimentos de modelos.
 
 | Horizonte | Pipeline |
 |---|---|
-| Atual | `ProjectSnapshot`, Research e artefatos de shortlist por projeto. |
-| Próximo | `PipelineRun` persistido, depois linhagem e eventos de custo. |
+| Atual — auditoria P0 | Projetos, Research, runs, linhagem, roteiro, voz, mídia, composição, legendas, preview, QC, aprovação e custos parciais no checkout; sem certificação LIVE. |
+| Próximo | P1–P4: produto/campanha, fal.ai, finalização/revisão e exportação com resultados comerciais. |
 | Futuro | Produção, publicação, métricas, receitas, experimentos, otimização e alocação. |
 
 ## Estados e transições
