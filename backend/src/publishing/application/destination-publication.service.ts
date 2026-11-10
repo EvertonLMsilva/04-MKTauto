@@ -277,14 +277,22 @@ export class DestinationPublicationService {
         s.reservations.activeForExecution?.(id, 'FACEBOOK_REELS', account) ??
         s.reservations.forExecution(id, 'FACEBOOK_REELS', account);
       const op = reservation && s.social.get(reservation.operationId);
+      const recoveryOnly =
+        typeof authorization?.authorizationId === 'string' &&
+        authorization.authorizationId.startsWith('recovery:');
+      const needsRecovery =
+        op &&
+        (op.state === 'UNCERTAIN' ||
+          op.requiresReconciliation ||
+          (op.state === 'PUBLISHED' && !op.remoteReceipt));
       if (
         !op ||
         op.supersession ||
         op.executionAuthorizationRequired !== true ||
         op.version !== expectedVersion ||
-        !['PREPARED', 'PROCESSING', 'READY'].includes(op.state) ||
-        op.requiresReconciliation ||
-        op.uncertainStage
+        needsRecovery !== recoveryOnly ||
+        (!needsRecovery &&
+          !['PREPARED', 'PROCESSING', 'READY'].includes(op.state))
       )
         socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
       s.manual.validateForPublication(op.packageHash, execution);
@@ -308,6 +316,84 @@ export class DestinationPublicationService {
       s.close();
     }
   }
+  async reconcileFacebookOccurrence(
+    id: string,
+    account: string,
+    expectedVersion: number,
+    authorization: FacebookOccurrenceAuthorization,
+  ) {
+    if (
+      !Number.isSafeInteger(expectedVersion) ||
+      expectedVersion < 0 ||
+      authorization?.expectedVersion !== expectedVersion ||
+      typeof authorization?.authorizationId !== 'string' ||
+      !authorization.authorizationId.startsWith('recovery:')
+    )
+      socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
+    const ports = this.facebook;
+    if (!ports || ports.publisher.accountId !== 'facebook_reels:' + account)
+      socialFail('SOCIAL_DESTINATION_INVALID');
+    const { execution } = this.context(id);
+    if (execution.status === 'RUNNING')
+      socialFail('SOCIAL_FACEBOOK_ACTIVE_CLAIM');
+    const s = this.store.openDestination(ports.publisher.mode);
+    try {
+      const reservation =
+        s.reservations.activeForExecution?.(id, 'FACEBOOK_REELS', account) ??
+        s.reservations.forExecution(id, 'FACEBOOK_REELS', account);
+      const op = reservation && s.social.get(reservation.operationId);
+      if (
+        !op ||
+        op.supersession ||
+        op.executionAuthorizationRequired !== true ||
+        op.version !== expectedVersion ||
+        !(
+          op.state === 'UNCERTAIN' ||
+          op.requiresReconciliation ||
+          (op.state === 'PUBLISHED' && !op.remoteReceipt)
+        )
+      )
+        socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+      s.manual.validateForPublication(op.packageHash, execution);
+      s.social.authorizePublication(op, this.now(), authorization);
+      if (op.state === 'UNCERTAIN' && op.uncertainStage === 'PUBLISH') {
+        // An inconclusive FINISH remains uncertain. A recovery grant never
+        // converts it to READY, where a later execution could repeat FINISH.
+        let status: string | undefined;
+        try {
+          status = (
+            await ports.publisher.getContainerStatus({
+              containerId: op.containerId,
+            })
+          ).status;
+        } catch {
+          return op;
+        }
+        if (status !== 'PUBLISHED') return op;
+      }
+      const engine = new SocialPublicationService({
+        repository: s.social,
+        manual: s.manual,
+        publisher: ports.publisher,
+        media: ports.media,
+        transferVerifier: ports.verifier,
+        allowLivePosts: false,
+        operationalAuthorization: authorization,
+        now: this.now,
+        authorize: (value: any) => s.reservations.authorize(value, this.now()),
+      });
+      let observed = await engine.reconcile(op.operationId);
+      if (
+        observed.state === 'PUBLISHED' &&
+        observed.mediaId &&
+        !observed.remoteReceipt
+      )
+        observed = await engine.receipt(observed.operationId);
+      return observed;
+    } finally {
+      s.close();
+    }
+  }
   async execute(
     id: string,
     network: PublicationNetwork,
@@ -319,6 +405,8 @@ export class DestinationPublicationService {
   ): Promise<any> {
     if (network !== 'FACEBOOK_REELS' || !this.facebook)
       socialFail('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
+    if (operationalAuthorization?.authorizationId.startsWith('recovery:'))
+      socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
     const ports = this.facebook,
       canonical = 'facebook_reels:' + account;
     if (ports.publisher.accountId !== canonical)

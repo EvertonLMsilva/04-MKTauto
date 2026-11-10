@@ -1182,11 +1182,17 @@ async function commercialSuccessor(withInstagram = false, publish = true) {
         code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED',
       });
       expect(f.posts).toEqual([]);
-      engine.operationalAuthorization = await commercialOccurrenceGrant(
-        f,
-        original,
-      );
-      original = await engine.createContainer(original.operationId);
+      const occurrenceGrant = await commercialOccurrenceGrant(f, original);
+      original = await new SocialPublicationService({
+        repository: store.social,
+        manual: store.manual,
+        publisher: f.ports.publisher,
+        media: f.ports.media,
+        transferVerifier: f.ports.verifier,
+        operationalAuthorization: occurrenceGrant,
+        now: () => f.at,
+        authorize: (op: any) => store.reservations.authorize(op, f.at),
+      }).createContainer(original.operationId);
     } finally {
       store.close();
     }

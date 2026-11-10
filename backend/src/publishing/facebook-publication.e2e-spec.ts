@@ -999,3 +999,229 @@ test('HTTP recurring Facebook requires an authenticated operation grant before d
     await x.cleanup();
   }
 });
+
+test('PUBLISHING-003 probe: lost FINISH can receive a fresh grant after expiry for safe reconciliation', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const prepared = await f
+      .reopen()
+      .prepareFacebookOccurrence(f.execution.execution_id, '1355505384315575');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: prepared.operationId,
+      accountId: '1355505384315575',
+      packageHash: f.facebookPackage.contentHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: prepared.version,
+      authorizationId: 'probe_initial_grant',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 60000).toISOString(),
+    };
+    f.fail('publish');
+    await expect(
+      f
+        .reopen()
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          grant,
+        ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_RECONCILIATION_REQUIRED' });
+    const row = f
+      .reopen()
+      .status(f.execution.execution_id)
+      .find((p) => p.network === 'FACEBOOK_REELS')!;
+    expect(row.operation.uncertainStage).toBe('PUBLISH');
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    const next = new Date(Date.parse(f.at) + 120000).toISOString();
+    const fresh = {
+      ...grant,
+      expectedVersion: row.operation.version,
+      authorizationId: 'recovery:probe_recovery_grant',
+      authorizedAt: next,
+      expiresAt: new Date(Date.parse(next) + 60000).toISOString(),
+    };
+    await f
+      .reopen(() => next)
+      .authorizeFacebookOccurrence(
+        f.execution.execution_id,
+        grant.accountId,
+        row.operation.version,
+        fresh,
+      );
+    await expect(
+      f
+        .reopen(() => next)
+        .execute(
+          f.execution.execution_id,
+          'FACEBOOK_REELS',
+          grant.accountId,
+          fresh,
+        ),
+    ).rejects.toMatchObject({ code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED' });
+    f.setReceiptVisible(false);
+    const inconclusive = await f
+      .reopen(() => next)
+      .reconcileFacebookOccurrence(
+        f.execution.execution_id,
+        grant.accountId,
+        row.operation.version,
+        fresh,
+      );
+    expect(inconclusive.state).toBe('UNCERTAIN');
+    expect(inconclusive.uncertainStage).toBe('PUBLISH');
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    f.setReceiptVisible(true);
+    const attempts = await Promise.allSettled(
+      [f.reopen(() => next), f.reopen(() => next)].map((service) =>
+        service.reconcileFacebookOccurrence(
+          f.execution.execution_id,
+          grant.accountId,
+          row.operation.version,
+          fresh,
+        ),
+      ),
+    );
+    expect(attempts.some((attempt) => attempt.status === 'fulfilled')).toBe(
+      true,
+    );
+    const recovered = f
+      .reopen(() => next)
+      .status(f.execution.execution_id)
+      .find((p) => p.network === 'FACEBOOK_REELS')!.operation;
+    expect(recovered.state).toBe('PUBLISHED');
+    expect(recovered.remoteReceipt?.mediaId).toBe('987654321');
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('HTTP QC recovery observes a lost Facebook FINISH without another publication POST', async () => {
+  const x = await supersessionHttpFixture(false);
+  try {
+    const prepared = await x
+      .post('/prepare', { accountId: x.accountId })
+      .expect(201);
+    vi.setSystemTime(Date.parse(x.f.at) + 1000);
+    const initial = {
+      executionId: x.f.execution.execution_id,
+      operationId: prepared.body.operationId,
+      accountId: x.accountId,
+      packageHash: x.f.facebookPackage.contentHash,
+      campaignRevision: x.f.execution.campaign_revision,
+      expectedVersion: prepared.body.version,
+      authorizationId: 'http_initial_finish_grant',
+      authorizedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+    const granted = await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: initial,
+      })
+      .expect(201);
+    x.f.fail('publish');
+    await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: granted.body.authorization,
+      })
+      .expect(409);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    const current = await request(x.app.getHttpServer())
+      .get(`/publishing/executions/${x.f.execution.execution_id}/destinations`)
+      .set('Authorization', x.token)
+      .expect(200);
+    const op = current.body.find(
+      (row: any) => row.network === 'FACEBOOK_REELS',
+    ).operation;
+    expect(op.uncertainStage).toBe('PUBLISH');
+    vi.setSystemTime(Date.parse(x.f.at) + 120000);
+    const recovery = {
+      ...initial,
+      expectedVersion: op.version,
+      authorizationId: 'recovery:http_finish_grant',
+      authorizedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+    await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: {
+          ...recovery,
+          authorizationId: 'normal_grant_for_uncertain_operation',
+        },
+      })
+      .expect(409);
+    await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: { ...recovery, operationId: 'another_operation' },
+      })
+      .expect(409);
+    await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: { ...recovery, expiresAt: recovery.authorizedAt },
+      })
+      .expect(409);
+    const recoveryGrant = await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: recovery,
+      })
+      .expect(201);
+    await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: recoveryGrant.body.authorization,
+      })
+      .expect(409);
+    const { actor: _actor, ...recoveryInput } =
+      recoveryGrant.body.authorization;
+    const reconciled = await x
+      .post('/reconcile', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: recoveryInput,
+      })
+      .expect(201);
+    expect(reconciled.body.state).toBe('PUBLISHED');
+    expect(reconciled.body.remoteReceipt.mediaId).toBe('987654321');
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    expect(x.network).not.toHaveBeenCalled();
+    await x
+      .post('/reconcile', {
+        accountId: x.accountId,
+        expectedVersion: op.version,
+        authorization: recoveryInput,
+      })
+      .expect(409);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    await x.cleanup();
+  }
+});
