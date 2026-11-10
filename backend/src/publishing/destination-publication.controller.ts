@@ -146,6 +146,42 @@ export class DestinationPublicationController {
       );
     });
   }
+  @Post(':id/facebook-reels/reconcile')
+  reconcileOccurrence(
+    @Param('id') id: string,
+    @Body()
+    body: {
+      accountId: string;
+      expectedVersion: number;
+      authorization: Omit<FacebookOccurrenceAuthorization, 'actor'>;
+    },
+    @Req() request: any,
+  ) {
+    return this.respond(() => {
+      exact(body, ['accountId', 'expectedVersion', 'authorization']);
+      exact(body.authorization, [
+        'executionId',
+        'operationId',
+        'accountId',
+        'packageHash',
+        'campaignRevision',
+        'expectedVersion',
+        'authorizationId',
+        'authorizedAt',
+        'expiresAt',
+      ]);
+      const authorization = serverApprovalRequest(
+        body.authorization,
+        request[QC_REVIEWER_CONTEXT],
+      );
+      return this.service.reconcileFacebookOccurrence(
+        id,
+        body.accountId,
+        body.expectedVersion,
+        authorization as FacebookOccurrenceAuthorization,
+      );
+    });
+  }
   @Post(':id/facebook-reels') async publish(
     @Param('id') id: string,
     @Body()
