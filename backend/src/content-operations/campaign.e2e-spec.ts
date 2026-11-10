@@ -1,4 +1,14 @@
-import { provisionQcReviewer } from '../publishing/application/local-qc-identity.js';
+import {
+  operationalQcIdentity,
+  provisionQcReviewer,
+} from '../publishing/application/local-qc-identity.js';
+import { OperationsService } from '../operations/operations.service.js';
+import { PublishingService } from '../publishing/application/publishing.service.js';
+import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
+import {
+  AFFILIATE_RUN_CONTEXT,
+  type AffiliateRunContext,
+} from '../affiliate/application/ports/affiliate-run-context.port.js';
 import { instagramCaption } from '../publishing/domain/social-publication-contracts.js';
 import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
 import { execFileSync } from 'node:child_process';
@@ -1412,15 +1422,23 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
             200,
           );
           expect(captionStatus.body.captionHistory).toHaveLength(2);
-          const captionCatalog = new SqliteAffiliatePersistence(f.database).open();
+          const captionCatalog = new SqliteAffiliatePersistence(
+            f.database,
+          ).open();
           try {
-            const briefing = captionCatalog.getBriefing(String(body.briefingId))!;
+            const briefing = captionCatalog.getBriefing(
+              String(body.briefingId),
+            )!;
             expect(briefing).not.toBeNull();
             const caption = captionStatus.body.caption;
             expect(caption.text).not.toContain(briefing.disclosure);
             expect(caption.envelope).toBe(
-              [caption.text, briefing.cta, briefing.disclosure, briefing.affiliateUrl]
-                .join('\n\n'),
+              [
+                caption.text,
+                briefing.cta,
+                briefing.disclosure,
+                briefing.affiliateUrl,
+              ].join('\n\n'),
             );
             expect(caption.envelope).toContain('Publicidade');
             for (const disclosure of [undefined, '']) {
@@ -1858,3 +1876,497 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
       .expect(409);
   });
 });
+
+// Real CATALOG/FIXED recurrence, frozen Affiliate binding and Publishing preparation.
+// Only local media/audio/render/QC are simulated; all databases are disposable.
+test.each(['CATALOG', 'FIXED', 'LEGACY'] as const)(
+  '%s daily packages retain frozen offer identity across D1/D2, restart and replay',
+  async (mode) => {
+    const f = p2EditorialFixture({ productionProfile: 'MIXED_MEDIA_V2' });
+    provisionSchema(f.base.db);
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('EXTERNAL_TRANSPORT_BLOCKED'));
+    const provider = new FakeEditorialProvider();
+    const generated = vi.spyOn(provider, 'script');
+    const hash = (value: string) =>
+      createHash('sha256').update(value).digest('hex');
+    const plans = new Map<string, any>(),
+      renders = new Map<string, any>(),
+      reports = new Map<string, any>(),
+      voices = new Map<string, any>();
+    const images = new Map<string, any>();
+    let clock = '2026-11-07T12:00:00.000Z';
+    let app!: INestApplication,
+      admin: CampaignAdministration,
+      operations: OperationsService,
+      publishing: PublishingService,
+      workflow: NativeCampaignWorkflow;
+    const local = {
+      prepareImage: vi.fn((scope: any) => {
+        const image = {
+          mediaAssetId: `image:${scope.pipelineRunId}`,
+          contentHash: hash(scope.pipelineRunId),
+          visualDirectionPosition: 1,
+          rights: { commercialUseAllowed: true },
+        };
+        images.set(image.mediaAssetId, image);
+        return image;
+      }),
+      automaticAudio: vi.fn(
+        async (scope: any, durationMilliseconds: number) => {
+          const voice = {
+            ...scope,
+            voiceTrackId: `voice:${scope.scriptId}`,
+            contentHash: hash(scope.scriptId),
+            durationMilliseconds,
+          };
+          voices.set(voice.voiceTrackId, voice);
+          return voice;
+        },
+      ),
+      authorizedAudio: (_run: string, script: string) =>
+        voices.get(`voice:${script}`) ?? null,
+      alignAudio: async (id: string) => ({
+        input: { scriptId: voices.get(id).scriptId, audioAssetId: id },
+        output: { alignmentId: id },
+      }),
+      subtitles: async (id: string) => ({ subtitleId: id }),
+      compose: vi.fn(async (input: any) => {
+        const plan = plans.get(input.compositionPlanId);
+        const render = {
+          ...plan,
+          videoRenderId: `render:${plan.pipelineRunId}`,
+          revision: 1,
+          contentHash: hash(plan.pipelineRunId),
+          logicalReference: `render:${plan.pipelineRunId}`,
+          origin: { rights: { commercialUseAuthorized: true } },
+        };
+        renders.set(render.videoRenderId, render);
+        return render;
+      }),
+      burn: async (id: string) => renders.get(id),
+      qc: async (id: string) => {
+        const render = renders.get(id);
+        const report = {
+          reportId: `qc:${render.pipelineRunId}`,
+          videoRenderId: id,
+          videoRenderContentHash: render.contentHash,
+          result: 'PASS',
+          approvalBlocked: false,
+          findings: [
+            'COMMERCIAL_RIGHTS',
+            'PROCESSING_RIGHTS',
+            'NARRATION_RIGHTS',
+          ].map((code) => ({ code, status: 'PASS' })),
+        };
+        reports.set(report.reportId, report);
+        return report;
+      },
+      preview: async () => ({ ready: true, url: 'offline-preview' }),
+    };
+    const media = {
+      registerCompositionPlan: (plan: any) => {
+        plans.set(plan.compositionPlanId, plan);
+        return plan;
+      },
+      getCompositionPlan: (id: string) => plans.get(id),
+      get: (id: string) => images.get(id),
+      getVideoRender: (id: string) => renders.get(id),
+      verifyMedia: (id: string) => renders.get(id)?.contentHash,
+      report: (id: string) => {
+        const q = reports.get(id),
+          render = renders.get(q.videoRenderId);
+        return {
+          ...q,
+          qualityControlReportId: id,
+          contentHash: hash(JSON.stringify(q)),
+          pipelineRunId: render.pipelineRunId,
+          projectId: render.projectId,
+          projectVersion: render.projectVersion,
+        };
+      },
+    };
+    const external = {
+      configuration: () => ({ mode: 'fake', accountId: '123456789' }),
+      execute: vi.fn(async () => {
+        throw new Error('PUBLICATION_FORBIDDEN');
+      }),
+      status: async () => null,
+    };
+    const start = async () => {
+      const module = await Test.createTestingModule({
+        imports: [OperationsModule],
+      })
+        .overrideProvider(EDITORIAL_PROVIDER)
+        .useValue(provider)
+        .overrideProvider(LocalFlowService)
+        .useValue(local)
+        .overrideProvider(MediaService)
+        .useValue(media)
+        .overrideProvider(InstagramPublicationService)
+        .useValue(external)
+        .compile();
+      admin = module.get(CampaignAdministration);
+      vi.spyOn(admin as any, 'now').mockImplementation(() => clock);
+      operations = module.get(OperationsService);
+      publishing = module.get(PublishingService);
+      workflow = module.get(NativeCampaignWorkflow);
+      app = module.createNestApplication();
+      await app.init();
+    };
+    const prefix = '/content-operations/campaign-executions';
+    for (const [key, value] of Object.entries({
+      PROJECT_API_DATABASE: f.database,
+      SOCIAL_HISTORY_DATABASE: f.database,
+      CAMPAIGN_SCHEDULER_ENABLED: 'false',
+      INSTAGRAM_SCHEDULER_ENABLED: 'false',
+      INSTAGRAM_PUBLICATION_MODE: 'fake',
+      INSTAGRAM_LIVE_POSTS_ENABLED: 'false',
+      INSTAGRAM_ACCOUNT_ID: '123456789',
+      INSTAGRAM_API_VERSION: 'v25.0',
+    }))
+      vi.stubEnv(key, value);
+    const identityFile = join(dirname(f.database), 'daily-reviewers.json'),
+      secretFile = join(dirname(f.database), 'daily-reviewer');
+
+    const catalog = new SqliteAffiliatePersistence(f.database).open();
+    const originalProduct = catalog.getProduct('prod_001', 1)!;
+    const originalCampaign = catalog.getCampaign('camp_001', 1)!;
+    const register = (
+      id: string,
+      productRevision: number,
+      offerRevision: number,
+      changed = false,
+      archived = false,
+    ) => {
+      const mediaReference = 'media:' + id;
+      const evidence = [
+        {
+          id: 'ev_rights',
+          kind: 'MEDIA_USAGE_RIGHT',
+          sourceRef: 'fixture:catalog-package-permission',
+          recordedAt: '2026-11-01T00:00:00Z',
+          mediaAuthorization: {
+            mediaRef: mediaReference,
+            contentHash: hash(mediaReference),
+            commercialUse: 'GRANTED',
+            processing: 'GRANTED',
+            localProcessing: true,
+            externalProviders: [],
+          },
+        },
+      ];
+      let product = originalProduct;
+      for (let revision = 1; revision <= productRevision; revision++) {
+        const existing = catalog.getProduct(id, revision);
+        product =
+          existing ??
+          catalog.registerProduct(
+            {
+              ...originalProduct,
+              productId: id,
+              revision,
+              name: id + (changed ? ' atualizado' : ''),
+              status: archived ? 'ARCHIVED' : 'ACTIVE',
+              media: [{ mediaRef: mediaReference, evidenceRef: 'ev_rights' }],
+              evidence: [
+                ...originalProduct.evidence.filter(
+                  (e) => e.kind === 'PRODUCT_SPECIFICATION',
+                ),
+                ...evidence,
+              ],
+              localImage: {
+                mediaReference,
+                contentHash: hash(mediaReference),
+                origin: 'OPERATOR_OWNED',
+                provider: null,
+                rights: {
+                  usageBasis: 'OWNED',
+                  commercialUseAllowed: true,
+                  evidence,
+                },
+              },
+            },
+            'product_' + id + '_' + revision,
+          );
+      }
+      let offer = originalCampaign;
+      for (let revision = 1; revision <= offerRevision; revision++) {
+        offer =
+          catalog.getCampaign('offer_' + id, revision) ??
+          catalog.registerCampaign(
+            {
+              ...originalCampaign,
+              campaignId: 'offer_' + id,
+              revision,
+              productId: id,
+              productRevision,
+              affiliateUrl:
+                'https://s.shopee.com.br/' + id + (changed ? '_updated' : ''),
+            },
+            'offer_' + id + '_' + revision,
+            true,
+          );
+      }
+      return { product, offer };
+    };
+    const a = register('prod_catalog_a', 2, 3);
+    const b = register('prod_catalog_b', 3, 2);
+    const expected =
+      mode === 'CATALOG'
+        ? [a, b]
+        : [
+            { product: originalProduct, offer: originalCampaign },
+            { product: originalProduct, offer: originalCampaign },
+          ];
+    const packages: any[] = [],
+      executions: any[] = [];
+    try {
+      await provisionQcReviewer(identityFile, 'daily_operator', secretFile);
+      vi.stubEnv('QC_IDENTITIES_FILE', identityFile);
+      const principal = await operationalQcIdentity.authenticate(
+        'Bearer ' + readFileSync(secretFile, 'utf8').trim(),
+        '127.0.0.1',
+      );
+      await start();
+      const input = {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        projectVersion: 1,
+        requestId: 'catalog_package_096',
+        requestedAt: '2026-11-07T11:00:00Z',
+        ...(mode === 'LEGACY' ? {} : { selectionMode: mode }),
+        ...(mode === 'CATALOG'
+          ? {}
+          : { localImage: { mediaReference: 'authorized-image-001' } }),
+        recurrence: {
+          enabled: true,
+          time: '09:00',
+          timeZone: 'America/Sao_Paulo',
+        },
+      };
+      const first = (
+        await request(app.getHttpServer())
+          .post(prefix + '/local')
+          .send(input)
+          .expect(201)
+      ).body;
+      await request(app.getHttpServer())
+        .post(prefix + '/local')
+        .send(input)
+        .expect(201)
+        .expect((r) => expect(r.body.execution_id).toBe(first.execution_id));
+      for (let day = 0; day < 2; day++) {
+        clock =
+          day === 0 ? '2026-11-07T12:00:00.000Z' : '2026-11-08T12:00:00.000Z';
+        await Promise.all([admin!.tick(), admin!.tick()]);
+        const execution = admin!
+          .list()
+          .find((e) => e.production_date === clock.slice(0, 10))!;
+        executions.push(execution);
+        expect(execution.campaign_id).toBe('camp_001');
+        expect(execution.campaign_revision).toBe(1);
+        const view = admin!.get(execution.execution_id);
+        expect(view.selectionMode).toBe(
+          mode === 'CATALOG' ? 'CATALOG' : 'FIXED',
+        );
+        expect(view.finalization.pending?.code).toBe(
+          'EXACT_HUMAN_APPROVAL_REQUIRED',
+        );
+        expect(
+          (await admin!.result(execution.execution_id)).package,
+        ).toBeNull();
+        const binding = app.get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT);
+        const frozen = binding.resolveRunBriefing(execution.run_id)!;
+        const { product, offer } = expected[day];
+        expect(frozen).toMatchObject({
+          campaignId: offer.campaignId,
+          campaignRevision: offer.revision,
+          productId: product.productId,
+          productRevision: product.revision,
+          affiliateUrl: offer.affiliateUrl,
+        });
+        const selection = structuredClone(view.productSelection);
+        if (mode === 'CATALOG') {
+          expect(selection).toMatchObject({
+            method: 'ROUND_ROBIN_ID_V1',
+            productId: product.productId,
+            productRevision: product.revision,
+            sourceCampaignId: offer.campaignId,
+            sourceCampaignRevision: offer.revision,
+            briefingHash: frozen.contentHash,
+          });
+          register(
+            product.productId,
+            product.revision + 1,
+            offer.revision + 1,
+            true,
+          );
+        } else if (day === 0) {
+          catalog.registerProduct(
+            {
+              ...originalProduct,
+              revision: 2,
+              name: 'Produto atualizado fora do snapshot',
+            },
+            'fixed_product_2',
+          );
+          catalog.registerCampaign(
+            {
+              ...originalCampaign,
+              revision: 2,
+              productRevision: 2,
+              affiliateUrl: 'https://s.shopee.com.br/fixed_updated',
+            },
+            'fixed_offer_2',
+            true,
+          );
+        }
+        // Restart after selection/render: later catalog revisions cannot replace this run's binding.
+        await app.close();
+        await start();
+        expect(
+          app
+            .get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT)
+            .resolveRunBriefing(execution.run_id),
+        ).toEqual(frozen);
+        expect(admin!.get(execution.execution_id).productSelection).toEqual(
+          selection,
+        );
+        await operations!.finalDecision(
+          execution.execution_id,
+          { decision: 'APPROVED', justification: null },
+          principal,
+        );
+        let interrupted: any;
+        if (day === 1) {
+          const execute = workflow!.execute.bind(workflow!);
+          vi.spyOn(workflow!, 'execute').mockImplementationOnce(
+            async (...args) => {
+              const handoff = (await execute(...args)) as any;
+              interrupted = handoff.package;
+              throw new CampaignError('PACKAGE_CONNECTION_INTERRUPTED');
+            },
+          );
+        }
+        await admin!.tick();
+        if (day === 1 && interrupted) {
+          expect(admin!.get(execution.execution_id).status).toBe(
+            'WAITING_RECONCILIATION',
+          );
+          expect(publishing!.package(interrupted.contentHash)).toEqual(
+            interrupted,
+          );
+          await app.close();
+          await start();
+          await admin!.tick();
+        }
+        const result = await admin!.result(execution.execution_id);
+        expect(
+          result.package,
+          JSON.stringify(admin!.get(execution.execution_id).finalization),
+        ).not.toBeNull();
+        const pkg = result.package as any;
+        packages.push(pkg);
+        expect(pkg).toMatchObject({
+          campaignId: offer.campaignId,
+          campaignRevision: offer.revision,
+          productId: product.productId,
+          productRevision: product.revision,
+          link: offer.affiliateUrl,
+          rightsEvidence: product.evidence,
+          commercialApprovalRequired: true,
+        });
+        expect(pkg.identity.pipelineRunId).toBe(execution.run_id);
+        expect(publishing!.package(pkg.contentHash)).toEqual(pkg);
+        expect(publishing!.packageReview(pkg.contentHash)).toBeNull();
+        expect(
+          admin!
+            .history(execution.execution_id)
+            .filter((h) => h.event_type === 'HUMAN_APPROVAL'),
+        ).toHaveLength(1);
+        const completed = admin!.finalizationContext(
+          execution.execution_id,
+        ).completed;
+        expect(workflow!.coordinatedPackage(execution, completed)).toEqual(pkg);
+        if (mode === 'CATALOG') {
+          // Keep ManualDistribution's rejection: the recurring campaign cannot stand in for the selected offer.
+          expect(() =>
+            publishing!.prepare(
+              {
+                campaignId: 'camp_001',
+                campaignRevision: 1,
+                videoRenderId: pkg.identity.videoRenderId,
+                qualityControlReportId: pkg.identity.qualityControlReportId,
+                platform: pkg.platform,
+                account: pkg.account,
+                caption: pkg.caption,
+              },
+              'wrong_binding_' + day,
+            ),
+          ).toThrow('DISTRIBUTION_CAMPAIGN_BINDING_MISMATCH');
+        }
+        const missing = vi
+          .spyOn(
+            app.get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT),
+            'resolveRunBriefing',
+          )
+          .mockReturnValueOnce(null);
+        try {
+          expect(() =>
+            workflow!.coordinatedPackage(execution, completed),
+          ).toThrow('CAMPAIGN_CONTEXT_NOT_FOUND');
+        } finally {
+          missing.mockRestore();
+        }
+        await admin!.tick();
+        expect((await admin!.result(execution.execution_id)).package).toEqual(
+          pkg,
+        );
+      }
+      expect(executions[0].execution_id).not.toBe(executions[1].execution_id);
+      expect(packages[0].contentHash).not.toBe(packages[1].contentHash);
+      expect(admin!.list()).toHaveLength(2);
+      expect(generated).toHaveBeenCalledTimes(2);
+      expect(local.compose).toHaveBeenCalledTimes(2);
+      expect(
+        catalog.db
+          .prepare(
+            "SELECT count(*) n FROM manual_distribution_records WHERE kind='PACKAGE'",
+          )
+          .get()?.n,
+      ).toBe(2);
+      await app.close();
+      await start();
+      for (let day = 0; day < 2; day++)
+        expect(
+          (await admin!.result(executions[day].execution_id)).package,
+        ).toEqual(packages[day]);
+      if (mode === 'CATALOG') {
+        register(a.product.productId, 4, 5, true, true);
+        register(b.product.productId, 5, 4, true, true);
+        clock = '2026-11-09T12:00:00.000Z';
+        await admin!.tick();
+        const blocked = admin!
+          .list()
+          .find((e) => e.production_date === '2026-11-09')!;
+        expect(
+          admin!.get(blocked.execution_id).finalization.pending?.code,
+        ).toBe('CATALOG_PRODUCT_REQUIRED');
+        expect((await admin!.result(blocked.execution_id)).package).toBeNull();
+        expect(generated).toHaveBeenCalledTimes(2);
+      }
+      expect(f.base.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(external.execute).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await app?.close();
+      catalog.close();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      f.cleanup();
+    }
+  },
+  30000,
+);

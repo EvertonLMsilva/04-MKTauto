@@ -316,11 +316,13 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       throw new CampaignError('SOCIAL_INSTAGRAM_CONFIGURATION_REQUIRED');
     if (!this.publishing.coordinatePackage)
       throw new CampaignError('SOCIAL_PUBLICATION_REQUEST_REQUIRED');
+    const briefing = this.binding.resolveRunBriefing(e.run_id);
+    if (!briefing) throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
     const handoff = document(done.HANDOFF),
       script = document(document(done.EDITORIAL).script);
     const pkg = this.publishing.coordinatePackage(e.run_id, {
-      campaignId: e.campaign_id,
-      campaignRevision: e.campaign_revision,
+      campaignId: briefing.campaignId,
+      campaignRevision: briefing.campaignRevision,
       videoRenderId: String(handoff.videoRenderId),
       qualityControlReportId: String(document(done.QC).reportId),
       platform: 'instagram',
