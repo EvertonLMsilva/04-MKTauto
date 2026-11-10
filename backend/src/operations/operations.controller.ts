@@ -13,6 +13,8 @@ import {
   StreamableFile,
   UseInterceptors,
   UploadedFile,
+  Optional,
+  ServiceUnavailableException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
@@ -22,6 +24,7 @@ import {
 } from '../publishing/application/local-qc.guard.js';
 import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
 import { OperationsService } from './operations.service.js';
+import { DashboardSummaryService } from './dashboard-summary.service.js';
 import {
   operationsPage,
   operationsScript,
@@ -33,6 +36,9 @@ type QcRequest = Request & { [QC_REVIEWER_CONTEXT]?: unknown };
 export class OperationsController {
   constructor(
     @Inject(OperationsService) private readonly operations: OperationsService,
+    @Optional()
+    @Inject(DashboardSummaryService)
+    private readonly dashboardSummary?: DashboardSummaryService,
   ) {}
   private async respond<T>(action: () => T | Promise<T>) {
     try {
@@ -116,6 +122,15 @@ export class OperationsController {
   @UseGuards(LocalQcGuard)
   checkInstagramConnection(@Body() value: unknown) {
     return this.respond(() => this.operations.checkInstagramConnection(value));
+  }
+  @Get('dashboard/summary')
+  @UseGuards(LocalQcGuard)
+  summary(@Res({ passthrough: true }) response: Response) {
+    response.set('Cache-Control', 'no-store');
+    const summary = this.dashboardSummary;
+    if (!summary)
+      throw new ServiceUnavailableException({ code: 'DASHBOARD_SUMMARY_UNAVAILABLE' });
+    return this.respond(() => summary.summary());
   }
   @Get('executions') @UseGuards(LocalQcGuard) list() {
     return this.respond(() => this.operations.list());

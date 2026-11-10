@@ -4,9 +4,19 @@ import { CampaignOrchestrationModule } from '../content-operations/campaign-orch
 import { MediaModule } from '../media/media.module.js';
 import { OperationsController } from './operations.controller.js';
 import { OperationsService } from './operations.service.js';
+import { DashboardSummaryService } from './dashboard-summary.service.js';
+import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-summary.repository.js';
 @Module({
   imports: [CampaignOrchestrationModule, MediaModule, PublishingModule],
   controllers: [OperationsController],
-  providers: [OperationsService],
+  providers: [
+    OperationsService,
+    {
+      provide: DashboardSummaryService,
+      useFactory: () => new DashboardSummaryService(
+        new SqliteDashboardSummaryRepository(process.env.PROJECT_API_DATABASE ?? null),
+      ),
+    },
+  ],
 })
 export class OperationsModule {}
