@@ -9,7 +9,10 @@ import { PublishingService } from '../publishing/application/publishing.service.
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { LocalQcGuard } from '../publishing/application/local-qc.guard.js';
 import { CampaignRepository } from './infrastructure/campaign.repository.js';
-import { NativeCampaignWorkflow } from './application/native-campaign-workflow.js';
+import {
+  NativeCampaignWorkflow,
+  campaignRequest,
+} from './application/native-campaign-workflow.js';
 import { CampaignAdministration } from './application/campaign-administration.js';
 import { CampaignController } from './campaign.controller.js';
 
@@ -488,4 +491,256 @@ test('uncertain upload resumes the same operation without repeating upload or co
   } finally {
     await f.close();
   }
+});
+
+test('recurring destination request freezes distinct Instagram and Facebook intents', () => {
+  const base = {
+    campaignId: 'camp_001',
+    campaignRevision: 1,
+    runId: 'run_day_1',
+    scheduledAt: '2026-11-08T12:00:00.000Z',
+    briefingId: 'brief_001',
+    generationRequestId: 'generation_001',
+    researchShortlistId: null,
+    mode: 'PRODUCTION',
+  };
+  const instagram = {
+    network: 'INSTAGRAM',
+    accountId: '123456789',
+    packageHash: 'a'.repeat(64),
+  };
+  const facebook = {
+    network: 'FACEBOOK_REELS',
+    accountId: '1355505384315575',
+    packageHash: 'b'.repeat(64),
+  };
+  expect(
+    campaignRequest({ ...base, publication: [instagram, facebook] })
+      .publication,
+  ).toEqual([instagram, facebook]);
+  expect(() =>
+    campaignRequest({ ...base, publication: [facebook, facebook] }),
+  ).toThrow('INVALID_PUBLICATION_REQUEST');
+});
+
+test('two recurring occurrences keep Facebook pending without repeating or mixing Instagram receipts', async () => {
+  const instagram = {
+    execute: vi.fn(async (e: any) => ({
+      operationId: `ig:${e.execution_id}`,
+      mediaId: `ig-media:${e.execution_id}`,
+      receipt: { mediaId: `ig-media:${e.execution_id}` },
+    })),
+    status: () => null,
+  };
+  const facebookRows = new Map<string, any>();
+  const facebook = { status: (id: string) => facebookRows.get(id) ?? [] };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    instagram as any,
+    undefined,
+    undefined,
+    facebook as any,
+  );
+  const publication = [
+    {
+      network: 'INSTAGRAM',
+      accountId: '123456789',
+      packageHash: 'a'.repeat(64),
+    },
+    {
+      network: 'FACEBOOK_REELS',
+      accountId: '1355505384315575',
+      packageHash: 'b'.repeat(64),
+    },
+  ];
+  const d1 = { execution_id: 'execution_day_1' } as any;
+  const d2 = { execution_id: 'execution_day_2' } as any;
+  const run = (e: any) =>
+    workflow.execute('PUBLICATION', e, { publication }, { HANDOFF: {} });
+  await expect(run(d1)).rejects.toThrow(
+    'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+  );
+  expect(instagram.execute).toHaveBeenCalledTimes(1);
+  facebookRows.set(d1.execution_id, [
+    {
+      network: 'FACEBOOK_REELS',
+      accountId: publication[1].accountId,
+      operationId: 'fb:day1',
+      operation: {
+        operationId: 'fb:day1',
+        packageHash: publication[1].packageHash,
+        state: 'PUBLISHED',
+        mediaId: 'fb-media:day1',
+        remoteReceipt: { mediaId: 'fb-media:day1' },
+      },
+    },
+  ]);
+  const first = (await run(d1)) as any;
+  expect(first.destinations.INSTAGRAM.operationId).toBe('ig:execution_day_1');
+  expect(first.destinations.FACEBOOK_REELS.operationId).toBe('fb:day1');
+  await expect(run(d2)).rejects.toThrow(
+    'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+  );
+  facebookRows.set(d2.execution_id, [
+    {
+      network: 'FACEBOOK_REELS',
+      accountId: publication[1].accountId,
+      operationId: 'fb:day2',
+      operation: {
+        operationId: 'fb:day2',
+        packageHash: publication[1].packageHash,
+        state: 'PUBLISHED',
+        mediaId: 'fb-media:day2',
+        remoteReceipt: { mediaId: 'fb-media:day2' },
+      },
+    },
+  ]);
+  const second = (await run(d2)) as any;
+  expect(second.destinations.FACEBOOK_REELS.operationId).toBe('fb:day2');
+  expect(second.destinations.INSTAGRAM.operationId).toBe('ig:execution_day_2');
+  expect(first.destinations.FACEBOOK_REELS.operationId).not.toBe(
+    second.destinations.FACEBOOK_REELS.operationId,
+  );
+});
+
+test('Facebook-only recurrence waits for manual authorization and isolates UNKNOWN or mismatched receipts', async () => {
+  const instagram = { execute: vi.fn() };
+  let rows: any[] = [];
+  const facebook = { status: () => rows };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    instagram as any,
+    undefined,
+    undefined,
+    facebook as any,
+  );
+  const target = {
+    network: 'FACEBOOK_REELS',
+    accountId: '1355505384315575',
+    packageHash: 'b'.repeat(64),
+  };
+  const run = () =>
+    workflow.execute(
+      'PUBLICATION',
+      { execution_id: 'execution_day_1' } as any,
+      { publication: [target] },
+      { HANDOFF: {} },
+    );
+  await expect(run()).rejects.toThrow(
+    'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+  );
+  expect(instagram.execute).not.toHaveBeenCalled();
+  rows = [
+    {
+      network: target.network,
+      accountId: target.accountId,
+      operation: {
+        operationId: 'fb:day1',
+        packageHash: target.packageHash,
+        state: 'UNCERTAIN',
+        uncertainStage: 'PUBLISH',
+      },
+    },
+  ];
+  await expect(run()).rejects.toThrow('SOCIAL_RECONCILIATION_REQUIRED');
+  rows = [
+    {
+      network: target.network,
+      accountId: target.accountId,
+      operation: {
+        operationId: 'fb:day1',
+        packageHash: 'c'.repeat(64),
+        state: 'PUBLISHED',
+        mediaId: 'media:day1',
+        remoteReceipt: { mediaId: 'media:day1' },
+      },
+    },
+  ];
+  await expect(run()).rejects.toThrow('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+  rows[0].operation.packageHash = target.packageHash;
+  rows[0].operationId = 'fb:day1';
+  rows[0].operation.remoteReceipt.mediaId = 'media:other';
+  await expect(run()).rejects.toThrow('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+  rows[0].operation.remoteReceipt.mediaId = 'media:day1';
+  expect(
+    ((await run()) as any).destinations.FACEBOOK_REELS.receipt.mediaId,
+  ).toBe('media:day1');
+  expect(instagram.execute).not.toHaveBeenCalled();
+});
+
+test('a reconciled Instagram receipt still leaves Facebook pending', async () => {
+  const receipt = {
+    operationId: 'ig:day1',
+    mediaId: 'ig-media:day1',
+    receipt: { mediaId: 'ig-media:day1' },
+  };
+  const instagram = {
+    execute: vi.fn(),
+    status: () => ({ operation: { state: 'PUBLISHED' } }),
+    reconcile: vi.fn(async () => ({
+      verified: true,
+      step: 'PUBLICATION',
+      result: receipt,
+    })),
+  };
+  const facebook = { status: () => [] };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    instagram as any,
+    undefined,
+    undefined,
+    facebook as any,
+  );
+  const publication = [
+    {
+      network: 'INSTAGRAM',
+      accountId: '123456789',
+      packageHash: 'a'.repeat(64),
+    },
+    {
+      network: 'FACEBOOK_REELS',
+      accountId: '1355505384315575',
+      packageHash: 'b'.repeat(64),
+    },
+  ];
+  await expect(
+    workflow.execute(
+      'PUBLICATION',
+      { execution_id: 'execution_day_1' } as any,
+      { publication },
+      { HANDOFF: {} },
+    ),
+  ).rejects.toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+  expect(instagram.reconcile).toHaveBeenCalledOnce();
+  expect(instagram.execute).not.toHaveBeenCalled();
 });

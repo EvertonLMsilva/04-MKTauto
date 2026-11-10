@@ -1,6 +1,7 @@
 import { VideoProductionPreparationService } from '../media/application/video-production-preparation.service.js';
 import { VideoGenerationService } from '../media/application/video-generation.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
+import { DestinationPublicationService } from '../publishing/application/destination-publication.service.js';
 import { Module } from '@nestjs/common';
 import { OperationalNotificationsModule } from '../notifications/operational-notifications.module.js';
 import { OperationalAlertsService } from '../notifications/application/operational-alerts.service.js';
@@ -73,6 +74,7 @@ import { CampaignController } from './campaign.controller.js';
         VideoProductionPreparationService,
         VideoGenerationService,
         InstagramEditorialService,
+        DestinationPublicationService,
       ],
       useFactory: (
         a: AffiliateService,
@@ -90,6 +92,7 @@ import { CampaignController } from './campaign.controller.js';
         preparations: VideoProductionPreparationService,
         generation: VideoGenerationService,
         captions: InstagramEditorialService,
+        facebook: DestinationPublicationService,
       ) =>
         new NativeCampaignWorkflow(
           a,
@@ -110,6 +113,7 @@ import { CampaignController } from './campaign.controller.js';
             media: m,
           },
           captions,
+          facebook,
         ),
     },
     {
