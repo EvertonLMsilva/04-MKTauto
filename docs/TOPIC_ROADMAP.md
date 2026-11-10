@@ -326,6 +326,26 @@ dependente; retornar ao ChatGPT para decisão.
 
 ## Instagram MVP — fechamento operacional e estratégia futura
 
+### AFFILIATE-005 — pacote assistido de produto/oferta (10/11/2026)
+
+Base confirmada `96d9b5c16185ec953d58a5819357388329f0abc1` (merge #141);
+branch isolada `feature/mktauto-affiliate-assisted-preview`. Prévia reutiliza
+triagem, DTOs, validações CATALOG e inspetor PNG existentes, sem alterar Media,
+cadastro ou permissões. API de prévia sem efeitos operacionais e CLI offline
+produzem minutas, erros, evidências e hash; finalPayload só aparece após gates
+técnicos completos. Autorização/registro permanecem false mesmo nessa condição.
+Projeto/revisões são consultados em modo leitura quando há contexto configurado;
+a CLI não abre banco e mantém essas verificações pendentes. O cesto N04 recebeu
+pacote real BLOCKED, sem imagem/direitos/link afiliado comprovados, e as outras
+duas alternativas foram preservadas. Procedimento, limites e evidências em
+[`tasks/AFFILIATE-005.md`](tasks/AFFILIATE-005.md). Sem LIVE, grants reais,
+publicação, chamada paga, scheduler ou D1/D2. USER_ONLY_MERGE.
+Validação: 329 testes PASS em 25 arquivos (15 novos, incluindo HTTP da prévia),
+sete E2E Affiliate/contexto PASS, TypeScript, build, lint (oito avisos
+preexistentes), Prettier e diff-check PASS. CLI real offline reproduziu o pacote
+bloqueado do cesto em nova execução, sem banco operacional ou POST. Entrega
+técnica aguardando revisão e merge manual do PR; nenhum próximo tópico iniciado.
+
 ### AFFILIATE-004 — pré-qualificação auditável em lote (10/11/2026)
 
 Base `f4925e5bd9881cd693674ab3c1bf6f7773490b82` (#140), branch isolada

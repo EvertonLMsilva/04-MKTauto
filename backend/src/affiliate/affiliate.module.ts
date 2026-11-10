@@ -1,6 +1,9 @@
 import { PROJECT_SNAPSHOT_READER } from '../project/application/ports/project-snapshot-reader.port.js';
 import type { ProjectSnapshotReader } from '../project/application/ports/project-snapshot-reader.port.js';
 import { Module } from '@nestjs/common';
+import { QualificationPreviewController } from './qualification-preview.controller.js';
+import { QualificationPreviewService } from './application/qualification-preview.service.js';
+import type { AffiliateRepositoryFactory } from './application/ports/affiliate-repository.port.js';
 import { FeedQualificationService } from './application/feed-qualification.service.js';
 import { FeedQualificationController } from './feed-qualification.controller.js';
 import { ShopeeCatalogService } from './application/shopee-catalog.service.js';
@@ -31,6 +34,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
 @Module({
   imports: [ProjectModule],
   controllers: [
+    QualificationPreviewController,
     FeedQualificationController,
     AffiliateController,
     AffiliateRunContextController,
@@ -45,6 +49,19 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     AffiliateDiscoveryService,
   ],
   providers: [
+    {
+      provide: QualificationPreviewService,
+      useFactory: (
+        feeds: FeedQualificationService,
+        p: AffiliateRepositoryFactory,
+        projects: ProjectSnapshotReader,
+      ) => new QualificationPreviewService(feeds, p, projects),
+      inject: [
+        FeedQualificationService,
+        AFFILIATE_REPOSITORY,
+        PROJECT_SNAPSHOT_READER,
+      ],
+    },
     FeedQualificationService,
     ShopeeCatalogService,
     shopeeAffiliateProvider,
