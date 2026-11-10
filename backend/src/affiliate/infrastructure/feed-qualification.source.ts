@@ -5,7 +5,10 @@ import { fileDigest } from './local-discovery-cache.js';
 import { catalogError } from './discovery-error.js';
 import type { RawQualificationRow } from '../domain/feed-qualification.js';
 
-export async function readQualificationFeeds(configPath: string | undefined) {
+export async function readQualificationFeeds(
+  configPath: string | undefined,
+  includeCurrency = false,
+) {
   if (!configPath || !isAbsolute(configPath))
     throw catalogError('EXTERNAL_CATALOG_CONFIGURATION_INVALID');
   const config = JSON.parse(await readFile(configPath, 'utf8'));
@@ -68,6 +71,7 @@ export async function readQualificationFeeds(configPath: string | undefined) {
       imageUrl: 'image_link',
       attributes: 'global_item_attributes',
       reportedAffiliateUrl: 'product_short link',
+      ...(includeCurrency ? { currency: 'currency' } : {}),
     };
     for await (const row of csvRecords(path, {
       delimiter: feed.delimiter,
