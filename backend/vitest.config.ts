@@ -8,5 +8,7 @@ export default defineConfig({
     globals: true,
     root: './',
     include: ['**/*.spec.ts'],
+    // Bound contention between SQLite-heavy fixtures and other unit workers.
+    maxWorkers: 2,
   },
 });
