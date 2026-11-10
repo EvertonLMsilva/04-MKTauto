@@ -190,6 +190,254 @@ async function supersessionHttpFixture(withOriginal = true) {
   }
 }
 
+test('operational queue lists destination gaps without external effects', async () => {
+  const x = await supersessionHttpFixture(false);
+  try {
+    const d2 = x.f.campaigns.schedule(
+      {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        runId: 'run_queue_day2',
+        scheduledAt: '2026-11-09T13:00:00.000Z',
+      },
+      {
+        briefingId: 'brief_001',
+        generationRequestId: 'queue_day2',
+        publication: [
+          {
+            network: 'INSTAGRAM',
+            accountId: '123456789',
+            packageHash: 'a'.repeat(64),
+          },
+          {
+            network: 'FACEBOOK_REELS',
+            accountId: x.accountId,
+            packageHash: 'b'.repeat(64),
+          },
+        ],
+      },
+      '2026-11-09T13:00:00.000Z',
+    );
+    const eventCounts = () => ({
+      campaign: Number(
+        x.f.f.base.db
+          .prepare('SELECT COUNT(*) AS n FROM campaign_execution_events')
+          .get()?.n,
+      ),
+      social: Number(
+        x.f.f.base.db
+          .prepare('SELECT COUNT(*) AS n FROM social_publication_events')
+          .get()?.n,
+      ),
+    });
+    const beforeReads = eventCounts();
+    const url = '/publishing/executions/queue?limit=10&offset=0';
+    await request(x.app.getHttpServer()).get(url).expect(401);
+    const response = await request(x.app.getHttpServer())
+      .get(url)
+      .set('Authorization', x.token)
+      .expect(200);
+    expect(response.body.total).toBe(2);
+    expect(response.body.items[0].executionId).toBe(d2.execution_id);
+    expect(response.body.items[0].projectId).toBe('project_001');
+    expect(response.body.items[0].destinations).toHaveLength(2);
+    expect(response.body.items[0].publicationComplete).toBe(false);
+    const execution = response.body.items.find(
+      (item: any) => item.executionId === x.f.execution.execution_id,
+    );
+    expect(execution.destinations).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ network: 'INSTAGRAM', state: 'PUBLISHED' }),
+        expect.objectContaining({ network: 'FACEBOOK_REELS', state: null }),
+      ]),
+    );
+    expect(execution.publicationComplete).toBe(false);
+    const first = await request(x.app.getHttpServer())
+      .get('/publishing/executions/queue?limit=1&offset=0')
+      .set('Authorization', x.token)
+      .expect(200);
+    const second = await request(x.app.getHttpServer())
+      .get('/publishing/executions/queue?limit=1&offset=1')
+      .set('Authorization', x.token)
+      .expect(200);
+    expect(first.body.items[0].executionId).toBe(d2.execution_id);
+    expect(second.body.items[0].executionId).toBe(x.f.execution.execution_id);
+    await request(x.app.getHttpServer())
+      .get('/publishing/executions/queue?limit=101')
+      .set('Authorization', x.token)
+      .expect(400);
+    expect(eventCounts()).toEqual(beforeReads);
+    expect(x.f.posts).toEqual([]);
+    expect(x.network).not.toHaveBeenCalled();
+    const prepared = await x
+      .post('/prepare', { accountId: x.accountId })
+      .expect(201);
+    const pending = await request(x.app.getHttpServer())
+      .get(url)
+      .set('Authorization', x.token)
+      .expect(200);
+    expect(
+      pending.body.items
+        .find((item: any) => item.executionId === x.f.execution.execution_id)
+        .destinations.find((item: any) => item.network === 'FACEBOOK_REELS'),
+    ).toMatchObject({ state: 'PREPARED', nextAction: 'AUTHORIZE_FACEBOOK' });
+    vi.setSystemTime(Date.parse(x.f.at) + 1000);
+    const authorization = {
+      executionId: x.f.execution.execution_id,
+      operationId: prepared.body.operationId,
+      accountId: x.accountId,
+      packageHash: x.f.facebookPackage.contentHash,
+      campaignRevision: x.f.execution.campaign_revision,
+      expectedVersion: prepared.body.version,
+      authorizationId: 'queue_occurrence_grant',
+      authorizedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+    const grant = await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization,
+      })
+      .expect(201);
+    await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: grant.body.authorization,
+      })
+      .expect(201);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    const restarted = await x.create();
+    const beforeRestartRead = eventCounts();
+    const complete = await request(restarted.getHttpServer())
+      .get(url)
+      .set('Authorization', x.token)
+      .expect(200);
+    const d1 = complete.body.items.find(
+      (item: any) => item.executionId === x.f.execution.execution_id,
+    );
+    expect(d1.publicationComplete).toBe(true);
+    expect(
+      d1.destinations.find((item: any) => item.network === 'FACEBOOK_REELS')
+        .receipt.mediaId,
+    ).toBe('987654321');
+    expect(
+      d1.destinations.find((item: any) => item.network === 'FACEBOOK_REELS')
+        .simulated,
+    ).toBe(true);
+    expect(
+      d1.destinations.find((item: any) => item.network === 'INSTAGRAM').receipt
+        .mediaId,
+    ).toBe(x.f.ig.mediaId);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    expect(x.network).not.toHaveBeenCalled();
+    expect(eventCounts()).toEqual(beforeRestartRead);
+  } finally {
+    await x.cleanup();
+  }
+});
+
+test('operational queue shows an expired grant and uncertain FINISH without reconciling it', async () => {
+  const x = await supersessionHttpFixture(false);
+  try {
+    const prepared = await x
+      .post('/prepare', { accountId: x.accountId })
+      .expect(201);
+    vi.setSystemTime(Date.parse(x.f.at) + 1000);
+    const authorization = {
+      executionId: x.f.execution.execution_id,
+      operationId: prepared.body.operationId,
+      accountId: x.accountId,
+      packageHash: x.f.facebookPackage.contentHash,
+      campaignRevision: x.f.execution.campaign_revision,
+      expectedVersion: prepared.body.version,
+      authorizationId: 'queue_uncertain_grant',
+      authorizedAt: new Date().toISOString(),
+      expiresAt: new Date(Date.now() + 60000).toISOString(),
+    };
+    const grant = await x
+      .post('/occurrence-authorization', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization,
+      })
+      .expect(201);
+    x.f.fail('publish');
+    await x
+      .post('', {
+        accountId: x.accountId,
+        expectedVersion: prepared.body.version,
+        authorization: grant.body.authorization,
+      })
+      .expect(409);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    vi.setSystemTime(Date.parse(x.f.at) + 120000);
+    const events = Number(
+      x.f.f.base.db
+        .prepare('SELECT COUNT(*) AS n FROM social_publication_events')
+        .get()?.n,
+    );
+    const response = await request(x.app.getHttpServer())
+      .get('/publishing/executions/queue')
+      .set('Authorization', x.token)
+      .expect(200);
+    const row = response.body.items[0].destinations.find(
+      (item: any) => item.network === 'FACEBOOK_REELS',
+    );
+    expect(row).toMatchObject({
+      state: 'UNCERTAIN',
+      authorizationExpired: true,
+      requiresReconciliation: true,
+      pendingCode: 'SOCIAL_RECONCILIATION_REQUIRED',
+      nextAction: 'AUTHORIZE_RECOVERY_AND_RECONCILE',
+      receipt: null,
+    });
+    expect(
+      Number(
+        x.f.f.base.db
+          .prepare('SELECT COUNT(*) AS n FROM social_publication_events')
+          .get()?.n,
+      ),
+    ).toBe(events);
+    expect(x.f.posts).toEqual(['create', 'upload', 'publish']);
+    expect(x.network).not.toHaveBeenCalled();
+  } finally {
+    await x.cleanup();
+  }
+});
+
+test('operational queue follows active supersession ownership without hiding the original', async () => {
+  const x = await supersessionHttpFixture(true);
+  try {
+    const successor = await x.prepare().expect(201);
+    const before = [...x.f.posts];
+    const response = await request(x.app.getHttpServer())
+      .get('/publishing/executions/queue')
+      .set('Authorization', x.token)
+      .expect(200);
+    const execution = response.body.items.find(
+      (item: any) => item.executionId === x.f.execution.execution_id,
+    );
+    const facebook = execution.destinations.find(
+      (item: any) => item.network === 'FACEBOOK_REELS',
+    );
+    expect(facebook).toMatchObject({
+      operationId: successor.body.operationId,
+      originalOperationId: x.original.operationId,
+      supersessionRevision: 1,
+      state: 'PREPARED',
+      nextAction: 'AUTHORIZE_SUCCESSOR',
+      receipt: null,
+    });
+    expect(execution.publicationComplete).toBe(false);
+    expect(x.f.posts).toEqual(before);
+    expect(x.network).not.toHaveBeenCalled();
+  } finally {
+    await x.cleanup();
+  }
+});
+
 test('HTTP supersession prepares idempotently without publication or execution authorization', async () => {
   const x = await supersessionHttpFixture();
   try {
