@@ -125,6 +125,24 @@ test("mantém imagens estáticas por padrão e aceita mídia mista explicitament
   })), (error) => error.code === "INVALID_PRODUCTION_PROFILE" && error.path === "channel.productionProfile");
 });
 
+test("separa duração de assets de vídeo da duração final no MIXED_MEDIA_V2", () => {
+  const snapshot = createProjectSnapshot(validProject({
+    channel: {
+      ...validProject().channel,
+      productionProfile: "MIXED_MEDIA_V2",
+      minDurationSeconds: 25,
+      maxDurationSeconds: 45,
+      minVideoAssetDurationSeconds: 5,
+      maxVideoAssetDurationSeconds: 45,
+    },
+  }));
+
+  assert.equal(snapshot.channel.minDurationSeconds, 25);
+  assert.equal(snapshot.channel.maxDurationSeconds, 45);
+  assert.equal(snapshot.channel.minVideoAssetDurationSeconds, 5);
+  assert.equal(snapshot.channel.maxVideoAssetDurationSeconds, 45);
+});
+
 test("define schemas separados para Project, ChannelProfile, ReferenceProfile e ProjectSnapshot", () => {
   assert.deepEqual(Object.keys(PROJECT_SCHEMAS), [
     "Project",
