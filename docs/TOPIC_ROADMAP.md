@@ -326,6 +326,26 @@ dependente; retornar ao ChatGPT para decisão.
 
 ## Instagram MVP — fechamento operacional e estratégia futura
 
+### AFFILIATE-004 — pré-qualificação auditável em lote (10/11/2026)
+
+Base `f4925e5bd9881cd693674ab3c1bf6f7773490b82` (#140), branch isolada
+`feature/mktauto-affiliate-feed-qualification`. Implementada a lacuna dos feeds
+brutos sem JSON discovery, preservando contratos/cadastro/rotação existentes.
+Leitor CSV e hash existentes alimentam classificações determinísticas, razões
+por registro, API GET paginada e CLI com relatório completo sem sobrescrita.
+Sem pontuação comercial, grants, banco novo ou alterações de código fora de Affiliate.
+Execução real somente leitura: 110.000 registros, 109.515 IDs, 109.512
+pré-candidatos, 485 duplicados e três incompletos; zero ofertas elegíveis.
+Nova instância reproduziu o SHA-256 integral do relatório. Dados sem mídia,
+direitos ou afiliação comprovada não avançam como ofertas CATALOG.
+Testes, procedimento, limites e artefatos em
+[`tasks/AFFILIATE-004.md`](tasks/AFFILIATE-004.md). Sem LIVE, cadastro real,
+publicação, scheduler, download de mídia ou chamada paga. USER_ONLY_MERGE.
+Validação: 314 testes Affiliate/rotação/fluxo local PASS (sete novos), sete E2E
+HTTP Affiliate/contexto PASS, TypeScript, build, lint (oito avisos preexistentes),
+Prettier do escopo e diff-check PASS. Entrega técnica aguardando revisão e merge
+manual do PR; nenhum tópico seguinte iniciado.
+
 ### COMMERCIAL-003 — custos e prontidão de rentabilidade (10/11/2026)
 
 Base confirmada `dc0f5a49943f63d73492c993eb153557fd4209f3` (merge #135).

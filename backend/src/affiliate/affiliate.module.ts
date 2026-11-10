@@ -1,6 +1,8 @@
 import { PROJECT_SNAPSHOT_READER } from '../project/application/ports/project-snapshot-reader.port.js';
 import type { ProjectSnapshotReader } from '../project/application/ports/project-snapshot-reader.port.js';
 import { Module } from '@nestjs/common';
+import { FeedQualificationService } from './application/feed-qualification.service.js';
+import { FeedQualificationController } from './feed-qualification.controller.js';
 import { ShopeeCatalogService } from './application/shopee-catalog.service.js';
 import { SHOPEE_AFFILIATE } from './application/ports/shopee-affiliate.port.js';
 import { shopeeAffiliateProvider } from './infrastructure/shopee-affiliate.provider.js';
@@ -29,6 +31,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
 @Module({
   imports: [ProjectModule],
   controllers: [
+    FeedQualificationController,
     AffiliateController,
     AffiliateRunContextController,
     DiscoveryController,
@@ -42,6 +45,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     AffiliateDiscoveryService,
   ],
   providers: [
+    FeedQualificationService,
     ShopeeCatalogService,
     shopeeAffiliateProvider,
     {
