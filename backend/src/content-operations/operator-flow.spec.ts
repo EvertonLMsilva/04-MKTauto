@@ -567,13 +567,33 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
       status: () => null,
     };
     const facebookRows = new Map<string, any>();
+    const grantFor = (e: {
+      execution_id: string;
+      campaign_revision: number;
+    }) => ({
+      executionId: e.execution_id,
+      operationId: `fb:${e.execution_id}`,
+      accountId: '1355505384315575',
+      packageHash: 'b'.repeat(64),
+      campaignRevision: e.campaign_revision,
+      authorizationId: `fake_grant:${e.execution_id}`,
+      actor: 'operator_fixture',
+      authorizedAt: '2026-11-09T23:59:00.000Z',
+      expiresAt: '2026-11-10T00:01:00.000Z',
+    });
     const publishFacebook = (
-      e: { execution_id: string },
-      grant?: { operationId: string; expiresAt: string },
+      e: { execution_id: string; campaign_revision: number },
+      grant?: ReturnType<typeof grantFor>,
     ) => {
       const operationId = `fb:${e.execution_id}`;
+      const expected = grantFor(e);
       if (
-        grant?.operationId !== operationId ||
+        !grant ||
+        Object.entries(expected).some(
+          ([field, value]) =>
+            field !== 'expiresAt' &&
+            grant[field as keyof typeof grant] !== value,
+        ) ||
         Date.parse(grant.expiresAt) <= Date.parse('2026-11-10T00:00:00.000Z')
       )
         throw Error('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
@@ -640,20 +660,17 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
     );
     expect(() =>
       publishFacebook(d1, {
+        ...grantFor(d1),
         operationId: `fb:${d2.execution_id}`,
-        expiresAt: '2026-11-10T00:01:00.000Z',
       }),
     ).toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
     expect(() =>
       publishFacebook(d1, {
-        operationId: `fb:${d1.execution_id}`,
+        ...grantFor(d1),
         expiresAt: '2026-11-09T00:00:00.000Z',
       }),
     ).toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
-    publishFacebook(d1, {
-      operationId: `fb:${d1.execution_id}`,
-      expiresAt: '2026-11-10T00:01:00.000Z',
-    });
+    publishFacebook(d1, grantFor(d1));
     const first = (await run(d1)) as any;
     expect(first.destinations.INSTAGRAM.operationId).toBe(
       `ig:${d1.execution_id}`,
@@ -664,10 +681,7 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
     await expect(run(d2)).rejects.toThrow(
       'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
     );
-    publishFacebook(d2, {
-      operationId: `fb:${d2.execution_id}`,
-      expiresAt: '2026-11-10T00:01:00.000Z',
-    });
+    publishFacebook(d2, grantFor(d2));
     const second = (await run(d2)) as any;
     expect(second.destinations.FACEBOOK_REELS.operationId).toBe(
       `fb:${d2.execution_id}`,
@@ -680,10 +694,7 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
     );
     expect(campaigns.get(d1.execution_id)?.run_id).toBe('run_day_1');
     expect(campaigns.get(d2.execution_id)?.run_id).toBe('run_day_2');
-    publishFacebook(d1, {
-      operationId: `fb:${d1.execution_id}`,
-      expiresAt: '2026-11-10T00:01:00.000Z',
-    });
+    publishFacebook(d1, grantFor(d1));
     expect(effects).toEqual([
       `instagram:${d1.execution_id}`,
       `facebook:${d1.execution_id}`,
