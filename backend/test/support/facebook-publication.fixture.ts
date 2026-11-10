@@ -325,10 +325,20 @@ export async function facebookPublicationFixture(
               publishing_phase: { status: 'not_started' },
             }
           : {
-              video_status: processing ? 'ready' : 'processing',
+              video_status:
+                !processing && !published
+                  ? 'upload_complete'
+                  : processing
+                    ? 'ready'
+                    : 'processing',
               uploading_phase: { status: 'complete' },
               processing_phase: {
-                status: processing ? 'complete' : 'in_progress',
+                status:
+                  !processing && !published
+                    ? 'not_started'
+                    : processing
+                      ? 'complete'
+                      : 'in_progress',
               },
               publishing_phase: {
                 status:

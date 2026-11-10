@@ -185,7 +185,9 @@ export class DestinationPublicationService {
       if (
         !op.supersession ||
         op.accountId !== ports.publisher.accountId ||
-        ['PUBLISHED', 'FAILED', 'EXPIRED'].includes(op.state)
+        ['FAILED', 'EXPIRED'].includes(op.state) ||
+        (op.state === 'PUBLISHED' &&
+          (op.remoteReceipt || op.mediaId !== op.containerId))
       )
         socialFail('SOCIAL_SUPERSESSION_INELIGIBLE');
       const revalidate = () => {

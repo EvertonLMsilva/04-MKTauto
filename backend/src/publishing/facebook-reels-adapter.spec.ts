@@ -78,6 +78,62 @@ test('official Facebook flow uses returned upload URL, binary bytes and a remote
   expect(JSON.stringify(a)).not.toContain('fixture_page_token');
 });
 
+test('completed upload is eligible for FINISH before remote processing starts', async () => {
+  const a = new FacebookReelsAdapter({
+    pageId: '1355505384315575',
+    apiVersion: 'v26.0',
+    mode: 'fake',
+    getAccessToken: () => 'fixture_page_token',
+    getAppAccessToken: () => 'fixture_app_token',
+    fetch: async () =>
+      new Response(
+        JSON.stringify({
+          id: '987654321',
+          status: {
+            video_status: 'upload_complete',
+            uploading_phase: { status: 'complete', bytes_transferred: 1319892 },
+            processing_phase: { status: 'not_started' },
+            publishing_phase: { status: 'not_started' },
+          },
+        }),
+      ),
+  });
+  expect(await a.getContainerStatus({ containerId: '987654321' })).toEqual({
+    status: 'UPLOAD_COMPLETE',
+  });
+});
+
+test.each([
+  ['in_progress', 'not_started'],
+  ['complete', 'in_progress'],
+])(
+  'remote processing %s or publishing %s does not authorize another FINISH',
+  async (processing, publishing) => {
+    const a = new FacebookReelsAdapter({
+      pageId: '1355505384315575',
+      apiVersion: 'v26.0',
+      mode: 'fake',
+      getAccessToken: () => 'fixture_page_token',
+      getAppAccessToken: () => 'fixture_app_token',
+      fetch: async () =>
+        new Response(
+          JSON.stringify({
+            id: '987654321',
+            status: {
+              video_status: 'processing',
+              uploading_phase: { status: 'complete' },
+              processing_phase: { status: processing },
+              publishing_phase: { status: publishing },
+            },
+          }),
+        ),
+    });
+    expect(await a.getContainerStatus({ containerId: '987654321' })).toEqual({
+      status: 'IN_PROGRESS',
+    });
+  },
+);
+
 test.each(['v26.0', 'v27.0'])(
   'Graph v26 persists and uses the exact Meta upload endpoint %s',
   async (uploadVersion) => {

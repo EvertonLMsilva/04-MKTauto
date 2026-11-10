@@ -49,7 +49,7 @@ test('new cross-version sessions persist the exact original URL and response pro
       graphVersion: 'v26.0',
       originalUrlRecovered: true,
     });
-    expect(f.posts).toEqual(['create', 'upload']);
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
   } finally {
     f.cleanup();
   }

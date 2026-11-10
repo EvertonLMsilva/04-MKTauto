@@ -175,19 +175,74 @@ test.each(['create', 'upload', 'publish'] as const)(
   },
 );
 
-test('processing wait reuses session after restart; concurrent dispatch cannot duplicate submissions', async () => {
+test('FINISH precedes processing; concurrent receipt recovery cannot duplicate submissions', async () => {
   const f = await facebookPublicationFixture();
   try {
     f.approve(f.facebookPackage);
     f.setProcessing(false);
     await expect(f.execute()).rejects.toMatchObject({
-      code: 'SOCIAL_PROCESSING_REQUIRED',
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
     });
-    expect(f.posts).toEqual(['create', 'upload']);
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
     f.setProcessing(true);
     await Promise.allSettled([f.execute(), f.execute(f.reopen())]);
     expect((await f.execute()).receipt.mediaId).toBe('987654321');
     expect(f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('FINISH uses the acknowledged session before processing and receipt is recovered after restart', async () => {
+  const f = await facebookPublicationFixture(true, 'v27.0');
+  try {
+    f.approve(f.facebookPackage);
+    f.setProcessing(false);
+    await expect(f.execute()).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    const op = f
+      .reopen()
+      .status(f.execution.execution_id)
+      .find((r) => r.network === 'FACEBOOK_REELS')!.operation;
+    expect(op.state).toBe('PUBLISHED');
+    expect(op.containerId).toBe('987654321');
+    expect(op.mediaId).toBe('987654321');
+    expect(op.remoteReceipt).toBeUndefined();
+    f.setProcessing(true);
+    const result = await f.execute(f.reopen());
+    expect(result.receipt.mediaId).toBe('987654321');
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('uncertain FINISH with only upload complete never sends a second FINISH', async () => {
+  const f = await facebookPublicationFixture(true, 'v27.0');
+  try {
+    f.approve(f.facebookPackage);
+    f.fail('publish');
+    f.setReceiptVisible(false);
+    await expect(f.execute()).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    f.fail(undefined);
+    vi.spyOn(f.ports.publisher, 'getContainerStatus').mockResolvedValue({
+      status: 'FINISHED',
+    });
+    await expect(f.execute(f.reopen())).rejects.toMatchObject({
+      code: 'SOCIAL_RECONCILIATION_REQUIRED',
+    });
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+    const op = f
+      .reopen()
+      .status(f.execution.execution_id)
+      .find((r) => r.network === 'FACEBOOK_REELS')!.operation;
+    expect(op.state).toBe('UNCERTAIN');
+    expect(op.uncertainStage).toBe('PUBLISH');
   } finally {
     f.cleanup();
   }

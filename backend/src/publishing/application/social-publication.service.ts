@@ -488,7 +488,10 @@ export class SocialPublicationService {
       const { evidenceHash, ...proof } = op.transferEvidence ?? {};
       if (
         op.uploadStage !== 'ACKNOWLEDGED' ||
-        op.providerStatus !== 'FINISHED' ||
+        ![
+          'FINISHED',
+          ...(op.network === 'FACEBOOK_REELS' ? ['UPLOAD_COMPLETE'] : []),
+        ].includes(op.providerStatus) ||
         op.requiresReconciliation ||
         proof.operationId !== op.operationId ||
         proof.containerId !== op.containerId ||
@@ -504,6 +507,13 @@ export class SocialPublicationService {
         op.mediaHash,
       );
     this.manual.validateForPublication(op.packageHash);
+    if (op.network === 'FACEBOOK_REELS' && op.publicationFlowVersion === 2) {
+      const status = await this.publisher.getContainerStatus({
+        containerId: op.containerId,
+      });
+      if (!['UPLOAD_COMPLETE', 'FINISHED'].includes(status.status))
+        socialFail('SOCIAL_RECONCILIATION_REQUIRED');
+    }
     return this.#post(
       op,
       'PUBLISHING',
@@ -697,9 +707,14 @@ export class SocialPublicationService {
         containerId: op.containerId,
       }));
       if (
-        !['IN_PROGRESS', 'FINISHED', 'PUBLISHED', 'ERROR', 'EXPIRED'].includes(
-          status,
-        )
+        ![
+          'IN_PROGRESS',
+          'UPLOAD_COMPLETE',
+          'FINISHED',
+          'PUBLISHED',
+          'ERROR',
+          'EXPIRED',
+        ].includes(status)
       )
         socialFail('SOCIAL_STATUS_INVALID');
     } catch (error: any) {
@@ -717,6 +732,16 @@ export class SocialPublicationService {
       status === 'PUBLISHED' &&
       op.state !== 'PUBLISHING' &&
       op.uncertainStage !== 'PUBLISH'
+    )
+      return this.#transition(op, [op.state], {
+        providerStatus: status,
+        errorCode: 'SOCIAL_RECONCILIATION_REQUIRED',
+        requiresReconciliation: true,
+      }).value;
+    if (
+      op.publicationFlowVersion === 2 &&
+      op.uncertainStage === 'PUBLISH' &&
+      !['PUBLISHED', 'ERROR', 'EXPIRED'].includes(status)
     )
       return this.#transition(op, [op.state], {
         providerStatus: status,
@@ -758,8 +783,18 @@ export class SocialPublicationService {
       return this.#transition(op, ['UNCERTAIN'], { providerStatus: status })
         .value;
     }
-    const state: any =
-      status === 'PUBLISHED'
+    const finishEligible =
+      status === 'UPLOAD_COMPLETE' &&
+      !reconcile &&
+      op.network === 'FACEBOOK_REELS' &&
+      op.publicationFlowVersion === 2 &&
+      op.state === 'PROCESSING' &&
+      op.uploadStage === 'ACKNOWLEDGED' &&
+      !op.requiresReconciliation &&
+      !op.uncertainStage;
+    const state: any = finishEligible
+      ? 'READY'
+      : status === 'PUBLISHED'
         ? 'PUBLISHED'
         : status === 'ERROR'
           ? 'FAILED'
