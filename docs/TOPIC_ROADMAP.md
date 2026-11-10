@@ -1,9 +1,14 @@
 # MKTauto --- roadmap operacional
 
-> Proposta de baseline V2 para revisão humana: [ROADMAP_BASELINE_V2.md](ROADMAP_BASELINE_V2.md).
-> Ela define inventário e indicadores novos sem alterar as decisões históricas
-> abaixo. Permanece `PROPOSED` até aprovação e merge manual pelo usuário;
-> a contagem informal anterior de 31/59 não foi reconciliada.
+> Baseline V2 documental integrada pelo PR #151 (`28eebc3`):
+> [ROADMAP_BASELINE_V2.md](ROADMAP_BASELINE_V2.md). A integração Git não fica
+> mais em `PROPOSED`; revisão dos critérios e autorização operacional são
+> dimensões separadas. Inventário preservado: 19 IDs, sem contar MEDIA-005
+> novamente. A contagem informal anterior de 31/59 não foi reconciliada.
+>
+> Frentes: **A = Publishing; B = Media/produção; C = Affiliate/Commercial**.
+> Operations é transversal. MEDIA-005 compõe o release operacional V1;
+> seu deploy/smoke aprovado não comprova D1/D2 nem autoriza publicação futura.
 
 Este arquivo contém **ordem, dependências, estado atual e critérios de aceite**.
 Histórico detalhado de tópicos concluídos e PRs:
@@ -34,6 +39,13 @@ Ports & Adapters, linhagem, QC e aprovação humana da versão exata no MVP.
 O orçamento recorrente da V1 é distinto do limite anterior do lote experimental
 de três originais em P2, preservado abaixo; não renova nem amplia autorização
 LIVE. Execução paga continua exigindo autorização explícita e orçamento.
+
+**Ressalva de voz na baseline integrada:** o requisito histórico Kokoro acima
+permanece. MEDIA-004 registra aprovação humana de Piper Cadu para o vídeo
+exato; MEDIA-005 registra aprovação e deploy dos recursos específicos do
+release. Isso comprova voz local no critério técnico de mídia, mas não uma
+substituição geral de Kokoro no critério operacional V1. A reconciliação desse
+escopo continua pendente; ver as decisões e fontes na baseline V2.
 
 ### MVP V2 — expansão de conteúdo
 
@@ -424,7 +436,9 @@ USER_ONLY_MERGE; próximo tópico não iniciado.
 
 ## MEDIA-004 — Piper cadu e pausas da narração
 
-Estado: entrega validada; revisão e merge manual via PR pendentes.
+Estado de integração: MERGED no PR #140; aprovação audiovisual registrada
+abaixo. As autorizações posteriores de release pertencem à MEDIA-005 e ao
+escopo de suas decisões específicas, sem renovar autorização operacional.
 
 A comparação eSpeak atual/segmentado foi reprovada por inteligibilidade. O
 operador selecionou Piper cadu-medium e aprovou o vídeo final com zero silêncio
@@ -459,3 +473,29 @@ preservados. Binários, pesos, mídia, manifestos privados, logs e dados de test
 ficam fora do Git. O runtime Piper usado no teste foi instalado offline em
 ambiente descartável; o Dockerfile operacional e seus ambientes não foram
 alterados. Deploy/empacotamento e uso comercial exigem decisões separadas.
+
+## MEDIA-005 — release operacional V1 e decisões específicas
+
+As restrições acima descrevem o escopo de MEDIA-004. Posteriormente, as Tasks
+123–125 de MEDIA-005 registraram candidata técnica, aprovações específicas e
+`DEPLOYED_SMOKE_PASS`. A DECISION-04 foi autorizada explicitamente para uma
+janela e recuperação limitadas, com a imagem
+`sha256:d0822016fc8c533a67c05f67a340989eb13d0c14b128b8c34f78bbe727303e3a`
+e source `2b9952144de747d31292903b96077de9fb1da3cb`. Backup e restauração privada
+de teste passaram; API/QC/Finance responderam 200 e o recibo Facebook foi
+preservado. O perímetro local B teve risco residual aceito, sem comprovar
+isolamento exclusivo. Kokoro permanece BLOCKED nesse relatório.
+
+MEDIA-005 integra o resultado existente `V1-OPS-01`, com evidência para
+`V1-MEDIA-01`; não cria tópico adicional no denominador de 19 resultados.
+Aprovação audiovisual, aprovação da imagem, autorização de deploy, aceite da
+baseline e aceite operacional de cada ocorrência são distintos. D1/D2 não
+foram autorizados; flags de publicação, schedulers e TTS pago continuaram
+desabilitadas. O merge do PR #151 e estas correções não autorizam LIVE.
+
+O relatório da Task 112 também comprova o Reel Facebook e recibo persistido
+da sucessora PUBLISHED v12, sem repetição de CREATE/UPLOAD/FINISH registrada.
+Isso corrige `PUBLISHING-FB-001` para operação PARTIAL, sem inferir aceite humano
+integral nem eliminar o risco UNKNOWN da sessão original. Fontes e limites em
+[ROADMAP_BASELINE_V2.md](ROADMAP_BASELINE_V2.md); somente relatórios existentes
+foram consultados, sem acesso ao SQLite LIVE ou nova chamada à Meta.
