@@ -82,8 +82,13 @@ export class OllamaEditorialProvider implements EditorialProvider {
             properties: {
               attributeIndexes: {
                 type: 'array',
-                items: { type: 'integer' },
-                maxItems: 3,
+                items: {
+                  type: 'integer',
+                  ...(facts.length
+                    ? { enum: facts.map((_, index) => index) }
+                    : {}),
+                },
+                maxItems: Math.min(3, facts.length),
               },
               hookIndex: { type: 'integer', enum: [0, 1] },
             },

@@ -363,3 +363,45 @@ it('rejects attributes without product specification evidence', async () => {
   ).rejects.toThrow('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
   expect(send).not.toHaveBeenCalled();
 });
+
+it.each([0, 1, 4])(
+  'bounds generation schema to the same %i facts accepted by validation',
+  async (count) => {
+    const send = vi.fn(
+      async () =>
+        new Response(
+          JSON.stringify({
+            done: true,
+            response: JSON.stringify({ attributeIndexes: [], hookIndex: 0 }),
+          }),
+        ),
+    );
+    const attributes = Array.from({ length: count }, () => ({
+      name: 'material_declarado',
+      value: 'papel',
+      evidenceRef: 'spec',
+    }));
+    await new OllamaEditorialProvider('gemma3:4b', send).ideas({
+      ...input,
+      briefing: { ...input.briefing, attributes },
+    });
+    const body = JSON.parse((send.mock.calls as any)[0][1].body);
+    expect(body.format.properties.attributeIndexes.maxItems).toBe(
+      Math.min(3, count),
+    );
+    if (count)
+      expect(body.format.properties.attributeIndexes.items.enum).toEqual(
+        attributes.map((_, i) => i),
+      );
+    else
+      expect(
+        body.format.properties.attributeIndexes.items.enum,
+      ).toBeUndefined();
+    expect(body.options).toEqual({
+      temperature: 0,
+      num_predict: 160,
+      num_ctx: 2048,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+  },
+);
