@@ -17,6 +17,7 @@ import {
   observationId,
 } from '../infrastructure/commercial-measurement.repository.js';
 import type { ManualDistributionRepository } from '../infrastructure/manual-distribution.repository.js';
+import { projectProfitability } from '../domain/commercial-measurement-profitability.js';
 
 export class CommercialMeasurementService {
   readonly repository: CommercialMeasurementRepository;
@@ -176,6 +177,7 @@ export class CommercialMeasurementService {
       knownCostsByCurrency: totals,
       costLedger: ledger ?? unknownValue('FINANCE_UNAVAILABLE'),
       knownNetResult: subtractMoney(commission, knownCost),
+      profitability: projectProfitability(latest, ledger),
       costCompleteness: unknownValue('EXCLUDES_UNMEASURED_COSTS'),
       unknownCosts,
       costScope: {

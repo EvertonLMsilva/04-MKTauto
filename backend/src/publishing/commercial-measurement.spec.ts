@@ -407,6 +407,140 @@ test('historical V2 results expose project scope after restart without rewriting
   }
 });
 
+test('reported commission lifecycle requires revisions, survives replay/restart and never upgrades legacy values', async () => {
+  const f = await fixture();
+  try {
+    const o = await f.occurrence('2026-11-08');
+    f.manual(o);
+    f.cost(o);
+    const target = { kind: 'execution', id: o.execution.execution_id };
+    const observed = {
+      ...input,
+      commissions: { status: 'KNOWN', amount: '5', currency: 'BRL' },
+    };
+    const legacy = f.publishing.recordCommercialResults(
+      target,
+      observed,
+      'profit_legacy',
+    );
+    expect(
+      f.publishing.commercialSummary(target).profitability.confirmedCommission
+        .status,
+    ).toBe('UNKNOWN');
+    const rows = f.f.base.db.prepare('SELECT * FROM cost_events').all();
+    const expected = {
+      ...observed,
+      commissionStatus: 'EXPECTED',
+      expectedRevision: 1,
+      correctionReason: 'Fictitious pending report',
+    };
+    const first = f.publishing.recordCommercialResults(
+      target,
+      expected,
+      'profit_expected',
+    );
+    expect(
+      f.publishing.recordCommercialResults(
+        target,
+        expected,
+        'profit_expected_replay',
+      ),
+    ).toEqual(first);
+    const confirmation = {
+      ...observed,
+      commissionStatus: 'CONFIRMED',
+      expectedRevision: 2,
+      correctionReason: 'Fictitious confirmed report',
+    };
+    const confirmed = f.publishing.recordCommercialResults(
+      target,
+      confirmation,
+      'profit_confirmed',
+    );
+    expect(() =>
+      f.publishing.recordCommercialResults(
+        target,
+        { ...confirmation, commissionStatus: 'CANCELLED' },
+        'profit_stale',
+      ),
+    ).toThrow(/RESULTS_CONFLICT|REVISION_CONFLICT/);
+    const reopened = new (PublishingService as any)(
+      f.store,
+      f.media,
+      f.finance,
+    );
+    const summary = reopened.commercialSummary(target);
+    expect(summary.profitability.confirmedCommission).toEqual(
+      observed.commissions,
+    );
+    expect(summary.profitability.costEvidence[0].status).toBe(
+      'RECORDED_UNCLASSIFIED',
+    );
+    expect(summary.profitability.netProfit.status).toBe('UNKNOWN');
+    expect(summary.profitability.roi.status).toBe('UNKNOWN');
+    const cancelled = {
+      ...observed,
+      commissionStatus: 'CANCELLED',
+      expectedRevision: 3,
+      correctionReason: 'Fictitious cancellation',
+    };
+    reopened.recordCommercialResults(target, cancelled, 'profit_cancelled');
+    const after = reopened.commercialSummary(target);
+    expect(after.profitability.reportedCommissionStatus).toBe('CANCELLED');
+    expect(after.profitability.confirmedCommission.status).toBe('UNKNOWN');
+    expect(after.history).toHaveLength(4);
+    expect(after.history).toContainEqual(legacy);
+    expect(after.history).toContainEqual(confirmed);
+    expect(f.f.base.db.prepare('SELECT * FROM cost_events').all()).toEqual(
+      rows,
+    );
+    expect(
+      reopened.recordCommercialResults(target, observed, 'profit_legacy'),
+    ).toEqual(legacy);
+    expect(
+      reopened.recordCommercialResults(
+        target,
+        observed,
+        'profit_legacy_other_key',
+      ),
+    ).toEqual(legacy);
+  } finally {
+    f.close();
+  }
+});
+
+test('two publications sharing a link cannot receive confirmed individual campaign totals', async () => {
+  const f = await fixture();
+  try {
+    const a = await f.occurrence('2026-11-08');
+    await f.occurrence('2026-11-09');
+    const b = await f.occurrence('2026-11-10');
+    expect(a.pkg.link).toBe(b.pkg.link);
+    for (const o of [a, b]) {
+      const pub = f.manual(o);
+      const target = { kind: 'publication', id: pub.publicationId };
+      f.publishing.recordCommercialResults(
+        target,
+        {
+          ...input,
+          attribution: 'CAMPAIGN_REPORTED',
+          commissionStatus: 'CONFIRMED',
+          commissions: { status: 'KNOWN', amount: '5', currency: 'USD' },
+        },
+        `shared_report_${o.execution.production_date.replaceAll('-', '')}`,
+      );
+      const summary = f.publishing.commercialSummary(target);
+      expect(summary.reportedCommission.amount).toBe('5');
+      expect(summary.profitability.confirmedCommission.status).toBe('UNKNOWN');
+      expect(summary.profitability.partialNetResult.status).toBe('UNKNOWN');
+      expect(summary.profitability.roi.status).toBe('UNKNOWN');
+      expect(summary.history).toHaveLength(1);
+    }
+  } finally {
+    f.close();
+  }
+});
+
 test.each(['missing', 'unconfirmed'])(
   'rejects results for %s confirmation',
   async (state) => {
@@ -756,6 +890,7 @@ test('E2E HTTP: real CATALOG selection, official fake publication, verifiable re
     const url = `/publishing/executions/${o.execution.execution_id}/commercial-results`;
     const observed = {
       ...input,
+      commissionStatus: 'CONFIRMED',
       commissions: { status: 'KNOWN', amount: '5', currency: 'BRL' },
       clicks: { status: 'KNOWN', value: 2 },
     };
@@ -788,6 +923,9 @@ test('E2E HTTP: real CATALOG selection, official fake publication, verifiable re
           operationId: published.operationId,
         });
         expect(r.body.commission.amount).toBe('5');
+        expect(r.body.profitability.confirmedCommission.amount).toBe('5');
+        expect(r.body.profitability.status).toBe('NOT_CALCULABLE');
+        expect(r.body.profitability.roi.status).toBe('UNKNOWN');
         expect(r.body.knownCost.status).toBe('UNKNOWN');
         expect(r.body.knownNetResult.status).toBe('UNKNOWN');
       });

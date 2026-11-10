@@ -2021,6 +2021,27 @@ merge do anterior.
 
 ## Instagram MVP — fechamento operacional e estratégia futura
 
+### COMMERCIAL-003 — custos e prontidão de rentabilidade (10/11/2026)
+
+Base confirmada `dc0f5a49943f63d73492c993eb153557fd4209f3` (merge #135).
+Entrega técnica validada na branch isolada `feature/mktauto-commercial-profitability`,
+aguardando revisão e merge manual do PR.
+Extensão restrita a Commercial em `publishing/*commercial-measurement*`,
+expressamente autorizada pelo usuário. Novo estado opcional da comissão e
+projeção de prontidão preservam normalização, hashes, replay e campos antigos.
+Custos registrados sem classificação não viram despesas confirmadas; somente
+evidência tipada de reconciliação Finance compõe o subtotal TTS comprovado,
+inclusive zero. Lucro, margem e ROI definitivos continuam UNKNOWN por falta de
+custeio completo e alocação comprovada; saldo parcial tem escopo explícito.
+Sem alteração Finance, Affiliate, Publishing operacional, migrations ou LIVE.
+Mapa, contratos, evidências e pendências em
+[`tasks/COMMERCIAL-003.md`](tasks/COMMERCIAL-003.md). COMMERCIAL-002 segue
+aguardando amostra real Shopee. USER_ONLY_MERGE; sem próximo tópico iniciado.
+TDD comprovou a lacuna antes da correção. Validação offline: 934 regressões
+PASS em 76 arquivos; 57 testes Commercial na execução final focada; cinco E2E
+Finance/Publishing PASS. TypeScript, build, lint (oito avisos preexistentes),
+Prettier do escopo e diff-check passaram. As contagens se sobrepõem.
+
 ### COMMERCIAL-001 — rastreamento comercial integrado (10/11/2026)
 
 Entrega técnica validada, aguardando revisão e merge manual do PR. Base remota
