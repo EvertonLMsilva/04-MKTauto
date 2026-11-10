@@ -534,6 +534,103 @@ function native(instagram: any) {
   );
 }
 
+test('LOCAL_IMAGES RECORDING selects the authorized recording without synthesizing audio', async () => {
+  const script = { scriptId: 'script_001', contentHash: hash };
+  const recording = {
+    voiceTrackId: 'voice_recording_001',
+    contentHash: hash,
+    durationMilliseconds: 20000,
+  };
+  const local = {
+    prepareImage: vi.fn(() => ({
+      mediaAssetId: 'image_001',
+      contentHash: hash,
+    })),
+    authorizedAudio: vi.fn(() => recording),
+    automaticAudio: vi.fn(async () => ({
+      voiceTrackId: 'voice_synthetic_001',
+      contentHash: hash,
+      durationMilliseconds: 20000,
+    })),
+  };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {
+      resolveRunBriefing: () => ({
+        campaignId: request.campaignId,
+        mediaRefs: [request.localImage.mediaReference],
+      }),
+    } as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    local as any,
+    {} as any,
+    {
+      getGlobalOperation: () => null,
+      getGlobalUsage: () => ({
+        policy: {
+          time_zone: 'America/Sao_Paulo',
+          daily_usd: '1',
+          monthly_usd: '20',
+        },
+        dailyUsd: '0',
+        monthlyUsd: '0',
+      }),
+    } as any,
+    {
+      get: () => ({ projectSnapshot: { channel: { minDurationSeconds: 20 } } }),
+    } as any,
+    {} as any,
+  );
+  const result = await workflow.execute(
+    'AUDIO',
+    execution,
+    { ...request, audioMode: 'RECORDING' },
+    { EDITORIAL: { script }, MEDIA_QC: { result: 'PASS' } },
+  );
+  expect(result).toMatchObject({
+    voiceTrackId: recording.voiceTrackId,
+    voiceTrackContentHash: recording.contentHash,
+    durationMilliseconds: recording.durationMilliseconds,
+  });
+  expect(local.authorizedAudio).toHaveBeenCalledWith(
+    execution.run_id,
+    script.scriptId,
+    script.contentHash,
+    undefined,
+    'RECORDING',
+  );
+  expect(local.automaticAudio).not.toHaveBeenCalled();
+  local.authorizedAudio.mockReturnValueOnce(null as any);
+  await expect(
+    workflow.execute(
+      'AUDIO',
+      execution,
+      { ...request, audioMode: 'RECORDING' },
+      { EDITORIAL: { script }, MEDIA_QC: { result: 'PASS' } },
+    ),
+  ).rejects.toThrow('AUDIO_REQUIRED');
+  expect(local.automaticAudio).not.toHaveBeenCalled();
+  expect(
+    await workflow.execute('AUDIO', execution, request, {
+      EDITORIAL: { script },
+      MEDIA_QC: { result: 'PASS' },
+    }),
+  ).toMatchObject({ voiceTrackId: 'voice_synthetic_001' });
+  expect(local.automaticAudio).toHaveBeenCalledTimes(1);
+  expect(
+    await workflow.execute(
+      'AUDIO',
+      execution,
+      { ...request, audioMode: 'AUTOMATIC' },
+      { EDITORIAL: { script }, MEDIA_QC: { result: 'PASS' } },
+    ),
+  ).toMatchObject({ voiceTrackId: 'voice_synthetic_001' });
+  expect(local.automaticAudio).toHaveBeenCalledTimes(2);
+});
+
 test('a local-image execution accepts an explicit package only for its publication stage', () => {
   expect(
     campaignRequest({

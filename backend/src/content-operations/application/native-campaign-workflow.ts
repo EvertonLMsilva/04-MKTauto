@@ -1443,17 +1443,26 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           ],
         };
       if (!done.MEDIA_QC) throw new CampaignError('MEDIA_QC_REQUIRED');
-      const run = this.operations.get(e.run_id);
-      const durationMs = run.projectSnapshot.channel.minDurationSeconds * 1000;
-      const voice = await this.local.automaticAudio(
-        {
-          pipelineRunId: e.run_id,
-          scriptId: String(script.scriptId),
-          scriptContentHash: String(script.contentHash),
-          createdAt: e.scheduled_at,
-        },
-        durationMs,
-      );
+      const voice =
+        r.audioMode === 'RECORDING'
+          ? this.local.authorizedAudio(
+              e.run_id,
+              String(script.scriptId),
+              String(script.contentHash),
+              undefined,
+              'RECORDING',
+            )
+          : await this.local.automaticAudio(
+              {
+                pipelineRunId: e.run_id,
+                scriptId: String(script.scriptId),
+                scriptContentHash: String(script.contentHash),
+                createdAt: e.scheduled_at,
+              },
+              this.operations.get(e.run_id).projectSnapshot.channel
+                .minDurationSeconds * 1000,
+            );
+      if (!voice) throw new CampaignError('AUDIO_REQUIRED');
       return {
         voiceTrackId: voice.voiceTrackId,
         voiceTrackContentHash: voice.contentHash,
