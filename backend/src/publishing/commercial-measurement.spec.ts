@@ -24,6 +24,11 @@ import { InstagramPublicationService } from './application/instagram-publication
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
 import { facebookPublicationFixture } from '../../test/support/facebook-publication.fixture.js';
 import { SocialPublicationService } from './application/social-publication.service.js';
+import {
+  CommercialMeasurementRepository,
+  observationId,
+} from './infrastructure/commercial-measurement.repository.js';
+import { validateObservation } from './domain/commercial-measurement.js';
 
 const at = '2026-11-08T13:00:00.000Z';
 const unknown = { status: 'UNKNOWN', reason: 'NOT_REPORTED' };
@@ -299,6 +304,8 @@ test('confirmed publication resolves frozen catalog identity; absent measurement
       'observation_001',
     );
     expect(result.identity).toMatchObject({
+      projectId: o.pkg.identity.projectId,
+      projectVersion: o.pkg.identity.projectVersion,
       publicationId: pub.publicationId,
       executionId: o.execution.execution_id,
       campaignId: 'camp_001',
@@ -314,6 +321,87 @@ test('confirmed publication resolves frozen catalog identity; absent measurement
     expect(summary.commission.status).toBe('UNKNOWN');
     expect(summary.knownCost.status).toBe('UNKNOWN');
     expect(summary.knownNetResult.status).toBe('UNKNOWN');
+  } finally {
+    f.close();
+  }
+});
+
+test('historical V2 results expose project scope after restart without rewriting history or replay receipts', async () => {
+  const f = await fixture();
+  try {
+    const o = await f.occurrence('2026-11-08');
+    const pub = f.manual(o);
+    const target = { kind: 'publication' as const, id: pub.publicationId };
+    // Explicitly fictitious pre-COMMERCIAL-001 snapshot in a disposable DB.
+    const session = f.store.open();
+    const resolved = new CommercialMeasurementRepository(
+      session.manual.repository,
+    ).resolve(target);
+    const {
+      projectId: _id,
+      projectVersion: _version,
+      ...identity
+    } = resolved.identity as any;
+    const normalized = validateObservation(input, pub.publicationId);
+    const id = observationId({
+      ...normalized,
+      publicationId: pub.publicationId,
+    });
+    const body = {
+      schemaVersion: 'publication-commercial-results/2.0.0',
+      ...normalized,
+      publicationId: pub.publicationId,
+      packageHash: o.pkg.contentHash,
+      observationId: id,
+      revision: 1,
+      previousResultHash: null,
+      identity,
+      inputHash: affiliateHash(normalized),
+      recordedAt: at,
+    };
+    const historical = { ...body, contentHash: affiliateHash(body) };
+    try {
+      session.manual.repository.command(
+        'RESULTS',
+        { target, raw: input },
+        'historical_v2',
+        () =>
+          session.manual.repository.put(
+            'RESULTS',
+            `commercial:${id}:1`,
+            historical,
+          ),
+      );
+    } finally {
+      session.close();
+    }
+    const db = f.f.base.db;
+    const snapshot = () => ({
+      results: db
+        .prepare(
+          "SELECT * FROM manual_distribution_records WHERE kind='RESULTS'",
+        )
+        .all(),
+      commands: db.prepare('SELECT * FROM affiliate_commands').all(),
+    });
+    const before = snapshot();
+    const reopened = new (PublishingService as any)(
+      f.store,
+      f.media,
+      f.finance,
+    );
+    const summary = reopened.commercialSummary(target);
+    expect(summary.identity).toMatchObject({
+      projectId: o.pkg.identity.projectId,
+      projectVersion: o.pkg.identity.projectVersion,
+      ...identity,
+    });
+    expect(summary.history).toEqual([historical]);
+    expect(summary.observations).toEqual([historical]);
+    expect(
+      reopened.recordCommercialResults(target, input, 'historical_v2'),
+    ).toEqual(historical);
+    expect(snapshot()).toEqual(before);
   } finally {
     f.close();
   }
@@ -692,6 +780,8 @@ test('E2E HTTP: real CATALOG selection, official fake publication, verifiable re
       .expect(200)
       .expect((r) => {
         expect(r.body.identity).toMatchObject({
+          projectId: o.pkg.identity.projectId,
+          projectVersion: o.pkg.identity.projectVersion,
           executionId: o.execution.execution_id,
           productId: 'prod_001',
           executionMode: 'fake',
@@ -1291,6 +1381,8 @@ describe('commercial social destination resolution', () => {
           'fb_results',
         );
         expect(first.identity).toMatchObject({
+          projectId: s.pkg.identity.projectId,
+          projectVersion: s.pkg.identity.projectVersion,
           operationId: s.op.operationId,
           executionId: o.execution.execution_id,
           campaignId: o.execution.campaign_id,

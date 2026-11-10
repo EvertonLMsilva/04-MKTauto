@@ -2021,6 +2021,31 @@ merge do anterior.
 
 ## Instagram MVP — fechamento operacional e estratégia futura
 
+### COMMERCIAL-001 — rastreamento comercial integrado (10/11/2026)
+
+Entrega técnica validada, aguardando revisão e merge manual do PR. Base remota
+confirmada: `d64b24aea4d20341387e2403a630327b98b5a883` (#133); branch isolada
+`feature/mktauto-commercial-tracking`. Reutilizados os contratos e consultas
+Commercial existentes, sem duplicação de módulos ou auditoria de catálogo.
+
+A projeção agora expõe projeto/versão do pacote persistido, inclusive em consultas
+de resultados V2 antigos, sem regravar histórico, hashes ou recibos de replay.
+Produto, oferta Affiliate/revisão, campanha, execução, operação, plataforma,
+recibo e link conservam os vínculos congelados e a distinção KNOWN/UNKNOWN.
+TDD demonstrou a lacuna antes da correção; 41 testes Commercial passaram,
+incluindo HTTP fake, Facebook e preservação histórica. Regressões: 920 PASS
+em 75 arquivos e 29 E2E PASS em quatro arquivos. TypeScript, build, lint
+(oito avisos preexistentes), Prettier do escopo e diff-check passaram.
+
+Evidência e mapa dos filhos C-01 a C-08 em
+[`tasks/COMMERCIAL-001.md`](tasks/COMMERCIAL-001.md). Validação offline com SQLite
+descartável não comprova venda, comissão ou rentabilidade reais. COMMERCIAL-002
+depende de amostra Shopee real autorizada/sanitizada e pacote aprovado; nenhum
+layout oficial ou importador foi presumido. AFFILIATE-001 permanece em
+READY_AWAITING_APPROVAL. Sem cadastro, grant, publicação, chamada paga,
+recorrência D1/D2, alteração Finance ou acesso ao SQLite LIVE.
+USER_ONLY_MERGE; próximo tópico não iniciado.
+
 - O fechamento atual integra legenda automática fundamentada nos dados cadastrados, revisão versionada, autorização específica de publicação quando necessária e agendamento Instagram fake. Direitos, QC, Finance, aprovação da versão exata e histórico permanecem obrigatórios.
 - A extração local registra explicitamente modelo indisponível e ausência de nova inferência de IA; não representa uma chamada generativa nem autoriza chamadas pagas.
 - **Estratégia futura: páginas dark.** Avaliar páginas temáticas sem exposição pessoal após a validação comercial do MVP. Cadastro de contas, identidade editorial, direitos e operação dessas páginas dependem de especificação e autorização futuras. Nenhuma funcionalidade de páginas dark é implementada neste fechamento.
