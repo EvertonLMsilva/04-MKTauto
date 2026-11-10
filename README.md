@@ -1,12 +1,16 @@
 # MKTauto
 
-Máquina Portfolio-First para um operador individual criar e administrar canais
+Operação Affiliate-First para um operador individual criar e administrar canais
 próprios, testar nichos e formatos e transformar histórico de conteúdo,
 desempenho e monetização em decisões explicáveis.
 
-O primeiro MVP recebe projeto, nicho, tema e referências estratégicas e produz
-ideia, roteiro, narração, mídia autorizada ou gerada, vídeo vertical, legendas,
-metadados e preview. Publicação, automação diária, analytics e otimização entram
+A base existente recebe projeto, nicho, tema e referências estratégicas e produz
+ideia, roteiro, narração, mídia autorizada ou gerada, vídeo vertical, legendas e
+preview. A prioridade é cadastrar produtos manualmente, gerar roteiros com a IA
+existente, cenas/áudio pela fal.ai quando suportados e finalizar com FFmpeg.
+Aprovação humana, publicação manual, custos e resultados comerciais permitem
+validar 10 anúncios e buscar a primeira venda. Essas adaptações ainda são planejadas.
+Publicação automática, automação diária, analytics avançado e otimização entram
 em fases posteriores. Toda publicação do MVP exige aprovação humana da versão
 exata.
 
@@ -135,15 +139,15 @@ privados ou stack traces.
   estrutura futura, fases, segurança e riscos;
 - `docs/MODULAR_VIDEO_PIPELINE.md`: artefatos, etapas, estados, validação,
   publicação idempotente e observabilidade;
-- `docs/TOPIC_ROADMAP.md`: histórico, fases Portfolio-First, épicos, gates e
+- `docs/TOPIC_ROADMAP.md`: prioridades Affiliate-First, backlog anterior, gates e
   tópicos incrementais;
 - `docs/PROJECT_WORKFLOW.md`: processo de análise, aprovação e entrega;
 - `AGENTS.md`: regras obrigatórias do repositório.
 
 ## Estado e próximo tópico
 
-Project Configuration, a entrada de Research por projeto e a estratégia
-Portfolio-First V07 estão concluídos. A atualização documental V08 formaliza
-OpenAI multimodelo atrás de portas e roteamento configurável, sem implementar IA.
-O roadmap mantém `FND01 — persistência de PipelineRun` como próxima entrega
-técnica, iniciada somente após o merge da V08.
+A auditoria P0 encontrou produção de preview, FFmpeg, legendas, custos parciais,
+QC e aprovação humana no checkout, além de projetos e pesquisa. Não certificou
+operação LIVE. Produto/campanha, fal.ai e resultados comerciais são lacunas.
+A ordem vigente está em `docs/TOPIC_ROADMAP.md`; P1 depende de aprovação e task
+do Planner. P0.1 altera somente governança/documentação, sem implementar P1.
