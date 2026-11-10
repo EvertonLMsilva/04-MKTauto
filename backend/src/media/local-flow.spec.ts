@@ -311,6 +311,10 @@ test('alignment → subtitles → burn-in → QC → preview, replay and concurr
     const report = await f.flow.acceptAlignment(f.evidence);
     expect(await f.flow.acceptAlignment(f.evidence)).toEqual(report);
     const subtitles = f.flow.subtitles(f.evidence.output.alignmentId);
+    expect(f.flow.subtitles(f.evidence.output.alignmentId)).toEqual(subtitles);
+    expect(subtitles.subtitleId).not.toBe(
+      `subtitle_local:${f.evidence.output.evidenceHash}`,
+    );
     const video = await f.media.compose(f.request());
     const results = await Promise.all([
       f.flow.burn(video.videoRenderId, subtitles.subtitleId),

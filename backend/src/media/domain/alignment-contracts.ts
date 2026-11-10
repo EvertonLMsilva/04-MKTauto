@@ -166,7 +166,59 @@ function exact(value: unknown, keys: string[]) {
   )
     localFail('ALIGNMENT_CONTRACT_INVALID');
 }
-export function serializeSubtitles(segments: AlignmentSegment[]) {
+export const SUBTITLE_PRESENTATION_POLICY = 'frame-coverage/1';
+
+/** Acoustic evidence is immutable. Display cues may group adjacent words using
+ * their outer acoustic boundaries, so even sub-frame words remain on screen.
+ * Coverage is checked after ASS centisecond quantization, not just in SRT.
+ */
+export function serializeSubtitles(
+  segments: AlignmentSegment[],
+  presentation?: { frameRate: number; durationMs: number },
+) {
+  if (presentation) {
+    const { frameRate, durationMs } = presentation;
+    if (
+      !Number.isFinite(frameRate) ||
+      frameRate <= 0 ||
+      frameRate > 240 ||
+      !Number.isSafeInteger(durationMs) ||
+      durationMs <= 0 ||
+      !segments.length
+    )
+      localFail('SUBTITLE_PRESENTATION_INVALID');
+    const covered = (s: AlignmentSegment) => {
+      const start = Math.floor(s.startMs / 10) * 10;
+      const end = Math.floor(s.endMs / 10) * 10;
+      return (
+        (Math.ceil((start * frameRate) / 1000 - 1e-9) * 1000) / frameRate < end
+      );
+    };
+    const cues: AlignmentSegment[] = [];
+    for (const segment of segments) {
+      if (
+        !Number.isSafeInteger(segment.startMs) ||
+        !Number.isSafeInteger(segment.endMs) ||
+        segment.startMs < 0 ||
+        segment.endMs <= segment.startMs ||
+        segment.endMs > durationMs ||
+        (cues.length && segment.startMs < cues[cues.length - 1].endMs)
+      )
+        localFail('SUBTITLE_PRESENTATION_INVALID');
+      const last = cues[cues.length - 1];
+      if (last && (!covered(segment) || !covered(last))) {
+        cues[cues.length - 1] = {
+          ...last,
+          endMs: segment.endMs,
+          textEndOffset: segment.textEndOffset,
+          text: `${last.text} ${segment.text}`,
+        };
+      } else cues.push({ ...segment });
+    }
+    if (cues.some((cue) => !covered(cue)))
+      localFail('SUBTITLE_FRAME_COVERAGE_UNREPRESENTABLE');
+    segments = cues;
+  }
   if (
     segments.some((s) => Math.floor(s.endMs / 10) <= Math.floor(s.startMs / 10))
   )
