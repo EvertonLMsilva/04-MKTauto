@@ -131,7 +131,7 @@ async function fixture() {
   );
   const workflow = new NativeCampaignWorkflow(
     {} as any,
-    {} as any,
+    context as any,
     {} as any,
     {} as any,
     {} as any,
