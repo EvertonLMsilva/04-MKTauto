@@ -326,7 +326,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         >;
     },
     private readonly captioning?: InstagramEditorialService,
-    private readonly facebook?: Pick<DestinationPublicationService, 'status'>,
+    private readonly facebook?: Pick<
+      DestinationPublicationService,
+      'status' | 'prepareFacebookOccurrence'
+    >,
   ) {}
   coordinatedPackage(e: CampaignExecution, done: Record<string, unknown>) {
     if (!done.HANDOFF) return null;
@@ -1258,7 +1261,24 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
           );
       }
       if (!facebookTarget) return instagramResult;
-      const rows = this.facebook?.status(e.execution_id) ?? [];
+      let rows = this.facebook?.status(e.execution_id) ?? [];
+      if (
+        !rows.some(
+          (value) =>
+            value.network === 'FACEBOOK_REELS' &&
+            value.accountId === facebookTarget.accountId,
+        )
+      ) {
+        if (!this.facebook)
+          throw new CampaignError('SOCIAL_FACEBOOK_CONFIGURATION_REQUIRED');
+        const prepared = await this.facebook.prepareFacebookOccurrence(
+          e.execution_id,
+          String(facebookTarget.accountId),
+        );
+        if (prepared.packageHash !== facebookTarget.packageHash)
+          throw new CampaignError('SOCIAL_PUBLICATION_IDENTITY_CONFLICT');
+        rows = this.facebook.status(e.execution_id);
+      }
       const row = rows
         .filter(
           (value) =>
@@ -1870,6 +1890,31 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   async readyToResume(e: CampaignExecution, history: CampaignEvent[]) {
     const paused = history.filter((h) => h.event_type === 'PAUSED').at(-1);
     const r = executionRequest(history);
+    if (
+      paused?.evidence.step === 'PUBLICATION' &&
+      paused.evidence.code === 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED' &&
+      Array.isArray(r.publication)
+    ) {
+      const target = r.publication
+        .map(document)
+        .find((p) => p.network === 'FACEBOOK_REELS');
+      const row = this.facebook
+        ?.status(e.execution_id)
+        .filter(
+          (p) =>
+            p.network === 'FACEBOOK_REELS' && p.accountId === target?.accountId,
+        )
+        .at(-1);
+      const op = row?.operation;
+      return !!(
+        op &&
+        op.packageHash === target?.packageHash &&
+        op.state === 'PUBLISHED' &&
+        !op.requiresReconciliation &&
+        op.mediaId &&
+        op.remoteReceipt?.mediaId === op.mediaId
+      );
+    }
     if (!r.videoProduction || r.mode !== 'LOCAL_VALIDATION' || r.publication)
       return false;
     const done = completedContext(history);

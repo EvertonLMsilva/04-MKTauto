@@ -6,6 +6,7 @@ import { provisionSchema } from '../administration/schema-provisioner.js';
 import { SqliteAffiliateRepository } from '../affiliate/infrastructure/sqlite-affiliate.repository.js';
 import { PublishingPersistence } from '../publishing/infrastructure/publishing.persistence.js';
 import { PublishingService } from '../publishing/application/publishing.service.js';
+import { facebookPublicationFixture } from '../../test/support/facebook-publication.fixture.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
 import { LocalQcGuard } from '../publishing/application/local-qc.guard.js';
 import { CampaignRepository } from './infrastructure/campaign.repository.js';
@@ -524,99 +525,140 @@ test('recurring destination request freezes distinct Instagram and Facebook inte
 });
 
 test('two recurring occurrences keep Facebook pending without repeating or mixing Instagram receipts', async () => {
-  const instagram = {
-    execute: vi.fn(async (e: any) => ({
-      operationId: `ig:${e.execution_id}`,
-      mediaId: `ig-media:${e.execution_id}`,
-      receipt: { mediaId: `ig-media:${e.execution_id}` },
-    })),
-    status: () => null,
-  };
-  const facebookRows = new Map<string, any>();
-  const facebook = { status: (id: string) => facebookRows.get(id) ?? [] };
-  const workflow = new NativeCampaignWorkflow(
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    {} as any,
-    instagram as any,
-    undefined,
-    undefined,
-    facebook as any,
-  );
-  const publication = [
-    {
-      network: 'INSTAGRAM',
-      accountId: '123456789',
-      packageHash: 'a'.repeat(64),
-    },
-    {
-      network: 'FACEBOOK_REELS',
-      accountId: '1355505384315575',
-      packageHash: 'b'.repeat(64),
-    },
-  ];
-  const d1 = { execution_id: 'execution_day_1' } as any;
-  const d2 = { execution_id: 'execution_day_2' } as any;
-  const run = (e: any) =>
-    workflow.execute('PUBLICATION', e, { publication }, { HANDOFF: {} });
-  await expect(run(d1)).rejects.toThrow(
-    'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
-  );
-  expect(instagram.execute).toHaveBeenCalledTimes(1);
-  facebookRows.set(d1.execution_id, [
-    {
-      network: 'FACEBOOK_REELS',
-      accountId: publication[1].accountId,
-      operationId: 'fb:day1',
-      operation: {
+  const base = p2EditorialFixture();
+  try {
+    provisionSchema(base.base.db, 44);
+    const campaigns = new CampaignRepository(base.base.db);
+    const d1 = campaigns.schedule(
+      {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        runId: 'run_day_1',
+        scheduledAt: '2026-11-08T12:00:00.000Z',
+      },
+      { briefingId: 'brief_001', generationRequestId: 'generation_day_1' },
+      '2026-11-08T12:00:00.000Z',
+    );
+    const d2 = campaigns.schedule(
+      {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        runId: 'run_day_2',
+        scheduledAt: '2026-11-09T12:00:00.000Z',
+      },
+      { briefingId: 'brief_001', generationRequestId: 'generation_day_2' },
+      '2026-11-09T12:00:00.000Z',
+    );
+    const instagram = {
+      execute: vi.fn(async (e: any) => ({
+        operationId: `ig:${e.execution_id}`,
+        mediaId: `ig-media:${e.execution_id}`,
+        receipt: { mediaId: `ig-media:${e.execution_id}` },
+      })),
+      status: () => null,
+    };
+    const facebookRows = new Map<string, any>();
+    const facebook = {
+      status: (id: string) => facebookRows.get(id) ?? [],
+      prepareFacebookOccurrence: vi.fn(async () => ({
+        packageHash: 'b'.repeat(64),
+      })),
+    };
+    const workflow = new NativeCampaignWorkflow(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      instagram as any,
+      undefined,
+      undefined,
+      facebook as any,
+    );
+    const publication = [
+      {
+        network: 'INSTAGRAM',
+        accountId: '123456789',
+        packageHash: 'a'.repeat(64),
+      },
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: '1355505384315575',
+        packageHash: 'b'.repeat(64),
+      },
+    ];
+    const run = (e: any) =>
+      workflow.execute('PUBLICATION', e, { publication }, { HANDOFF: {} });
+    await expect(run(d1)).rejects.toThrow(
+      'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+    );
+    expect(instagram.execute).toHaveBeenCalledTimes(1);
+    facebookRows.set(d1.execution_id, [
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: publication[1].accountId,
         operationId: 'fb:day1',
-        packageHash: publication[1].packageHash,
-        state: 'PUBLISHED',
-        mediaId: 'fb-media:day1',
-        remoteReceipt: { mediaId: 'fb-media:day1' },
+        operation: {
+          operationId: 'fb:day1',
+          packageHash: publication[1].packageHash,
+          state: 'PUBLISHED',
+          mediaId: 'fb-media:day1',
+          remoteReceipt: { mediaId: 'fb-media:day1' },
+        },
       },
-    },
-  ]);
-  const first = (await run(d1)) as any;
-  expect(first.destinations.INSTAGRAM.operationId).toBe('ig:execution_day_1');
-  expect(first.destinations.FACEBOOK_REELS.operationId).toBe('fb:day1');
-  await expect(run(d2)).rejects.toThrow(
-    'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
-  );
-  facebookRows.set(d2.execution_id, [
-    {
-      network: 'FACEBOOK_REELS',
-      accountId: publication[1].accountId,
-      operationId: 'fb:day2',
-      operation: {
+    ]);
+    const first = (await run(d1)) as any;
+    expect(first.destinations.INSTAGRAM.operationId).toBe(
+      `ig:${d1.execution_id}`,
+    );
+    expect(first.destinations.FACEBOOK_REELS.operationId).toBe('fb:day1');
+    await expect(run(d2)).rejects.toThrow(
+      'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+    );
+    facebookRows.set(d2.execution_id, [
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: publication[1].accountId,
         operationId: 'fb:day2',
-        packageHash: publication[1].packageHash,
-        state: 'PUBLISHED',
-        mediaId: 'fb-media:day2',
-        remoteReceipt: { mediaId: 'fb-media:day2' },
+        operation: {
+          operationId: 'fb:day2',
+          packageHash: publication[1].packageHash,
+          state: 'PUBLISHED',
+          mediaId: 'fb-media:day2',
+          remoteReceipt: { mediaId: 'fb-media:day2' },
+        },
       },
-    },
-  ]);
-  const second = (await run(d2)) as any;
-  expect(second.destinations.FACEBOOK_REELS.operationId).toBe('fb:day2');
-  expect(second.destinations.INSTAGRAM.operationId).toBe('ig:execution_day_2');
-  expect(first.destinations.FACEBOOK_REELS.operationId).not.toBe(
-    second.destinations.FACEBOOK_REELS.operationId,
-  );
+    ]);
+    const second = (await run(d2)) as any;
+    expect(second.destinations.FACEBOOK_REELS.operationId).toBe('fb:day2');
+    expect(second.destinations.INSTAGRAM.operationId).toBe(
+      `ig:${d2.execution_id}`,
+    );
+    expect(first.destinations.FACEBOOK_REELS.operationId).not.toBe(
+      second.destinations.FACEBOOK_REELS.operationId,
+    );
+    expect(campaigns.get(d1.execution_id)?.run_id).toBe('run_day_1');
+    expect(campaigns.get(d2.execution_id)?.run_id).toBe('run_day_2');
+  } finally {
+    base.cleanup();
+  }
 });
 
 test('Facebook-only recurrence waits for manual authorization and isolates UNKNOWN or mismatched receipts', async () => {
   const instagram = { execute: vi.fn() };
   let rows: any[] = [];
-  const facebook = { status: () => rows };
+  const facebook = {
+    status: () => rows,
+    prepareFacebookOccurrence: vi.fn(async () => ({
+      packageHash: 'b'.repeat(64),
+    })),
+  };
   const workflow = new NativeCampaignWorkflow(
     {} as any,
     {} as any,
@@ -663,6 +705,9 @@ test('Facebook-only recurrence waits for manual authorization and isolates UNKNO
     },
   ];
   await expect(run()).rejects.toThrow('SOCIAL_RECONCILIATION_REQUIRED');
+  rows[0].operation.state = 'FAILED';
+  rows[0].operation.uncertainStage = null;
+  await expect(run()).rejects.toThrow('SOCIAL_RECONCILIATION_REQUIRED');
   rows = [
     {
       network: target.network,
@@ -703,7 +748,12 @@ test('a reconciled Instagram receipt still leaves Facebook pending', async () =>
       result: receipt,
     })),
   };
-  const facebook = { status: () => [] };
+  const facebook = {
+    status: () => [],
+    prepareFacebookOccurrence: vi.fn(async () => ({
+      packageHash: 'b'.repeat(64),
+    })),
+  };
   const workflow = new NativeCampaignWorkflow(
     {} as any,
     {} as any,
@@ -743,4 +793,192 @@ test('a reconciled Instagram receipt still leaves Facebook pending', async () =>
   ).rejects.toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
   expect(instagram.reconcile).toHaveBeenCalledOnce();
   expect(instagram.execute).not.toHaveBeenCalled();
+});
+
+test('a published Facebook receipt remains independent when Instagram fails', async () => {
+  const instagram = {
+    execute: vi.fn(async () => {
+      throw new Error('INSTAGRAM_FAILURE');
+    }),
+    status: () => null,
+  };
+  const facebook = {
+    status: () => [
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: '1355505384315575',
+        operationId: 'fb:day1',
+        operation: {
+          operationId: 'fb:day1',
+          packageHash: 'b'.repeat(64),
+          state: 'PUBLISHED',
+          mediaId: 'fb-media:day1',
+          remoteReceipt: { mediaId: 'fb-media:day1' },
+        },
+      },
+    ],
+    prepareFacebookOccurrence: vi.fn(),
+  };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    instagram as any,
+    undefined,
+    undefined,
+    facebook as any,
+  );
+  const publication = [
+    {
+      network: 'INSTAGRAM',
+      accountId: '123456789',
+      packageHash: 'a'.repeat(64),
+    },
+    {
+      network: 'FACEBOOK_REELS',
+      accountId: '1355505384315575',
+      packageHash: 'b'.repeat(64),
+    },
+  ];
+  await expect(
+    workflow.execute(
+      'PUBLICATION',
+      { execution_id: 'execution_day_1' } as any,
+      { publication },
+      { HANDOFF: {} },
+    ),
+  ).rejects.toThrow('INSTAGRAM_FAILURE');
+  expect(facebook.prepareFacebookOccurrence).not.toHaveBeenCalled();
+  expect(facebook.status()[0].operation.remoteReceipt.mediaId).toBe(
+    'fb-media:day1',
+  );
+});
+
+test('disposable SQLite coordinates Instagram receipt and an authorized Facebook occurrence independently', async () => {
+  const f = await facebookPublicationFixture(true);
+  try {
+    provisionSchema(f.f.base.db, 44);
+    f.approve(f.facebookPackage);
+    const instagram = f.instagram;
+    const instagramExecute = vi.spyOn(instagram, 'execute');
+    const facebook = f.reopen();
+    const workflow = new NativeCampaignWorkflow(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      instagram,
+      undefined,
+      undefined,
+      facebook,
+    );
+    const publication = [
+      {
+        network: 'INSTAGRAM',
+        accountId: '123456789',
+        packageHash: f.instagramPackage.contentHash,
+      },
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: '1355505384315575',
+        packageHash: f.facebookPackage.contentHash,
+      },
+    ];
+    const run = () =>
+      workflow.execute(
+        'PUBLICATION',
+        f.execution as any,
+        { publication },
+        { HANDOFF: {} },
+      );
+    await expect(run()).rejects.toThrow(
+      'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+    );
+    expect(instagramExecute).not.toHaveBeenCalled();
+    expect(f.posts).toEqual([]);
+    const row = facebook
+      .status(f.execution.execution_id)
+      .find((p) => p.network === 'FACEBOOK_REELS');
+    expect(row?.operation.state).toBe('PREPARED');
+    f.campaigns.ownedEvent(
+      f.execution.execution_id,
+      f.execution.claim_token!,
+      f.at,
+      'PAUSED',
+      {
+        step: 'PUBLICATION',
+        code: 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+      },
+      'WAITING_INPUT',
+    );
+    const history = f.campaigns
+      .history(f.execution.execution_id)
+      .map((event, index) =>
+        index === 0
+          ? { ...event, evidence: { ...event.evidence, publication } }
+          : event,
+      );
+    expect(
+      await workflow.readyToResume(
+        f.campaigns.get(f.execution.execution_id),
+        history as any,
+      ),
+    ).toBe(false);
+    const grant = {
+      executionId: f.execution.execution_id,
+      operationId: row!.operationId,
+      accountId: publication[1].accountId,
+      packageHash: publication[1].packageHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: row!.operation.version,
+      authorizationId: 'combined_occurrence_grant_001',
+      actor: 'reviewer_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 600000).toISOString(),
+    };
+    await facebook.authorizeFacebookOccurrence(
+      f.execution.execution_id,
+      grant.accountId,
+      0,
+      grant,
+    );
+    await facebook.execute(
+      f.execution.execution_id,
+      'FACEBOOK_REELS',
+      grant.accountId,
+      grant,
+      0,
+    );
+    expect(
+      await workflow.readyToResume(
+        f.campaigns.get(f.execution.execution_id),
+        history as any,
+      ),
+    ).toBe(true);
+    const result = (await run()) as any;
+    expect(result.destinations.INSTAGRAM.operationId).toBe(f.ig.operationId);
+    expect(result.destinations.INSTAGRAM.receipt).toEqual(f.ig.receipt);
+    expect(result.destinations.FACEBOOK_REELS.receipt.mediaId).toBe(
+      '987654321',
+    );
+    expect(instagramExecute).not.toHaveBeenCalled();
+    expect(f.posts).toEqual(['create', 'upload', 'publish']);
+  } finally {
+    f.cleanup();
+  }
 });
