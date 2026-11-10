@@ -3,8 +3,12 @@ import { SocialPublicationRepository } from './infrastructure/social-publication
 import { DestinationReservationsRepository } from './infrastructure/destination-reservations.repository.js';
 import { InstagramPublicationRepository } from './infrastructure/instagram-publication.repository.js';
 import { Test } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, scryptSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { p2EditorialFixture } from '../../test/support/p2-editorial-fixture.js';
 import { provisionSchema } from '../administration/schema-provisioner.js';
 import { AffiliateService } from '../affiliate/application/affiliate.service.js';
@@ -24,6 +28,9 @@ import { InstagramPublicationService } from './application/instagram-publication
 import { deterministicInstagramPorts } from './infrastructure/instagram-fake.js';
 import { facebookPublicationFixture } from '../../test/support/facebook-publication.fixture.js';
 import { SocialPublicationService } from './application/social-publication.service.js';
+import { DestinationPublicationController } from './destination-publication.controller.js';
+import { DestinationPublicationService } from './application/destination-publication.service.js';
+import { LocalQcGuard } from './application/local-qc.guard.js';
 import {
   CommercialMeasurementRepository,
   observationId,
@@ -1032,6 +1039,84 @@ async function socialSnapshot(
   };
 }
 
+async function commercialOccurrenceGrant(
+  f: Awaited<ReturnType<typeof facebookPublicationFixture>>,
+  original: any,
+) {
+  // Fictitious QC credentials and an exact occurrence grant, never a LIVE grant.
+  const root = mkdtempSync(join(tmpdir(), 'commercial-qc-'));
+  const file = join(root, 'identities.json');
+  const secret = randomBytes(32).toString('base64url');
+  const salt = randomBytes(16).toString('hex');
+  let app: INestApplication | undefined;
+  try {
+    writeFileSync(
+      file,
+      JSON.stringify({
+        version: 1,
+        identities: [
+          {
+            id: 'commercial_qc_fixture',
+            salt,
+            hash: scryptSync(secret, Buffer.from(salt, 'hex'), 64, {
+              N: 32768,
+              r: 8,
+              p: 1,
+              maxmem: 67108864,
+            }).toString('hex'),
+            roles: ['QC_REVIEWER'],
+            revoked: false,
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    vi.stubEnv('QC_IDENTITIES_FILE', file);
+    const module = await Test.createTestingModule({
+      controllers: [DestinationPublicationController],
+      providers: [
+        {
+          provide: DestinationPublicationService,
+          useValue: f.reopen(() => f.at),
+        },
+        LocalQcGuard,
+      ],
+    }).compile();
+    app = module.createNestApplication();
+    await app.init();
+    const authorization = {
+      executionId: f.execution.execution_id,
+      operationId: original.operationId,
+      accountId: f.facebookPackage.account,
+      packageHash: original.packageHash,
+      campaignRevision: f.execution.campaign_revision,
+      expectedVersion: original.version,
+      authorizationId: 'commercial_original_occurrence_fixture',
+      authorizedAt: f.at,
+      expiresAt: new Date(Date.parse(f.at) + 60000).toISOString(),
+    };
+    const response = await request(app.getHttpServer())
+      .post(
+        `/publishing/executions/${f.execution.execution_id}/facebook-reels/occurrence-authorization`,
+      )
+      .set('Authorization', `Bearer commercial_qc_fixture.${secret}`)
+      .send({
+        accountId: authorization.accountId,
+        expectedVersion: original.version,
+        authorization,
+      })
+      .expect(201);
+    expect(response.body.authorization).toEqual({
+      ...authorization,
+      actor: 'commercial_qc_fixture',
+    });
+    return response.body.authorization;
+  } finally {
+    await app?.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+}
+
 async function commercialSuccessor(withInstagram = false, publish = true) {
   // Isolate Facebook-only reader cases by skipping the fixture's unrelated
   // Instagram publication. Mixed-network cases execute both real services.
@@ -1091,26 +1176,13 @@ async function commercialSuccessor(withInstagram = false, publish = true) {
         f.publishing.packageReview(f.facebookPackage.contentHash).contentHash,
         f.at,
       );
-      const occurrenceGrant = {
-        executionId: f.execution.execution_id,
-        operationId: original.operationId,
-        accountId: '1355505384315575',
-        packageHash: f.facebookPackage.contentHash,
-        campaignRevision: f.execution.campaign_revision,
-        expectedVersion: original.version,
-        authorizationId: 'commercial_original_execute',
-        actor: 'operator_fixture',
-        authorizedAt: f.at,
-        expiresAt: new Date(Date.parse(f.at) + 60000).toISOString(),
-      };
-      await f
-        .reopen(() => f.at)
-        .authorizeFacebookOccurrence(
-          f.execution.execution_id,
-          occurrenceGrant.accountId,
-          original.version,
-          occurrenceGrant,
-        );
+      await expect(
+        engine.createContainer(original.operationId),
+      ).rejects.toMatchObject({
+        code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED',
+      });
+      expect(f.posts).toEqual([]);
+      const occurrenceGrant = await commercialOccurrenceGrant(f, original);
       original = await new SocialPublicationService({
         repository: store.social,
         manual: store.manual,
@@ -1205,6 +1277,7 @@ describe('commercial active Facebook successor resolution', () => {
     expect(globalThis.fetch).not.toHaveBeenCalled();
     vi.useRealTimers();
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
   });
 
   test('execution summary selects the published successor and preserves the historical reservation', async () => {
