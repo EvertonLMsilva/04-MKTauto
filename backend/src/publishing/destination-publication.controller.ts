@@ -4,6 +4,7 @@ import {
   Get,
   Post,
   Param,
+  Query,
   Inject,
   UseGuards,
   ConflictException,
@@ -31,6 +32,21 @@ export class DestinationPublicationController {
     @Inject(DestinationPublicationService)
     private readonly service: DestinationPublicationService,
   ) {}
+  @Get('queue')
+  queue(
+    @Query('limit') rawLimit?: string,
+    @Query('offset') rawOffset?: string,
+  ) {
+    return this.respond(() => {
+      const parse = (value: string | undefined, fallback: number) =>
+        value === undefined
+          ? fallback
+          : /^\d+$/.test(value)
+            ? Number(value)
+            : NaN;
+      return this.service.queue(parse(rawLimit, 25), parse(rawOffset, 0));
+    });
+  }
   @Get(':id/destinations') status(@Param('id') id: string) {
     return this.service.status(id);
   }
@@ -46,6 +62,7 @@ export class DestinationPublicationController {
         [
           'DISTRIBUTION_INVALID_CONTRACT',
           'SOCIAL_SUPERSESSION_INVALID',
+          'SOCIAL_QUEUE_PAGINATION_INVALID',
         ].includes(code)
       )
         throw new BadRequestException({ code });
