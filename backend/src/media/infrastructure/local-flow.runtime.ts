@@ -24,6 +24,7 @@ import {
   localFail,
   alignmentHash,
   serializeSubtitles,
+  SUBTITLE_PRESENTATION_POLICY,
   validateAlignment,
   type AlignmentEvidence,
 } from '../domain/alignment-contracts.js';
@@ -71,8 +72,7 @@ export function publicationSourceReview(
       result: string;
       contentHash: string;
     } | null;
-    if (review?.result !== 'PASS')
-      localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+    if (review?.result !== 'PASS') localFail('PUBLICATION_SOURCE_QC_REQUIRED');
     new LocalEvidenceStorage(resolve(root)).read(
       asset.contentHash,
       asset.technicalProperties.format,
@@ -80,8 +80,7 @@ export function publicationSourceReview(
     );
     return { reviewHash: review.contentHash, sourceKind: 'TEMPORAL_VIDEO' };
   }
-  if (asset.assetType !== 'IMAGE')
-    localFail('PUBLICATION_SOURCE_QC_REQUIRED');
+  if (asset.assetType !== 'IMAGE') localFail('PUBLICATION_SOURCE_QC_REQUIRED');
   const properties = asset.technicalProperties;
   if (
     asset.mediaReference !== `media:sha256_${asset.contentHash}` ||
@@ -531,12 +530,20 @@ export class LocalFlowRuntime {
       evidence.approvedAt !== config.approvedAt ||
       evidence.targetDurationMs !== voice.durationMilliseconds ||
       evidence.speechDurationMs > evidence.targetDurationMs ||
-      !['literal-deduplication/1', 'paragraph-preserving-deduplication/2']
-        .includes(evidence.adaptation) ||
+      ![
+        'literal-deduplication/1',
+        'paragraph-preserving-deduplication/2',
+      ].includes(evidence.adaptation) ||
       evidence.narration !==
         (evidence.adaptation === 'paragraph-preserving-deduplication/2'
-          ? adaptKokoroNarration(script.fullNarration, voice.durationMilliseconds)
-          : adaptLocalNarration(script.fullNarration, voice.durationMilliseconds))
+          ? adaptKokoroNarration(
+              script.fullNarration,
+              voice.durationMilliseconds,
+            )
+          : adaptLocalNarration(
+              script.fullNarration,
+              voice.durationMilliseconds,
+            ))
     )
       localFail('LOCAL_TTS_LICENSE_REQUIRED');
     // CTC keeps its existing canonical text; Kokoro receives paragraph breaks.
@@ -957,9 +964,21 @@ export class LocalFlowRuntime {
         const evidence = this.alignment(r, alignmentId),
           { voice, script } = this.bind(r, evidence),
           files = this.files();
-        const text = serializeSubtitles(evidence.output.segments);
+        // The local composer outputs 30 fps. Presentation policy is separate
+        // from signed acoustic evidence, and participates in artifact identity.
+        const presentation = {
+          frameRate: 30,
+          durationMs: evidence.input.durationMs,
+        };
+        const text = serializeSubtitles(evidence.output.segments, presentation);
+        const presentationHash = adaptationHash({
+          policy: SUBTITLE_PRESENTATION_POLICY,
+          presentation,
+          srt: text.srt,
+          ass: text.ass,
+        });
         const doc = {
-          subtitleId: `subtitle_local:${evidence.output.evidenceHash}`,
+          subtitleId: `subtitle_local:${evidence.output.evidenceHash}:${presentationHash}`,
           alignmentId,
           evidenceHash: evidence.output.evidenceHash,
           voiceTrackId: voice.voiceTrackId,
