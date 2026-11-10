@@ -66,6 +66,10 @@ function adaptNarration(
     localFail('NARRATION_DURATION_REQUIRED');
   return narration;
 }
+export type PiperPresentation = {
+  schemaVersion: 'piper-presentation/1';
+  sentencePauseSeconds: number;
+};
 const blockedModel =
   'de4cecee38b30bb1a6378a337af605d59f0c377df702c6a6752870db8991cd84';
 export type LocalSpeechEvidence = {
@@ -84,6 +88,7 @@ export type LocalSpeechEvidence = {
   narration: string;
   targetDurationMs: number;
   speechDurationMs: number;
+  presentation?: PiperPresentation;
   adaptation:
     'literal-deduplication/1' | 'paragraph-preserving-deduplication/2';
 };
@@ -320,6 +325,20 @@ export class LocalPiperTts {
         /edresson|ryan/i.test(metadata.dataset ?? '')
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
+      if (
+        m.presentation !== undefined &&
+        (m.engine !== 'piper' ||
+          !m.presentation ||
+          typeof m.presentation !== 'object' ||
+          Object.keys(m.presentation).sort().join(',') !==
+            'schemaVersion,sentencePauseSeconds' ||
+          m.presentation.schemaVersion !== 'piper-presentation/1' ||
+          typeof m.presentation.sentencePauseSeconds !== 'number' ||
+          !Number.isFinite(m.presentation.sentencePauseSeconds) ||
+          m.presentation.sentencePauseSeconds < 0 ||
+          m.presentation.sentencePauseSeconds > 2)
+      )
+        localFail('LOCAL_TTS_LICENSE_REQUIRED');
       const licenseURL = new URL(m.licenseSource);
       if (m.engine === 'espeak-ng' && metadata.espeak.voice.includes('+')) {
         const variant = `espeak-ng-data/voices/!v/${metadata.espeak.voice.split('+')[1]}`;
@@ -442,6 +461,12 @@ export class LocalPiperTts {
                 m.configPath,
                 '--output_file',
                 raw,
+                ...(m.presentation
+                  ? [
+                      '--sentence-silence',
+                      String(m.presentation.sentencePauseSeconds),
+                    ]
+                  : []),
               ],
         { ...options, outputPath: raw, stdin: narration + '\n' },
       );
@@ -509,6 +534,7 @@ export class LocalPiperTts {
         narration,
         targetDurationMs: durationMs,
         speechDurationMs,
+        ...(m.presentation ? { presentation: m.presentation } : {}),
         adaptation:
           m.engine === 'kokoro'
             ? 'paragraph-preserving-deduplication/2'

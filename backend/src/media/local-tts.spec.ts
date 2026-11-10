@@ -513,13 +513,22 @@ test('actual speech that exceeds available duration is never cropped or accepted
   }
 });
 
-test.each(['piper', 'espeak-ng', 'kokoro'])(
+test.each(['piper', 'piper-prosody', 'espeak-ng', 'kokoro'])(
   'native SQLite preserves synthetic provenance, replay and adapted alignment for %s',
   async (engine) => {
     const f = fixture(),
       native = p2EditorialFixture();
     if (engine === 'espeak-ng') espeakFixture(f);
     if (engine === 'kokoro') kokoroFixture(f);
+    if (engine === 'piper-prosody') {
+      Object.assign(f.manifest, {
+        presentation: {
+          schemaVersion: 'piper-presentation/1',
+          sentencePauseSeconds: 0.45,
+        },
+      });
+      f.save();
+    }
     const db = new DatabaseSync(native.database);
     provisionSchema(db);
     db.close();
@@ -826,3 +835,80 @@ test.each([false, true])(
     }
   },
 );
+const piperPresentation = {
+  schemaVersion: 'piper-presentation/1',
+  sentencePauseSeconds: 0.45,
+};
+
+test.each([0, 0.45])(
+  'pinned Piper presentation preserves text and records sentence pause %s',
+  async (sentencePauseSeconds) => {
+    const f = fixture();
+    const presentation = { ...piperPresentation, sentencePauseSeconds };
+    try {
+      Object.assign(f.manifest, { presentation });
+      f.save();
+      const result = await new LocalPiperTts(f.env, f.runner).synthesize(
+        'São 3 passos, em 20 segundos.\n\nConfira os detalhes.',
+        20000,
+      );
+      expect(f.runner.mock.calls[0][1]).toEqual(
+        expect.arrayContaining([
+          '--sentence-silence',
+          String(sentencePauseSeconds),
+        ]),
+      );
+      expect(f.runner.mock.calls[0][2].stdin).toBe(
+        'São 3 passos, em 20 segundos. Confira os detalhes.\n',
+      );
+      expect(result.evidence).toMatchObject({
+        configurationHash: f.env.LOCAL_TTS_MANIFEST_SHA256,
+        presentation,
+        adaptation: 'literal-deduplication/1',
+      });
+      expect(JSON.stringify(f.runner.mock.calls)).not.toMatch(
+        /atempo|length.scale/,
+      );
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test.each([
+  { schemaVersion: 'unknown/1', sentencePauseSeconds: 0.45 },
+  { schemaVersion: 'piper-presentation/1', sentencePauseSeconds: -0.1 },
+  { schemaVersion: 'piper-presentation/1', sentencePauseSeconds: 2.01 },
+  { schemaVersion: 'piper-presentation/1', sentencePauseSeconds: '0.45' },
+  { schemaVersion: 'piper-presentation/1', sentencePauseSeconds: null },
+  { ...piperPresentation, speed: 1.5 },
+])(
+  'invalid Piper presentation blocks before execution: %j',
+  async (presentation) => {
+    const f = fixture();
+    try {
+      Object.assign(f.manifest, { presentation });
+      f.save();
+      await expect(
+        new LocalPiperTts(f.env, f.runner).synthesize('Olá.', 4000),
+      ).rejects.toThrow('LOCAL_TTS_LICENSE_REQUIRED');
+      expect(f.runner).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test('Piper presentation cannot silently change an eSpeak configuration', () => {
+  const f = fixture();
+  try {
+    espeakFixture(f);
+    Object.assign(f.manifest, { presentation: piperPresentation });
+    f.save();
+    expect(() => new LocalPiperTts(f.env).configuration()).toThrow(
+      'LOCAL_TTS_LICENSE_REQUIRED',
+    );
+  } finally {
+    f.cleanup();
+  }
+});

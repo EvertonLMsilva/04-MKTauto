@@ -528,6 +528,8 @@ export class LocalFlowRuntime {
       evidence.attribution !== config.attribution ||
       evidence.approvedBy !== config.approvedBy ||
       evidence.approvedAt !== config.approvedAt ||
+      adaptationHash(evidence.presentation ?? null) !==
+        adaptationHash(config.presentation ?? null) ||
       evidence.targetDurationMs !== voice.durationMilliseconds ||
       evidence.speechDurationMs > evidence.targetDurationMs ||
       ![

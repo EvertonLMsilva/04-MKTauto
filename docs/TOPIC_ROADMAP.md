@@ -375,3 +375,42 @@ USER_ONLY_MERGE; próximo tópico não iniciado.
 - O fechamento atual integra legenda automática fundamentada nos dados cadastrados, revisão versionada, autorização específica de publicação quando necessária e agendamento Instagram fake. Direitos, QC, Finance, aprovação da versão exata e histórico permanecem obrigatórios.
 - A extração local registra explicitamente modelo indisponível e ausência de nova inferência de IA; não representa uma chamada generativa nem autoriza chamadas pagas.
 - **Estratégia futura: páginas dark.** Avaliar páginas temáticas sem exposição pessoal após a validação comercial do MVP. Cadastro de contas, identidade editorial, direitos e operação dessas páginas dependem de especificação e autorização futuras. Nenhuma funcionalidade de páginas dark é implementada neste fechamento.
+
+
+## MEDIA-004 — Piper cadu e pausas da narração
+
+Estado: entrega validada; revisão e merge manual via PR pendentes.
+
+A comparação eSpeak atual/segmentado foi reprovada por inteligibilidade. O
+operador selecionou Piper cadu-medium e aprovou o vídeo final com zero silêncio
+adicional entre frases em 10/11/2026. O sintetizador já produz pausas naturais;
+450 ms adicionais geravam intervalos próximos de um segundo.
+
+O adapter Media aceita o perfil opt-in `piper-presentation/1`, com
+`sentencePauseSeconds` entre 0 e 2, vinculado ao manifesto e à evidência de voz.
+Manifestos antigos preservam o comportamento anterior. Não há mudança de
+velocidade, corte de fala, instalação automática, fallback novo ou ativação
+operacional. Recursos e manifestos operacionais continuam sujeitos a aprovação.
+
+Evidências: TDD com oito falhas antes da implementação; regressão Media com
+384 testes passando e um opt-in ignorado; regressão final de TTS com 50 testes
+passando, incluindo pausa zero, replay/restart e manifestos históricos; build e
+lint focado aprovados. Execução física isolada com Piper 1.8.0/cadu, PyTorch
+2.8.0+cpu, limite de 6 GiB e sem rede: nova fala de 11,447 s, CTC real com CER
+0,0298507463, 27 palavras cobertas em 26 cues sobre frames reais, MP4 H.264/AAC
+1080×1920 de 12 s, QC e decode completos PASS. Hash da versão aprovada:
+`6abdba4e6c4c090bd2fd7e335944b48f91255dbed61aa07473d9f808ad31dd4c`.
+
+Modelo de teste: revisão `cf910fb59f1d79ab3b625a63993a108751c6c25d`, pesos cadu
+SHA-256 `d5a662e3f606d5a49dd29ba9ce90c304ae45dd9543f8b0c773bcb0de282499de`.
+MODEL_CARD declara dataset CC0 e base rdh CC0 treinada do zero; não publica
+snapshot completo da execução de treinamento. Engine GPL-3.0-or-later e avisos
+das dependências foram inventariados para a avaliação isolada autorizada.
+Aquisição gratuita: 178.480.147 bytes; conjunto preparado: 201.973.272 bytes,
+abaixo do teto autorizado de 250 MB. Nenhuma autorização operacional é inferida.
+
+LIVE, banco operacional, schedulers, publishing e worktree experimental foram
+preservados. Binários, pesos, mídia, manifestos privados, logs e dados de teste
+ficam fora do Git. O runtime Piper usado no teste foi instalado offline em
+ambiente descartável; o Dockerfile operacional e seus ambientes não foram
+alterados. Deploy/empacotamento e uso comercial exigem decisões separadas.
