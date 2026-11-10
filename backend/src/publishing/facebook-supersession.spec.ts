@@ -7,7 +7,7 @@ import { affiliateHash } from '../affiliate/domain/affiliate-contracts.js';
 import type { FacebookCreateAcknowledgement } from './domain/facebook-upload-session.js';
 async function fixture(activeClaim = false) {
   const f = await facebookPublicationFixture(true, 'v27.0', true);
-  provisionSchema(f.f.base.db, 44);
+  provisionSchema(f.f.base.db, 43);
   f.approve(f.facebookPackage);
   if (!activeClaim)
     f.campaigns.ownedEvent(
@@ -56,6 +56,7 @@ async function fixture(activeClaim = false) {
   } finally {
     store.close();
   }
+  provisionSchema(f.f.base.db, 44);
   const observation = await f.ports.publisher.inspectUploadSession!(
     original.containerId,
   );
