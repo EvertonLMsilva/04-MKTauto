@@ -20,6 +20,8 @@ export interface KnownMoney {
 }
 export type CountValue = KnownCount | UnknownValue;
 export type MoneyValue = KnownMoney | UnknownValue;
+export type CommissionStatus =
+  'UNKNOWN' | 'EXPECTED' | 'CONFIRMED' | 'CANCELLED';
 export const metricNames = [
   'views',
   'reach',
@@ -47,6 +49,7 @@ export interface CommercialObservation {
   sales: CountValue;
   revenue: MoneyValue;
   commissions: MoneyValue;
+  commissionStatus?: CommissionStatus;
 }
 export function validateObservation(
   raw: unknown,
@@ -63,6 +66,7 @@ export function validateObservation(
     'sales',
     'revenue',
     'commissions',
+    'commissionStatus',
   ];
   if (!raw || typeof raw !== 'object' || Array.isArray(raw))
     distributionFail('DISTRIBUTION_INVALID_CONTRACT');
@@ -87,6 +91,15 @@ export function validateObservation(
     ),
   });
   const expectedRevision = value.expectedRevision ?? 0;
+  if (
+    Object.hasOwn(value, 'commissionStatus') &&
+    (!['UNKNOWN', 'EXPECTED', 'CONFIRMED', 'CANCELLED'].includes(
+      value.commissionStatus,
+    ) ||
+      (value.commissionStatus === 'CONFIRMED' &&
+        legacy.commissions.status !== 'KNOWN'))
+  )
+    distributionFail('DISTRIBUTION_COMMISSION_STATUS_INVALID');
   if (!Number.isSafeInteger(expectedRevision) || expectedRevision < 0)
     distributionFail('DISTRIBUTION_REVISION_INVALID');
   const correctionReason = value.correctionReason ?? null;
@@ -133,6 +146,10 @@ export function validateObservation(
     sales: legacy.sales,
     revenue: legacy.revenue,
     commissions: legacy.commissions,
+    // Omission must preserve historical input hashes and cross-key replay.
+    ...(Object.hasOwn(value, 'commissionStatus')
+      ? { commissionStatus: value.commissionStatus as CommissionStatus }
+      : {}),
   };
 }
 
