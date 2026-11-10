@@ -549,15 +549,51 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
       { briefingId: 'brief_001', generationRequestId: 'generation_day_2' },
       '2026-11-09T12:00:00.000Z',
     );
+    const effects: string[] = [];
+    const instagramReceipts = new Map<string, any>();
     const instagram = {
-      execute: vi.fn(async (e: any) => ({
-        operationId: `ig:${e.execution_id}`,
-        mediaId: `ig-media:${e.execution_id}`,
-        receipt: { mediaId: `ig-media:${e.execution_id}` },
-      })),
+      execute: vi.fn(async (e: any) => {
+        if (instagramReceipts.has(e.execution_id))
+          return instagramReceipts.get(e.execution_id);
+        const receipt = {
+          operationId: `ig:${e.execution_id}`,
+          mediaId: `ig-media:${e.execution_id}`,
+          receipt: { mediaId: `ig-media:${e.execution_id}` },
+        };
+        effects.push(`instagram:${e.execution_id}`);
+        instagramReceipts.set(e.execution_id, receipt);
+        return receipt;
+      }),
       status: () => null,
     };
     const facebookRows = new Map<string, any>();
+    const publishFacebook = (
+      e: { execution_id: string },
+      grant?: { operationId: string; expiresAt: string },
+    ) => {
+      const operationId = `fb:${e.execution_id}`;
+      if (
+        grant?.operationId !== operationId ||
+        Date.parse(grant.expiresAt) <= Date.parse('2026-11-10T00:00:00.000Z')
+      )
+        throw Error('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+      if (facebookRows.has(e.execution_id)) return;
+      effects.push(`facebook:${e.execution_id}`);
+      facebookRows.set(e.execution_id, [
+        {
+          network: 'FACEBOOK_REELS',
+          accountId: '1355505384315575',
+          operationId,
+          operation: {
+            operationId,
+            packageHash: 'b'.repeat(64),
+            state: 'PUBLISHED',
+            mediaId: `fb-media:${e.execution_id}`,
+            remoteReceipt: { mediaId: `fb-media:${e.execution_id}` },
+          },
+        },
+      ]);
+    };
     const facebook = {
       status: (id: string) => facebookRows.get(id) ?? [],
       prepareFacebookOccurrence: vi.fn(async () => ({
@@ -599,44 +635,43 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
       'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
     );
     expect(instagram.execute).toHaveBeenCalledTimes(1);
-    facebookRows.set(d1.execution_id, [
-      {
-        network: 'FACEBOOK_REELS',
-        accountId: publication[1].accountId,
-        operationId: 'fb:day1',
-        operation: {
-          operationId: 'fb:day1',
-          packageHash: publication[1].packageHash,
-          state: 'PUBLISHED',
-          mediaId: 'fb-media:day1',
-          remoteReceipt: { mediaId: 'fb-media:day1' },
-        },
-      },
-    ]);
+    expect(() => publishFacebook(d1)).toThrow(
+      'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
+    );
+    expect(() =>
+      publishFacebook(d1, {
+        operationId: `fb:${d2.execution_id}`,
+        expiresAt: '2026-11-10T00:01:00.000Z',
+      }),
+    ).toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+    expect(() =>
+      publishFacebook(d1, {
+        operationId: `fb:${d1.execution_id}`,
+        expiresAt: '2026-11-09T00:00:00.000Z',
+      }),
+    ).toThrow('FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED');
+    publishFacebook(d1, {
+      operationId: `fb:${d1.execution_id}`,
+      expiresAt: '2026-11-10T00:01:00.000Z',
+    });
     const first = (await run(d1)) as any;
     expect(first.destinations.INSTAGRAM.operationId).toBe(
       `ig:${d1.execution_id}`,
     );
-    expect(first.destinations.FACEBOOK_REELS.operationId).toBe('fb:day1');
+    expect(first.destinations.FACEBOOK_REELS.operationId).toBe(
+      `fb:${d1.execution_id}`,
+    );
     await expect(run(d2)).rejects.toThrow(
       'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED',
     );
-    facebookRows.set(d2.execution_id, [
-      {
-        network: 'FACEBOOK_REELS',
-        accountId: publication[1].accountId,
-        operationId: 'fb:day2',
-        operation: {
-          operationId: 'fb:day2',
-          packageHash: publication[1].packageHash,
-          state: 'PUBLISHED',
-          mediaId: 'fb-media:day2',
-          remoteReceipt: { mediaId: 'fb-media:day2' },
-        },
-      },
-    ]);
+    publishFacebook(d2, {
+      operationId: `fb:${d2.execution_id}`,
+      expiresAt: '2026-11-10T00:01:00.000Z',
+    });
     const second = (await run(d2)) as any;
-    expect(second.destinations.FACEBOOK_REELS.operationId).toBe('fb:day2');
+    expect(second.destinations.FACEBOOK_REELS.operationId).toBe(
+      `fb:${d2.execution_id}`,
+    );
     expect(second.destinations.INSTAGRAM.operationId).toBe(
       `ig:${d2.execution_id}`,
     );
@@ -645,6 +680,16 @@ test('two recurring occurrences keep Facebook pending without repeating or mixin
     );
     expect(campaigns.get(d1.execution_id)?.run_id).toBe('run_day_1');
     expect(campaigns.get(d2.execution_id)?.run_id).toBe('run_day_2');
+    publishFacebook(d1, {
+      operationId: `fb:${d1.execution_id}`,
+      expiresAt: '2026-11-10T00:01:00.000Z',
+    });
+    expect(effects).toEqual([
+      `instagram:${d1.execution_id}`,
+      `facebook:${d1.execution_id}`,
+      `instagram:${d2.execution_id}`,
+      `facebook:${d2.execution_id}`,
+    ]);
   } finally {
     base.cleanup();
   }
@@ -982,3 +1027,172 @@ test('disposable SQLite coordinates Instagram receipt and an authorized Facebook
     f.cleanup();
   }
 });
+
+test('PUBLISHING-003 probe: reconciliation does not complete a required Facebook destination from an Instagram receipt', async () => {
+  const instagram = {
+    reconcile: vi.fn(async () => ({
+      verified: true,
+      step: 'PUBLICATION',
+      result: {
+        operationId: 'ig:day1',
+        mediaId: 'ig-media:day1',
+        receipt: { mediaId: 'ig-media:day1' },
+      },
+    })),
+  };
+  const facebook = {
+    status: () => [
+      {
+        network: 'FACEBOOK_REELS',
+        accountId: '1355505384315575',
+        operationId: 'fb:day1',
+        operation: { state: 'UNCERTAIN', uncertainStage: 'PUBLISH' },
+      },
+    ],
+  };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    instagram as any,
+    undefined,
+    undefined,
+    facebook as any,
+  );
+  const history = [
+    {
+      event_type: 'SCHEDULED',
+      evidence: {
+        publication: [
+          {
+            network: 'INSTAGRAM',
+            accountId: '123456789',
+            packageHash: 'a'.repeat(64),
+          },
+          {
+            network: 'FACEBOOK_REELS',
+            accountId: '1355505384315575',
+            packageHash: 'b'.repeat(64),
+          },
+        ],
+      },
+    },
+    { event_type: 'STEP_STARTED', evidence: { step: 'PUBLICATION' } },
+  ];
+  expect(
+    await workflow.reconcile(
+      {
+        execution_id: 'execution_day_1',
+        status: 'WAITING_RECONCILIATION',
+      } as any,
+      history as any,
+    ),
+  ).toBeNull();
+});
+
+test.each([
+  ['PUBLISHED', 'PREPARED', false],
+  ['PUBLISHED', 'UNCERTAIN', false],
+  ['PUBLISHED', 'PROCESSING', false],
+  ['PUBLISHED', 'PUBLISHED', true],
+  ['FAILED', 'PUBLISHED', false],
+  ['UNCERTAIN', 'PUBLISHED', false],
+] as const)(
+  'multidestination reconciliation %s / %s completes only with both receipts',
+  async (igState, fbState, complete) => {
+    const instagram = {
+      reconcile: vi.fn(async () =>
+        igState === 'PUBLISHED'
+          ? {
+              verified: true,
+              step: 'PUBLICATION',
+              result: {
+                operationId: 'ig:day1',
+                mediaId: 'ig-media:day1',
+                receipt: { mediaId: 'ig-media:day1' },
+              },
+            }
+          : null,
+      ),
+      status: vi.fn(async () => ({ operation: { state: igState } })),
+    };
+    const facebook = {
+      status: () => [
+        {
+          network: 'FACEBOOK_REELS',
+          accountId: '1355505384315575',
+          operationId: 'fb:day1',
+          operation: {
+            operationId: 'fb:day1',
+            packageHash: 'b'.repeat(64),
+            state: fbState,
+            mediaId: fbState === 'PUBLISHED' ? 'fb-media:day1' : null,
+            uncertainStage: fbState === 'UNCERTAIN' ? 'PUBLISH' : null,
+            remoteReceipt:
+              fbState === 'PUBLISHED' ? { mediaId: 'fb-media:day1' } : null,
+          },
+        },
+      ],
+    };
+    const workflow = new NativeCampaignWorkflow(
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      {} as any,
+      instagram as any,
+      undefined,
+      undefined,
+      facebook as any,
+    );
+    const history = [
+      {
+        event_type: 'SCHEDULED',
+        evidence: {
+          publication: [
+            {
+              network: 'INSTAGRAM',
+              accountId: '123456789',
+              packageHash: 'a'.repeat(64),
+            },
+            {
+              network: 'FACEBOOK_REELS',
+              accountId: '1355505384315575',
+              packageHash: 'b'.repeat(64),
+            },
+          ],
+        },
+      },
+      { event_type: 'STEP_STARTED', evidence: { step: 'PUBLICATION' } },
+    ];
+    const proof = await workflow.reconcile(
+      {
+        execution_id: 'execution_day_1',
+        status: 'WAITING_RECONCILIATION',
+      } as any,
+      history as any,
+    );
+    if (!complete) expect(proof).toBeNull();
+    else
+      expect(proof?.result).toMatchObject({
+        destinations: {
+          INSTAGRAM: { operationId: 'ig:day1' },
+          FACEBOOK_REELS: { operationId: 'fb:day1' },
+        },
+      });
+  },
+);
