@@ -1256,7 +1256,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         if (!instagramResult)
           instagramResult = await this.instagram.execute(
             e,
-            instagramTarget,
+            Array.isArray(r.publication) ? instagramTarget : r.publication,
             done.HANDOFF,
           );
       }
@@ -1991,12 +1991,77 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const publication = history
       .filter((h) => h.event_type === 'STEP_STARTED')
       .at(-1);
+    const request = executionRequest(history);
+    const destinations = Array.isArray(request.publication)
+      ? request.publication.map(document)
+      : [];
+    const facebookTarget = destinations.find(
+      (value) => value.network === 'FACEBOOK_REELS',
+    );
+    const instagramTarget = destinations.find(
+      (value) => value.network === 'INSTAGRAM',
+    );
+    const facebookReceipt = () => {
+      if (!facebookTarget) return null;
+      const row = this.facebook
+        ?.status(e.execution_id)
+        .filter(
+          (value) =>
+            value.network === 'FACEBOOK_REELS' &&
+            value.accountId === facebookTarget.accountId,
+        )
+        .at(-1);
+      const op = row?.operation;
+      return op &&
+        op.operationId === row?.operationId &&
+        op.packageHash === facebookTarget.packageHash &&
+        op.state === 'PUBLISHED' &&
+        !op.uncertainStage &&
+        !op.requiresReconciliation &&
+        op.mediaId &&
+        op.remoteReceipt?.mediaId === op.mediaId
+        ? {
+            operationId: op.operationId,
+            mediaId: op.mediaId,
+            receipt: op.remoteReceipt,
+          }
+        : null;
+    };
+    if (
+      publication?.evidence.step === 'PUBLICATION' &&
+      facebookTarget &&
+      !instagramTarget
+    ) {
+      const receipt = facebookReceipt();
+      return receipt
+        ? {
+            verified: true,
+            step: 'PUBLICATION',
+            result: { destinations: { FACEBOOK_REELS: receipt } },
+          }
+        : null;
+    }
     if (publication?.evidence.step === 'PUBLICATION' && this.instagram) {
       const proof = await this.instagram.reconcile(e.execution_id);
-      if (proof?.verified) return proof;
+      if (proof?.verified) {
+        if (!facebookTarget || proof.step !== 'PUBLICATION' || !proof.result)
+          return proof;
+        const receipt = facebookReceipt();
+        return receipt
+          ? {
+              verified: true,
+              step: 'PUBLICATION',
+              result: {
+                destinations: {
+                  INSTAGRAM: proof.result,
+                  FACEBOOK_REELS: receipt,
+                },
+              },
+            }
+          : null;
+      }
       const status = await this.instagram.status?.(e.execution_id);
       const op = status?.operation;
-      const request = executionRequest(history);
       if (!request.publication && this.publishing.coordinatePackage) {
         const pkg = this.coordinatedPackage(e, completedContext(history));
         if (pkg)
@@ -2036,7 +2101,6 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     const lastFailure = history
       .filter((h) => h.event_type === 'STEP_FAILED')
       .at(-1);
-    const request = executionRequest(history);
     if (lastFailure?.evidence.code === 'FINANCE_UNKNOWN') {
       const operation = this.finance.getGlobalOperation(
         String(request.generationRequestId),

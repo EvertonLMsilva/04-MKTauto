@@ -1091,7 +1091,36 @@ async function commercialSuccessor(withInstagram = false, publish = true) {
         f.publishing.packageReview(f.facebookPackage.contentHash).contentHash,
         f.at,
       );
-      original = await engine.createContainer(original.operationId);
+      const occurrenceGrant = {
+        executionId: f.execution.execution_id,
+        operationId: original.operationId,
+        accountId: '1355505384315575',
+        packageHash: f.facebookPackage.contentHash,
+        campaignRevision: f.execution.campaign_revision,
+        expectedVersion: original.version,
+        authorizationId: 'commercial_original_execute',
+        actor: 'operator_fixture',
+        authorizedAt: f.at,
+        expiresAt: new Date(Date.parse(f.at) + 60000).toISOString(),
+      };
+      await f
+        .reopen(() => f.at)
+        .authorizeFacebookOccurrence(
+          f.execution.execution_id,
+          occurrenceGrant.accountId,
+          original.version,
+          occurrenceGrant,
+        );
+      original = await new SocialPublicationService({
+        repository: store.social,
+        manual: store.manual,
+        publisher: f.ports.publisher,
+        media: f.ports.media,
+        transferVerifier: f.ports.verifier,
+        operationalAuthorization: occurrenceGrant,
+        now: () => f.at,
+        authorize: (op: any) => store.reservations.authorize(op, f.at),
+      }).createContainer(original.operationId);
     } finally {
       store.close();
     }
