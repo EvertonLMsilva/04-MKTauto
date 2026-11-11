@@ -34,6 +34,27 @@ import {
   validateShopeeLinkInput,
 } from '../infrastructure/shopee-links.js';
 import { buildShopeeOffersQuery } from '../infrastructure/shopee-offers.js';
+import {
+  withShopeeLiveAuthorization,
+  shopeeLiveLinkAllowed,
+} from '../infrastructure/shopee-affiliate.provider.js';
+
+export interface ShopeeLiveAuthorizationScope {
+  authorizationId: string;
+  campaignId: string;
+  campaignRevision: number;
+  productionDates: string[];
+  notBefore: string;
+  expiresAt: string;
+  maxOfferPages: number;
+  maxLinks: number;
+  periodic: boolean;
+  evidenceRef: string;
+  costBasis: 'NO_CHARGE_CONFIRMED';
+  costEvidenceRef: string;
+}
+export const shopeeOperationalCycleId = (campaignId: string, day: string) =>
+  'ops_' + affiliateHash({ campaignId, day }).slice(0, 60);
 
 interface LinkClaim {
   projectId: string;
@@ -57,6 +78,181 @@ type Discovery = Awaited<ReturnType<ShopeeCatalogService['discover']>>;
 // Public application entry point for Operations. configure once; runCycle receives
 // only project + occurrence identity. No timers, publishing or financial effects.
 export class ShopeeDynamicService {
+  async previewLiveAuthorization(
+    raw: ShopeeDynamicConfiguration,
+    rawScope: ShopeeLiveAuthorizationScope,
+  ) {
+    const configuration = validateDynamicConfiguration(raw);
+    for (const query of configuration.queries) buildShopeeOffersQuery(query);
+    await this.verifyProject(configuration);
+    const scope = structuredClone(rawScope);
+    const fail = (): never => {
+      throw new Error('SHOPEE_LIVE_AUTHORIZATION_INVALID');
+    };
+    if (
+      !scope ||
+      Object.keys(scope).sort().join(',') !==
+        'authorizationId,campaignId,campaignRevision,costBasis,costEvidenceRef,evidenceRef,expiresAt,maxLinks,maxOfferPages,notBefore,periodic,productionDates'
+    )
+      fail();
+    affiliateIdentifier(scope.authorizationId, 'authorizationId');
+    affiliateIdentifier(scope.campaignId, 'campaignId');
+    if (
+      !Number.isSafeInteger(scope.campaignRevision) ||
+      scope.campaignRevision < 1 ||
+      !Array.isArray(scope.productionDates) ||
+      scope.productionDates.length < 1 ||
+      scope.productionDates.length > 31 ||
+      new Set(scope.productionDates).size !== scope.productionDates.length ||
+      scope.productionDates.some(
+        (d) =>
+          typeof d !== 'string' ||
+          !/^\d{4}-\d{2}-\d{2}$/.test(d) ||
+          !Number.isFinite(Date.parse(d)) ||
+          new Date(d).toISOString().slice(0, 10) !== d,
+      ) ||
+      typeof scope.periodic !== 'boolean' ||
+      (scope.productionDates.length > 1 && !scope.periodic) ||
+      !Number.isSafeInteger(scope.maxOfferPages) ||
+      scope.maxOfferPages !== configuration.maxPages ||
+      !Number.isSafeInteger(scope.maxLinks) ||
+      scope.maxLinks < 0 ||
+      scope.maxLinks > configuration.maxSelected ||
+      scope.costBasis !== 'NO_CHARGE_CONFIRMED' ||
+      [scope.evidenceRef, scope.costEvidenceRef].some(
+        (s) => typeof s !== 'string' || !s.trim() || s.length > 1000,
+      ) ||
+      [scope.notBefore, scope.expiresAt].some(
+        (s) =>
+          typeof s !== 'string' ||
+          !/(Z|[+-]\d\d:\d\d)$/.test(s) ||
+          !Number.isFinite(Date.parse(s)),
+      ) ||
+      Date.parse(scope.expiresAt) <= Date.parse(scope.notBefore) ||
+      Date.parse(scope.expiresAt) - Date.parse(scope.notBefore) > 32 * 86400000
+    )
+      fail();
+    const campaign = await this.affiliate.getCampaign(
+      scope.campaignId,
+      scope.campaignRevision,
+    );
+    if (!campaign || campaign.projectId !== configuration.projectId)
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    const subject = {
+      schemaVersion: 'shopee-live-authorization/1',
+      mode: 'SHOPEE_LIVE' as const,
+      ...scope,
+      projectId: configuration.projectId,
+      configurationHash: affiliateHash(configuration),
+    };
+    return immutable({ scope: subject, scopeHash: affiliateHash(subject) });
+  }
+  async approveLiveAuthorization(
+    configuration: ShopeeDynamicConfiguration,
+    scope: ShopeeLiveAuthorizationScope,
+    expectedScopeHash: string,
+    actorId: string,
+  ) {
+    affiliateIdentifier(actorId, 'actorId');
+    const preview = await this.previewLiveAuthorization(configuration, scope);
+    if (expectedScopeHash !== preview.scopeHash)
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    this.journal.initialize();
+    const prior = this.journal.get<{ scopeHash: string }>(
+      'LIVE_AUTHORIZATION',
+      scope.authorizationId,
+      'GRANTED',
+    );
+    if (prior && prior.scopeHash !== preview.scopeHash)
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    this.journal.put('LIVE_AUTHORIZATION', scope.authorizationId, 'GRANTED', {
+      ...preview,
+      actorId,
+      recordedAt: new Date().toISOString(),
+    });
+    if (
+      this.journal.get<{ scopeHash: string }>(
+        'LIVE_AUTHORIZATION',
+        scope.authorizationId,
+        'GRANTED',
+      )?.scopeHash !== preview.scopeHash
+    )
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    return {
+      authorizationId: scope.authorizationId,
+      scopeHash: preview.scopeHash,
+    };
+  }
+  async runAuthorizedScheduledCycle(
+    projectId: string,
+    cycleId: string,
+    authorizationId: string,
+    campaignId: string,
+    productionDate: string,
+    campaignRevision = 1,
+  ) {
+    const fail = (): never => {
+      throw new Error('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
+    };
+    if (process.env.SHOPEE_AFFILIATE_MODE !== 'live') fail();
+    const grant = this.journal.get<{
+      scope: ShopeeLiveAuthorizationScope & {
+        mode: string;
+        projectId: string;
+        configurationHash: string;
+      };
+      scopeHash: string;
+    }>('LIVE_AUTHORIZATION', authorizationId, 'GRANTED');
+    if (
+      !grant ||
+      grant.scope.mode !== 'SHOPEE_LIVE' ||
+      grant.scope.projectId !== projectId ||
+      grant.scope.campaignId !== campaignId ||
+      grant.scope.campaignRevision !== campaignRevision ||
+      !grant.scope.productionDates.includes(productionDate) ||
+      cycleId !== shopeeOperationalCycleId(campaignId, productionDate) ||
+      Date.now() < Date.parse(grant.scope.notBefore) ||
+      Date.now() >= Date.parse(grant.scope.expiresAt)
+    )
+      fail();
+    const approved = grant!;
+    const config = this.journal.get<ShopeeDynamicConfiguration>(
+      'CONFIGURATION',
+      projectId,
+    );
+    if (
+      !config ||
+      affiliateHash(config) !== approved.scope.configurationHash ||
+      affiliateHash(approved.scope) !== approved.scopeHash
+    )
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    const key = affiliateHash({ projectId, cycleId });
+    const claim = this.journal.get<{ executionMode?: string }>(
+      'CYCLE',
+      key,
+      'CLAIM',
+    );
+    if (claim && claim.executionMode !== 'SHOPEE_LIVE')
+      throw new Error('SHOPEE_LIVE_SCOPE_MISMATCH');
+    return withShopeeLiveAuthorization(
+      {
+        ...approved.scope,
+        mode: 'SHOPEE_LIVE',
+        reserve: (operation, index) => {
+          if (
+            !this.journal.put('LIVE_REQUEST', key, `${operation}_${index}`, {
+              authorizationId,
+              campaignId,
+              productionDate,
+              scopeHash: approved.scopeHash,
+            })
+          )
+            throw new Error('SHOPEE_LIVE_CALL_ALREADY_RESERVED');
+        },
+      },
+      () => this.runScheduledCycle(projectId, cycleId),
+    );
+  }
   // A lease spans the bounded discovery/link budget (at most 150s). A stopped
   // worker may only be recovered after expiry, never while it still owns work.
   async runScheduledCycle(
@@ -150,7 +346,14 @@ export class ShopeeDynamicService {
     );
     if (!configuration) throw new Error('SHOPEE_CONFIGURATION_REQUIRED');
     await this.verifyProject(configuration);
-    if (!this.journal.put('CYCLE', key, 'CLAIM', { configuration, cycleId }))
+    if (
+      !this.journal.put('CYCLE', key, 'CLAIM', {
+        configuration,
+        cycleId,
+        executionMode:
+          process.env.SHOPEE_AFFILIATE_MODE === 'live' ? 'SHOPEE_LIVE' : 'FAKE',
+      })
+    )
       throw new Error('SHOPEE_CYCLE_IN_PROGRESS_OR_RECOVERY_REQUIRED');
     let discovery: Discovery;
     try {
@@ -438,6 +641,13 @@ export class ShopeeDynamicService {
           'RECONCILED',
         );
       if (!link) {
+        if (
+          process.env.SHOPEE_AFFILIATE_MODE === 'live' &&
+          !shopeeLiveLinkAllowed()
+        ) {
+          decision.reasons = ['LIVE_LINK_AUTHORIZATION_REQUIRED'];
+          continue;
+        }
         // Recovery cannot initiate a new mutation, even if the worker stopped
         // before reserving it. A fresh occurrence may safely discover again.
         if (recovery) {

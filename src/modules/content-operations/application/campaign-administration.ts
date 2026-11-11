@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
-import { createHash } from 'node:crypto';
+import { shopeeOperationalCycleId } from '../../affiliate/application/shopee-dynamic.service.js';
 import type { ShopeeDynamicService } from '../../affiliate/application/shopee-dynamic.service.js';
 import type { ShopeeDynamicConfiguration } from '../../affiliate/domain/shopee-dynamic.js';
 import {
@@ -294,6 +294,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     value: unknown,
     configuration: ShopeeDynamicConfiguration,
     actorId: string,
+    authorizationId?: string,
   ) {
     identifier(actorId);
     const input = localRequestInput(value);
@@ -301,27 +302,42 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       throw new CampaignError('SHOPEE_DYNAMIC_CATALOG_RECURRENCE_REQUIRED');
     if (this.open().recurrences(true).some(e => e.config.request.campaignId === input.campaignId && e.config.request.fakeExecutionPolicy))
       throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
-    this.assertDynamicOffline();
+    this.assertDynamicActivation(authorizationId);
     const request = await this.workflow.localRequest(value);
     const projectId = String(document(request.run).projectId);
     if (configuration?.projectId !== projectId)
       throw new CampaignError('SHOPEE_DYNAMIC_PROJECT_MISMATCH');
     await this.shopee!.configure(configuration);
-    await this.prepareDynamicCatalog(request);
+    const activation = {enabled:true, actorId, mode:process.env.SHOPEE_AFFILIATE_MODE ?? 'fake', ...(authorizationId ? {authorizationId} : {})};
+    await this.prepareDynamicCatalog(request, activation);
     return this.open().configureRecurrence(
-      { ...request, shopeeDynamic: { enabled: true, actorId } },
+      { ...request, shopeeDynamic: activation },
       true,
       String(input.requestId),
       this.now(),
       (previous) => this.workflow.freezeCatalogRequest(request, previous),
     );
   }
-  private assertDynamicOffline() {
+  async reviewLiveAuthorization(value: unknown, actorId: string) {
+    const input = document(value);
     if (!this.shopee) throw new CampaignError('SHOPEE_DYNAMIC_UNAVAILABLE');
-    if ((process.env.SHOPEE_AFFILIATE_MODE ?? 'fake') !== 'fake')
-      throw new CampaignError('SHOPEE_DYNAMIC_LIVE_FORBIDDEN');
+    if (typeof input.confirmed !== 'boolean' || Object.keys(input).some(k => !['configuration','scope','confirmed','expectedScopeHash'].includes(k)))
+      throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_INVALID');
+    const configuration = input.configuration as ShopeeDynamicConfiguration;
+    const scope = input.scope as import('../../affiliate/application/shopee-dynamic.service.js').ShopeeLiveAuthorizationScope;
+    if (!input.confirmed) return this.shopee.previewLiveAuthorization(configuration, scope);
+    if (typeof input.expectedScopeHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedScopeHash))
+      throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_INVALID');
+    return this.shopee.approveLiveAuthorization(configuration, scope, input.expectedScopeHash, actorId);
   }
-  private async prepareDynamicCatalog(request: Record<string, unknown>) {
+  private assertDynamicActivation(authorizationId?: string) {
+    if (!this.shopee) throw new CampaignError('SHOPEE_DYNAMIC_UNAVAILABLE');
+    const mode = process.env.SHOPEE_AFFILIATE_MODE ?? 'fake';
+    if (mode !== 'fake' && mode !== 'live') throw new CampaignError('SHOPEE_AFFILIATE_MODE_INVALID');
+    if (mode === 'live' && !authorizationId) throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
+    if (mode === 'fake' && authorizationId) throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
+  }
+  private async prepareDynamicCatalog(request: Record<string, unknown>, activation?: Record<string, unknown>) {
     const zone = request.schedule
       ? String(document(request.schedule).timeZone)
       : undefined;
@@ -335,15 +351,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
         )
     )
       return;
-    this.assertDynamicOffline();
-    const cycleId =
-      'ops_' +
-      createHash('sha256')
-        .update(canonicalJson({ campaignId: request.campaignId, day }))
-        .digest('hex')
-        .slice(0, 60);
+    const mode = activation?.mode ?? 'fake';
+    if (mode !== (process.env.SHOPEE_AFFILIATE_MODE ?? 'fake')) throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
+    const authorizationId = typeof activation?.authorizationId === 'string' ? activation.authorizationId : undefined;
+    this.assertDynamicActivation(authorizationId);
+    const cycleId = shopeeOperationalCycleId(String(request.campaignId), day);
     try {
-      await this.shopee!.runScheduledCycle(
+      if (mode === 'live') await this.shopee!.runAuthorizedScheduledCycle(String(document(request.run).projectId),cycleId,authorizationId!,String(request.campaignId),day,Number(request.campaignRevision));
+      else await this.shopee!.runScheduledCycle(
         String(document(request.run).projectId),
         cycleId,
       );
@@ -913,7 +928,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
               throw new CampaignError(
                 'SHOPEE_DYNAMIC_CATALOG_RECURRENCE_REQUIRED',
               );
-            await this.prepareDynamicCatalog(request);
+            await this.prepareDynamicCatalog(request, document(shopeeDynamic));
           }
           store.scheduleRecurring(
             config,

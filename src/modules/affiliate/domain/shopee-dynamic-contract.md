@@ -1,5 +1,111 @@
 # SHOPEE-DYNAMIC-MVP-001 — contrato de aquisição
 
+## Atualização LIVE-003 — autorização operacional restritiva
+
+Implementação validada offline sobre `a38b7153a0a43f08a6be74479b945e761e3bb4ad`.
+Isto não é homologação LIVE, autorização de consulta ou ativação operacional.
+
+Selecionar `SHOPEE_AFFILIATE_MODE=live` continua sem autorizar HTTP. A facade
+`ConfiguredShopeeAffiliate` exige capacidade interna por contexto assíncrono,
+com validade e limites separados para leituras e links. Fora desse contexto,
+falha antes do transporte. A classe de transporte single-use e o probe isolado
+permanecem com seu contrato explícito anterior; não são o scheduler.
+
+O Operations autenticado (sessão/CSRF via `LocalQcGuard`) disponibiliza
+`POST /operations/campaigns/shopee-live-authorization`:
+
+1. Enviar `{configuration, scope, confirmed: false}` para obter a prévia e
+   `scopeHash`, sem HTTP Shopee ou grant persistido.
+2. Após revisão humana, enviar a mesma configuração/escopo com `confirmed: true`
+   e `expectedScopeHash`. O servidor associa o ator autenticado e persiste o
+   grant imutável no journal existente; ainda não consulta a Shopee.
+3. Ativar explicitamente pelo endpoint existente
+   `POST /operations/campaigns/shopee-dynamic`, usando
+   `{request, configuration, authorizationId}`. Este passo poderá executar as
+   operações autorizadas; não é autorizado nesta T01 nem substitui o smoke.
+
+`scope` tem exatamente os campos de `ShopeeLiveAuthorizationScope`:
+
+```ts
+{
+  authorizationId, campaignId, campaignRevision,
+  productionDates, // datas civis explícitas, únicas, máximo 31
+  notBefore, expiresAt, // ISO com timezone, validade máxima 32 dias
+  maxOfferPages, // orçamento por ciclo, igual ao maxPages da configuração
+  maxLinks, // 0 bloqueia novas mutações sem marcar resultado remoto incerto
+  periodic, // true obrigatório para autorizar mais de uma data
+  evidenceRef,
+  costBasis: 'NO_CHARGE_CONFIRMED',
+  costEvidenceRef
+}
+```
+
+São referências de evidência declaradas pelo operador, não uma verificação
+automática de cobrança. Sem comprovação aplicável de ausência de cobrança,
+este gate não autoriza a chamada; operações pagas continuam fora deste contrato
+e exigem fluxo financeiro/orçamento próprio. Não há custo zero presumido.
+
+O hash revisado inclui modo LIVE, projeto, campanha/revisão, configuração
+normalizada completa, datas, limites e evidências. Os ciclos são derivados pelo
+servidor de campanha/data; não cabe ao operador escolher IDs técnicos diários.
+Cada tentativa HTTP recebe reserva append-only no journal antes do transporte.
+Replay não repete chamadas; uma reserva incerta nunca é apagada para tentar de
+novo. Uma autorização não pode ser ampliada reutilizando o mesmo identificador.
+
+O histórico da recorrência registra modo e authorizationId. Mudar a variável
+de ambiente não promove recorrência FAKE/histórica para LIVE. A recorrência
+FAKE controlada continua protegida, com LOCAL_ONLY e publicação DISABLED.
+Datas não autorizadas, grants expirados, outro projeto/campanha/revisão ou
+configuração alterada bloqueiam a aquisição antes de HTTP. Ocorrências já
+reservadas conservam seu produto e não consultam novamente. O scheduler não é
+habilitado por esta configuração. Não há novo catálogo, timer ou migração.
+
+Elegibilidade, direitos, associação comercial e rotação permanecem os anteriores:
+gerar um link não muda `associationVerified: false`. Sem evidências adequadas,
+o candidato fica WAITING. Autorização de transporte não concede direitos de
+mídia, aprovação comercial, permissão de publicação ou autorização financeira.
+
+### Primeiro smoke futuro — ainda não autorizado
+
+O runner existente `scripts/shopee-affiliate-live-once.mjs` consulta somente
+`productOfferV2(page: 1, limit: 1) { nodes { itemId } }`. Ele não inicia Nest,
+não gera link, não abre banco, não baixa imagem e imprime apenas metadados
+sanitizados. Homologa autenticação/contrato mínimo; não comprova direitos,
+associação ou operação comercial completa.
+
+Após autorização específica e confirmação de custo/limites aplicáveis, o comando
+previsto, a partir do checkout confirmado e com build correspondente, é:
+
+```powershell
+node --env-file="<arquivo privado autorizado>" scripts/shopee-affiliate-live-once.mjs --execute-once
+```
+
+Não executar esse comando nesta T01. Perímetro proposto: uma requisição POST ao
+endpoint fixo oficial `https://open-api.affiliate.shopee.com.br/graphql`, timeout
+10 segundos, resposta máxima 256 KiB, sem redirects ou retries. Credenciais
+privadas permanecem apenas na memória do processo. Relatório: requestCount,
+httpStatus, authentication, operation, offersReturned, contractFields e
+errorCodes; sem headers, assinatura, credenciais, ofertas ou corpo remoto.
+
+Custos e quotas oficiais continuam não comprovados pela evidência local. Os
+limites acima são controles do cliente, não quotas atribuídas à Shopee. O smoke
+exige consentimento próprio e não autoriza consultas periódicas ou mutações.
+Não houve probe real, grant operacional, alteração de SQLite LIVE, ativação de
+scheduler, publicação, deploy ou merge nesta implementação.
+
+Evidência offline desta atualização: 221 testes distintos focados aprovados,
+incluindo 14 cenários novos e o e2e diário HTTP existente. Foram verificados
+scopeHash/ator/autenticação, bloqueio padrão, ausência de credenciais, expiração,
+limites de leitura/mutação, grant imutável, FAKE não promovido, D1/D2 com HTTP
+simulado e direitos de fixture, replay, concorrência, restart e recuperação após
+parada sem repetir HTTP ou link incerto. TypeScript, build, lint do escopo e
+diff-check passaram; lint type-aware mantém avisos em testes e código legado.
+Nenhum resultado offline é apresentado como homologação autenticada real.
+
+As seções seguintes descrevem o contrato de aquisição original. A dependência
+histórica com Operations ali registrada foi atendida no PR #160; a ativação
+LIVE agora depende dos gates acima, sem remover as proteções de conteúdo.
+
 Base: `5915d31d361e6b8240a2891135be059b53d6bef1`. Persona: operador individual
 de canais temáticos. Implementação validada offline; LIVE não homologado.
 

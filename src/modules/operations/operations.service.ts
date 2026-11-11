@@ -24,13 +24,36 @@ export class OperationsService {
   async startDynamicCatalog(value: unknown, principal: unknown) {
     const actor = operationalQcIdentity.assertActive(principal);
     const input = document(value);
-    if (Object.keys(input).sort().join(',') !== 'configuration,request')
+    if (
+      ![
+        'configuration,request',
+        'authorizationId,configuration,request',
+      ].includes(Object.keys(input).sort().join(',')) ||
+      (Object.hasOwn(input, 'authorizationId') &&
+        typeof input.authorizationId !== 'string')
+    )
       fail('SHOPEE_DYNAMIC_INPUT_INVALID');
-    return this.campaigns.startDynamicCatalog(
+    const args = [
       input.request,
       input.configuration as import('../affiliate/domain/shopee-dynamic.js').ShopeeDynamicConfiguration,
       actor.id,
-    );
+    ] as const;
+    return input.authorizationId === undefined
+      ? this.campaigns.startDynamicCatalog(...args)
+      : this.campaigns.startDynamicCatalog(
+          ...args,
+          input.authorizationId as string,
+        );
+  }
+  async reviewShopeeLiveAuthorization(value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    try {
+      return await this.campaigns.reviewLiveAuthorization(value, actor.id);
+    } catch (error) {
+      if (error instanceof Error && /^SHOPEE_[A-Z_]+$/.test(error.message))
+        fail(error.message);
+      throw error;
+    }
   }
   constructor(
     @Inject(CampaignAdministration)

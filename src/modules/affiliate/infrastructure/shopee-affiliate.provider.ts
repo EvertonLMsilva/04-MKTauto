@@ -1,4 +1,6 @@
 import type { FactoryProvider } from '@nestjs/common';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
 import { SHOPEE_AFFILIATE } from '../application/ports/shopee-affiliate.port.js';
 import type { ShopeeAffiliatePort } from '../application/ports/shopee-affiliate.port.js';
 import type {
@@ -17,6 +19,54 @@ import type {
   ShopeeAffiliateOfferPage,
 } from '../domain/shopee-affiliate-contracts.js';
 
+export interface ShopeeLiveExecutionPermit {
+  mode: 'SHOPEE_LIVE';
+  expiresAt: string;
+  maxOfferPages: number;
+  maxLinks: number;
+  reserve: (operation: 'OFFERS' | 'LINK', index: number) => void;
+}
+const liveExecution = new AsyncLocalStorage<{
+  permit: ShopeeLiveExecutionPermit;
+  reads: number;
+  links: number;
+}>();
+// Internal capability, created only after checking an operator's persisted grant.
+// Async context prevents one campaign's permission leaking to another request.
+export function withShopeeLiveAuthorization<T>(
+  permit: ShopeeLiveExecutionPermit,
+  run: () => Promise<T>,
+): Promise<T> {
+  return liveExecution.run({ permit: { ...permit }, reads: 0, links: 0 }, run);
+}
+export function shopeeLiveLinkAllowed() {
+  const context = liveExecution.getStore();
+  return (
+    !!context &&
+    context.permit.mode === 'SHOPEE_LIVE' &&
+    Date.now() < Date.parse(context.permit.expiresAt) &&
+    context.links < context.permit.maxLinks
+  );
+}
+function reserveLiveRequest(operation: 'OFFERS' | 'LINK') {
+  const context = liveExecution.getStore();
+  if (
+    !context ||
+    context.permit.mode !== 'SHOPEE_LIVE' ||
+    Date.now() >= Date.parse(context.permit.expiresAt) ||
+    !Number.isFinite(Date.parse(context.permit.expiresAt))
+  )
+    throw new Error('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
+  const index = operation === 'OFFERS' ? ++context.reads : ++context.links;
+  const limit =
+    operation === 'OFFERS'
+      ? context.permit.maxOfferPages
+      : context.permit.maxLinks;
+  if (!Number.isSafeInteger(limit) || index > limit)
+    throw new Error('SHOPEE_LIVE_CALL_LIMIT');
+  context.permit.reserve(operation, index);
+}
+
 const provenance = (): ShopeeAffiliateProvenance => ({
   source: 'FAKE',
   fixtureVersion: 'shopee-affiliate-fake/1',
@@ -30,21 +80,19 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
     const { page, limit } = buildShopeeOffersQuery(input).variables;
     const offers = page === 1 ? await this.queryOffers() : [];
     return {
-      offers: offers
-        .slice(0, limit)
-        .map((offer) => ({
-          ...offer,
-          description: null,
-          availability: null,
-          shopName: null,
-          productUrl: null,
-          affiliateUrl: null,
-          priceRange: {
-            min: { amount: null, currency: null },
-            max: { amount: null, currency: null },
-          },
-          discountPercent: null,
-        })),
+      offers: offers.slice(0, limit).map((offer) => ({
+        ...offer,
+        description: null,
+        availability: null,
+        shopName: null,
+        productUrl: null,
+        affiliateUrl: null,
+        priceRange: {
+          min: { amount: null, currency: null },
+          max: { amount: null, currency: null },
+        },
+        discountPercent: null,
+      })),
       pageInfo: { page, limit, hasNextPage: false, nextPage: null },
     };
   }
@@ -148,6 +196,8 @@ export class ConfiguredShopeeAffiliate implements ShopeeOfferPagePort {
     }
   }
   queryOfferPage(input: ShopeeOfferQuery = {}) {
+    buildShopeeOffersQuery(input);
+    reserveLiveRequest('OFFERS');
     return this.operation((t) => t.queryOfferPage(input));
   }
   async queryOffers() {
@@ -161,6 +211,7 @@ export class ConfiguredShopeeAffiliate implements ShopeeOfferPagePort {
     input: ShopeeAffiliateLinkInput | { offerId: string },
   ): Promise<ShopeeAffiliateLink> {
     const checked = validateShopeeLinkInput(input);
+    reserveLiveRequest('LINK');
     return this.operation((t) => t.generateLink(checked));
   }
 }
