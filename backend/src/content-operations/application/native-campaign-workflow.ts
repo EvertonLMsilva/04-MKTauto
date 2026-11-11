@@ -1752,6 +1752,26 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         input.audioAssetId !== voiceTrackId
       )
         throw new CampaignError('CAMPAIGN_ALIGNMENT_MISMATCH');
+      if (
+        r.videoProduction &&
+        document(r.videoProduction).mode === 'LOCAL_IMAGES' &&
+        document(result.output).status === 'VERIFIED'
+      ) {
+        const durationMs = Number(input.durationMs);
+        const segments = document(result.output).segments as
+          { endMs: number }[] | undefined;
+        const lastEndMs = Number(segments?.at(-1)?.endMs);
+        const allowedTailMs = Math.min(2500, Math.floor(durationMs * 0.125));
+        if (
+          !Number.isSafeInteger(durationMs) ||
+          !Number.isSafeInteger(lastEndMs) ||
+          durationMs !== Number(document(done.AUDIO).durationMilliseconds) ||
+          lastEndMs <= 0 ||
+          lastEndMs > durationMs ||
+          durationMs - lastEndMs > allowedTailMs
+        )
+          throw new CampaignError('AUDIO_COVERAGE_REQUIRED');
+      }
       return result;
     }
     if (step === 'SUBTITLES')

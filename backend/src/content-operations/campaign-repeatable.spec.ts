@@ -631,6 +631,63 @@ test('LOCAL_IMAGES RECORDING selects the authorized recording without synthesizi
   expect(local.automaticAudio).toHaveBeenCalledTimes(2);
 });
 
+test('LOCAL_IMAGES rejects a verified alignment with a long silent tail before composition', async () => {
+  const script = { scriptId: 'script_001', contentHash: hash };
+  const alignment = {
+    input: {
+      scriptId: script.scriptId,
+      audioAssetId: 'voice_001',
+      durationMs: 20000,
+    },
+    output: {
+      alignmentId: 'alignment_001',
+      status: 'VERIFIED',
+      segments: [{ text: 'Confira pelo link', endMs: 7240 }],
+    },
+  };
+  const local = { alignAudio: vi.fn(async () => alignment) };
+  const workflow = new NativeCampaignWorkflow(
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    local as any,
+    {} as any,
+    {
+      getGlobalOperation: () => null,
+      getGlobalUsage: () => ({
+        policy: {
+          time_zone: 'America/Sao_Paulo',
+          daily_usd: '1',
+          monthly_usd: '20',
+        },
+        dailyUsd: '0',
+        monthlyUsd: '0',
+      }),
+    } as any,
+    {} as any,
+    {} as any,
+  );
+  const done = {
+    EDITORIAL: { script },
+    AUDIO: { voiceTrackId: 'voice_001', durationMilliseconds: 20000 },
+  };
+  await expect(
+    workflow.execute('ALIGNMENT', execution, request, done),
+  ).rejects.toThrow('AUDIO_COVERAGE_REQUIRED');
+  expect(local.alignAudio).toHaveBeenCalledTimes(1);
+  alignment.output.segments[0].endMs = 16260;
+  await expect(
+    workflow.execute('ALIGNMENT', execution, request, done),
+  ).rejects.toThrow('AUDIO_COVERAGE_REQUIRED');
+  alignment.output.segments[0].endMs = 17800;
+  await expect(
+    workflow.execute('ALIGNMENT', execution, request, done),
+  ).resolves.toEqual(alignment);
+});
+
 test('a local-image execution accepts an explicit package only for its publication stage', () => {
   expect(
     campaignRequest({
