@@ -27,6 +27,7 @@ export async function raceRunContext(
     ['domain', 'shopee-link-url'],
     ['domain', 'affiliate-run-context'],
     ['application', 'affiliate-commands.dto'],
+    ['application', 'affiliate-io'],
     ['application/ports', 'affiliate-run-context.port'],
     ['application', 'affiliate-run-context.service'],
     ['infrastructure', 'sqlite-affiliate.repository'],
@@ -34,7 +35,10 @@ export async function raceRunContext(
     ['infrastructure', 'sqlite-affiliate-run-context.repository'],
   ]) {
     const source = readFileSync(
-      new URL(`../../src/modules/affiliate/${folder}/${name}.ts`, import.meta.url),
+      new URL(
+        `../../src/modules/affiliate/${folder}/${name}.ts`,
+        import.meta.url,
+      ),
       'utf8',
     )
       .replace(/\.\.\/(?:domain|application)\//g, './')

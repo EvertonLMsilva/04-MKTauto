@@ -43,9 +43,9 @@ export class AffiliateRunContextController {
   ) {
     return this.respond(() => this.contexts.inspectRun(id, expectedBriefingId));
   }
-  private respond<T>(operation: () => T): T {
+  private async respond<T>(operation: () => T): Promise<Awaited<T>> {
     try {
-      return operation();
+      return await operation();
     } catch (error) {
       if (error instanceof ContractValidationError)
         throw new BadRequestException({ code: error.code, field: error.path });

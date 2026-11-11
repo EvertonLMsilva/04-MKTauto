@@ -22,13 +22,17 @@ export async function raceDiscovery(
     ['domain', 'affiliate-campaign-source'],
     ['domain', 'shopee-link-url'],
     ['application', 'affiliate-commands.dto'],
+    ['application', 'affiliate-io'],
     ['infrastructure', 'sqlite-affiliate.repository'],
     ['domain', 'discovery-media-evidence'],
     ['domain', 'affiliate-discovery'],
     ['infrastructure', 'sqlite-discovery.repository'],
   ]) {
     const source = readFileSync(
-      new URL(`../../src/modules/affiliate/${folder}/${name}.ts`, import.meta.url),
+      new URL(
+        `../../src/modules/affiliate/${folder}/${name}.ts`,
+        import.meta.url,
+      ),
       'utf8',
     ).replace(/\.\.\/(?:domain|application)\//g, './');
     const output = transpileModule(source, {

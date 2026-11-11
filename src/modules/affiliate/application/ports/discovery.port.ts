@@ -1,3 +1,4 @@
+import type { Io } from '../affiliate-io.js';
 import type {
   DiscoveryCandidate,
   DiscoveryPolicy,
@@ -16,7 +17,11 @@ export interface CatalogMetadata {
 }
 export interface DiscoveryBatch {
   candidates: DiscoveryCandidate[];
-  errors: { rowNumber: number; code: string; feedId?: string }[];
+  errors: {
+    rowNumber: number;
+    code: string;
+    feedId?: string;
+  }[];
   source: unknown;
 }
 export interface DiscoverySource {
@@ -27,7 +32,10 @@ export interface DiscoverySourceFactory {
   open(): Promise<DiscoverySource>;
 }
 export interface DiscoverySelection extends RankedDiscovery {
-  actor: { type: 'AUTOMATION'; id: string };
+  actor: {
+    type: 'AUTOMATION';
+    id: string;
+  };
   externalProductId: string;
   sourceId: string;
 }
@@ -41,17 +49,17 @@ export interface DiscoveryDecision {
   policy: DiscoveryPolicy;
   evaluatedAt: string;
 }
-export interface DiscoveryRepository {
-  close(): void;
-  get(id: string, requestHash?: string): DiscoveryDecision | null;
-  used(candidates: readonly DiscoveryCandidate[]): Set<string>;
+export interface DiscoveryRepository<A extends boolean = false> {
+  close(): Io<A, void>;
+  get(id: string, requestHash?: string): Io<A, DiscoveryDecision | null>;
+  used(candidates: readonly DiscoveryCandidate[]): Io<A, Set<string>>;
   reserve(
     id: string,
     hash: string,
-    create: () => DiscoveryDecision,
+    create: () => Io<A, DiscoveryDecision>,
     at: string,
-  ): DiscoveryDecision;
+  ): Io<A, DiscoveryDecision>;
 }
-export interface DiscoveryRepositoryFactory {
-  open(readOnly?: boolean): DiscoveryRepository;
+export interface DiscoveryRepositoryFactory<A extends boolean = false> {
+  open(readOnly?: boolean): Io<A, DiscoveryRepository<A>>;
 }

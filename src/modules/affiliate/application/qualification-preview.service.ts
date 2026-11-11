@@ -23,7 +23,7 @@ import type {
 export class QualificationPreviewService {
   constructor(
     private readonly feeds: FeedQualificationService,
-    private readonly persistence?: AffiliateRepositoryFactory,
+    private readonly persistence?: AffiliateRepositoryFactory<boolean>,
     private readonly projects?: ProjectSnapshotReader,
   ) {}
   async preview(raw: unknown) {
@@ -199,9 +199,9 @@ export class QualificationPreviewService {
         const project = await this.projects.get(input.projectId);
         if (!project) pending.push('PROJECT_NOT_FOUND');
         else context.projectHash = affiliateHash(project);
-        const repo = this.persistence.open(true);
+        const repo = await this.persistence.open(true);
         try {
-          const check = (
+          const check = async (
             read: (id: string, r: number) => unknown,
             id: string,
             revision: number,
@@ -212,22 +212,22 @@ export class QualificationPreviewService {
               pending.push(prefix + '_REVISION_INVALID');
               return;
             }
-            const current = read(id, revision);
-            if (read(id, revision + 1))
+            const current = await read(id, revision);
+            if (await read(id, revision + 1))
               pending.push(prefix + '_REVISION_STALE');
             if (current && affiliateHash(current) !== affiliateHash(value))
               pending.push(prefix + '_REVISION_CONFLICT');
-            if (!current && revision > 1 && !read(id, revision - 1))
+            if (!current && revision > 1 && !(await read(id, revision - 1)))
               pending.push(prefix + '_PREVIOUS_REVISION_REQUIRED');
           };
-          check(
+          await check(
             (id, r) => repo.getProduct(id, r),
             product.productId,
             product.revision,
             product,
             'PRODUCT',
           );
-          check(
+          await check(
             (id, r) => repo.getCampaign(id, r),
             campaign.campaignId,
             campaign.revision,
@@ -236,7 +236,7 @@ export class QualificationPreviewService {
           );
           context.revisionsVerified = !pending.some((r) => /REVISION/.test(r));
         } finally {
-          repo.close();
+          await repo.close();
         }
       } catch {
         pending.push('CATALOG_CONTEXT_UNAVAILABLE');
