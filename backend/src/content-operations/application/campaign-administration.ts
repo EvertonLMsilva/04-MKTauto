@@ -1,4 +1,5 @@
 import { DatabaseSync } from 'node:sqlite';
+import { assertFakeExecutionPolicy, CONTROLLED_FAKE_RUN_PREFIX } from '../domain/fake-execution-policy.js';
 import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import { PRODUCT_FRAMING_POLICY } from '../../media/domain/product-framing.js';
 import {
@@ -93,8 +94,13 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     this.db?.close();
   }
   async schedule(value: unknown) {
+    return this.scheduleRequest(value, false);
+  }
+  private async scheduleRequest(value: unknown, controlled: boolean) {
     if (document(value).legacyRecovery)
       throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
+    if (!controlled && (Object.hasOwn(document(value), 'fakeExecutionPolicy') || String(document(value).runId).startsWith(CONTROLLED_FAKE_RUN_PREFIX)))
+      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     const r = campaignRequest(value);
     if (r.selectionMode === 'CATALOG' || Object.hasOwn(r, 'catalogSelection'))
       throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
@@ -109,6 +115,18 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       r,
       new Date().toISOString(),
     );
+  }
+  async startControlledFake(value: unknown, actorId: string) {
+    identifier(actorId);
+    const request = await this.workflow.localRequest(value, actorId);
+    if (!assertFakeExecutionPolicy(request)) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+    return this.scheduleRequest(request, true);
+  }
+  controlledFake(id: string) {
+    const store = this.open(), execution = store.get(identifier(id));
+    const policy = assertFakeExecutionPolicy(executionRequest(store.history(id)), execution);
+    if (!policy) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+    return { execution, policy };
   }
   async startLocal(value: unknown) {
     const input = localRequestInput(value),
@@ -410,6 +428,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   publicationContext(id: string) {
     const c = this.finalizationContext(id),
       handoff = c.completed.HANDOFF ? document(c.completed.HANDOFF) : null;
+    if (assertFakeExecutionPolicy(c.request, c.execution)) throw new CampaignError('FAKE_EXECUTION_PUBLICATION_DISABLED');
     if (
       c.execution.status !== 'SUCCEEDED' ||
       !handoff ||
@@ -447,7 +466,23 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.open().cancel(id, new Date().toISOString());
   }
   async resume(id: string, value?: unknown) {
+    return this.resumeRequest(id, value);
+  }
+  async resumeControlledFake(id: string, expectedVersion: number) {
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new CampaignError('INVALID_EXECUTION_VERSION');
+    const { execution } = this.controlledFake(id);
+    if (execution.version !== expectedVersion) throw new CampaignError('EXECUTION_VERSION_CONFLICT');
+    return this.resumeRequest(id, undefined, true);
+  }
+  private async resumeRequest(id: string, value?: unknown, controlledCommand = false) {
     const store = this.open();
+    const current = store.get(id), persisted = executionRequest(store.history(id));
+    const controlled = assertFakeExecutionPolicy(persisted, current);
+    if (controlled) this.workflow.assertControlledRuntime(persisted, current);
+    if (controlled && value != null && Object.keys(document(value)).length) throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
+    if (controlled && !controlledCommand) throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    if (controlledCommand && !controlled) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+    if (controlled && ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(current.status)) return current;
     if (
       (!value || Object.keys(document(value)).length === 0) &&
       ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(store.get(id).status) &&
@@ -621,6 +656,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       store = this.open(),
       execution = store.get(id),
       history = store.history(id);
+    if (assertFakeExecutionPolicy(executionRequest(history), execution)) throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
     if (
       Object.keys(input).sort().join(',') !==
         'previousScriptContentHash,reason,scriptId' ||

@@ -1,4 +1,8 @@
 import { PublishingModule } from '../publishing/publishing.module.js';
+import { AffiliateModule } from '../affiliate/affiliate.module.js';
+import { FakeCampaignCommandController } from './fake-campaign-command.controller.js';
+import { FakeCampaignCommandService } from './fake-campaign-command.service.js';
+import { FakeCampaignCommandGuard } from './fake-campaign-command.guard.js';
 import { Module } from '@nestjs/common';
 import { CampaignOrchestrationModule } from '../content-operations/campaign-orchestration.module.js';
 import { MediaModule } from '../media/media.module.js';
@@ -7,10 +11,12 @@ import { OperationsService } from './operations.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-summary.repository.js';
 @Module({
-  imports: [CampaignOrchestrationModule, MediaModule, PublishingModule],
-  controllers: [OperationsController],
+  imports: [CampaignOrchestrationModule, MediaModule, PublishingModule, AffiliateModule],
+  controllers: [OperationsController, FakeCampaignCommandController],
   providers: [
     OperationsService,
+    FakeCampaignCommandService,
+    FakeCampaignCommandGuard,
     {
       provide: DashboardSummaryService,
       useFactory: () => new DashboardSummaryService(
