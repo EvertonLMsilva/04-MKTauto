@@ -11,6 +11,38 @@ test('dynamic configuration route requires the existing authenticated/CSRF Opera
       OperationsController.prototype.startDynamicCatalog,
     ),
   ).toContain(LocalQcGuard);
+  expect(
+    Reflect.getMetadata(
+      GUARDS_METADATA,
+      Object.getOwnPropertyDescriptor(
+        OperationsController.prototype,
+        'reviewShopeeLiveAuthorization',
+      )!.value,
+    ),
+  ).toContain(LocalQcGuard);
+});
+
+test('only authenticated Operations can preview or confirm a LIVE grant', async () => {
+  const campaigns = {
+    reviewLiveAuthorization: vi.fn(async () => ({ scopeHash: 'reviewed' })),
+  };
+  const service = new OperationsService(campaigns as any, {} as any, {} as any);
+  await expect(
+    service.reviewShopeeLiveAuthorization({ confirmed: true }, undefined),
+  ).rejects.toThrow();
+  expect(campaigns.reviewLiveAuthorization).not.toHaveBeenCalled();
+  const active = vi
+    .spyOn(operationalQcIdentity, 'assertActive')
+    .mockReturnValue({ id: 'operator_001' } as any);
+  try {
+    await service.reviewShopeeLiveAuthorization({ confirmed: false }, {});
+    expect(campaigns.reviewLiveAuthorization).toHaveBeenCalledExactlyOnceWith(
+      { confirmed: false },
+      'operator_001',
+    );
+  } finally {
+    active.mockRestore();
+  }
 });
 test('unauthenticated callers cannot configure or run acquisition; authenticated requests delegate once', async () => {
   const campaigns = {

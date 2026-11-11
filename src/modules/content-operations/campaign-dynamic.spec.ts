@@ -123,11 +123,29 @@ afterEach(() => {
 
 test('dynamic activation cannot replace a controlled FAKE recurrence', async () => {
   const f = fixture();
-  const open = vi.spyOn(f.admin as any, 'open').mockReturnValue({recurrences: () => [{config: {request: {campaignId: 'camp_001', fakeExecutionPolicy: {mode: 'FAKE'}}}}]});
+  const open = vi
+    .spyOn(f.admin as any, 'open')
+    .mockReturnValue({
+      recurrences: () => [
+        {
+          config: {
+            request: {
+              campaignId: 'camp_001',
+              fakeExecutionPolicy: { mode: 'FAKE' },
+            },
+          },
+        },
+      ],
+    });
   try {
-    await expect(f.admin.startDynamicCatalog(f.input, f.configuration, 'operator_001')).rejects.toThrow('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    await expect(
+      f.admin.startDynamicCatalog(f.input, f.configuration, 'operator_001'),
+    ).rejects.toThrow('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     expect(f.offers).not.toHaveBeenCalled();
-  } finally {open.mockRestore(); await f.close();}
+  } finally {
+    open.mockRestore();
+    await f.close();
+  }
 });
 
 test('D1 acquires before reservation; D2 uses the official tick after restart; WAITING never fabricates eligibility', async () => {
@@ -200,6 +218,22 @@ test('concurrent scheduler owners do not duplicate acquisition or the frozen occ
   }
 });
 
+test('changing provider mode cannot promote a persisted FAKE recurrence to LIVE', async () => {
+  const f = fixture();
+  vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'fake');
+  try {
+    await f.admin.startDynamicCatalog(f.input, f.configuration, 'operator_001');
+    await f.restart();
+    vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
+    f.setTime('2026-11-12T13:00:00.000Z');
+    await f.admin.tick();
+    expect(f.admin.list()).toHaveLength(1);
+    expect(f.offers).toHaveBeenCalledTimes(1);
+  } finally {
+    await f.close();
+  }
+});
+
 test('disabled acquisition preserves ordinary CATALOG and FIXED paths; LIVE and mismatched projects fail before acquisition', async () => {
   const f = fixture();
   try {
@@ -218,7 +252,7 @@ test('disabled acquisition preserves ordinary CATALOG and FIXED paths; LIVE and 
     vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
     await expect(
       f.admin.startDynamicCatalog(f.input, f.configuration, 'operator_001'),
-    ).rejects.toThrow('SHOPEE_DYNAMIC_LIVE_FORBIDDEN');
+    ).rejects.toThrow('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
     vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'fake');
     await expect(
       f.admin.startDynamicCatalog(

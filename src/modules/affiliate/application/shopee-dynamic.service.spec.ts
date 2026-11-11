@@ -8,10 +8,19 @@ import { p2EditorialFixture } from '../../../../test/support/p2-editorial-fixtur
 import { SqliteAffiliatePersistence } from '../infrastructure/sqlite-affiliate.persistence.js';
 import { ShopeeDynamicJournal } from '../infrastructure/shopee-dynamic-journal.js';
 import { ShopeeCatalogCommit } from '../infrastructure/shopee-catalog-commit.js';
-import { shopeeAffiliateProvider } from '../infrastructure/shopee-affiliate.provider.js';
+import {
+  shopeeAffiliateProvider,
+  withShopeeLiveAuthorization,
+} from '../infrastructure/shopee-affiliate.provider.js';
 import { AffiliateService } from './affiliate.service.js';
 import { ShopeeCatalogService } from './shopee-catalog.service.js';
-import { ShopeeDynamicService } from './shopee-dynamic.service.js';
+import {
+  ShopeeDynamicService,
+  shopeeOperationalCycleId,
+} from './shopee-dynamic.service.js';
+import { CampaignAdministration } from '../../content-operations/application/campaign-administration.js';
+import { NativeCampaignWorkflow } from '../../content-operations/application/native-campaign-workflow.js';
+import { executionRequest } from '../../content-operations/application/campaign-orchestrator.js';
 import { affiliateHash } from '../domain/affiliate-contracts.js';
 import { eligibleCatalogCandidate } from '../domain/affiliate-catalog.js';
 import { freezeCatalogRequest } from '../../content-operations/domain/product-rotation.js';
@@ -21,6 +30,35 @@ const { png } = await import(
   new URL('../../../../test-support/physical-fixtures.js', import.meta.url).href
 );
 const at = '2026-11-11T12:00:00Z';
+// These composition tests exercise transport/catalog behavior using an internal
+// synthetic capability. Persisted operator-grant checks have their own suite.
+const permitted = <T>(run: () => Promise<T>) =>
+  withShopeeLiveAuthorization(
+    {
+      mode: 'SHOPEE_LIVE',
+      expiresAt: '2100-01-01T00:00:00Z',
+      maxOfferPages: 10,
+      maxLinks: 5,
+      reserve: () => {},
+    },
+    run,
+  );
+function compositionService(service: ShopeeDynamicService) {
+  return new Proxy(service, {
+    get(target, key, receiver) {
+      const method = Reflect.get(target, key, receiver) as unknown;
+      if (
+        ['runCycle', 'recoverCycle', 'runScheduledCycle'].includes(
+          String(key),
+        ) &&
+        typeof method === 'function'
+      )
+        return (...args: unknown[]) =>
+          permitted(() => method.apply(target, args));
+      return method;
+    },
+  });
+}
 const node = (id = '11', commission = '0.12') => ({
   itemId: id,
   shopId: '7',
@@ -34,6 +72,7 @@ const node = (id = '11', commission = '0.12') => ({
 });
 let f: ReturnType<typeof p2EditorialFixture>;
 let service: ShopeeDynamicService;
+let unscopedService: ShopeeDynamicService;
 let affiliate: AffiliateService;
 let journal: ShopeeDynamicJournal;
 let config: ShopeeDynamicConfiguration;
@@ -43,6 +82,7 @@ let fetchMock: ReturnType<
 let imagePath: string;
 
 beforeEach(async () => {
+  vi.spyOn(Date,'now').mockReturnValue(Date.parse('2026-11-11T12:00:00Z'));
   f = p2EditorialFixture();
   const db = new DatabaseSync(f.database);
   try {
@@ -190,14 +230,16 @@ beforeEach(async () => {
     new ShopeeCatalogCommit(f.database),
   );
   journal = new ShopeeDynamicJournal(f.database);
-  service = new ShopeeDynamicService(
+  unscopedService = new ShopeeDynamicService(
     new ShopeeCatalogService(shopeeAffiliateProvider.useFactory()),
     affiliate,
     journal,
     projects,
   );
+  service = compositionService(unscopedService);
 });
 afterEach(() => {
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   f?.cleanup();
@@ -209,12 +251,14 @@ test('LIVE provider resolves Nest and isolates every page/link transport; no req
   }).compile();
   const provider = module.get(SHOPEE_AFFILIATE);
   expect(fetchMock).not.toHaveBeenCalled();
-  await provider.queryOfferPage({ limit: 2 });
-  await provider.queryOfferPage({ limit: 2 });
-  await provider.generateLink({
-    offerId: 'shopee-item-11',
-    originUrl: node().productLink,
-    subIds: ['one'],
+  await permitted(async () => {
+    await provider.queryOfferPage({ limit: 2 });
+    await provider.queryOfferPage({ limit: 2 });
+    await provider.generateLink({
+      offerId: 'shopee-item-11',
+      originUrl: node().productLink,
+      subIds: ['one'],
+    });
   });
   expect(fetchMock).toHaveBeenCalledTimes(3);
   expect(fetchMock.mock.calls[2][1].body).toContain('one');
@@ -256,11 +300,13 @@ test('integrates discovery → deterministic selection → SubIDs → verified l
     offer: { productId: '11', shopId: '7', offerId: 'shopee-item-11' },
   });
   const calls = fetchMock.mock.calls.length;
-  const restarted = new ShopeeDynamicService(
-    new ShopeeCatalogService(shopeeAffiliateProvider.useFactory()),
-    affiliate,
-    new ShopeeDynamicJournal(f.database),
-    { get: async (id) => f.base.get(id) },
+  const restarted = compositionService(
+    new ShopeeDynamicService(
+      new ShopeeCatalogService(shopeeAffiliateProvider.useFactory()),
+      affiliate,
+      new ShopeeDynamicJournal(f.database),
+      { get: async (id) => f.base.get(id) },
+    ),
   );
   expect(await restarted.runCycle('project_001', 'cycle_001')).toEqual(result);
   expect(fetchMock).toHaveBeenCalledTimes(calls);
@@ -647,3 +693,185 @@ test.each(['DENIED', 'UNCONFIRMED', 'SCOPED'])(
     expect(fetchMock).toHaveBeenCalledTimes(1);
   },
 );
+
+const liveScope = (maxLinks = 1) => ({
+  authorizationId: 'live_grant_fixture',
+  campaignId: 'camp_001',
+  campaignRevision: 1,
+  productionDates: ['2026-11-11', '2026-11-12'],
+  periodic: true,
+  notBefore: '2026-11-01T00:00:00Z',
+  expiresAt: '2026-12-01T00:00:00Z',
+  maxOfferPages: 2,
+  maxLinks,
+  evidenceRef: 'FICTITIOUS_TEST_ONLY:operator-reviewed',
+  costBasis: 'NO_CHARGE_CONFIRMED' as const,
+  costEvidenceRef: 'FICTITIOUS_TEST_ONLY:terms',
+});
+async function approveLive(maxLinks = 1) {
+  const scope = liveScope(maxLinks),
+    preview = await unscopedService.previewLiveAuthorization(config, scope);
+  await unscopedService.approveLiveAuthorization(
+    config,
+    scope,
+    preview.scopeHash,
+    'operator_001',
+  );
+  await unscopedService.configure(config);
+  return scope.authorizationId;
+}
+test('persisted LIVE authorization drives real scheduler D1/D2 with HTTP doubles, SubIDs, rights and immutable CATALOG', async () => {
+  const grant = await approveLive();
+  const workflow = new NativeCampaignWorkflow(
+    affiliate,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+    {} as any,
+  );
+  vi.spyOn(workflow, 'execute').mockRejectedValue(
+    Object.assign(new Error('EDITORIAL_PROVIDER_UNAVAILABLE'), {
+      code: 'EDITORIAL_PROVIDER_UNAVAILABLE',
+    }),
+  );
+  let clock = '2026-11-11T13:00:00.000Z';
+  const open = () =>
+    new CampaignAdministration(
+      f.database,
+      workflow,
+      false,
+      () => clock,
+      undefined,
+      unscopedService,
+    );
+  let admin = open();
+  const input = {
+    campaignId: 'camp_001',
+    campaignRevision: 1,
+    projectVersion: 1,
+    requestId: 'live_activate_fixture',
+    requestedAt: clock,
+    selectionMode: 'CATALOG',
+    recurrence: { enabled: true },
+  };
+  try {
+    const first = await admin.startDynamicCatalog(
+      input,
+      config,
+      'operator_001',
+      grant,
+    );
+    const frozen = executionRequest(
+      admin.history(first.execution_id),
+    ).catalogSelection;
+    expect(frozen).toMatchObject({
+      productId: 'shopee_11',
+      method: 'ROUND_ROBIN_ID_V1',
+    });
+    await admin.onModuleDestroy();
+    clock = '2026-11-12T13:00:00.000Z';
+    admin = open();
+    await admin.tick();
+    await admin.tick();
+    expect(admin.list()).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(([, o]) =>
+        String(o.body).includes('mutation'),
+      ),
+    ).toHaveLength(1);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(
+      executionRequest(admin.history(first.execution_id)).catalogSelection,
+    ).toEqual(frozen);
+  } finally {
+    await admin.onModuleDestroy();
+  }
+});
+test('persisted LIVE grant recovers after a stopped catalog commit without repeating HTTP', async () => {
+  const grant = await approveLive(),
+    cycle = shopeeOperationalCycleId('camp_001', '2026-11-11');
+  const commit = vi
+    .spyOn(affiliate, 'prepareShopeeCatalog')
+    .mockRejectedValueOnce(new Error('INJECTED_WORKER_STOP'));
+  await expect(
+    unscopedService.runAuthorizedScheduledCycle(
+      'project_001',
+      cycle,
+      grant,
+      'camp_001',
+      '2026-11-11',
+    ),
+  ).rejects.toThrow('INJECTED_WORKER_STOP');
+  const calls = fetchMock.mock.calls.length;
+  commit.mockRestore();
+  const restarted = new ShopeeDynamicService(
+    new ShopeeCatalogService(shopeeAffiliateProvider.useFactory()),
+    affiliate,
+    new ShopeeDynamicJournal(f.database),
+    { get: async (id) => f.base.get(id) },
+  );
+  expect(
+    (
+      await restarted.runAuthorizedScheduledCycle(
+        'project_001',
+        cycle,
+        grant,
+        'camp_001',
+        '2026-11-11',
+      )
+    ).decisions[0].status,
+  ).toBe('PREPARED');
+  expect(fetchMock).toHaveBeenCalledTimes(calls);
+});
+
+test('a read-only grant leaves eligible product waiting for link permission without reserving an uncertain mutation', async () => {
+  const grant = await approveLive(0),
+    cycle = shopeeOperationalCycleId('camp_001', '2026-11-11');
+  const result = await unscopedService.runAuthorizedScheduledCycle(
+    'project_001',
+    cycle,
+    grant,
+    'camp_001',
+    '2026-11-11',
+  );
+  expect(result.decisions[0].reasons).toEqual([
+    'LIVE_LINK_AUTHORIZATION_REQUIRED',
+  ]);
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
+test('authorized uncertain link is never repeated after restart or on the separately authorized next day', async () => {
+  const normal = fetchMock.getMockImplementation()!;
+  fetchMock.mockImplementation(async (url, options) => {
+    if (String(options.body).includes('mutation'))
+      throw new Error('PRIVATE_REMOTE_FAILURE');
+    return normal(url, options);
+  });
+  const grant = await approveLive();
+  for (const day of ['2026-11-11', '2026-11-12']) {
+    const restarted = new ShopeeDynamicService(
+      new ShopeeCatalogService(shopeeAffiliateProvider.useFactory()),
+      affiliate,
+      new ShopeeDynamicJournal(f.database),
+      { get: async (id) => f.base.get(id) },
+    );
+    const result = await restarted.runAuthorizedScheduledCycle(
+      'project_001',
+      shopeeOperationalCycleId('camp_001', day),
+      grant,
+      'camp_001',
+      day,
+    );
+    expect(result.decisions[0].reasons).toEqual([
+      'LINK_RECONCILIATION_REQUIRED',
+    ]);
+  }
+  expect(
+    fetchMock.mock.calls.filter(([, o]) => String(o.body).includes('mutation')),
+  ).toHaveLength(1);
+});
