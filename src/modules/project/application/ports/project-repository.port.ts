@@ -9,6 +9,10 @@ export interface ProjectRecord {
   readonly snapshot: ProjectSnapshot;
 }
 export type CommandResult = ProjectSnapshot | ProjectRecord;
+/** Defaults preserve the synchronous SQLite contract; pg opts in explicitly. */
+export type ProjectResult<T, Async extends boolean = false> = Async extends true
+  ? Promise<T>
+  : T;
 export interface CommandRecord {
   idempotencyKey: string;
   commandType: 'CREATE_PROJECT' | 'CREATE_PROJECT_VERSION' | 'ARCHIVE_PROJECT';
@@ -16,23 +20,29 @@ export interface CommandRecord {
   actor: string;
   occurredAt: string;
 }
-export interface ProjectActions {
-  create(snapshot: ProjectSnapshot): ProjectSnapshot;
+export interface ProjectActions<Async extends boolean = false> {
+  create(snapshot: ProjectSnapshot): ProjectResult<ProjectSnapshot, Async>;
   createVersion(
     snapshot: ProjectSnapshot,
     expectedVersion: number,
-  ): ProjectSnapshot;
-  archive(projectId: string, expectedVersion: number): ProjectRecord;
+  ): ProjectResult<ProjectSnapshot, Async>;
+  archive(
+    projectId: string,
+    expectedVersion: number,
+  ): ProjectResult<ProjectRecord, Async>;
 }
-/** Operations and callbacks run synchronously within a single SQLite transaction. */
-export interface ProjectRepository {
-  get(projectId: string, version?: number): ProjectSnapshot | null;
+/** Every operation and its receipt run on one adapter-owned transaction. */
+export interface ProjectRepository<Async extends boolean = false> {
+  get(
+    projectId: string,
+    version?: number,
+  ): ProjectResult<ProjectSnapshot | null, Async>;
   executeCommand<T extends CommandResult>(
     record: CommandRecord,
-    operation: (actions: ProjectActions) => T,
-  ): T;
-  close(): void;
+    operation: (actions: ProjectActions<Async>) => ProjectResult<T, Async>,
+  ): ProjectResult<T, Async>;
+  close(): ProjectResult<void, Async>;
 }
-export interface ProjectRepositoryFactory {
-  open(readOnly?: boolean): ProjectRepository;
+export interface ProjectRepositoryFactory<Async extends boolean = false> {
+  open(readOnly?: boolean): ProjectResult<ProjectRepository<Async>, Async>;
 }

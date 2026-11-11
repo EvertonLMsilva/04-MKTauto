@@ -5,6 +5,8 @@ import { DatabaseSync } from 'node:sqlite';
 import { ProjectCommandService } from './project-command.service.js';
 import { ProjectCommandError } from './ports/project-commands.port.js';
 import { projectFixture } from '../../../../test/support/project-fixture.js';
+import type { ProjectRepositoryFactory } from './ports/project-repository.port.js';
+import { ProjectRepositoryError } from '../domain/project.errors.js';
 
 describe('ProjectCommandService', () => {
   const command = {
@@ -98,4 +100,74 @@ describe('ProjectCommandService', () => {
       ).rejects.toThrow('explicit absolute path');
     },
   );
+
+  it('waits for asynchronous repository completion before closing the handle', async () => {
+    const events: string[] = [];
+    const factory: ProjectRepositoryFactory<true> = {
+      async open() {
+        events.push('open');
+        return {
+          async get() {
+            return null;
+          },
+          async executeCommand(_record, operation) {
+            const result = await operation({
+              async create(snapshot) {
+                events.push('write');
+                return snapshot;
+              },
+              async createVersion() {
+                throw new Error('unexpected');
+              },
+              async archive() {
+                throw new Error('unexpected');
+              },
+            });
+            await Promise.resolve();
+            events.push('commit');
+            return result;
+          },
+          async close() {
+            await Promise.resolve();
+            events.push('close');
+          },
+        };
+      },
+    };
+    const result = await new ProjectCommandService<true>(factory).createProject(
+      command,
+    );
+    expect(result.project.id).toBe(command.project.id);
+    expect(events).toEqual(['open', 'write', 'commit', 'close']);
+  });
+
+  it('maps asynchronous repository rejection to the existing command error contract', async () => {
+    const close = vi.fn(async () => {});
+    const factory: ProjectRepositoryFactory<true> = {
+      async open() {
+        return {
+          async get() {
+            return null;
+          },
+          async executeCommand() {
+            await Promise.resolve();
+            throw new ProjectRepositoryError(
+              'PROJECT_NOT_FOUND',
+              'project.id',
+              'not found',
+            );
+          },
+          close,
+        };
+      },
+    };
+    await expect(
+      new ProjectCommandService<true>(factory).createProject(command),
+    ).rejects.toMatchObject({
+      code: 'PROJECT_NOT_FOUND',
+      field: 'project.id',
+      name: 'ProjectApplicationError',
+    });
+    expect(close).toHaveBeenCalledOnce();
+  });
 });
