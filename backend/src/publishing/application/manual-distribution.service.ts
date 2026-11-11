@@ -1,7 +1,10 @@
 import { HumanApprovalService } from './human-approval.service.js';
 import { validateHumanApprovalIdentity } from '../domain/human-approval-contracts.js';
 import type { CampaignOperationalFacts } from '../../content-operations/application/campaign-operations.port.js';
-import { assertPackageApprovalBinding, assertPublicationHandoff } from './publication-handoff.js';
+import {
+  assertPackageApprovalBinding,
+  assertPublicationHandoff,
+} from './publication-handoff.js';
 import {
   affiliateHash,
   rejectAffiliateDynamicPrice,
@@ -12,6 +15,7 @@ import {
   exact,
   hashValue,
   publicText,
+  https,
   timestamp,
   seal,
   validatePrepare,
@@ -47,6 +51,9 @@ export class ManualDistributionService {
         v.campaignRevision,
       );
       if (!campaign) fail('DISTRIBUTION_CAMPAIGN_NOT_FOUND');
+      publicText(campaign.cta, 'cta');
+      publicText(campaign.disclosure, 'disclosure');
+      https(campaign.affiliateUrl, 'affiliateUrl');
       const product: any = repo.catalog.getProduct(
           campaign.productId,
           campaign.productRevision,

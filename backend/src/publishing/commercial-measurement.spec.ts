@@ -47,7 +47,7 @@ const input = {
   periodEnd: '2026-11-09T00:00:00Z',
 };
 
-async function fixture(schema = 43) {
+async function fixture(schema = 43, affiliateUrl?: string) {
   const f = p2EditorialFixture();
   provisionSchema(f.base.db, schema);
   const persistence = new SqliteAffiliatePersistence(f.database);
@@ -108,6 +108,7 @@ async function fixture(schema = 43) {
       ...repo.getCampaign('camp_001', 1)!,
       revision: 2,
       productRevision: 2,
+      ...(affiliateUrl ? { affiliateUrl } : {}),
     };
     repo.registerCampaign(campaign, 'measurement_campaign', true);
     repo.registerProduct(
@@ -299,6 +300,74 @@ async function fixture(schema = 43) {
     close: () => f.cleanup(),
   };
 }
+
+test.each([
+  'campaignId',
+  'campaignRevision',
+  'videoRenderId',
+  'qualityControlReportId',
+])('commercial package rejects empty required reference: %s', async (field) => {
+  const f = await fixture();
+  try {
+    expect(() =>
+      f.publishing.prepare(
+        {
+          campaignId: 'camp_001',
+          campaignRevision: 2,
+          videoRenderId: 'render_001',
+          qualityControlReportId: 'qc_001',
+          platform: 'instagram',
+          account: '123456789',
+          caption: 'Produto autorizado',
+          [field]: '',
+        },
+        'invalid_reference',
+      ),
+    ).toThrow(/DISTRIBUTION_INVALID/);
+  } finally {
+    f.close();
+  }
+});
+
+test.each(['cta', 'disclosure', 'affiliateUrl'])(
+  'commercial package rejects missing frozen data before persisting: %s',
+  async (field) => {
+    const f = await fixture();
+    let session: ReturnType<typeof f.store.open> | undefined;
+    try {
+      const o = await f.occurrence('2026-11-08');
+      session = f.store.open(false);
+      const catalog = session.manual.repository.catalog;
+      const campaign = catalog.getCampaign(
+        o.pkg.campaignId,
+        o.pkg.campaignRevision,
+      );
+      vi.spyOn(catalog, 'getCampaign').mockReturnValue({
+        ...campaign,
+        [field]: '',
+      });
+      const before = session.manual.repository.list('PACKAGE');
+      expect(() =>
+        session!.manual.prepare(
+          {
+            campaignId: o.pkg.campaignId,
+            campaignRevision: o.pkg.campaignRevision,
+            videoRenderId: o.render.videoRenderId,
+            qualityControlReportId: o.pkg.identity.qualityControlReportId,
+            platform: 'facebook',
+            account: '123456789',
+            caption: 'Produto autorizado',
+          },
+          'invalid_commercial',
+        ),
+      ).toThrow(/DISTRIBUTION_INVALID/);
+      expect(session.manual.repository.list('PACKAGE')).toEqual(before);
+    } finally {
+      session?.close();
+      f.close();
+    }
+  },
+);
 
 test('confirmed publication resolves frozen catalog identity; absent measurements and costs stay UNKNOWN', async () => {
   const f = await fixture();
@@ -861,7 +930,9 @@ test('legacy recordResults is included and can be corrected without overwriting 
 });
 
 test('E2E HTTP: real CATALOG selection, official fake publication, verifiable result, summary by execution', async () => {
-  const f = await fixture();
+  const affiliateUrl =
+    'https://example.com/item?sub_id1=campaign%2B001&sub_id2=video_001';
+  const f = await fixture(43, affiliateUrl);
   let app: any;
   const fetch = vi
     .spyOn(globalThis, 'fetch')
@@ -885,6 +956,23 @@ test('E2E HTTP: real CATALOG selection, official fake publication, verifiable re
       },
     );
     expect(published.receipt.permalink).toContain('/fake_');
+    const persisted = new SocialPublicationRepository(f.f.base).get(
+      published.operationId,
+    );
+    expect(persisted.executionMode).toBe('fake');
+    expect(persisted.caption).toBe(
+      [o.pkg.caption, o.pkg.cta, o.pkg.disclosure, affiliateUrl].join('\n\n'),
+    );
+    expect(
+      await instagram.execute(
+        claimed,
+        { packageHash: o.pkg.contentHash, accountId: '123456789' },
+        {
+          videoRenderId: o.render.videoRenderId,
+          contentHash: o.render.contentHash,
+        },
+      ),
+    ).toEqual(published);
     const module = await Test.createTestingModule({
       controllers: [PublishingController],
       providers: [
@@ -1116,6 +1204,124 @@ async function commercialOccurrenceGrant(
     rmSync(root, { recursive: true, force: true });
   }
 }
+
+test.each([false, true])(
+  'approved commercial package to original Facebook occurrence and measurement; uncertain create=%s',
+  async (uncertain) => {
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(Error('NO_EXTERNAL_NETWORK'));
+    const f = await facebookPublicationFixture(true, 'v27.0');
+    try {
+      provisionSchema(f.f.base.db, 44);
+      f.campaigns.ownedEvent(
+        f.execution.execution_id,
+        f.execution.claim_token!,
+        f.at,
+        'WORKFLOW_FINISHED',
+        {},
+        'SUCCEEDED',
+      );
+      const service = f.reopen(),
+        id = f.execution.execution_id,
+        account = f.facebookPackage.account;
+      await expect(
+        service.prepareFacebookOccurrence(id, account),
+      ).rejects.toMatchObject({ code: 'DISTRIBUTION_APPROVAL_REQUIRED' });
+      expect(f.posts).toEqual([]);
+      f.approve(f.facebookPackage);
+      const prepared = await service.prepareFacebookOccurrence(id, account);
+      expect(prepared.state).toBe('PREPARED');
+      await expect(f.execute(service)).rejects.toMatchObject({
+        code: 'SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED',
+      });
+      expect(f.posts).toEqual([]);
+      const grant = await commercialOccurrenceGrant(f, prepared);
+      const publish = vi.spyOn(f.ports.publisher, 'publish');
+      const run = () =>
+        f.reopen().execute(id, 'FACEBOOK_REELS', account, grant);
+      if (uncertain) {
+        f.fail('create');
+        await expect(run()).rejects.toMatchObject({
+          code: 'SOCIAL_RECONCILIATION_REQUIRED',
+        });
+        f.fail(undefined);
+        await expect(run()).rejects.toMatchObject({
+          code: 'SOCIAL_RECONCILIATION_REQUIRED',
+        });
+        expect(f.posts).toEqual(['create']);
+        const op = new SocialPublicationRepository(f.f.base).get(
+          prepared.operationId,
+        );
+        expect(op.state).toBe('UNCERTAIN');
+        expect(op.remoteReceipt).toBeUndefined();
+        expect(() =>
+          f.publishing.recordCommercialResults(
+            { kind: 'operation', id: prepared.operationId },
+            input,
+            'uncertain_results',
+          ),
+        ).toThrow(/CONFIRMED_PUBLICATION_REQUIRED/);
+      } else {
+        const result = await run();
+        expect(await run()).toEqual(result);
+        expect(f.posts).toEqual(['create', 'upload', 'publish']);
+        const op = new SocialPublicationRepository(f.f.base).get(
+          result.operationId,
+        );
+        expect(op).toMatchObject({
+          state: 'PUBLISHED',
+          executionMode: 'fake',
+          packageHash: f.facebookPackage.contentHash,
+          remoteReceipt: result.receipt,
+        });
+        expect(publish.mock.calls[0][0].caption).toBe(
+          [
+            f.facebookPackage.caption,
+            f.facebookPackage.cta,
+            f.facebookPackage.disclosure,
+            f.facebookPackage.link,
+          ].join('\n\n'),
+        );
+        const target = { kind: 'operation' as const, id: result.operationId };
+        const observation = f.publishing.recordCommercialResults(
+          target,
+          input,
+          'original_fb_results',
+        );
+        expect(observation.identity).toMatchObject({
+          productId: f.facebookPackage.productId,
+          productRevision: f.facebookPackage.productRevision,
+          campaignId: f.facebookPackage.campaignId,
+          campaignRevision: f.facebookPackage.campaignRevision,
+          packageHash: f.facebookPackage.contentHash,
+          executionMode: 'fake',
+          affiliateLink: { url: f.facebookPackage.link },
+          permalink: result.receipt.permalink,
+        });
+        expect(
+          f.publishing.recordCommercialResults(
+            target,
+            input,
+            'original_fb_results',
+          ),
+        ).toEqual(observation);
+        expect(f.publishing.commercialSummary(target).history).toHaveLength(1);
+      }
+      expect(
+        f
+          .reopen()
+          .status(id)
+          .find((r) => r.network === 'INSTAGRAM')?.operation.remoteReceipt,
+      ).toEqual(f.ig.receipt);
+      expect(network).not.toHaveBeenCalled();
+    } finally {
+      f.cleanup();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+    }
+  },
+);
 
 async function commercialSuccessor(withInstagram = false, publish = true) {
   // Isolate Facebook-only reader cases by skipping the fixture's unrelated
