@@ -9,6 +9,13 @@ import type {
   ShopeeGeneratedAffiliateLink,
 } from '../domain/shopee-affiliate-contracts.js';
 import { validateShopeeLinkInput } from './shopee-links.js';
+import { ShopeeAffiliateLive } from './shopee-affiliate-live.js';
+import { buildShopeeOffersQuery } from './shopee-offers.js';
+import type { ShopeeOfferPagePort } from '../application/ports/shopee-affiliate.port.js';
+import type {
+  ShopeeOfferQuery,
+  ShopeeAffiliateOfferPage,
+} from '../domain/shopee-affiliate-contracts.js';
 
 const provenance = (): ShopeeAffiliateProvenance => ({
   source: 'FAKE',
@@ -16,7 +23,31 @@ const provenance = (): ShopeeAffiliateProvenance => ({
   observedAt: null,
 });
 
-export class FakeShopeeAffiliate implements ShopeeAffiliatePort {
+export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
+  async queryOfferPage(
+    input: ShopeeOfferQuery = {},
+  ): Promise<ShopeeAffiliateOfferPage> {
+    const { page, limit } = buildShopeeOffersQuery(input).variables;
+    const offers = page === 1 ? await this.queryOffers() : [];
+    return {
+      offers: offers
+        .slice(0, limit)
+        .map((offer) => ({
+          ...offer,
+          description: null,
+          availability: null,
+          shopName: null,
+          productUrl: null,
+          affiliateUrl: null,
+          priceRange: {
+            min: { amount: null, currency: null },
+            max: { amount: null, currency: null },
+          },
+          discountPercent: null,
+        })),
+      pageInfo: { page, limit, hasNextPage: false, nextPage: null },
+    };
+  }
   async queryOffers(): Promise<ShopeeAffiliateOffer[]> {
     return [
       {
@@ -79,11 +110,73 @@ export class FakeShopeeAffiliate implements ShopeeAffiliatePort {
   }
 }
 
+// Singleton facade, single-use transport. No fetch or credential validation is deferred
+// beyond explicitly selecting LIVE. Transport failures never carry upstream messages.
+export class ConfiguredShopeeAffiliate implements ShopeeOfferPagePort {
+  #credentials: { appId: string; secret: string };
+  #fetch: typeof globalThis.fetch;
+  constructor(
+    credentials: { appId: string; secret: string },
+    fetch: typeof globalThis.fetch,
+  ) {
+    if (!credentials.appId.trim() || !credentials.secret.trim())
+      throw new Error('SHOPEE_LIVE_CREDENTIALS_MISSING');
+    this.#credentials = { ...credentials };
+    this.#fetch = fetch;
+  }
+  private async operation<T>(
+    run: (transport: ShopeeAffiliateLive) => Promise<T>,
+  ): Promise<T> {
+    const transport = new ShopeeAffiliateLive(this.#credentials, {
+      fetch: this.#fetch,
+    });
+    try {
+      return await run(transport);
+    } catch (error) {
+      const meta = transport.metadata();
+      if (meta.authentication === 'FAILURE')
+        throw new Error('SHOPEE_AUTHENTICATION_REJECTED');
+      const code = error instanceof Error ? error.message : '';
+      if (/^SHOPEE_(?:OFFERS_QUERY|LINK_INPUT)_INVALID$/.test(code))
+        throw new Error(code);
+      if (
+        /^SHOPEE_(?:OFFERS|LINK)_/.test(code) ||
+        code.startsWith('SHOPEE_LIVE_RESPONSE_')
+      )
+        throw new Error('SHOPEE_CONTRACT_ERROR');
+      throw new Error('SHOPEE_UNAVAILABLE');
+    }
+  }
+  queryOfferPage(input: ShopeeOfferQuery = {}) {
+    return this.operation((t) => t.queryOfferPage(input));
+  }
+  async queryOffers() {
+    return (await this.queryOfferPage()).offers;
+  }
+  generateLink(
+    input: ShopeeAffiliateLinkInput,
+  ): Promise<ShopeeGeneratedAffiliateLink>;
+  generateLink(input: { offerId: string }): Promise<ShopeeAffiliateLink>;
+  generateLink(
+    input: ShopeeAffiliateLinkInput | { offerId: string },
+  ): Promise<ShopeeAffiliateLink> {
+    const checked = validateShopeeLinkInput(input);
+    return this.operation((t) => t.generateLink(checked));
+  }
+}
+
 export const shopeeAffiliateProvider = {
   provide: SHOPEE_AFFILIATE,
   useFactory: () => {
     const mode = process.env.SHOPEE_AFFILIATE_MODE ?? 'fake';
-    if (mode === 'live') throw new Error('SHOPEE_AFFILIATE_LIVE_UNAVAILABLE');
+    if (mode === 'live')
+      return new ConfiguredShopeeAffiliate(
+        {
+          appId: process.env.SHOPEE_AFFILIATE_APP_ID ?? '',
+          secret: process.env.SHOPEE_AFFILIATE_SECRET ?? '',
+        },
+        globalThis.fetch,
+      );
     if (mode !== 'fake') throw new Error('SHOPEE_AFFILIATE_MODE_INVALID');
     return new FakeShopeeAffiliate();
   },

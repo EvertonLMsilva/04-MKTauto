@@ -2,7 +2,8 @@ import {
   type AffiliateCampaignSourceV1,
   validateAffiliateCampaignSource,
 } from '../domain/affiliate-campaign-source.js';
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, Optional } from '@nestjs/common';
+import { ShopeeCatalogCommit } from '../infrastructure/shopee-catalog-commit.js';
 import { AFFILIATE_REPOSITORY } from './ports/affiliate-repository.port.js';
 import type {
   AffiliateRepository,
@@ -52,7 +53,31 @@ export class AffiliateService {
     private readonly persistence: AffiliateRepositoryFactory,
     @Inject(PROJECT_SNAPSHOT_READER)
     private readonly projects: ProjectSnapshotReader,
+    @Optional()
+    @Inject(ShopeeCatalogCommit)
+    private readonly shopeeCommit?: ShopeeCatalogCommit,
   ) {}
+  async prepareShopeeCatalog(
+    productValue: unknown,
+    campaignValue: unknown,
+    sourceValue: unknown,
+    verifiedMediaRefs: readonly string[],
+    receipt: string,
+  ) {
+    const product = validateAffiliateProduct(productValue);
+    const campaign = validateAffiliateCampaign(campaignValue);
+    const source = validateAffiliateCampaignSource(sourceValue);
+    affiliateIdentifier(`sp_${receipt}`, 'idempotencyKey');
+    if (!this.shopeeCommit) throw new Error('SHOPEE_CATALOG_COMMIT_REQUIRED');
+    await this.verifyProject(campaign);
+    return this.shopeeCommit.commit(
+      product,
+      campaign,
+      source,
+      verifiedMediaRefs,
+      receipt,
+    );
+  }
   catalogCandidates(projectId: string) {
     affiliateIdentifier(projectId, 'projectId');
     const repo = this.persistence.open(true);

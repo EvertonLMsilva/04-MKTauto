@@ -344,8 +344,10 @@ describe('Shopee link generation (offline only)', () => {
       await fake.generateLink({ offerId: value.offerId }),
     ).not.toHaveProperty('originUrl');
     vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
-    expect(() => shopeeAffiliateProvider.useFactory()).toThrow(
-      'SHOPEE_AFFILIATE_LIVE_UNAVAILABLE',
+    vi.stubEnv('SHOPEE_AFFILIATE_APP_ID', 'synthetic-app');
+    vi.stubEnv('SHOPEE_AFFILIATE_SECRET', 'synthetic-secret');
+    expect(shopeeAffiliateProvider.useFactory()).not.toBeInstanceOf(
+      FakeShopeeAffiliate,
     );
   });
 
