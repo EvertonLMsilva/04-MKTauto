@@ -8,33 +8,44 @@ import type {
   ArchiveProjectDto,
 } from './project-commands.dto.js';
 import { ProjectApplicationService } from './project-application.service.js';
-import type { CommandResult } from './ports/project-repository.port.js';
+import type {
+  CommandResult,
+  ProjectResult,
+} from './ports/project-repository.port.js';
+import type { ProjectSnapshot } from '../domain/project-contracts.js';
+import type { ProjectRecord } from './ports/project-repository.port.js';
 
 @Injectable()
-export class ProjectCommandService implements ProjectCommands {
+export class ProjectCommandService<
+  Async extends boolean = false,
+> implements ProjectCommands {
   constructor(
     @Inject(PROJECT_REPOSITORY)
-    private readonly persistence: ProjectRepositoryFactory,
+    private readonly persistence: ProjectRepositoryFactory<Async>,
   ) {}
   createProject(command: CreateProjectDto) {
-    return this.execute((service) => service.createProject(command));
+    return this.execute<ProjectSnapshot>((service) =>
+      service.createProject(command),
+    );
   }
   createProjectVersion(command: CreateProjectVersionDto) {
-    return this.execute((service) => service.createProjectVersion(command));
+    return this.execute<ProjectSnapshot>((service) =>
+      service.createProjectVersion(command),
+    );
   }
   archiveProject(command: ArchiveProjectDto) {
-    return this.execute((service) =>
+    return this.execute<ProjectRecord>((service) =>
       service.archiveProject(command),
     ) as ReturnType<ProjectCommands['archiveProject']>;
   }
   private async execute<T extends CommandResult>(
-    run: (service: ProjectApplicationService) => T,
+    run: (service: ProjectApplicationService<Async>) => ProjectResult<T, Async>,
   ): Promise<T> {
-    const repository = this.persistence.open();
+    const repository = await this.persistence.open();
     try {
-      return run(new ProjectApplicationService(repository));
+      return await run(new ProjectApplicationService<Async>(repository));
     } finally {
-      repository.close();
+      await repository.close();
     }
   }
 }

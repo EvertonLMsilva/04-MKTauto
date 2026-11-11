@@ -3,7 +3,10 @@ import type {
   ProjectActions,
   CommandResult,
   CommandRecord,
+  ProjectResult,
+  ProjectRecord,
 } from './ports/project-repository.port.js';
+import type { ProjectSnapshot } from '../domain/project-contracts.js';
 import { ProjectCommandError } from './ports/project-commands.port.js';
 import { createHash } from 'node:crypto';
 import { ContractValidationError } from '../domain/project.errors.js';
@@ -42,8 +45,8 @@ export class ProjectApplicationError extends ProjectCommandError {
   }
 }
 
-export class ProjectApplicationService {
-  constructor(private readonly repository: ProjectRepository) {
+export class ProjectApplicationService<Async extends boolean = false> {
+  constructor(private readonly repository: ProjectRepository<Async>) {
     if (!repository || typeof repository.executeCommand !== 'function') {
       throw applicationFailure(
         'INVALID_REPOSITORY',
@@ -54,24 +57,29 @@ export class ProjectApplicationService {
   }
 
   createProject(command: unknown) {
-    return this.#execute('CREATE_PROJECT', command, ({ project }) => {
-      const snapshot = createProjectSnapshot(project);
-      if (snapshot.project.version !== 1) {
-        throw applicationFailure(
-          'PROJECT_VERSION_CONFLICT',
-          'project.version',
-          'um projeto novo deve começar na versão 1',
-        );
-      }
-      return {
-        payload: { snapshot },
-        operation: (actions: ProjectActions) => actions.create(snapshot),
-      };
-    });
+    return this.#execute<ProjectSnapshot>(
+      'CREATE_PROJECT',
+      command,
+      ({ project }) => {
+        const snapshot = createProjectSnapshot(project);
+        if (snapshot.project.version !== 1) {
+          throw applicationFailure(
+            'PROJECT_VERSION_CONFLICT',
+            'project.version',
+            'um projeto novo deve começar na versão 1',
+          );
+        }
+        return {
+          payload: { snapshot },
+          operation: (actions: ProjectActions<Async>) =>
+            actions.create(snapshot),
+        };
+      },
+    );
   }
 
   createProjectVersion(command: unknown) {
-    return this.#execute(
+    return this.#execute<ProjectSnapshot>(
       'CREATE_PROJECT_VERSION',
       command,
       ({ project, expectedVersion }) => {
@@ -87,7 +95,7 @@ export class ProjectApplicationService {
   }
 
   archiveProject(command: unknown) {
-    return this.#execute(
+    return this.#execute<ProjectRecord>(
       'ARCHIVE_PROJECT',
       command,
       ({ projectId, expectedVersion }) => {
@@ -106,9 +114,9 @@ export class ProjectApplicationService {
     command: unknown,
     prepare: (command: Record<string, unknown>) => {
       payload: object;
-      operation: (actions: ProjectActions) => T;
+      operation: (actions: ProjectActions<Async>) => ProjectResult<T, Async>;
     },
-  ): T {
+  ): ProjectResult<T, Async> {
     try {
       requireRecord(command, 'command');
       rejectSensitiveFields(command);
@@ -122,7 +130,7 @@ export class ProjectApplicationService {
         occurredAt,
         ...prepared.payload,
       });
-      return this.repository.executeCommand(
+      const result = this.repository.executeCommand(
         {
           idempotencyKey,
           commandType,
@@ -132,6 +140,13 @@ export class ProjectApplicationService {
         },
         prepared.operation,
       );
+      // Keep synchronous SQLite behavior, including error precedence, unchanged.
+      if (result instanceof Promise) {
+        return result.catch((caught: unknown) => {
+          throw asApplicationError(caught);
+        }) as ProjectResult<T, Async>;
+      }
+      return result;
     } catch (caught) {
       throw asApplicationError(caught);
     }
