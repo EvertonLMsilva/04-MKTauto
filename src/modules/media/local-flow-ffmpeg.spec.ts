@@ -103,10 +103,40 @@ it('composes, burns subtitles and decodes actual local fixture media with FFmpeg
       source.videoRenderId,
       subtitles.subtitleId,
     );
-    expect((await service.qc(final.videoRenderId)).result).toBe('PASS');
-    expect(
-      (await service.previewBytes(final.videoRenderId)).length,
-    ).toBeGreaterThan(1000);
+    expect(final.compositionPlanContentHash).toBe(plan.contentHash);
+    const qc = await service.qc(final.videoRenderId);
+    expect(qc.result).toBe('PASS');
+    const bytes = await service.previewBytes(final.videoRenderId);
+    const evidenceRoot = process.env.MKTAUTO_MEDIA_CLOSURE_EVIDENCE_ROOT;
+    if (evidenceRoot) {
+      const { mkdirSync, writeFileSync } = await import('node:fs');
+      const { createHash } = await import('node:crypto');
+      mkdirSync(evidenceRoot, { recursive: true });
+      expect(createHash('sha256').update(bytes).digest('hex')).toBe(
+        final.contentHash,
+      );
+      writeFileSync(join(evidenceRoot, 'fixture-final.mp4'), bytes);
+      writeFileSync(
+        join(evidenceRoot, 'fixture-evidence.json'),
+        JSON.stringify(
+          {
+            fixtureOnly: true,
+            productionCampaign: false,
+            alignment:
+              'Existing authorized test double; not physical CTC inference',
+            voice: 'Owned PCM test fixture; not newly synthesized TTS',
+            compositionPlanId: plan.compositionPlanId,
+            compositionPlanContentHash: plan.contentHash,
+            render: final,
+            qc,
+            humanApproval: false,
+          },
+          null,
+          2,
+        ),
+      );
+    }
+    expect(bytes.length).toBeGreaterThan(1000);
   } finally {
     f.close();
   }
