@@ -47,11 +47,11 @@ export async function analyzeTrendRun({
       cause: error,
     });
   }
-  const prior: any = store.getOperation(idempotencyKey);
+  const prior: any = await store.getOperation(idempotencyKey);
   if (prior && prior.topicClusters.length > 0 && prior.scores.length > 0)
     return resultFromCatalog(prior, config);
 
-  const catalog: any = store.getRun(runId);
+  const catalog: any = await store.getRun(runId);
   if (!catalog)
     throw new TrendStoreError('RUN_NOT_FOUND', `Run não encontrada: ${runId}`);
   if (catalog.candidates.length === 0) {
@@ -62,14 +62,16 @@ export async function analyzeTrendRun({
       gaps: [`INSUFFICIENT_ELIGIBLE_CANDIDATES:0/${config.candidateLimit}`],
     };
   }
-  const histories: any = new Map(
-    catalog.candidates.map(({ id }: any): any => [
+  const histories: any = new Map();
+  for (const { id } of catalog.candidates) {
+    histories.set(
       id,
-      historyScope && typeof store.getCandidateResearchHistory === 'function'
+      await (historyScope &&
+      typeof store.getCandidateResearchHistory === 'function'
         ? store.getCandidateResearchHistory(id, { runId, ...historyScope })
-        : store.getCandidateHistory(id),
-    ]),
-  );
+        : store.getCandidateHistory(id)),
+    );
+  }
   const evidence: any = catalog.candidates.map((candidate: any): any => ({
     candidateId: candidate.id,
     title: candidate.title ?? 'Título público indisponível',
@@ -141,7 +143,7 @@ export async function analyzeTrendRun({
     config,
     now,
   });
-  const persisted: any = store.recordAnalysis({
+  const persisted: any = await store.recordAnalysis({
     idempotencyKey,
     runId,
     topicClusters,

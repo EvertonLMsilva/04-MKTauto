@@ -9,14 +9,19 @@ import {
   validateResearchShortlistPolicy,
 } from '../domain/research-shortlist-contracts.js';
 import { TrendStoreError } from '../domain/research.errors.js';
+import { runResearchIo } from './research-io.js';
 
-export function buildResearchShortlist({
+export function buildResearchShortlist(options: any): any {
+  return runResearchIo(buildResearchShortlistSteps(options));
+}
+
+function* buildResearchShortlistSteps({
   store,
   researchInput,
   researchTopicCatalog,
   policy = DEFAULT_RESEARCH_SHORTLIST_POLICY,
   clock = (): any => new Date(),
-}: any): any {
+}: any): Generator<unknown, any, any> {
   if (
     !store ||
     typeof store.getRun !== 'function' ||
@@ -45,13 +50,13 @@ export function buildResearchShortlist({
         `ResearchTopicCatalog.${field} diverge do ResearchInput`,
       );
   }
-  const daily: any = store.getResearchDailyRunByPipeline(pipelineRunId);
+  const daily: any = yield store.getResearchDailyRunByPipeline(pipelineRunId);
   if (!daily)
     throw new TrendStoreError(
       'RESEARCH_RUN_NOT_FOUND',
       'execução exata de Research inexistente',
     );
-  const storedSource: any = store.getResearchArtifact(daily.id);
+  const storedSource: any = yield store.getResearchArtifact(daily.id);
   if (
     !storedSource ||
     stableHash(storedSource) !== stableHash(source) ||
@@ -66,7 +71,7 @@ export function buildResearchShortlist({
       'catálogo não pertence à execução exata',
     );
   }
-  const storedCatalog: any = store.getRun(source.trendRunId);
+  const storedCatalog: any = yield store.getRun(source.trendRunId);
   if (!storedCatalog)
     throw new TrendStoreError(
       'RUN_NOT_FOUND',
@@ -85,7 +90,8 @@ export function buildResearchShortlist({
     policyVersion: policy.version,
     revision: 1,
   };
-  const storedPrior: any = store.getResearchShortlistByPipeline(pipelineRunId);
+  const storedPrior: any =
+    yield store.getResearchShortlistByPipeline(pipelineRunId);
   if (storedPrior) {
     const prior: any = createResearchShortlist(storedPrior);
     for (const [field, expected] of entries({
@@ -154,7 +160,7 @@ export function buildResearchShortlist({
       republicationAllowed: false,
     },
   };
-  return store.recordResearchShortlist(
+  return yield store.recordResearchShortlist(
     createResearchShortlist({ ...base, contentHash: stableHash(base) }),
   );
 }
