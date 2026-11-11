@@ -1,11 +1,12 @@
 # PostgreSQL foundation — CORE-POSTGRES-001-T01
 
-PostgreSQL is the selected principal database architecture: one database named `mktauto`, schemas owned by NestJS domains, one infrastructure-managed pool, and versioned PostgreSQL migrations. This delivery implements the Project pilot. The operational application and all other domains continue using SQLite. There is no cutover, real-data import, dual write, scheduler activation or deploy.
+PostgreSQL is the selected principal database architecture: one database named `mktauto`, schemas owned by NestJS domains, one infrastructure-managed pool, and versioned PostgreSQL migrations. PG-001 implements the Project pilot; PG-002-RESEARCH adds the isolated Research adapter described below. Operational modules continue using SQLite. There is no cutover, real-data import, dual write, scheduler activation or deploy.
 
 ## Implemented boundary
 
 - `platform.schema_migrations` owns global migration versions, names, exact SQL SHA256 checksums and application timestamps.
 - `project.projects`, `project.project_snapshots` and `project.project_commands` belong to Project. No empty schemas for other domains are created.
+- `research.*` belongs to Research and is introduced by migration 2. The Project migration remains unchanged.
 - The module-owned migration is `PROJECT_POSTGRES_MIGRATIONS`, version 1, `001_project_foundation`. SQL is a versioned TypeScript constant, included in the compiled artifact without changing the existing SQLite asset pipeline. It is new PostgreSQL DDL, not an executable copy of SQLite migrations 003/004.
 - Queries and DDL qualify table/schema names explicitly. Configuration pins the connection search path to `pg_catalog`; the migration transaction additionally clears its local search path.
 - Binary media remains in external storage. Project stores structured snapshots/receipts and their existing references, not binary files.
@@ -89,7 +90,7 @@ Cross-domain atomicity must be designed before migrating those modules:
 
 SQLite-specific dependencies include PRAGMA/user_version/sqlite_master, BEGIN IMMEDIATE, changes counts, rowid cursors, AUTOINCREMENT, INSERT OR IGNORE, typeof/GLOB/RAISE(ABORT), JSON functions and SQLite time functions. PublishingOperationsPersistence and CampaignRepository use rowid in cursor contracts. Finance keeps decimal values as text with exact comparisons. Several errors depend on SQLite constraint messages/SQLITE_BUSY. Constraints, triggers, partial indexes, deferred FKs, immutable history, reconciliation-pending states and lease ownership need explicit PostgreSQL designs, not placeholder substitutions or raw migration replay.
 
-Only Project is implemented here. No other domain's repository, database, trigger or migration is changed.
+PostgreSQL adapters currently cover Project and Research only. The inventory above remains a historical source/contract map; other domains' repositories, databases, triggers and migrations are unchanged.
 
 ## Real isolated validation
 
@@ -100,3 +101,42 @@ The fixture database must independently match `mktauto`, the test role and its u
 Integration coverage on PostgreSQL 18.6 includes schemas/migrations, concurrent migration idempotence, checksum/history drift, transactional migration failure, commit/rollback/client release, decimal precision, native checks/FKs/JSON validation, full Project lifecycle and history, exact SQLite contract parity, concurrent idempotent requests, competing expectedVersions, receipt-failure rollback/retry, immutable triggers, int8 boundaries and the actual NestJS HTTP flow. A separate test confirms default ProjectModule remains SQLite.
 
 Focused offline Project tests and compiled legacy tests cover the synchronous path. Full MKTauto migration, import of operational data, deployment, paid providers and LIVE cutover are outside this delivery. No paid business calls are made; local CPU/energy cost is unavailable, not assumed zero.
+
+## Research — PG-002-RESEARCH-T01
+
+Esta entrega fecha somente o domínio Research, dentro do programa PG-002. A aplicação operacional continua importando o `ResearchModule` SQLite. A ativação PostgreSQL exige uma aplicação isolada que importe explicitamente `ResearchModule.postgres(config)`; variáveis de ambiente não selecionam outro adapter automaticamente.
+
+O módulo reutiliza `PostgresModule`, `PostgresDatabase`, o pool, o gerenciador de transações e `PostgresMigrationRunner` de PG-001. Não existe um segundo pool ou runner implementado por Research. Cada contexto Nest registra a infraestrutura uma vez e os handles do repository nunca encerram o pool compartilhado.
+
+### Registro de migrations e schema
+
+`RESEARCH_POSTGRES_MIGRATIONS` contém a versão 2, `002_research_foundation`. `RESEARCH_POSTGRES_MIGRATION_REGISTRY` concatena a migration Project v1 original e a nova v2. O provisionamento administrativo Research deve passar esse registro completo ao runner existente. O exemplo Project acima pertence a um banco PG-001: executar apenas o registro v1 contra um banco que já possui v2 resulta em erro de histórico, sem downgrade ou reescrita de checksums.
+
+O schema `research` contém somente as 18 tabelas consumidas pelo repository Research:
+
+| Responsabilidade            | Tabelas                                                                                                |
+| --------------------------- | ------------------------------------------------------------------------------------------------------ |
+| Catálogos e operações       | trend_runs, source_runs, trend_operations                                                              |
+| Identidade e histórico      | trend_candidates, candidate_appearances, trend_snapshots                                               |
+| Clusters e ranking          | topic_clusters, topic_cluster_candidates, topic_cluster_snapshots, trend_scores, trend_score_snapshots |
+| Pesquisa diária e evidência | research_daily_runs, research_daily_steps, research_artifacts                                          |
+| Referências estratégicas    | reference_analysis_runs, reference_analysis_steps, reference_insights                                  |
+| Shortlist                   | research_shortlists                                                                                    |
+
+PKs, FKs, índices de deduplicação e unicidades de pipeline/revisão preservam os vínculos do SQLite. O trigger PostgreSQL de snapshots imutáveis usa SQLSTATE `P2001`. As relações são explicitamente qualificadas como `research.*`. Texto com collation `pg_catalog."C"` preserva identidade e ordenação binária; JSON preserva a representação original, sem normalização JSONB que altere hashes. Inteiros são convertidos localmente para números seguros do contrato. Durações e posições fracionárias aceitas pelo SQLite usam NUMERIC, sem truncamento para inteiro; parsers globais do driver não são modificados.
+
+### Contratos e fronteira de I/O
+
+Regras puras de validação, identidade, hash, linhagem, retry e estados são compartilhadas pelos adapters. Os SQL SQLite existentes permanecem iguais. Ranking, velocidade histórica, seleção e validação de evidências continuam usando as funções de domínio/aplicação existentes.
+
+Os ports Research possuem modo assíncrono explícito, com o comportamento síncrono como padrão. Isso preserva os consumidores SQLite que compartilham uma conexão/transação com outros domínios; nenhum port externo desses módulos é alterado. O serviço aguarda open, trabalho transacional e close quando o adapter é PostgreSQL. A análise já assíncrona passa a aguardar leituras de histórico e a persistência antes de montar a resposta.
+
+A shortlist utiliza um único algoritmo e um pequeno interpretador de etapas de I/O: resultados SQLite continuam síncronos, enquanto operações PostgreSQL são aguardadas. Não há uma segunda implementação de ranking, seleção, validação ou cálculo de hashes. O controller e seus códigos HTTP permanecem os mesmos.
+
+As operações PostgreSQL usam a conexão fornecida pelo gerenciador existente durante toda a unidade de trabalho. O contexto assíncrono do handle permite chamadas aninhadas sem abrir uma transação independente. A serialização de writers de Research conserva a semântica de `BEGIN IMMEDIATE` para deduplicação, recibos idempotentes e atualizações de histórico. Leituras compostas não misturam conexões dentro da mesma transação. Handles read-only e fechados são protegidos; fechar um handle não encerra a infraestrutura.
+
+### Validação e limite operacional
+
+Os novos testes são incluídos automaticamente por `npm run test:postgres`, reutilizando a harness PG-001, PostgreSQL 18.6 local, porta loopback efêmera, tmpfs, credenciais aleatórias e marcador independente da database descartável. Nenhuma database existente é usada como fixture. A suíte compara cenários equivalentes com SQLite descartável, além dos testes congelados e HTTP SQLite existentes.
+
+A validação cobre versões/checksums v1/v2, reexecução, rollback, catálogo e histórico, análise local, ranking determinístico, dados ausentes, estados/retomada de runs e steps, artifacts, shortlists, insights, evidências, erros, integridade referencial, concorrência e HTTP NestJS. Propostas locais de agrupamento substituem provedores externos nos testes. Não há chamada paga, scraping, migração de dados operacionais, dual write, deploy ou cutover. O programa PG-002 completo permanece fora do escopo desta entrega Research.

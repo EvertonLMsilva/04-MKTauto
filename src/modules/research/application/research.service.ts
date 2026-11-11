@@ -4,7 +4,12 @@ import {
   type ResearchRepository,
   type ResearchRepositoryFactory,
 } from './research-repository.port.js';
-import type { ResearchReader } from './research-reader.port.js';
+import type { ResearchReader, ResearchResult } from './research-reader.port.js';
+import type {
+  ResearchShortlist,
+  ReferenceInsight,
+} from '../domain/research.types.js';
+import { runResearchIo } from './research-io.js';
 import { buildResearchShortlist } from './research-shortlist.js';
 import { analyzeTrendRun } from './trend-analysis.js';
 import {
@@ -35,32 +40,66 @@ type WriteOperation =
   | 'recordReferenceInsight';
 
 @Injectable()
-export class ResearchService implements ResearchReader {
+export class ResearchService<
+  Async extends boolean = false,
+> implements ResearchReader<Async> {
   constructor(
     @Inject(RESEARCH_REPOSITORY)
-    private readonly persistence: ResearchRepositoryFactory,
+    private readonly persistence: ResearchRepositoryFactory<Async>,
   ) {}
-  private read<T>(operation: (repository: ResearchRepository) => T): T {
-    const repository = this.persistence.open(true);
-    try {
-      return operation(repository);
-    } finally {
-      repository.close();
-    }
+  private use<T>(
+    readOnly: boolean,
+    operation: (
+      repository: ResearchRepository<Async>,
+    ) => ResearchResult<T, Async>,
+  ): ResearchResult<T, Async> {
+    const persistence = this.persistence;
+    return runResearchIo(
+      (function* (): Generator<unknown, T, any> {
+        const repository: ResearchRepository<Async> =
+          yield persistence.open(readOnly);
+        let result!: T;
+        let failure: { error: unknown } | undefined;
+        try {
+          result = yield operation(repository);
+        } catch (error) {
+          failure = { error };
+        }
+        try {
+          yield repository.close();
+        } catch (error) {
+          failure ??= { error };
+        }
+        if (failure) throw failure.error;
+        return result;
+      })(),
+    ) as ResearchResult<T, Async>;
   }
-  private write<T>(operation: (repository: ResearchRepository) => T): T {
-    const repository = this.persistence.open();
-    try {
-      return repository.atomic(() => operation(repository));
-    } finally {
-      repository.close();
-    }
+  private read<T>(
+    operation: (
+      repository: ResearchRepository<Async>,
+    ) => ResearchResult<T, Async>,
+  ): ResearchResult<T, Async> {
+    return this.use(true, operation);
+  }
+  private write<T>(
+    operation: (
+      repository: ResearchRepository<Async>,
+    ) => ResearchResult<T, Async>,
+  ): ResearchResult<T, Async> {
+    return this.use(false, (repository) =>
+      repository.atomic<T>(() => operation(repository)),
+    );
   }
   getShortlist(id: string) {
-    return this.read((repository) => repository.getShortlist(id));
+    return this.read<ResearchShortlist | null>((repository) =>
+      repository.getShortlist(id),
+    );
   }
   getInsight(id: string) {
-    return this.read((repository) => repository.getInsight(id));
+    return this.read<ReferenceInsight | null>((repository) =>
+      repository.getInsight(id),
+    );
   }
   get(operation: ReadOperation, id: string) {
     return this.read((repository) => repository[operation](id));
@@ -98,7 +137,7 @@ export class ResearchService implements ResearchReader {
         'proposals',
         'propostas locais obrigatórias',
       );
-    const store = this.persistence.open();
+    const store = await this.persistence.open();
     try {
       // No external adapter. Proposals undergo the original evidence and membership checks.
       return await analyzeTrendRun({
@@ -115,19 +154,24 @@ export class ResearchService implements ResearchReader {
         clusterer: async () => value.proposals,
       });
     } finally {
-      store.close();
+      await store.close();
     }
   }
   ranking(id: string) {
-    return this.read((store) => {
-      const catalog = store.getRun(id);
-      return catalog
-        ? rankTrendCandidates({
-            candidates: catalog.candidates,
-            scores: catalog.scores,
-            clusters: catalog.topicClusters,
-          })
-        : null;
-    });
+    return this.read(
+      (store) =>
+        runResearchIo(
+          (function* (): Generator<unknown, any, any> {
+            const catalog = yield store.getRun(id);
+            return catalog
+              ? rankTrendCandidates({
+                  candidates: catalog.candidates,
+                  scores: catalog.scores,
+                  clusters: catalog.topicClusters,
+                })
+              : null;
+          })(),
+        ) as ResearchResult<any, Async>,
+    );
   }
 }
