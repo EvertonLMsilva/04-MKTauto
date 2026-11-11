@@ -4,7 +4,10 @@ import type {
   ShopeeAffiliateOfferDetails,
 } from '../domain/shopee-affiliate-contracts.js';
 
-// Confirmed fields, types and omissions: docs/tasks/P7.1-SHOPEE-OFFERS-001-contract.md
+// Historical official-schema snapshot: docs/tasks/P7.1-SHOPEE-OFFERS-001-contract.md.
+// Keep arguments/fields unchanged until the current official schema is evidenced.
+// Types/nullability of these fields still require current Explorer homologation;
+// the itemId-only probe does not validate this detailed contract or API quotas.
 const QUERY = `query AffiliateOffers($page: Int!, $limit: Int!, $keyword: String, $sortType: Int, $productCatId: Int) {
   productOfferV2(page: $page, limit: $limit, keyword: $keyword, sortType: $sortType, productCatId: $productCatId) {
     nodes { itemId productName price priceMin priceMax priceDiscountRate imageUrl productLink offerLink commission commissionRate shopId shopName }

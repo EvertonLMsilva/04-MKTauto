@@ -106,6 +106,47 @@ describe('controlled Shopee read transport (offline)', () => {
     ).toThrow('SHOPEE_LIVE_CREDENTIALS_MISSING');
   });
 
+  it.each(['HTTP_429', 'GRAPHQL_10030'])(
+    'retains sanitized rate-limit metadata and consumes the sole attempt for %s',
+    async (kind) => {
+      const { live, fetch } = setup(async () =>
+        kind === 'HTTP_429'
+          ? new Response('PRIVATE_RATE_LIMIT_BODY', {
+              status: 429,
+              headers: { 'Retry-After': '60' },
+            })
+          : Response.json({
+              data: { productOfferV2: { nodes: [{ itemId: '1' }] } },
+              errors: [
+                {
+                  message: 'PRIVATE_RATE_LIMIT_BODY',
+                  extensions: { code: 10030 },
+                },
+              ],
+            }),
+      );
+      await expect(live.queryOfferPage({ page: 1, limit: 1 })).rejects.toThrow(
+        kind === 'HTTP_429'
+          ? 'SHOPEE_LIVE_HTTP_ERROR'
+          : 'SHOPEE_LIVE_GRAPHQL_ERROR',
+      );
+      expect(live.metadata()).toMatchObject({
+        requestCount: 1,
+        httpStatus: kind === 'HTTP_429' ? 429 : 200,
+        offersReturned: null,
+        errorCodes:
+          kind === 'HTTP_429' ? ['SHOPEE_LIVE_HTTP_ERROR'] : ['10030'],
+      });
+      expect(JSON.stringify(live.metadata())).not.toContain(
+        'PRIVATE_RATE_LIMIT_BODY',
+      );
+      await expect(live.queryOfferPage({ page: 2, limit: 1 })).rejects.toThrow(
+        'SHOPEE_LIVE_ALREADY_ATTEMPTED',
+      );
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it.each([301, 302, 307, 308])(
     'blocks redirects (%i) without a second call',
     async (status) => {

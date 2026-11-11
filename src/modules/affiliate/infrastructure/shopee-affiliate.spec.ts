@@ -6,6 +6,7 @@ import type { ShopeeAffiliatePort } from '../application/ports/shopee-affiliate.
 import {
   FakeShopeeAffiliate,
   shopeeAffiliateProvider,
+  withShopeeLiveAuthorization,
 } from './shopee-affiliate.provider.js';
 
 vi.mock('node:sqlite', () => ({
@@ -119,5 +120,114 @@ describe('internal Shopee affiliate fake', () => {
     await expect(fake.generateLink({ offerId: 'unknown' })).rejects.toThrow(
       'SHOPEE_AFFILIATE_OFFER_NOT_FOUND',
     );
+  });
+
+  it.each([1, 2])(
+    'paginates all fake fixtures without loss or duplication with limit=%i',
+    async (limit) => {
+      const fake = new FakeShopeeAffiliate();
+      const all = await fake.queryOffers();
+      const ids: string[] = [];
+      let next: number | null = 1;
+      let calls = 0;
+      while (next !== null && calls < 3) {
+        const page = await fake.queryOfferPage({ page: next, limit });
+        ids.push(...page.offers.map((offer) => offer.productId));
+        expect(page.pageInfo.hasNextPage).toBe(ids.length < all.length);
+        next = page.pageInfo.nextPage;
+        calls++;
+      }
+      expect(ids).toEqual(all.map((offer) => offer.productId));
+      expect(new Set(ids).size).toBe(ids.length);
+      expect(next).toBeNull();
+      expect(calls).toBe(Math.ceil(all.length / limit));
+      expect((await fake.queryOfferPage({ page: 100, limit })).offers).toEqual(
+        [],
+      );
+    },
+  );
+
+  it.each(['HTTP_429', 'GRAPHQL_10030'])(
+    'does not retry rate limit %s through the authorized LIVE facade',
+    async (kind) => {
+      vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
+      vi.stubEnv('SHOPEE_AFFILIATE_APP_ID', 'synthetic-app');
+      vi.stubEnv('SHOPEE_AFFILIATE_SECRET', 'synthetic-secret');
+      const fetch = vi.fn(async () =>
+        kind === 'HTTP_429'
+          ? new Response('PRIVATE_RATE_LIMIT_BODY', {
+              status: 429,
+              headers: { 'Retry-After': '60' },
+            })
+          : Response.json({
+              errors: [
+                {
+                  message: 'PRIVATE_RATE_LIMIT_BODY',
+                  extensions: { code: 10030 },
+                },
+              ],
+            }),
+      );
+      vi.stubGlobal('fetch', fetch);
+      const provider = shopeeAffiliateProvider.useFactory();
+      expect(fetch).not.toHaveBeenCalled();
+      const reserve = vi.fn();
+      // Spare permission is not permission to retry a failed operation automatically.
+      await withShopeeLiveAuthorization(
+        {
+          mode: 'SHOPEE_LIVE',
+          expiresAt: new Date(Date.now() + 60000).toISOString(),
+          maxOfferPages: 2,
+          maxLinks: 0,
+          reserve,
+        },
+        async () => {
+          await expect(provider.queryOffers()).rejects.toThrow(
+            /^SHOPEE_UNAVAILABLE$/,
+          );
+          await Promise.resolve();
+          expect(fetch).toHaveBeenCalledTimes(1);
+          expect(reserve).toHaveBeenCalledExactlyOnceWith('OFFERS', 1);
+        },
+      );
+    },
+  );
+
+  it('requires a LIVE capability before HTTP and never leaks permission outside its async context', async () => {
+    vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
+    vi.stubEnv('SHOPEE_AFFILIATE_APP_ID', 'synthetic-app');
+    vi.stubEnv('SHOPEE_AFFILIATE_SECRET', 'synthetic-secret');
+    const fetch = vi.fn(async () =>
+      Response.json({
+        data: {
+          productOfferV2: {
+            nodes: [],
+            pageInfo: { page: 1, limit: 10, hasNextPage: false },
+          },
+        },
+      }),
+    );
+    vi.stubGlobal('fetch', fetch);
+    const provider = shopeeAffiliateProvider.useFactory();
+    await expect(provider.queryOffers()).rejects.toThrow(
+      'SHOPEE_LIVE_AUTHORIZATION_REQUIRED',
+    );
+    expect(fetch).not.toHaveBeenCalled();
+    await withShopeeLiveAuthorization(
+      {
+        mode: 'SHOPEE_LIVE',
+        expiresAt: new Date(Date.now() + 60000).toISOString(),
+        maxOfferPages: 1,
+        maxLinks: 0,
+        reserve: () => {},
+      },
+      async () => {
+        expect(await provider.queryOffers()).toEqual([]);
+      },
+    );
+    await expect(provider.queryOffers()).rejects.toThrow(
+      'SHOPEE_LIVE_AUTHORIZATION_REQUIRED',
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 });

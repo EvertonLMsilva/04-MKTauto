@@ -66,34 +66,58 @@ describe('documented Shopee offers (offline only)', () => {
     });
   });
 
-  it('preserves missing optional data as null instead of zero, empty strings or assertions', () => {
-    const body = {
-      data: {
-        productOfferV2: {
-          nodes: [{ itemId: '1' }],
-          pageInfo: { page: null, limit: 2, hasNextPage: false },
+  it.each(['omitted', 'null'])(
+    'preserves %s optional data as null instead of zero, empty strings or assertions',
+    (state) => {
+      const node: Record<string, unknown> = { itemId: '1' };
+      if (state === 'null')
+        for (const key of [
+          'shopId',
+          'productName',
+          'shopName',
+          'price',
+          'priceMin',
+          'priceMax',
+          'commission',
+          'commissionRate',
+          'priceDiscountRate',
+          'imageUrl',
+          'productLink',
+          'offerLink',
+        ])
+          node[key] = null;
+      const body = {
+        data: {
+          productOfferV2: {
+            nodes: [node],
+            pageInfo: { page: null, limit: 2, hasNextPage: false },
+          },
         },
-      },
-    };
-    const page = normalizeShopeeOfferPage(body, request, at);
-    expect(page.offers[0]).toMatchObject({
-      name: null,
-      shopId: null,
-      shopName: null,
-      price: { amount: null, currency: null },
-      estimatedCommission: { amount: null, currency: null, rate: null },
-      imageUrl: null,
-      productUrl: null,
-      affiliateUrl: null,
-      discountPercent: null,
-    });
-    expect(page.pageInfo).toEqual({
-      page: null,
-      limit: 2,
-      hasNextPage: false,
-      nextPage: null,
-    });
-  });
+      };
+      const page = normalizeShopeeOfferPage(body, request, at);
+      expect(page.offers[0]).toMatchObject({
+        name: null,
+        shopId: null,
+        shopName: null,
+        price: { amount: null, currency: null },
+        priceRange: {
+          min: { amount: null, currency: null },
+          max: { amount: null, currency: null },
+        },
+        estimatedCommission: { amount: null, currency: null, rate: null },
+        imageUrl: null,
+        productUrl: null,
+        affiliateUrl: null,
+        discountPercent: null,
+      });
+      expect(page.pageInfo).toEqual({
+        page: null,
+        limit: 2,
+        hasNextPage: false,
+        nextPage: null,
+      });
+    },
+  );
 
   it('keeps zero distinct from missing data and accepts nullable list entries by skipping them', () => {
     const body = shopeeOfferFixture();
