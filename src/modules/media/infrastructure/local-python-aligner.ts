@@ -206,8 +206,8 @@ export class LocalPythonAligner
           OPENBLAS_NUM_THREADS: '2',
         },
       });
-      let stdout = '',
-        bytes = 0,
+      const stdout: Buffer[] = [];
+      let bytes = 0,
         failure = '';
       const stop = (code: string) => {
         failure ||= code;
@@ -220,7 +220,7 @@ export class LocalPythonAligner
       child.stdout.on('data', (chunk: Buffer) => {
         bytes += chunk.length;
         if (bytes > MAX_OUTPUT) stop('ALIGNMENT_OUTPUT_LIMIT');
-        else stdout += chunk.toString('utf8');
+        else stdout.push(chunk);
       });
       child.stderr.on('data', (chunk: Buffer) => {
         bytes += chunk.length;
@@ -234,7 +234,7 @@ export class LocalPythonAligner
         signal?.removeEventListener('abort', cancel);
         try {
           if (failure) localFail(failure);
-          const result = JSON.parse(stdout);
+          const result = JSON.parse(Buffer.concat(stdout).toString('utf8'));
           if (code !== 0)
             localFail(
               /^ALIGNMENT_[A-Z_]+$/.test(result.error)
