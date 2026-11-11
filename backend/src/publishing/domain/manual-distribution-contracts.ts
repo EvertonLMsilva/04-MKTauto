@@ -76,6 +76,10 @@ export function validatePrepare(v: any): any {
     'account',
     'caption',
   ]);
+  for (const field of ['campaignId', 'videoRenderId', 'qualityControlReportId'])
+    publicText(v[field], field, 200);
+  if (!Number.isSafeInteger(v.campaignRevision) || v.campaignRevision < 1)
+    distributionFail('DISTRIBUTION_INVALID_REVISION', 'campaignRevision');
   if (
     !['instagram', 'facebook', 'threads', 'tiktok', 'youtube'].includes(
       v.platform,
