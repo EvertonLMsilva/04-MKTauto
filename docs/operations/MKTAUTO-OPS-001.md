@@ -1,5 +1,11 @@
 # MKTAUTO-OPS-001 — operação local isolada
 
+> Registro histórico do piloto OPS-001, executado no checkout e layout indicados
+> abaixo. Seus caminhos, PIDs e evidências originais são preservados. Para o
+> projeto atual com NestJS na raiz, consulte o [README](../../README.md) e a
+> [estrutura vigente](../architecture/PROJECT_STRUCTURE.md). O runtime existente
+> não é migrado nem reiniciado pela reestruturação de código.
+
 Data das evidências: 10/11/2026. Base backend: `2e121214450d361167396c25618ef8bfe6dd55bc`, branch `codex/be-ops-local-001`. Durante a execução, `origin/main` avançou para `a644dadd1180b986f5558225360cd1b89aefc215` pelo PR #149. O piloto e os gates desta entrega usam a base auditada, sem merge/rebase; o provisionador/schema e o bootstrap permanecem iguais nesses commits.
 
 **OPS_LOCAL_PASS=NO.** O runtime nativo, a leitura autenticada, o backup e a persistência de uma execução falha foram comprovados. A campanha parou em `ALIGNMENT_TEXT_DIVERGENT`; não houve MP4 final, QC final, aprovação ou publicação FAKE. O reinício não comprova idempotência de publicação.

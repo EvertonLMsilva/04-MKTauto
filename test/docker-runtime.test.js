@@ -23,6 +23,6 @@ test('build context is allowlisted and startup uses the official bootstrap', () 
   assert.equal(ignore.split(/\r?\n/)[0], '**');
   assert(!/^!.*(?:private|\.env|node_modules|outputs)/m.test(ignore));
   const dockerfile = readFileSync('Dockerfile', 'utf8');
-  assert(dockerfile.includes('CMD ["node", "backend/dist/main.js"]'));
+  assert(dockerfile.includes('CMD ["node", "dist/main.js"]'));
   assert(!/^COPY\s+\.\s/m.test(dockerfile));
 });

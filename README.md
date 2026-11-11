@@ -1,153 +1,106 @@
 # MKTauto
 
-Operação Affiliate-First para um operador individual criar e administrar canais
-próprios, testar nichos e formatos e transformar histórico de conteúdo,
-desempenho e monetização em decisões explicáveis.
+Backend NestJS modular para a operação Affiliate-First: projetos e snapshots,
+pesquisa, catálogo de produtos autorizados, conteúdo, mídia, custos e publicação
+com os gates existentes de direitos, QC e aprovação humana da versão exata.
+O frontend React permanece em repositório separado.
 
-A base existente recebe projeto, nicho, tema e referências estratégicas e produz
-ideia, roteiro, narração, mídia autorizada ou gerada, vídeo vertical, legendas e
-preview. A prioridade é cadastrar produtos manualmente, gerar roteiros com a IA
-existente, cenas/áudio pela fal.ai quando suportados e finalizar com FFmpeg.
-Aprovação humana, publicação manual, custos e resultados comerciais permitem
-validar 10 anúncios e buscar a primeira venda. Essas adaptações ainda são planejadas.
-Publicação automática, automação diária, analytics avançado e otimização entram
-em fases posteriores. Toda publicação do MVP exige aprovação humana da versão
-exata.
+## Instalação e execução
 
-O objetivo de longo prazo é maximizar lucro sustentável por conteúdo, canal,
-nicho e capacidade utilizada — não apenas volume, views ou seguidores. Revenue
-Analytics, experimentos, otimização e alocação entram incrementalmente. SaaS e
-modelos próprios são possibilidades futuras e não orientam o MVP atual.
-
-## O que já funciona
-
-O repositório possui uma aplicação local de pesquisa de tendências:
-
-- catálogo diário e histórico SQLite;
-- adapters oficiais para YouTube, Instagram, Threads e TikTok;
-- cobertura parcial e bloqueios explícitos, sem scraping;
-- agrupamento estruturado com Ollama local;
-- ranking, diversidade, estados e idempotência determinísticos;
-- exportação JSON, CSV e HTML;
-- shortlist e seleção humana sem download de mídia.
-- configuração local de projetos/canais com snapshots versionados e exportação
-  sanitizada.
-
-Esses componentes formam o início do módulo `Research`. Os adapters atuais não
-publicam conteúdo.
-
-## Executar
-
-Requer Node.js 24 ou superior.
+Requer Node.js 24 ou superior. Python é necessário para os testes e adapters
+especializados; FFmpeg, vozes e modelos dependem da configuração local autorizada.
 
 ```powershell
-npm test
+npm ci
+npm run build
+npm run db:provision -- 'D:\caminho-absoluto\ambiente-descartavel.sqlite'
+```
+
+Configure as variáveis descritas em `.env.example`, incluindo
+`PROJECT_API_DATABASE` com caminho absoluto para o banco do ambiente autorizado.
+A inicialização apenas valida o banco; não aplica migrations automaticamente.
+O comando administrativo acima mantém o target padrão 43 do provisioner.
+Schema 44 é suportado explicitamente por `provisionSchema(db, 44)` e pelo
+`init` de ops-local para um piloto novo. Os testes usam somente SQLite descartável.
+
+```powershell
 npm start
+npm run start:dev
+npm run start:prod
 ```
 
-`npm test` compila o backend e executa somente as suítes JavaScript em
-`test/*.test.js` no runner Node. Para executar todas as suítes suportadas,
-use `npm run test:all`: Node, testes unitários NestJS, E2E NestJS e testes
-Python do alinhador (requer Python). As suítes NestJS usam Vitest e também
-podem ser executadas com `npm --prefix backend test` e
-`npm --prefix backend run test:e2e`. Os testes Python usam
-`npm run test:python`. O smoke CTC com modelo real permanece opt-in;
-os testes comuns não baixam modelos nem executam APIs pagas.
+`start` e `start:prod` executam `dist/main.js` e carregam `.env` quando existir.
+`start:dev` usa Nest em watch e requer as variáveis exportadas no processo.
+A porta padrão é 3000. A configuração real define os providers e gates;
+iniciar o código não concede autorização para operação LIVE.
 
-A aplicação local fica em `http://localhost:3000`. Sem chaves, use a rodada de
-demonstração. Para dados atuais, mantenha o Ollama ativo e configure somente as
-credenciais oficiais necessárias no arquivo `.env`, que não entra no Git.
+## Comandos e validação
 
-### Radar diário
+| Comando | Comportamento |
+| --- | --- |
+| `npm run build` | Compila NestJS e copia os recursos SQL para `dist/` |
+| `npm run lint` | Oxlint com análise de tipos em `src/` e `test/` |
+| `npx tsc --noEmit --incremental false` | Verifica os tipos da aplicação e testes |
+| `npm test` | Build, testes Node/ops-local e testes unitários NestJS |
+| `npm run test:node` | Build e runner Node, incluindo os protocolos de ops-local |
+| `npm run test:unit` | Vitest: testes `*.spec.ts` |
+| `npm run test:e2e` | Vitest: testes `*.e2e-spec.ts` |
+| `npm run test:python` | Unittest de alinhamento e TTS |
+| `npm run test:compiled` | Pacote sem `src/`: SQL, schema 44, bootstrap e Project HTTP |
+| `npm run test:all` | Node, unitários NestJS, E2E e Python |
+
+Os testes comuns usam fakes/mocks para integrações externas. O smoke CTC com
+modelo real permanece opt-in; não baixa modelos durante os testes comuns.
+
+A CLI pública encaminha os comandos suportados à API NestJS:
 
 ```powershell
-npm run trend:daily -- --input .\research-input.json
-npm run trend:export -- --research-run research-daily:ID
-node --env-file-if-exists=.env src/trend-cli.js shortlist --date 2026-09-27 --candidate youtube:ID --actor operador
-node --env-file-if-exists=.env src/trend-cli.js select --date 2026-09-27 --candidate youtube:ID --actor operador
+npm run project -- create --input .\project-create.json --api-url http://127.0.0.1:3000
+npm run project -- latest --project-id project_001 --api-url http://127.0.0.1:3000
+npm run trend:shortlist -- --input .\shortlist.json --api-url http://127.0.0.1:3000
+npm run preview -- --render-id render_001 --api-url http://127.0.0.1:3000
 ```
 
-O comando diário exige o `ResearchInput` imutável produzido pelo handoff do
-projeto. Data, timezone, nicho, público, idioma e redes vêm desse snapshot; as
-regiões de pesquisa continuam na configuração operacional `TREND_REGIONS`. A
-saída informa o ID `research-daily:*` necessário para reexportação. Os comandos
-legados de shortlist e seleção por data não atuam sobre artefatos de Research.
+Também aceita `MKTAUTO_API_URL` como origem da API. Os payloads preservam seus
+contratos e chaves de idempotência. A CLI não abre bancos diretamente.
+As entradas aposentadas `start:legacy`, `video:live`, `trend:daily`,
+`trend:export`, `drive:authorize` e `drive:upload` permanecem como guardas de
+compatibilidade: retornam `COMMAND_UNAVAILABLE`, sem executar um runtime antigo.
 
-Referências encontradas não concedem direitos e não são baixadas. Instagram,
-Threads e TikTok só são consultados quando tokens, escopos e aprovações oficiais
-compatíveis estiverem configurados. Falta de acesso aparece como cobertura
-parcial ou bloqueada.
+## Estrutura e recursos
 
-### Projetos e canais
+- [Estrutura do projeto](docs/architecture/PROJECT_STRUCTURE.md).
+- [Mapa de módulos NestJS](docs/architecture/NESTJS_MODULE_MAP.md).
+- Aplicação: `src/main.ts`, `src/bootstrap.ts`, `src/app.module.ts` e `src/modules/`.
+- Administração: `src/infrastructure/administration/`.
+- SQL: `src/infrastructure/database/migrations/`; o build empacota os mesmos
+  arquivos em `dist/infrastructure/database/migrations/`.
+- Python especializado: `python/alignment/` e `python/tts/`, invocado pelos
+  adapters de Media. Requirements, algoritmos, modelos e direitos são preservados.
 
-A interface local usa somente JSON determinístico. Os comandos mutáveis recebem
-um arquivo contendo o comando completo validado pelo serviço de aplicação:
+O diretório intermediário antigo não contém mais arquivos versionados.
+Diretórios ignorados de checkouts anteriores não devem ser apagados por esse motivo.
+Não há segundo backend, scheduler ou catálogo.
+
+## Operação local e Docker
+
+A partir da raiz com build e dependências instalados:
 
 ```powershell
-npm run project -- create --input .\project-create.json --database .\data\mktauto.sqlite
-npm run project -- version --input .\project-version.json --database .\data\mktauto.sqlite
-npm run project -- archive --input .\project-archive.json --database .\data\mktauto.sqlite
+node scripts/ops-local/cli.mjs status --root '<root-absoluto-do-piloto>'
 ```
 
-Os arquivos de criação e nova versão contêm `idempotencyKey`, `actor`,
-`occurredAt` e `project`. Nova versão também exige `expectedVersion`;
-arquivamento recebe os três metadados, `projectId` e `expectedVersion`. O instante
-deve estar em ISO 8601 e cada efeito lógico deve ter uma chave idempotente.
+A CLI preserva identidade de workers, start/status/stop, histórico e recuperação.
+Seu `init` provisiona somente um root novo, conforme os recursos e a identidade
+QC explicitamente fornecidos. Não reutilize bancos operacionais como fixtures.
+O [registro do piloto OPS-001](docs/operations/MKTAUTO-OPS-001.md) conserva suas
+evidências e caminhos históricos.
 
-Consultas, revisão, seleção em memória e exportação não criam versões nem
-registram comandos:
+O Dockerfile compila na raiz e empacota `dist/`, `node_modules/`, `package.json`
+e `python/`. O comando do container é `node dist/main.js`. Os bind mounts e
+nomes operacionais em `compose.live.yml` foram preservados. A imagem de produção
+existente continua independente desta migração; deploy, substituição da imagem,
+reinício, schedulers, gastos e publicação exigem autorização operacional própria.
 
-```powershell
-npm run project -- latest --project-id project_curiosidades_ia
-npm run project -- get --project-id project_curiosidades_ia --version 1
-npm run project -- review --project-id project_curiosidades_ia --version 1
-npm run project -- select --project-id project_curiosidades_ia --version 1
-npm run project -- export --project-id project_curiosidades_ia --version 1 --output .\project.json
-```
-
-`--database` é opcional nas consultas e usa `data/mktauto.sqlite` por padrão. A
-exportação contém somente o `ProjectSnapshot` normalizado. Falhas retornam código
-de saída `1` e JSON em `stderr` com `code`, `field` e mensagem acionável, sem
-stack trace ou detalhes internos.
-
-### Preview local
-
-Com um projeto versionado, uma seleção humana persistida e a respectiva
-`PipelineRun`, execute o pipeline real com:
-
-```powershell
-npm run preview -- --project-id project_curiosidades_ia --project-version 1 --selection-id selection_ID
-```
-
-O banco usa `PREVIEW_DATABASE` do `.env` ou `data/mktauto.sqlite`; `--database`
-pode sobrescrever esse valor. O `.env` também deve conter a configuração real da
-OpenAI e do FFmpeg descrita em `.env.example`, com os roots de voz e mídia do
-provider iguais aos roots usados pelo FFmpeg. Os direitos comerciais de voz e
-imagem precisam estar explicitamente confirmados.
-
-O comando infere o run ID da seleção, revalida projeto e versão e informa
-`NEW`, `RESUMED` ou `REUSED_TERMINAL`. Progresso resumido é emitido em JSON Lines
-no `stderr`; o resultado final em `stdout` contém status, run ID, `VideoRender`
-ID, SHA-256, referência lógica e o path físico validado do MP4. Esse path existe
-somente na saída local do processo: contratos e persistência continuam usando a
-referência lógica. Falhas públicas não incluem credenciais, payloads, paths
-privados ou stack traces.
-
-## Arquitetura e planejamento
-
-- `docs/CONTENT_AUTOMATION_MVP_PROJECT.md`: visão, domínio, módulos, interfaces,
-  estrutura futura, fases, segurança e riscos;
-- `docs/MODULAR_VIDEO_PIPELINE.md`: artefatos, etapas, estados, validação,
-  publicação idempotente e observabilidade;
-- `docs/TOPIC_ROADMAP.md`: prioridades Affiliate-First, backlog anterior, gates e
-  tópicos incrementais;
-- `docs/PROJECT_WORKFLOW.md`: processo de análise, aprovação e entrega;
-- `AGENTS.md`: regras obrigatórias do repositório.
-
-## Estado e próximo tópico
-
-A auditoria P0 encontrou produção de preview, FFmpeg, legendas, custos parciais,
-QC e aprovação humana no checkout, além de projetos e pesquisa. Não certificou
-operação LIVE. Produto/campanha, fal.ai e resultados comerciais são lacunas.
-A ordem vigente está em `docs/TOPIC_ROADMAP.md`; P1 depende de aprovação e task
-do Planner. P0.1 altera somente governança/documentação, sem implementar P1.
+Segredos, modelos, bancos, mídias privadas, evidências e logs ficam fora do Git.
+As regras obrigatórias de trabalho estão em [AGENTS.md](AGENTS.md).

@@ -5,12 +5,13 @@ import { spawnSync } from 'node:child_process';
 const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url)));
 
 test('test commands scope Node discovery and retain the supported runners', () => {
-  assert.equal(pkg.scripts.test, 'npm run build && node --test "test/*.test.js"');
-  assert.equal(pkg.scripts['test:all'], 'npm test && npm --prefix backend test && npm --prefix backend run test:e2e && npm run test:python');
-  assert.equal(pkg.scripts['test:python'], 'python -B -m unittest discover -s backend/python/alignment -p "test_*.py"');
+  assert.equal(pkg.scripts.test, 'npm run test:node && npm run test:unit');
+  assert.equal(pkg.scripts['test:node'], 'npm run build && node --test "test/*.test.js" "scripts/ops-local/*.test.mjs"');
+  assert.equal(pkg.scripts['test:all'], 'npm test && npm run test:e2e && npm run test:python');
+  assert.equal(pkg.scripts['test:python'], 'python -B -m unittest discover -s python/alignment -p "test_*.py" && python -B -m unittest discover -s python/tts -p "test_*.py"');
 });
 test('official entries use no legacy executable and start stays NestJS', () => {
-  assert.equal(pkg.scripts.start, 'node --env-file-if-exists=.env backend/dist/main.js');
+  assert.equal(pkg.scripts.start, 'node --env-file-if-exists=.env dist/main.js');
   for (const [name, value] of Object.entries(pkg.scripts)) {
     if (name !== 'test') assert.doesNotMatch(value, /(?:^|\s)src\/.*\.js/);
   }
@@ -24,7 +25,7 @@ test('unavailable operations fail explicitly without loading legacy', () => {
   }
 });
 test('Research E2E uses Nest schema provisioning', () => {
-  const text = readFileSync(new URL('../backend/src/research/research-http.e2e-spec.ts', import.meta.url), 'utf8');
+  const text = readFileSync(new URL('../src/modules/research/research-http.e2e-spec.ts', import.meta.url), 'utf8');
   assert.doesNotMatch(text, /src\/project-repository\.js|ProjectRepository/);
   assert.match(text, /provisionSchema/);
 });

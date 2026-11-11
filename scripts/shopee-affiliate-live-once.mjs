@@ -1,4 +1,4 @@
-import { ShopeeAffiliateLive } from "../backend/dist/affiliate/infrastructure/shopee-affiliate-live.js";
+import { ShopeeAffiliateLive } from "../dist/modules/affiliate/infrastructure/shopee-affiliate-live.js";
 
 // Standalone, explicitly selected probe. Never imported by the application.
 // Prints metadata only; no raw errors, responses, offers or credentials.

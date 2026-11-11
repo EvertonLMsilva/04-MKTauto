@@ -1,4 +1,4 @@
-import { provisionSchema } from "../backend/dist/administration/schema-provisioner.js";
+import { provisionSchema } from "../dist/infrastructure/administration/schema-provisioner.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { withTemporarySqlite } from "./sqlite-test-fixture.js";
@@ -6,8 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 import {
   ProjectApplicationError,
   ProjectApplicationService,
-} from "../backend/dist/project/application/project-application.service.js";
-import { SqliteProjectRepository as ProjectRepository } from "../backend/dist/project/infrastructure/sqlite-project.repository.js";
+} from "../dist/modules/project/application/project-application.service.js";
+import { SqliteProjectRepository as ProjectRepository } from "../dist/modules/project/infrastructure/sqlite-project.repository.js";
 
 const CREATED_AT = "2026-09-27T12:00:00.000Z";
 const UPDATED_AT = "2026-09-27T13:00:00.000Z";
