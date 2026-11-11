@@ -70,21 +70,123 @@ aprovação humana da versão exata e publicação manual inicial.
 Registrar custos e resultados comerciais. SaaS e automação avançada
 aguardam validação comercial. O Planner especifica cada implementação.
 
-## Diretório canônico permanente
+## Main e checkout canônicos
 
-Toda implementação deve ocorrer exclusivamente em
-`D:\04-Projetos\23-MKTauto`. Não criar novos Git worktrees nem cópias do
-projeto para desenvolvimento. Preserve alterações locais e use branches
-no checkout original, após verificar a segurança da troca de branch.
+A `main` é a referência oficial do código integrado. O checkout canônico
+fica em `D:\04-Projetos\23-MKTauto` e deve ser preservado.
+
+Não desenvolver funcionalidades nem criar commits funcionais diretamente
+na `main`. Cada tópico deve utilizar branch própria. Atualizar a `main`
+por fast-forward somente quando for seguro, com checkout limpo e sem
+interferir em trabalho ativo.
+
+## Worktrees autorizados
+
+Worktrees isolados são permitidos e recomendados para tarefas paralelas.
+Criar novos worktrees somente quando necessário e autorizado pela task.
+Não criar worktrees adicionais para testes ou análises simples sem
+justificativa.
+
+Cada worktree deve:
+
+- Estar associado a um tópico-pai e utilizar branch própria.
+- Partir da `main` atualizada e ocupar diretório exclusivo.
+- Preservar o checkout original e suas alterações locais.
+- Não reutilizar worktrees de outras frentes.
+- Ser identificado no relatório da task, com diretório, branch e HEAD.
+
+Local recomendado: `D:\04-Projetos\_worktrees\`.
+
+## Frentes e isolamento
+
+- **CORE:** arquitetura, migrações, organização e limpeza.
+- **A:** Publishing e distribuição.
+- **B:** Produção, Media, TTS, CTC e vídeos.
+- **C:** Shopee, Affiliate e Commercial.
+
+Cada frente possui seu próprio tópico-pai e subtópicos. CORE é uma frente
+estrutural adicional e não substitui as três frentes funcionais.
+
+É proibido:
+
+- Duas frentes editarem simultaneamente o mesmo arquivo, inclusive em
+  worktrees diferentes.
+- Alterar worktrees de outras frentes.
+- Usar bancos LIVE como fixtures.
+- Alterar Docker operacional sem autorização explícita.
+- Acessar ou modificar credenciais fora do escopo autorizado.
+
+Em conflito de escopo, parar, registrar `BLOCKED_CROSS_SCOPE` com evidência
+mínima e solicitar coordenação antes de prosseguir no escopo conflitante.
+
+## Sincronização e preservação
+
+Antes de cada tópico, confirmar `origin/main`, HEAD, branch, diretório do
+worktree e status Git. Verificar alterações concorrentes relevantes antes
+de trocar a branch ou reconciliar alterações.
+
+Se houver outro processo modificando o checkout de trabalho, parar e
+retornar `BLOCKED_CONCURRENT_WRITER`. Não sobrescrever trabalho concorrente.
+
+Não utilizar `git reset --hard`, `git clean -fdx` ou force push para corrigir
+divergências. Preservar commits e arquivos de trabalho não integrados.
+
+## Encerramento de worktrees
+
+Ao concluir um tópico:
+
+- Confirmar integração ou arquivamento.
+- Confirmar ausência de alterações pendentes.
+- Confirmar preservação de commits exclusivos.
+- Confirmar inexistência de processos consumidores.
+- Registrar destino dos backups quando aplicável.
+
+Não excluir worktrees automaticamente após merge. A remoção deve ocorrer
+somente em tarefa de limpeza autorizada, após essas verificações.
 
 ## Git
 
 Um tópico pai corresponde a uma branch/PR quando o fechamento for autorizado;
 subtarefas relacionadas usam commits úteis na mesma branch.
 
+Commits intermediários são permitidos por subtópico dentro do fluxo
+autorizado. Abrir um único PR por tópico-pai concluído; não abrir PR
+artificial quando não houver alteração. Uma atualização de governança pode
+ter PR exclusivo quando a própria task o solicitar explicitamente.
+
 Commit, push e PR só quando a task explicitamente solicitar ou quando o
 fluxo do projeto já estiver executando a etapa de fechamento. Nunca
 limpar, sobrescrever ou incluir mudanças locais alheias à task.
+
+Não executar merge automático. `USER_ONLY_MERGE`: o merge cabe ao usuário.
+
+## Arquitetura NestJS aprovada
+
+O MKTauto terá um único backend operacional NestJS, estruturado em módulos.
+A estrutura-alvo é:
+
+``` text
+src/modules/
+src/infrastructure/
+src/shared/
+python/
+test/
+scripts/
+docker/
+```
+
+A pasta `backend/` será eliminada pela task de reestruturação correspondente.
+Não antecipar mudanças de caminhos em atualizações de governança. Até a
+migração terminar, os caminhos antigos permanecem válidos.
+
+## Autorização operacional
+
+Mudanças de código não autorizam automaticamente deploy, chamadas pagas,
+publicações, alterações em SQLite LIVE, reinício de containers, ativação de
+schedulers, criação de grants ou exclusão de dados. Essas ações exigem
+autorização explícita no respectivo escopo; gastos também exigem orçamento.
+Preservar todos os gates operacionais existentes, incluindo Finance, QC,
+direitos comerciais, aprovação humana, auditoria e recuperação.
 
 ## Proteções invariantes
 
