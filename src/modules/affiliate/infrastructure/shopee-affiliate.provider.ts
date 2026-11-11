@@ -78,9 +78,11 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
     input: ShopeeOfferQuery = {},
   ): Promise<ShopeeAffiliateOfferPage> {
     const { page, limit } = buildShopeeOffersQuery(input).variables;
-    const offers = page === 1 ? await this.queryOffers() : [];
+    const offers = await this.queryOffers();
+    const offset = (page - 1) * limit;
+    const hasNextPage = offset + limit < offers.length;
     return {
-      offers: offers.slice(0, limit).map((offer) => ({
+      offers: offers.slice(offset, offset + limit).map((offer) => ({
         ...offer,
         description: null,
         availability: null,
@@ -93,7 +95,12 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
         },
         discountPercent: null,
       })),
-      pageInfo: { page, limit, hasNextPage: false, nextPage: null },
+      pageInfo: {
+        page,
+        limit,
+        hasNextPage,
+        nextPage: hasNextPage ? page + 1 : null,
+      },
     };
   }
   async queryOffers(): Promise<ShopeeAffiliateOffer[]> {
