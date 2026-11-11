@@ -6,15 +6,49 @@ import type { AffiliateRunContext } from '../../affiliate/application/ports/affi
 import type { ResearchReader } from '../../research/application/research-reader.port.js';
 import { SqliteResearchReader } from '../../research/infrastructure/sqlite-research.reader.js';
 
+export interface ContentSqlSession {
+  prepare(sql: string): {
+    get(...values: any[]): any;
+    all(...values: any[]): any;
+    run(...values: any[]): any;
+  };
+  exec(sql: string): any;
+  readonly isTransaction: boolean;
+  close(): void;
+}
+export interface ContentSession {
+  db: ContentSqlSession;
+  research:
+    | Pick<ResearchReader, 'getShortlist' | 'getInsight'>
+    | Pick<ResearchReader<true>, 'getShortlist' | 'getInsight'>;
+  transaction<T>(operation: () => T): any;
+}
 export class ContentDatabase {
-  readonly db: DatabaseSync;
-  readonly research: ResearchReader;
+  protected readonly sql: ContentSqlSession;
+  private readonly sqlite?: DatabaseSync;
+  get db(): DatabaseSync {
+    if (!this.sqlite) throw new Error('CONTENT_NATIVE_SQLITE_UNAVAILABLE');
+    return this.sqlite;
+  }
+  private readonly session?: ContentSession;
+  readonly research:
+    | Pick<ResearchReader, 'getShortlist' | 'getInsight'>
+    | Pick<ResearchReader<true>, 'getShortlist' | 'getInsight'>;
   constructor(
-    path: string,
+    path: string | ContentSession,
     private readonly operations: Pick<ContentOperationsService, 'get'>,
-    protected readonly affiliate: AffiliateRunContext,
+    protected readonly affiliate: Pick<
+      AffiliateRunContext,
+      'resolveRunBriefing'
+    >,
     { readOnly = false }: { readOnly?: boolean } = {},
   ) {
+    if (typeof path !== 'string') {
+      this.session = path;
+      this.sql = path.db;
+      this.research = path.research;
+      return;
+    }
     if (!isAbsolute(path))
       throw new Error('PROJECT_API_DATABASE must be an explicit absolute path');
     const preflight = new DatabaseSync(path, { readOnly: true });
@@ -34,15 +68,16 @@ export class ContentDatabase {
     } finally {
       preflight.close();
     }
-    this.db = new DatabaseSync(path, { readOnly });
+    this.sqlite = new DatabaseSync(path, { readOnly });
+    this.sql = this.sqlite;
     try {
-      this.db.exec('PRAGMA busy_timeout=5000;');
-      this.db.exec(
+      this.sql.exec('PRAGMA busy_timeout=5000;');
+      this.sql.exec(
         readOnly ? 'PRAGMA query_only=ON;' : 'PRAGMA foreign_keys=ON;',
       );
       this.research = new SqliteResearchReader(this.db);
     } catch (error) {
-      this.db.close();
+      this.sql.close();
       throw error;
     }
   }
@@ -58,7 +93,19 @@ export class ContentDatabase {
       throw error;
     }
   }
+  protected transaction<T>(operation: () => T): T {
+    if (this.session) return this.session.transaction(operation);
+    try {
+      this.sql.exec('BEGIN IMMEDIATE');
+      const result = operation();
+      this.sql.exec('COMMIT');
+      return result;
+    } catch (error) {
+      if (this.sql.isTransaction) this.sql.exec('ROLLBACK');
+      throw error;
+    }
+  }
   close() {
-    this.db.close();
+    this.sql.close();
   }
 }

@@ -1,4 +1,14 @@
-import { Module } from '@nestjs/common';
+import { Module, type DynamicModule } from '@nestjs/common';
+import {
+  PostgresModule,
+  PostgresDatabase,
+  type PostgresConfig,
+} from '../../infrastructure/database/postgres/index.js';
+import {
+  PostgresContentPersistence,
+  type ContentPostgresDependencies,
+} from './infrastructure/postgres-content.persistence.js';
+import { EditorialFlowError } from './application/editorial-flow.service.js';
 import { OllamaEditorialProvider } from './infrastructure/ollama-editorial.provider.js';
 import { ContentOperationsModule } from '../content-operations/content-operations.module.js';
 import { CONTENT_OPERATIONS } from '../content-operations/application/ports/operations.port.js';
@@ -102,4 +112,44 @@ import { EditorialFlowController } from './editorial-flow.controller.js';
     },
   ],
 })
-export class ContentModule {}
+export class ContentModule {
+  /** Isolated opt-in; dependencies expose read contracts only, never live writes. */
+  static postgres(
+    config: PostgresConfig,
+    dependencies: ContentPostgresDependencies,
+  ): DynamicModule {
+    return {
+      module: PostgresContentPilotModule,
+      imports: [PostgresModule.register(config)],
+      controllers: [ContentController, EditorialFlowController],
+      providers: [
+        {
+          provide: PostgresContentPersistence,
+          inject: [PostgresDatabase],
+          useFactory: (database: PostgresDatabase) =>
+            new PostgresContentPersistence(database, dependencies),
+        },
+        {
+          provide: ContentService,
+          inject: [PostgresContentPersistence],
+          useFactory: (persistence: PostgresContentPersistence) =>
+            new ContentService<true>(persistence),
+        },
+        {
+          provide: EditorialFlowService,
+          useValue: {
+            generate: async () => {
+              throw new EditorialFlowError(
+                'CONTENT_CROSS_DOMAIN_TRANSACTION_REQUIRED',
+                'database',
+              );
+            },
+          },
+        },
+      ],
+      exports: [ContentService],
+    };
+  }
+}
+@Module({})
+class PostgresContentPilotModule {}
