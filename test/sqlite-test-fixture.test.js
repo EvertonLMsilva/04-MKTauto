@@ -1,10 +1,10 @@
-import { provisionSchema } from "../backend/dist/administration/schema-provisioner.js";
+import { provisionSchema } from "../dist/infrastructure/administration/schema-provisioner.js";
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 import { dirname } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { SqliteProjectRepository as ProjectRepository } from '../backend/dist/project/infrastructure/sqlite-project.repository.js';
+import { SqliteProjectRepository as ProjectRepository } from '../dist/modules/project/infrastructure/sqlite-project.repository.js';
 import { withTemporarySqlite } from './sqlite-test-fixture.js';
 
 test('fecha todas as conexões e remove fixture após falha de assertion', () => {

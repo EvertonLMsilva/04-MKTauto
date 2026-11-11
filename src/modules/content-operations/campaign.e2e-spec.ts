@@ -1,0 +1,2372 @@
+import {
+  operationalQcIdentity,
+  provisionQcReviewer,
+} from '../publishing/application/local-qc-identity.js';
+import { OperationsService } from '../operations/operations.service.js';
+import { PublishingService } from '../publishing/application/publishing.service.js';
+import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
+import {
+  AFFILIATE_RUN_CONTEXT,
+  type AffiliateRunContext,
+} from '../affiliate/application/ports/affiliate-run-context.port.js';
+import { instagramCaption } from '../publishing/domain/social-publication-contracts.js';
+import { validateTemporalReport } from '../media/domain/p4-qc-contracts.js';
+import { execFileSync } from 'node:child_process';
+import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { dirname, join } from 'node:path';
+import { SqliteAffiliatePersistence } from '../affiliate/infrastructure/sqlite-affiliate.persistence.js';
+import { MediaService } from '../media/application/media.service.js';
+import { VideoGenerationService } from '../media/application/video-generation.service.js';
+import { FakeVideoGenerationProvider } from '../media/infrastructure/fake-video-generation.provider.js';
+import { LocalEvidenceStorage } from '../media/infrastructure/local-evidence-storage.js';
+import { runProcess } from '../media/infrastructure/ffmpeg-process.js';
+import { CampaignRepository } from './infrastructure/campaign.repository.js';
+import { CampaignOrchestrator } from './application/campaign-orchestrator.js';
+import { CampaignError } from './domain/campaign.js';
+import { NativeCampaignWorkflow } from './application/native-campaign-workflow.js';
+import { Test } from '@nestjs/testing';
+import type { INestApplication } from '@nestjs/common';
+import request from 'supertest';
+import { DatabaseSync } from 'node:sqlite';
+import {
+  p2EditorialFixture,
+  p2FinancialProof,
+} from '../../../test/support/p2-editorial-fixture.js';
+import { provisionSchema } from '../../infrastructure/administration/schema-provisioner.js';
+import { CampaignOrchestrationModule } from './campaign-orchestration.module.js';
+import { OperationsModule } from '../operations/operations.module.js';
+import { LocalFlowService } from '../media/application/local-flow.service.js';
+import { LocalFlowRuntime } from '../media/infrastructure/local-flow.runtime.js';
+import { LocalFlowRepository } from '../media/infrastructure/local-flow.repository.js';
+import { ContentService } from '../content/application/content.service.js';
+import { CONTENT_OPERATIONS } from './application/ports/operations.port.js';
+import {
+  alignmentHash,
+  type AlignmentEvidence,
+} from '../media/domain/alignment-contracts.js';
+import {
+  CampaignAdministration,
+  CAMPAIGN_DATABASE,
+} from './application/campaign-administration.js';
+import { CONTENT_DATABASE } from '../content/infrastructure/content.persistence.js';
+import { AFFILIATE_DATABASE } from '../affiliate/infrastructure/affiliate-database.config.js';
+import { PROJECT_DATABASE } from '../project/infrastructure/project-database.config.js';
+import { RESEARCH_DATABASE } from '../research/infrastructure/research-database.config.js';
+import { CONTENT_OPERATIONS_DATABASE } from './application/ports/operations.port.js';
+import { FINANCE_DATABASE } from '../finance/finance.module.js';
+import { MEDIA_DATABASE } from '../media/infrastructure/media.persistence.js';
+import { PUBLISHING_DATABASE } from '../publishing/infrastructure/publishing.persistence.js';
+import { EDITORIAL_PROVIDER } from '../content/application/editorial-provider.port.js';
+import {
+  FakeEditorialProvider,
+  UnavailableEditorialProvider,
+} from '../content/infrastructure/fake-editorial.provider.js';
+import { FinanceService } from '../finance/application/finance.service.js';
+import { OpenAiNarrationTransport } from '../media/infrastructure/openai-narration.transport.js';
+import { ttsHash } from '../finance/domain/tts-financial-contracts.js';
+import { scriptContentHash } from '../content/domain/script-contracts.js';
+
+describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', () => {
+  let f: ReturnType<typeof p2EditorialFixture>,
+    app: INestApplication,
+    service: CampaignAdministration;
+  const provider = new FakeEditorialProvider();
+  let body: Record<string, unknown>;
+  beforeEach(async () => {
+    f = p2EditorialFixture({ productionProfile: 'MIXED_MEDIA_V2' });
+    const db = new DatabaseSync(f.database);
+    provisionSchema(db);
+    db.close();
+    const catalog = new SqliteAffiliatePersistence(f.database).open();
+    try {
+      catalog.registerCampaign(
+        {
+          ...catalog.getCampaign('camp_001', 1)!,
+          revision: 2,
+          affiliateUrl: 'https://s.shopee.com.br/offline',
+        },
+        'campaign_shopee',
+        true,
+      );
+      catalog.associateCampaignSource(
+        {
+          schemaVersion: 'affiliate-campaign-source/1.0.0',
+          sourceId: 'p76_shopee',
+          revision: 1,
+          source: 'SHOPEE_AFFILIATE_API',
+          offer: {
+            offerId: 'fixture-offer',
+            productId: 'fixture-product',
+            shopId: null,
+            provenance: {
+              source: 'FAKE',
+              fixtureVersion: 'p76/offline/1',
+              observedAt: null,
+            },
+          },
+          campaignId: 'camp_001',
+          campaignRevision: 2,
+          productId: 'prod_001',
+          productRevision: 1,
+          briefingId: 'brief_shopee',
+          affiliateUrl: 'https://s.shopee.com.br/offline',
+        },
+        'source_shopee',
+        ['authorized-image-001'],
+      );
+    } finally {
+      catalog.close();
+    }
+    const binary = (name: string) =>
+      execFileSync(
+        process.platform === 'win32' ? 'where.exe' : 'which',
+        [name],
+        { encoding: 'utf8', windowsHide: true },
+      )
+        .trim()
+        .split(/\r?\n/)[0];
+    vi.stubEnv('TEMPORAL_QC_MODE', 'offline');
+    vi.stubEnv('FFMPEG_PATH', binary('ffmpeg'));
+    vi.stubEnv('FFPROBE_PATH', binary('ffprobe'));
+    vi.stubEnv('FFMPEG_MEDIA_ROOT', join(dirname(f.database), 'media'));
+    vi.stubEnv('FFMPEG_VOICE_ROOT', join(dirname(f.database), 'voice'));
+    vi.stubEnv('FFMPEG_RENDER_ROOT', join(dirname(f.database), 'render'));
+    vi.stubEnv('PUBLISHING_RENDER_ROOT', process.env.FFMPEG_RENDER_ROOT!);
+    vi.stubEnv(
+      'LOCAL_MEDIA_EVIDENCE_ROOT',
+      join(dirname(f.database), 'evidence'),
+    );
+    for (const path of [
+      process.env.FFMPEG_MEDIA_ROOT!,
+      process.env.FFMPEG_VOICE_ROOT!,
+      process.env.FFMPEG_RENDER_ROOT!,
+      process.env.LOCAL_MEDIA_EVIDENCE_ROOT!,
+    ])
+      mkdirSync(path, { recursive: true });
+    vi.stubEnv('INSTAGRAM_PUBLICATION_MODE', 'fake');
+    vi.stubEnv('INSTAGRAM_ACCOUNT_ID', '123456789');
+    vi.stubEnv('INSTAGRAM_API_VERSION', 'v25.0');
+    vi.stubEnv('INSTAGRAM_SCHEDULER_ENABLED', 'false');
+    let builder = Test.createTestingModule({
+      imports: [OperationsModule],
+    });
+    for (const token of [
+      CAMPAIGN_DATABASE,
+      CONTENT_DATABASE,
+      AFFILIATE_DATABASE,
+      PROJECT_DATABASE,
+      RESEARCH_DATABASE,
+      CONTENT_OPERATIONS_DATABASE,
+      FINANCE_DATABASE,
+      MEDIA_DATABASE,
+      PUBLISHING_DATABASE,
+    ])
+      builder = builder.overrideProvider(token).useValue(f.database);
+    const module = await builder
+      .overrideProvider(EDITORIAL_PROVIDER)
+      .useValue(provider)
+      .compile();
+    app = module.createNestApplication();
+    await app.init();
+    service = module.get(CampaignAdministration);
+    body = {
+      audioMode: 'RECORDING',
+      campaignId: 'camp_001',
+      campaignRevision: 2,
+      scheduledAt: '2026-10-14T12:00:00Z',
+      runId: 'run_001',
+      briefingId: 'brief_shopee',
+      researchShortlistId: f.shortlist.artifactId,
+      generationRequestId: 'p4_editorial_001',
+      mode: 'LOCAL_VALIDATION',
+    };
+  });
+  it('requires QC_REVIEWER authentication on legacy recovery and forbids provenance injection through schedule', async () => {
+    await request(app.getHttpServer())
+      .post('/content-operations/campaign-executions/legacy-recovery')
+      .send({ campaignId: 'camp_001', runId: 'run_001', media: [] })
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/content-operations/campaign-executions')
+      .send({ ...body, legacyRecovery: { provenance: 'LEGACY_RECOVERY' } })
+      .expect(400);
+    expect(service.list()).toHaveLength(0);
+  });
+  afterEach(async () => {
+    await app.close();
+    f.cleanup();
+    vi.unstubAllEnvs();
+  });
+  const base = '/content-operations/campaign-executions';
+  it('schedules, replays, persists real native editorial checkpoints and waits for audio', async () => {
+    const first = await request(app.getHttpServer())
+      .post(base)
+      .send(body)
+      .expect(201);
+    const id = first.body.execution_id;
+    await request(app.getHttpServer())
+      .post(base)
+      .send(body)
+      .expect(201)
+      .expect((r) => expect(r.body.execution_id).toBe(id));
+    await Promise.all([service.tick(), service.tick()]);
+    await request(app.getHttpServer())
+      .get(`${base}/${id}`)
+      .expect(200)
+      .expect((r) => expect(r.body.status).toBe('WAITING_INPUT'));
+    const history = await request(app.getHttpServer())
+      .get(`${base}/${id}/history`)
+      .expect(200);
+    expect(
+      history.body.some(
+        (h: { event_type: string; evidence: { step: string } }) =>
+          h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+      ),
+    ).toBe(true);
+    const db = new DatabaseSync(f.database, { readOnly: true });
+    try {
+      expect(
+        db
+          .prepare(
+            "SELECT COUNT(*) n FROM scripts WHERE script_id='script:p4_editorial_001'",
+          )
+          .get()?.n,
+      ).toBe(1);
+      expect(db.prepare('SELECT COUNT(*) n FROM cost_events').get()?.n).toBe(0);
+    } finally {
+      db.close();
+    }
+    await request(app.getHttpServer()).post(`${base}/${id}/resume`).expect(201);
+    await service.tick();
+    expect(
+      service
+        .history(id)
+        .filter(
+          (h) =>
+            h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+        ),
+    ).toHaveLength(1);
+    await request(app.getHttpServer()).post(`${base}/${id}/cancel`).expect(201);
+    await request(app.getHttpServer()).post(`${base}/${id}/resume`).expect(409);
+    await request(app.getHttpServer())
+      .get(`${base}/missing_execution`)
+      .expect(404);
+    await request(app.getHttpServer())
+      .post(base)
+      .send({ ...body, runId: 'different_run' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .post(base)
+      .send({ ...body, paid: true })
+      .expect(400);
+  });
+  it('runs native editorial, motion scene preparation and simulation, then waits for real media without spending', async () => {
+    const network = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('NETWORK_FORBIDDEN'));
+    try {
+      const input = { ...body, videoProduction: { mode: 'OFFLINE' } };
+      const e = await service.schedule(input);
+      expect((await service.schedule(input)).execution_id).toBe(e.execution_id);
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      const history = service.history(e.execution_id);
+      const scenes = history.find(
+        (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+      )!.evidence.result as any;
+      expect(scenes.shopeeSource.offer.provenance.source).toBe('FAKE');
+      expect(scenes.commercial.productId).toBe('prod_001');
+      expect(scenes.review.status).toBe('REQUIRED');
+      expect(scenes.scenes.length).toBeGreaterThan(0);
+      expect(
+        scenes.scenes.every(
+          (s: any) =>
+            s.sceneMediaType === 'GENERATED_VIDEO' &&
+            s.movementRequirement === 'REAL_MOTION_REQUIRED',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(history)).toContain('REAL_VIDEO_MEDIA_REQUIRED');
+      expect(JSON.stringify(history)).toContain('NOT_MATERIALIZED');
+      expect(history.some((h) => h.evidence.step === 'AUDIO')).toBe(false);
+      for (const step of ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC']) {
+        const started = history.find(
+          (event) =>
+            event.event_type === 'STEP_STARTED' && event.evidence.step === step,
+        )!;
+        expect(
+          await app.get(NativeCampaignWorkflow).reconcile(
+            service.get(e.execution_id),
+            history.filter((event) => event.sequence <= started.sequence),
+          ),
+        ).toEqual({
+          verified: true,
+          reason: 'OFFLINE_VIDEO_STAGE_REPLAY_SAFE',
+        });
+      }
+      expect(network).not.toHaveBeenCalled();
+      const db = new DatabaseSync(f.database, { readOnly: true });
+      try {
+        expect(db.prepare('SELECT COUNT(*) n FROM cost_events').get()?.n).toBe(
+          0,
+        );
+      } finally {
+        db.close();
+      }
+      await service.resume(e.execution_id);
+      await service.tick();
+      expect(
+        service
+          .history(e.execution_id)
+          .filter(
+            (h) =>
+              h.event_type === 'STEP_DONE' &&
+              h.evidence.step === 'VIDEO_GENERATION',
+          ),
+      ).toHaveLength(1);
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    } finally {
+      network.mockRestore();
+    }
+  });
+  it.each([
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: false,
+    },
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: true,
+    },
+    { mediaDecision: 'REJECTED', finalDecision: 'APPROVED' },
+    { mediaDecision: 'APPROVED', finalDecision: 'REJECTED' },
+    {
+      mediaDecision: 'APPROVED',
+      finalDecision: 'APPROVED',
+      simulateTimeout: false,
+      paidTts: true,
+    },
+  ])(
+    'browser QC, offline finalization and independent handoff: %j',
+    async ({ mediaDecision, finalDecision, simulateTimeout, paidTts }) => {
+      let restorePublicationRights: (() => void) | undefined;
+      const e = await service.schedule({
+        ...body,
+        videoProduction: { mode: 'ASSISTED_LOCAL' },
+      });
+      await service.tick();
+      const editorial = service
+        .history(e.execution_id)
+        .find(
+          (h) =>
+            h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+        )!.evidence.result as any;
+      const script = editorial.script;
+      const scenes = {
+        pipelineRunId: script.pipelineRunId,
+        projectId: script.projectId,
+        projectVersion: script.projectVersion,
+        script,
+        scenes: script.visualDirections,
+      };
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'REAL_VIDEO_MEDIA_REQUIRED',
+      );
+      expect(
+        service
+          .history(e.execution_id)
+          .some((h) => h.evidence.step === 'VIDEO_GENERATION'),
+      ).toBe(false);
+      const file = join(dirname(f.database), 'technical-fixture.mp4');
+      await runProcess(
+        process.env.FFMPEG_PATH!,
+        [
+          '-v',
+          'error',
+          '-nostdin',
+          '-f',
+          'lavfi',
+          '-i',
+          'testsrc2=s=64x64:r=8:d=2',
+          '-an',
+          '-c:v',
+          'libx264',
+          '-threads',
+          '1',
+          '-preset',
+          'ultrafast',
+          '-pix_fmt',
+          'yuv420p',
+          file,
+        ],
+        { timeoutMs: 15000, maxLogBytes: 8192 },
+      );
+      const hash = new LocalEvidenceStorage(process.env.FFMPEG_MEDIA_ROOT!).put(
+        readFileSync(file),
+        'mp4',
+      );
+      const ref = 'media:sha256_' + hash;
+      const media = app.get(MediaService);
+      const ids = scenes.scenes.map((scene: any) => {
+        const id = 'technical_fixture_' + scene.position;
+        media.register({
+          schemaVersion: 'media-asset/2.0.0',
+          source: null,
+          mediaAssetId: id,
+          pipelineRunId: scenes.pipelineRunId,
+          projectId: scenes.projectId,
+          projectVersion: scenes.projectVersion,
+          scriptId: scenes.script.scriptId,
+          scriptContentHash: scenes.script.contentHash,
+          visualDirectionPosition: scene.position,
+          assetType: 'VIDEO',
+          technicalProperties: {
+            format: 'mp4',
+            widthPixels: 64,
+            heightPixels: 64,
+            durationMilliseconds: 2000,
+            mimeType: 'video/mp4',
+            hasAudio: false,
+          },
+          contentHash: hash,
+          mediaReference: ref,
+          origin: 'OPERATOR_OWNED',
+          provider: null,
+          rights: {
+            usageBasis: 'OWNED',
+            commercialUseAllowed: true,
+            evidence: [
+              {
+                id: 'fixture_rights_' + scene.position,
+                kind: 'MEDIA_USAGE_RIGHT',
+                sourceRef: 'fixture:locally-generated-test-pattern',
+                recordedAt: '2026-10-14T12:00:00Z',
+                mediaAuthorization: {
+                  mediaRef: ref,
+                  contentHash: hash,
+                  commercialUse: 'GRANTED',
+                  processing: 'GRANTED',
+                  localProcessing: true,
+                  externalProviders: [],
+                },
+              },
+            ],
+          },
+          createdAt: '2026-10-14T12:00:00Z',
+          revision: 1,
+          supersedesMediaAssetId: null,
+        });
+        return id;
+      });
+      const realGet = media.get.bind(media);
+      const denied = vi.spyOn(media, 'get').mockImplementation((id: string) => {
+        const asset = realGet(id)!;
+        return {
+          ...asset,
+          rights: {
+            ...asset.rights,
+            evidence: asset.rights.evidence!.map((item) => ({
+              ...item,
+              mediaAuthorization: {
+                ...item.mediaAuthorization!,
+                localProcessing: false,
+              },
+            })),
+          },
+        };
+      });
+      try {
+        await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+        await service.tick();
+        expect(JSON.stringify(service.history(e.execution_id))).toContain(
+          'MEDIA_PROCESSING_RIGHTS_REQUIRED',
+        );
+      } finally {
+        denied.mockRestore();
+      }
+      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'COMPLETE_TEMPORAL_QC_REQUIRED',
+      );
+      const preparation = service
+        .history(e.execution_id)
+        .find(
+          (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'SCENES',
+        )!.evidence.result as any;
+      expect(
+        preparation.scenes.every(
+          (scene: any) =>
+            scene.sceneMediaType === 'RECORDED_VIDEO' &&
+            scene.movementRequirement === 'REAL_MOTION_REQUIRED',
+        ),
+      ).toBe(true);
+      const generation = service
+        .history(e.execution_id)
+        .find(
+          (h) =>
+            h.event_type === 'STEP_DONE' &&
+            h.evidence.step === 'VIDEO_GENERATION',
+        )!.evidence.result as any;
+      expect(generation.generation).toBe('NOT_REQUESTED');
+      expect(generation.materialization).toBe('EXISTING_AUTHORIZED_MEDIA');
+      const asset = media.get(ids[0])!;
+      const report = validateTemporalReport(
+        await media.evaluateTemporalMedia(ids[0]),
+        {
+          mediaAssetId: asset.mediaAssetId,
+          mediaReference: asset.mediaReference,
+          contentHash: asset.contentHash,
+          scriptContentHash: asset.scriptContentHash,
+          visualDirectionPosition: asset.visualDirectionPosition,
+        },
+      );
+      expect(report.identity.contentHash).toBe(hash);
+      expect(report.evidence.fidelity).toBe('NOT_VALIDATED');
+      expect(report.evidence.motion).toBe('NOT_VALIDATED');
+      expect(report.evidence.continuity).toBe('NOT_VALIDATED');
+      expect(report.result).toBe('NOT_VALIDATED');
+      expect(report.evidence.provenance?.contentHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(
+        service
+          .history(e.execution_id)
+          .some((h) =>
+            ['AUDIO', 'COMPOSITION', 'BURN', 'PUBLICATION'].includes(
+              String(h.evidence.step),
+            ),
+          ),
+      ).toBe(false);
+      await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+      await service.tick();
+      expect(await media.evaluateTemporalMedia(ids[0])).toEqual(report);
+      const staleReview = vi
+        .spyOn(media, 'evaluateTemporalMedia')
+        .mockRejectedValueOnce(
+          Object.assign(new Error('HUMAN_APPROVAL_REVIEW_INVALID'), {
+            code: 'HUMAN_APPROVAL_REVIEW_INVALID',
+          }),
+        );
+      try {
+        await service.resume(e.execution_id, { sceneMediaAssetIds: ids });
+        await service.tick();
+        expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+        expect(JSON.stringify(service.history(e.execution_id))).toContain(
+          'AUTHENTICATED_MEDIA_REVIEW_REQUIRED',
+        );
+      } finally {
+        staleReview.mockRestore();
+      }
+      const configFile = join(dirname(f.database), 'qc-identities.json'),
+        secretFile = join(dirname(f.database), 'individual-reviewer');
+      await provisionQcReviewer(configFile, 'qc_operator_test', secretFile);
+      vi.stubEnv('QC_IDENTITIES_FILE', configFile);
+      const credential = readFileSync(secretFile, 'utf8');
+      const browser = request.agent(app.getHttpServer());
+      const [operatorId, secret] = credential.trim().split('.');
+      await browser
+        .get('/operations')
+        .expect(200)
+        .expect('Content-Type', /html/)
+        .expect((response) => {
+          expect(response.text).toContain('Aprovar mídia');
+          expect(response.headers['content-security-policy']).toContain(
+            "frame-ancestors 'none'",
+          );
+        });
+      const session = await browser
+        .post('/operations/session')
+        .set('Host', 'localhost:3000')
+        .set('Origin', 'http://localhost:3000')
+        .send({ operatorId, secret })
+        .expect(201);
+      expect(session.headers['set-cookie'][0]).toContain('HttpOnly');
+      expect(JSON.stringify(session.body)).not.toContain(secret);
+      await browser
+        .get('/operations/executions')
+        .set('Host', 'localhost:3000')
+        .expect(200)
+        .expect((response) =>
+          expect(
+            response.body.some(
+              (row: any) => row.execution_id === e.execution_id,
+            ),
+          ).toBe(true),
+        );
+      const png = join(dirname(f.database), 'technical-reference.png');
+      await runProcess(
+        process.env.FFMPEG_PATH!,
+        ['-v', 'error', '-nostdin', '-i', file, '-frames:v', '1', png],
+        { timeoutMs: 15000, maxLogBytes: 8192 },
+      );
+      const refHash = new LocalEvidenceStorage(
+        process.env.FFMPEG_MEDIA_ROOT!,
+      ).put(readFileSync(png), 'png');
+      const referenceRights = structuredClone(asset.rights);
+      referenceRights.evidence![0].id = 'reference_fixture_right';
+      referenceRights.evidence![0].mediaAuthorization = {
+        mediaRef: 'media:sha256_' + refHash,
+        contentHash: refHash,
+        commercialUse: 'GRANTED',
+        processing: 'GRANTED',
+        localProcessing: true,
+        externalProviders: ['fal_ai'],
+      };
+      const reference = media.register({
+        ...asset,
+        mediaAssetId: 'assisted_reference',
+        revision: 1,
+        supersedesMediaAssetId: null,
+        assetType: 'IMAGE',
+        technicalProperties: {
+          format: 'png',
+          widthPixels: 64,
+          heightPixels: 64,
+          durationMilliseconds: null,
+          mimeType: 'image/png',
+          hasAudio: null,
+        },
+        contentHash: refHash,
+        mediaReference: 'media:sha256_' + refHash,
+        rights: referenceRights,
+      });
+      for (const id of ids) {
+        const video = media.get(id)!,
+          auto: any = await media.evaluateTemporalMedia(id);
+        const criterion = {
+          startSeconds: 0,
+          endSeconds: 2,
+          observation:
+            'Isolated contract attestation for owned technical frames, without a commercial claim.',
+        };
+        const prepared = await browser
+          .post(`/operations/executions/${e.execution_id}/media/${id}/context`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({ referenceId: reference.mediaAssetId })
+          .expect(201);
+        expect(prepared.body.automatic.contentHash).toBe(auto.contentHash);
+        await browser
+          .get(
+            `/operations/executions/${e.execution_id}/media/${id}/${reference.mediaAssetId}/file?kind=reference`,
+          )
+          .set('Host', 'localhost:3000')
+          .expect(200)
+          .expect('Content-Type', /image\/png/);
+        await browser
+          .post('/media/assets/' + id + '/temporal-reviews')
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .send({})
+          .expect(403);
+        const reviewed = await browser
+          .post('/media/assets/' + id + '/temporal-reviews')
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({
+            schemaVersion: 'human-temporal-review-request/1.0.0',
+            mediaAssetId: id,
+            mediaContentHash: video.contentHash,
+            mediaRevision: video.revision,
+            automaticReportHash: auto.contentHash,
+            referenceImage: {
+              mediaAssetId: reference.mediaAssetId,
+              contentHash: refHash,
+              revision: reference.revision,
+            },
+            decision: mediaDecision,
+            criteria: {
+              motion: criterion,
+              continuity: criterion,
+              fidelity: criterion,
+            },
+          })
+          .expect(201);
+        expect(
+          reviewed.body.evidence.provenance.parameters.humanReview.actor,
+        ).toBe('qc_operator_test');
+        await request(app.getHttpServer())
+          .get('/media/assets/' + id + '/temporal-reviews')
+          .expect(401);
+        await request(app.getHttpServer())
+          .get('/media/assets/' + id + '/temporal-reviews')
+          .set('Authorization', 'Bearer ' + credential)
+          .expect(200)
+          .expect((response) => expect(response.body).toEqual(reviewed.body));
+      }
+      if (mediaDecision === 'REJECTED') {
+        await browser
+          .post(`/operations/executions/${e.execution_id}/advance`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({})
+          .expect(201);
+        expect(service.get(e.execution_id).status).toBe('FAILED');
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'MEDIA_REVIEW_REJECTED',
+        );
+        expect(
+          service
+            .history(e.execution_id)
+            .some((event) => event.evidence.step === 'COMPOSITION'),
+        ).toBe(false);
+        return;
+      }
+      // The persisted authenticated decision is sufficient; no manual resume command.
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      const finalHistory = service.history(e.execution_id);
+      expect(
+        finalHistory.some(
+          (h) => h.event_type === 'STEP_DONE' && h.evidence.step === 'MEDIA_QC',
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(finalHistory)).toContain('AUDIO_REQUIRED');
+      await browser
+        .post(`/operations/executions/${e.execution_id}/advance`)
+        .set('Host', 'localhost:3000')
+        .set('Origin', 'http://localhost:3000')
+        .set('x-qc-csrf', session.body.csrfToken)
+        .send({})
+        .expect(201);
+      await request(app.getHttpServer())
+        .get(`/content-operations/campaign-executions/${e.execution_id}`)
+        .expect(200)
+        .expect((response) => {
+          expect(response.body.finalization.pending).toMatchObject({
+            code: 'AUDIO_REQUIRED',
+          });
+          expect(response.body.finalization.pending.message).toContain(
+            'gravação autorizada',
+          );
+          expect(response.body.finalization.availableActions).toContain(
+            'SUPPLY_INPUT',
+          );
+        });
+      expect(finalHistory.some((h) => h.evidence.step === 'COMPOSITION')).toBe(
+        false,
+      );
+      if (finalDecision === 'APPROVED' && simulateTimeout === false) {
+        const revision = {
+          ...script,
+          scriptId: `${script.scriptId}:revision_2`,
+          revision: 2,
+          supersedesScriptId: script.scriptId,
+          origin: 'OPERATOR',
+          hook: 'Conheça os detalhes deste produto autorizado.',
+          createdAt: new Date().toISOString(),
+          contentHash: '',
+        };
+        if (paidTts) {
+          revision.hook = 'Conheça.';
+          revision.narrativeBlocks = revision.narrativeBlocks.map((b: any) => ({
+            ...b,
+            narration: 'Publicidade.',
+          }));
+        }
+        revision.fullNarration = [
+          revision.hook,
+          ...revision.narrativeBlocks.map((b: any) => b.narration),
+          revision.cta,
+        ]
+          .filter((p) => p !== null)
+          .join('\n\n');
+        revision.contentHash = scriptContentHash(revision);
+        app.get(ContentService).registerScript(revision);
+        const revise = () =>
+          browser
+            .post(`/operations/executions/${e.execution_id}/script-revision`)
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({
+              scriptId: revision.scriptId,
+              previousScriptContentHash: script.contentHash,
+              reason:
+                'Revisão de narração na fixture isolada; visuais preservados.',
+            });
+        await revise().expect(201);
+        await revise().expect(201);
+        const context = service.finalizationContext(e.execution_id);
+        expect((context.completed.EDITORIAL as any).script.scriptId).toBe(
+          revision.scriptId,
+        );
+        expect(context.completed.MEDIA_QC).toBeDefined();
+        expect(
+          service
+            .history(e.execution_id)
+            .filter((h) => h.event_type === 'SCRIPT_REVISED'),
+        ).toHaveLength(1);
+        const response = await browser
+          .get(`/operations/executions/${e.execution_id}`)
+          .set('Host', 'localhost:3000')
+          .expect(200);
+        expect(response.body.media.length).toBeGreaterThan(0);
+      }
+      const { wav } = await import(
+        new URL('../../../test-support/physical-fixtures.js', import.meta.url)
+          .href
+      );
+      const audio = wav({ durationMilliseconds: 2000 });
+      const upload = () =>
+        browser
+          .post(`/operations/executions/${e.execution_id}/audio`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken);
+      const advance = () =>
+        browser
+          .post(`/operations/executions/${e.execution_id}/advance`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({});
+      if (!paidTts) {
+        await upload()
+          .field('usageBasis', 'OWNED')
+          .field('commercialUseAllowed', 'false')
+          .field(
+            'statement',
+            'Isolated owned recording fixture, authorized for this test only.',
+          )
+          .attach('audio', audio, {
+            filename: 'recording.wav',
+            contentType: 'audio/wav',
+          })
+          .expect(400);
+        await upload()
+          .field('usageBasis', 'OWNED')
+          .field('commercialUseAllowed', 'true')
+          .field(
+            'statement',
+            'Isolated owned recording fixture, authorized for this test only.',
+          )
+          .attach('audio', audio, {
+            filename: 'recording.wav',
+            contentType: 'audio/wav',
+          })
+          .expect((response) =>
+            expect(response.status, JSON.stringify(response.body)).toBe(201),
+          );
+        vi.stubEnv('LOCAL_ALIGNMENT_PYTHON', '');
+        vi.stubEnv('LOCAL_ALIGNMENT_MODEL_ROOT', '');
+        await advance().expect(201);
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'ALIGNMENT_CONFIGURATION_REQUIRED',
+        );
+      }
+      // The unavailable model is replaced only in this isolated test by a deterministic offline aligner.
+      const aligner = {
+        identity: 'closure-fixture/1',
+        align: vi.fn(async (input: any) => {
+          const chunks = [...input.canonicalText.matchAll(/[^\n]+/g)];
+          const evidence: AlignmentEvidence = {
+            input,
+            parameters: { fixture: true },
+            provenance: 'FORCED_ALIGNMENT',
+            output: {
+              alignmentId:
+                'align_' +
+                alignmentHash({ input, configuration: 'closure-fixture/1' }),
+              provider: 'offline-fixture',
+              modelVersion: 'fixture/1',
+              audioSha256: input.audioSha256,
+              scriptTextSha256: input.scriptTextSha256,
+              status: 'VERIFIED',
+              evidenceHash: '',
+              segments: chunks.map((match: any, index: number) => ({
+                startMs: Math.floor((index * input.durationMs) / chunks.length),
+                endMs: Math.floor(
+                  ((index + 1) * input.durationMs) / chunks.length,
+                ),
+                text: match[0],
+                textStartOffset: match.index,
+                textEndOffset: match.index + match[0].length,
+              })),
+            },
+          };
+          evidence.output.evidenceHash = alignmentHash(evidence);
+          return evidence;
+        }),
+      };
+      const local = app.get(LocalFlowService);
+      const runtime = new LocalFlowRuntime(
+        () =>
+          new LocalFlowRepository(
+            f.database,
+            app.get(CONTENT_OPERATIONS),
+            app.get(ContentService),
+          ),
+        media,
+        process.env,
+        { verify: async () => true },
+        runProcess,
+        aligner,
+        app.get(FinanceService),
+      );
+      const spy = vi
+        .spyOn(local, 'alignAudio')
+        .mockImplementation((id: string) => runtime.alignAudio(id));
+      try {
+        if (paidTts) {
+          const current = (
+            service.finalizationContext(e.execution_id).completed
+              .EDITORIAL as any
+          ).script;
+          const basis = {
+              pipelineRunId: current.pipelineRunId,
+              scriptId: script.scriptId,
+              endpoint: 'OFFLINE_FAKE_FAL',
+            },
+            key = ttsHash(basis);
+          const output = {
+            mediaReference: ref,
+            contentHash: hash,
+            assetType: 'VIDEO',
+            technicalProperties: media.get(ids[0])!.technicalProperties,
+            origin: 'PROVIDER_GENERATED',
+            provider: 'fal',
+            rights: {
+              usageBasis: 'PROVIDER_TERMS',
+              commercialUseAllowed: true,
+            },
+            source: null,
+          };
+          const db = new DatabaseSync(f.database);
+          try {
+            db.prepare(
+              "INSERT INTO fal_generations VALUES(?,?,?,'COMPLETED',?,NULL,NULL,'0','USD','OFFLINE_FAKE',?,?,?,?)",
+            ).run(
+              key,
+              current.pipelineRunId,
+              JSON.stringify(basis),
+              'req_offline_fal',
+              JSON.stringify(output),
+              createHash('sha256').update(JSON.stringify(output)).digest('hex'),
+              new Date().toISOString(),
+              new Date().toISOString(),
+            );
+          } finally {
+            db.close();
+          }
+          app.get(FinanceService).configureCampaign('camp_001', 2);
+          const audioHash = new LocalEvidenceStorage(
+            process.env.FFMPEG_VOICE_ROOT!,
+          ).put(wav({ durationMilliseconds: 1000 }), 'wav');
+          const synth = vi
+            .spyOn(OpenAiNarrationTransport.prototype, 'synthesize')
+            .mockResolvedValue({
+              audio: {
+                durationMilliseconds: 1000,
+                audioFormat: 'wav',
+                contentHash: audioHash,
+                storageReference: `object:voice/sha256/${audioHash}`,
+                provider: 'openai',
+                origin: 'SYNTHETIC_TTS',
+                rights: {
+                  usageBasis: 'PROVIDER_TERMS',
+                  commercialUseAllowed: true,
+                },
+              },
+              providerRequestId: 'req_offline_tts',
+            });
+          const ready = vi
+            .spyOn(OpenAiNarrationTransport.prototype, 'ready')
+            .mockReturnValue(true);
+          // Fake rights/acquisition read boundary, applied after authentic visual QC.
+          const scopedAsset = (id: string) => {
+            const asset = realGet(id);
+            if (!asset || !ids.includes(id)) return asset;
+            return {
+              ...asset,
+              rights: {
+                ...asset.rights,
+                evidence: asset.rights.evidence!.map((right) => ({
+                  ...right,
+                  mediaAuthorization: {
+                    ...right.mediaAuthorization!,
+                    campaignId: String(body.campaignId),
+                    purpose: 'HUMAN_QC_REVIEW',
+                    operationScope: 'fixture_operation_001',
+                  },
+                })),
+              },
+            };
+          };
+          const scopeRead = vi
+            .spyOn(media, 'get')
+            .mockImplementation(scopedAsset as any);
+          const originalAcquisition = media.acquisition.bind(media);
+          const acquisitionRead = vi
+            .spyOn(media, 'acquisition')
+            .mockImplementation((id: string) =>
+              id === 'fixture_operation_001'
+                ? ({ mediaAsset: scopedAsset(ids[0]) } as any)
+                : originalAcquisition(id),
+            );
+          const call = (path: string, value: any) =>
+            browser
+              .post(`/operations/executions/${e.execution_id}/tts/${path}`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send(value);
+          try {
+            const prepared = await call('prepare', {}).expect(201);
+            const beforeAuthorization = await browser
+              .get(`/operations/executions/${e.execution_id}`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            expect(beforeAuthorization.body.nextAction.code).toBe(
+              'TTS_AUTHORIZATION_REQUIRED',
+            );
+            expect(beforeAuthorization.body.script.scriptId).toBe(
+              current.scriptId,
+            );
+            expect(beforeAuthorization.body.script.revision).toBe(2);
+            expect(beforeAuthorization.body.tts).toMatchObject({
+              model: 'gpt-4o-mini-tts',
+              voice: 'marin',
+              estimatedUsd: '0.00306',
+              reservationUsd: '0.01',
+            });
+            const unchangedHistory = service.history(e.execution_id);
+            expect(
+              service.finalizationContext(e.execution_id).completed.MEDIA_QC,
+            ).toBeTruthy();
+            expect(prepared.body.text).toBe(
+              'Conheça. Publicidade. Confira pelo link',
+            );
+            await call('execute', {
+              requestHash: prepared.body.requestHash,
+            }).expect(400);
+            expect(synth).not.toHaveBeenCalled();
+            expect(service.history(e.execution_id)).toEqual(unchangedHistory);
+            await call('authorize', {
+              requestHash: prepared.body.requestHash,
+              acceptsUnboundedCost: true,
+              expiresAt: new Date(Date.now() + 900000).toISOString(),
+            }).expect(201);
+            const interruption = vi
+              .spyOn(local, 'ingestTts')
+              .mockRejectedValueOnce(
+                Object.assign(
+                  new Error('isolated interruption after paid response'),
+                  { code: 'LOCAL_MEDIA_UNAVAILABLE' },
+                ),
+              );
+            try {
+              await call('execute', {
+                requestHash: prepared.body.requestHash,
+              }).expect(503);
+            } finally {
+              interruption.mockRestore();
+            }
+            expect(synth).toHaveBeenCalledTimes(1);
+            await browser
+              .post(`/operations/executions/${e.execution_id}/retry`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send({})
+              .expect(201);
+            await Promise.all(
+              [0, 1].map(() =>
+                call('execute', {
+                  requestHash: prepared.body.requestHash,
+                }).expect((r) =>
+                  expect(r.status, JSON.stringify(r.body)).toBe(201),
+                ),
+              ),
+            );
+            expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+              'COMPOSITION_RIGHTS_REQUIRED',
+            );
+            const rightsResponse = await browser
+              .get(`/operations/executions/${e.execution_id}`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            const grantInput = {
+              scopeHash: rightsResponse.body.compositionAuthorization.scopeHash,
+              acceptsCompositionRights: true,
+              audioIntelligible: true,
+              sourceRef: 'fixture:explicit-local-composition-license',
+              statement:
+                'This isolated fixture permits commercial local composition of its generated test pattern.',
+            };
+            const grant = (input: any) =>
+              browser
+                .post(
+                  `/operations/executions/${e.execution_id}/composition-authorization`,
+                )
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send(input);
+            await grant({ ...grantInput, audioIntelligible: false }).expect(
+              400,
+            );
+            await grant({ ...grantInput, scopeHash: 'f'.repeat(64) }).expect(
+              400,
+            );
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((x) => x.event_type === 'COMPOSITION_AUTHORIZED'),
+            ).toHaveLength(0);
+            const previewAudio = await browser
+              .get(`/operations/executions/${e.execution_id}/narration.wav`)
+              .set('Host', 'localhost:3000')
+              .expect(200)
+              .expect('Content-Type', /audio\/wav/);
+            expect(previewAudio.body.subarray(0, 4).toString()).toBe('RIFF');
+            await Promise.all(
+              [0, 1].map(() =>
+                grant(grantInput).expect((response) =>
+                  expect(response.status, JSON.stringify(response.body)).toBe(
+                    201,
+                  ),
+                ),
+              ),
+            );
+            await grant(grantInput).expect(201);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((x) => x.event_type === 'COMPOSITION_AUTHORIZED'),
+            ).toHaveLength(1);
+            expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+              'EXACT_HUMAN_APPROVAL_REQUIRED',
+            );
+            expect(
+              (
+                await browser
+                  .get(`/operations/executions/${e.execution_id}`)
+                  .set('Host', 'localhost:3000')
+                  .expect(200)
+              ).body.nextAction.code,
+            ).toBe('EXACT_HUMAN_APPROVAL_REQUIRED');
+            const file = await browser
+              .get(`/operations/executions/${e.execution_id}/final.mp4`)
+              .set('Host', 'localhost:3000')
+              .expect(200);
+            expect(file.body.includes(Buffer.from('ftyp'))).toBe(true);
+            expect(
+              service.finalizationContext(e.execution_id).completed.QC,
+            ).toMatchObject({ result: 'PASS' });
+            const audioStage = service.finalizationContext(e.execution_id)
+              .completed.AUDIO as any;
+            const voiceReader = new LocalFlowRepository(
+              f.database,
+              app.get(CONTENT_OPERATIONS),
+              app.get(ContentService),
+            );
+            try {
+              expect(
+                voiceReader.getVoiceTrack(audioStage.voiceTrackId),
+              ).toMatchObject({
+                provider: 'openai',
+                origin: 'SYNTHETIC_TTS',
+                durationMilliseconds: 2000,
+                scriptId: current.scriptId,
+                rights: {
+                  usageBasis: 'PROVIDER_TERMS',
+                  commercialUseAllowed: true,
+                },
+              });
+            } finally {
+              voiceReader.close();
+            }
+            await call('execute', {
+              requestHash: prepared.body.requestHash,
+            }).expect(201);
+            expect(synth).toHaveBeenCalledTimes(1);
+            const beforeReframe = service.finalizationContext(
+              e.execution_id,
+            ).completed;
+            await browser
+              .post(`/operations/executions/${e.execution_id}/final-review`)
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send({
+                decision: 'REJECTED',
+                justification:
+                  'Isolated test requests a new composition while retaining original approved media.',
+              })
+              .expect(201);
+            expect(service.get(e.execution_id).status).toBe('CANCELLED');
+            const revisionBody = {
+              previousRenderContentHash: (beforeReframe.BURN as any)
+                .contentHash,
+              reason:
+                'Regenerate the isolated fixture with full product image and safe caption framing.',
+            };
+            const revise = () =>
+              browser
+                .post(
+                  `/operations/executions/${e.execution_id}/composition-revision`,
+                )
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send(revisionBody);
+            const reframed = await revise().expect((r) =>
+              expect(r.status, JSON.stringify(r.body)).toBe(201),
+            );
+            expect(reframed.body.framing.revision).toBe(2);
+            expect(
+              reframed.body.framing.segments.every(
+                (s: any) => s.framingStrategy === 'CONTAIN_9_16',
+              ),
+            ).toBe(true);
+            expect(reframed.body.nextAction.code).toBe(
+              'EXACT_HUMAN_APPROVAL_REQUIRED',
+            );
+            const afterReframe = service.finalizationContext(
+              e.execution_id,
+            ).completed;
+            for (const step of [
+              'EDITORIAL',
+              'MEDIA_QC',
+              'AUDIO',
+              'ALIGNMENT',
+              'SUBTITLES',
+              'COMPOSITION_AUTHORIZATION',
+            ])
+              expect(afterReframe[step]).toEqual(beforeReframe[step]);
+            expect(afterReframe.APPROVAL).toBeUndefined();
+            expect(afterReframe.HANDOFF).toBeUndefined();
+            for (const patch of [
+              {},
+              { reviewedRenderContentHash: 'f'.repeat(64) },
+            ])
+              await browser
+                .post(`/operations/executions/${e.execution_id}/final-review`)
+                .set('Host', 'localhost:3000')
+                .set('Origin', 'http://localhost:3000')
+                .set('x-qc-csrf', session.body.csrfToken)
+                .send({ decision: 'APPROVED', justification: null, ...patch })
+                .expect(409);
+            expect((afterReframe.BURN as any).videoRenderId).not.toBe(
+              (beforeReframe.BURN as any).videoRenderId,
+            );
+            await revise().expect(201);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((e) => e.event_type === 'COMPOSITION_REVISED'),
+            ).toHaveLength(1);
+            expect(
+              service
+                .history(e.execution_id)
+                .filter((e) => e.event_type === 'HUMAN_APPROVAL'),
+            ).toHaveLength(1);
+            expect(synth).toHaveBeenCalledTimes(1);
+            const audit = new DatabaseSync(f.database, { readOnly: true });
+            let operationId: string;
+            try {
+              operationId = String(
+                audit.prepare('SELECT operation_id FROM tts_operations').get()!
+                  .operation_id,
+              );
+            } finally {
+              audit.close();
+            }
+            const latest = app.get(FinanceService).getTts(operationId);
+            expect(latest?.billing).toBeNull();
+            expect(latest?.state).toBe('UNKNOWN');
+            expect(
+              app.get(FinanceService).getLedgerByPipelineRun('run_001').events,
+            ).toHaveLength(0);
+            expect(
+              service.finalizationContext(e.execution_id).completed.HANDOFF,
+            ).toBeUndefined();
+            if (process.env.MKTAUTO_TTS_E2E_EVIDENCE_ROOT) {
+              const root = process.env.MKTAUTO_TTS_E2E_EVIDENCE_ROOT;
+              mkdirSync(root, { recursive: true });
+              writeFileSync(join(root, 'offline-fixture.mp4'), file.body);
+              writeFileSync(
+                join(root, 'offline-e2e.json'),
+                JSON.stringify(
+                  {
+                    syntheticFixture: true,
+                    actualP77: false,
+                    operationsNextAction:
+                      beforeAuthorization.body.nextAction.code,
+                    currentScriptRevision:
+                      beforeAuthorization.body.script.revision,
+                    fakeProviders: ['fal', 'OpenAI TTS', 'aligner'],
+                    paidCalls: 0,
+                    mp4Sha256: createHash('sha256')
+                      .update(file.body)
+                      .digest('hex'),
+                    mp4Bytes: file.body.length,
+                    finalQc: 'PASS',
+                    humanHandoffApproved: false,
+                    compositionAuthorizationRecorded: true,
+                    ttsSubmissions: synth.mock.calls.length,
+                    billing: latest?.billing,
+                    costState: latest?.state,
+                    completedSteps: Object.keys(
+                      service.finalizationContext(e.execution_id).completed,
+                    ),
+                  },
+                  null,
+                  2,
+                ),
+              );
+            }
+          } finally {
+            synth.mockRestore();
+            ready.mockRestore();
+            scopeRead.mockRestore();
+            acquisitionRead.mockRestore();
+          }
+          return;
+        }
+        await browser
+          .post(`/operations/executions/${e.execution_id}/retry`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({})
+          .expect(201);
+        await advance().expect(201);
+        expect(service.get(e.execution_id).finalization.pending?.code).toBe(
+          'EXACT_HUMAN_APPROVAL_REQUIRED',
+        );
+        await browser
+          .get(`/operations/executions/${e.execution_id}/final.mp4?download=1`)
+          .set('Host', 'localhost:3000')
+          .expect(200)
+          .expect('Content-Type', /video\/mp4/)
+          .expect('Content-Disposition', /attachment/)
+          .expect((response) =>
+            expect(response.body.includes(Buffer.from('ftyp'))).toBe(true),
+          );
+        await advance().expect(201);
+        expect(
+          service
+            .history(e.execution_id)
+            .filter(
+              (event) =>
+                event.event_type === 'STEP_STARTED' &&
+                event.evidence.step === 'COMPOSITION',
+            ),
+        ).toHaveLength(1);
+        await browser
+          .post(`/operations/executions/${e.execution_id}/final-review`)
+          .set('Host', 'localhost:3000')
+          .set('Origin', 'http://localhost:3000')
+          .set('x-qc-csrf', session.body.csrfToken)
+          .send({
+            decision: finalDecision,
+            justification:
+              finalDecision === 'REJECTED'
+                ? 'Fixture final rejected by its test operator.'
+                : null,
+          })
+          .expect(201);
+        await advance().expect(201);
+        expect(service.get(e.execution_id).status).toBe(
+          finalDecision === 'APPROVED' ? 'SUCCEEDED' : 'CANCELLED',
+        );
+        expect(
+          service
+            .history(e.execution_id)
+            .find((event) => event.event_type === 'HUMAN_APPROVAL')?.evidence
+            .actor,
+        ).toBe('qc_operator_test');
+        if (finalDecision === 'APPROVED') {
+          const prefix = `/operations/executions/${e.execution_id}/instagram`;
+          const authHeaders = {
+            Host: 'localhost:3000',
+            Origin: 'http://localhost:3000',
+            'x-qc-csrf': session.body.csrfToken,
+          };
+          const generated = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({})
+            .expect(201);
+          expect(generated.body.inferencePerformed).toBe(false);
+          const replayCaption = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({})
+            .expect(201);
+          expect(replayCaption.body.contentHash).toBe(
+            generated.body.contentHash,
+          );
+          const regenerated = await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({ previousHash: generated.body.contentHash })
+            .expect(201);
+          expect(regenerated.body.revision).toBe(generated.body.revision + 1);
+          await browser
+            .post(prefix + '/caption')
+            .set(authHeaders)
+            .send({ previousHash: generated.body.contentHash })
+            .expect(409);
+          const captionStatus = await browser
+            .get(prefix)
+            .set('Host', 'localhost:3000');
+          expect(captionStatus.status, JSON.stringify(captionStatus.body)).toBe(
+            200,
+          );
+          expect(captionStatus.body.captionHistory).toHaveLength(2);
+          const captionCatalog = new SqliteAffiliatePersistence(
+            f.database,
+          ).open();
+          try {
+            const briefing = captionCatalog.getBriefing(
+              String(body.briefingId),
+            )!;
+            expect(briefing).not.toBeNull();
+            const caption = captionStatus.body.caption;
+            expect(caption.text).not.toContain(briefing.disclosure);
+            expect(caption.envelope).toBe(
+              [
+                caption.text,
+                briefing.cta,
+                briefing.disclosure,
+                briefing.affiliateUrl,
+              ].join('\n\n'),
+            );
+            expect(caption.envelope).toContain('Publicidade');
+            for (const disclosure of [undefined, '']) {
+              expect(() =>
+                instagramCaption({
+                  caption: caption.text,
+                  cta: briefing.cta,
+                  disclosure,
+                  link: briefing.affiliateUrl,
+                }),
+              ).toThrow('DISTRIBUTION_INVALID_TEXT');
+            }
+          } finally {
+            captionCatalog.close();
+          }
+          const originalGet = media.get.bind(media);
+          const scopedRights = vi
+            .spyOn(media, 'get')
+            .mockImplementation((assetId: string) => {
+              const a = originalGet(assetId);
+              return a
+                ? {
+                    ...a,
+                    rights: {
+                      ...a.rights,
+                      evidence: a.rights.evidence?.map((e) =>
+                        e.mediaAuthorization
+                          ? {
+                              ...e,
+                              mediaAuthorization: {
+                                ...e.mediaAuthorization,
+                                campaignId: 'camp_001',
+                                operationScope: 'fixture_review_scope',
+                                purpose: 'HUMAN_QC_REVIEW' as const,
+                              },
+                            }
+                          : e,
+                      ),
+                    },
+                  }
+                : a;
+            });
+          restorePublicationRights = () => scopedRights.mockRestore();
+          const rightsStatus = await browser
+            .get(prefix)
+            .set('Host', 'localhost:3000');
+          expect(rightsStatus.status, JSON.stringify(rightsStatus.body)).toBe(
+            200,
+          );
+          expect(rightsStatus.body.publicationRights.required).toBe(true);
+          await browser
+            .post(prefix + '/package')
+            .set(authHeaders)
+            .send({ captionHash: regenerated.body.contentHash })
+            .expect(400);
+          const consent = {
+            scopeHash: rightsStatus.body.publicationRights.scope.scopeHash,
+            sourceRef: 'fixture:owned-publication-license',
+            statement:
+              'Offline fixture operator owns the commercial Instagram publication rights.',
+            acceptsCommercialPublication: true,
+          };
+          await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send({ ...consent, acceptsCommercialPublication: false })
+            .expect(400);
+          const granted = await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send(consent)
+            .expect(201);
+          const consentReplay = await browser
+            .post(prefix + '/rights')
+            .set(authHeaders)
+            .send(consent)
+            .expect(201);
+          expect(
+            consentReplay.body.grant?.contentHash ??
+              consentReplay.body.contentHash,
+          ).toBe(granted.body.contentHash);
+          const prepare = await browser
+            .post(prefix + '/package')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({ captionHash: regenerated.body.contentHash });
+          expect(prepare.status, JSON.stringify(prepare.body)).toBe(201);
+          const scheduleAt = new Date(Date.now() + 60000).toISOString();
+          const input = {
+            packageHash: prepare.body.contentHash,
+            scheduledAt: scheduleAt,
+            confirm: true,
+          };
+          await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send({ ...input, confirm: false })
+            .expect(400);
+          const getAsset = scopedRights.getMockImplementation()!;
+          scopedRights.mockImplementation((mediaId: string) => {
+            const asset = getAsset(mediaId);
+            return asset
+              ? {
+                  ...asset,
+                  rights: { ...asset.rights, commercialUseAllowed: false },
+                }
+              : asset;
+          });
+          try {
+            const denied = await browser
+              .post(prefix + '/schedule')
+              .set('Host', 'localhost:3000')
+              .set('Origin', 'http://localhost:3000')
+              .set('x-qc-csrf', session.body.csrfToken)
+              .send(input);
+            expect(denied.status, JSON.stringify(denied.body)).toBe(400);
+            expect(denied.body.code).toBe('PUBLICATION_RIGHTS_REQUIRED');
+          } finally {
+            scopedRights.mockImplementation(getAsset);
+          }
+          const scheduledResponse = await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send(input);
+          expect(
+            scheduledResponse.status,
+            JSON.stringify(scheduledResponse.body),
+          ).toBe(201);
+          await browser
+            .post(prefix + '/schedule')
+            .set('Host', 'localhost:3000')
+            .set('Origin', 'http://localhost:3000')
+            .set('x-qc-csrf', session.body.csrfToken)
+            .send(input)
+            .expect(201);
+          const { InstagramPublicationService } =
+            await import('../publishing/application/instagram-publication.service.js');
+          const { PublishingPersistence } =
+            await import('../publishing/infrastructure/publishing.persistence.js');
+          const { INSTAGRAM_PUBLICATION_PORTS } =
+            await import('../publishing/application/ports/instagram-publication.port.js');
+          const instance = app.get(InstagramPublicationService);
+          await instance.tick();
+          expect((await instance.status(e.execution_id)).schedule.status).toBe(
+            'SCHEDULED',
+          );
+          const afterRestart = new InstagramPublicationService(
+            app.get(PublishingPersistence),
+            app.get(INSTAGRAM_PUBLICATION_PORTS),
+            () => new Date(Date.parse(scheduleAt) + 1000).toISOString(),
+            false,
+            app.get(FinanceService),
+          );
+          const ports = app.get<any>(INSTAGRAM_PUBLICATION_PORTS);
+          const publish = vi.spyOn(ports.publisher, 'publish');
+          if (simulateTimeout) {
+            publish.mockImplementationOnce(async () => {
+              throw Object.assign(new Error(), {
+                code: 'SOCIAL_NETWORK_UNCERTAIN',
+              });
+            });
+          }
+          try {
+            await Promise.all([afterRestart.tick(), afterRestart.tick()]);
+            const status = await afterRestart.status(e.execution_id);
+            if (simulateTimeout) {
+              expect(status.schedule.status, JSON.stringify(status)).toBe(
+                'WAITING_RECONCILIATION',
+              );
+              const recovered = new InstagramPublicationService(
+                app.get(PublishingPersistence),
+                ports,
+                () => new Date(Date.parse(scheduleAt) + 120000).toISOString(),
+                false,
+                app.get(FinanceService),
+              );
+              await recovered.tick();
+              expect(publish).toHaveBeenCalledTimes(1);
+              expect(
+                (await recovered.status(e.execution_id)).operation.state,
+              ).toBe('UNCERTAIN');
+            } else {
+              expect(status.schedule.status, JSON.stringify(status)).toBe(
+                'COMPLETED',
+              );
+              expect(status.operation.state).toBe('PUBLISHED');
+              expect(status.operation.remoteReceipt.permalink).toContain(
+                'instagram.com',
+              );
+              await afterRestart.tick();
+              expect(
+                (await afterRestart.status(e.execution_id)).operation
+                  .contentHash,
+              ).toBe(status.operation.contentHash);
+              expect(publish).toHaveBeenCalledTimes(1);
+            }
+          } finally {
+            publish.mockRestore();
+          }
+          expect(service.get(e.execution_id).status).toBe('SUCCEEDED');
+          restorePublicationRights();
+          restorePublicationRights = undefined;
+        }
+        expect(aligner.align).toHaveBeenCalledTimes(1);
+      } finally {
+        restorePublicationRights?.();
+        spy.mockRestore();
+      }
+    },
+    60000,
+  );
+  it('recovers an explicitly resumed failed simulation without materialization', async () => {
+    const generation = app.get(VideoGenerationService);
+    const failing = new VideoGenerationService(
+      new FakeVideoGenerationProvider('FAIL_ONCE'),
+    );
+    const spies = [
+      vi
+        .spyOn(generation, 'submit')
+        .mockImplementation(failing.submit.bind(failing)),
+      vi
+        .spyOn(generation, 'poll')
+        .mockImplementation(failing.poll.bind(failing)),
+      vi
+        .spyOn(generation, 'recover')
+        .mockImplementation(failing.recover.bind(failing)),
+    ];
+    try {
+      const e = await service.schedule({
+        ...body,
+        videoProduction: { mode: 'OFFLINE' },
+      });
+      await service.tick();
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'VIDEO_SIMULATION_RECOVERY_REQUIRED',
+      );
+      // One scene may fail once per resume; completed fake operations replay unchanged.
+      for (
+        let i = 0;
+        i < 30 &&
+        !JSON.stringify(service.history(e.execution_id)).includes(
+          'REAL_VIDEO_MEDIA_REQUIRED',
+        );
+        i++
+      ) {
+        await service.resume(e.execution_id);
+        await service.tick();
+      }
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'REAL_VIDEO_MEDIA_REQUIRED',
+      );
+      expect(spies[2]).toHaveBeenCalled();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    } finally {
+      spies.forEach((spy) => spy.mockRestore());
+    }
+  });
+  it('rejects invalid scene identities before scheduling any production effect', async () => {
+    await expect(
+      service.schedule({ ...body, sceneMediaAssetIds: ['asset_001'] }),
+    ).rejects.toThrow('INVALID_SCENE_MEDIA');
+    await expect(
+      service.schedule({
+        ...body,
+        videoProduction: { mode: 'OFFLINE' },
+        sceneMediaAssetIds: ['asset_001', 'asset_001'],
+      }),
+    ).rejects.toThrow('INVALID_SCENE_MEDIA');
+  });
+  it('rejects LIVE or production simulation without calling providers', async () => {
+    await expect(
+      service.schedule({ ...body, videoProduction: { mode: 'LIVE' } }),
+    ).rejects.toThrow('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+    await expect(
+      service.schedule({
+        ...body,
+        mode: 'PRODUCTION',
+        videoProduction: { mode: 'OFFLINE' },
+      }),
+    ).rejects.toThrow('OFFLINE_VIDEO_PRODUCTION_REQUIRED');
+  });
+  it('blocks fake editorial in production', async () => {
+    const e = await service.schedule({ ...body, mode: 'PRODUCTION' });
+    await service.tick();
+    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    expect(JSON.stringify(service.history(e.execution_id))).toContain(
+      'EDITORIAL_REAL_PROVIDER_REQUIRED',
+    );
+  });
+  it('persists unavailable provider without fabricated completion', async () => {
+    const spy = vi
+      .spyOn(provider, 'ideas')
+      .mockImplementation(() => new UnavailableEditorialProvider().ideas());
+    try {
+      const e = await service.schedule(body);
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      expect(JSON.stringify(service.history(e.execution_id))).toContain(
+        'EDITORIAL_PROVIDER_UNAVAILABLE',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it('preserves UNKNOWN and never dispatches paid editorial', async () => {
+    const finance = app.get(FinanceService),
+      proof = { ...p2FinancialProof(), operationId: 'p4_editorial_001' };
+    finance.reserveGlobal(proof, new Date().toISOString());
+    finance.dispatchGlobal(proof.operationId);
+    finance.unknownGlobal(proof.operationId);
+    const spy = vi.spyOn(provider, 'ideas');
+    try {
+      const e = await service.schedule(body);
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_RECONCILIATION');
+      expect(spy).not.toHaveBeenCalled();
+      expect(finance.getGlobalOperation(proof.operationId)?.state).toBe(
+        'UNKNOWN',
+      );
+      await expect(service.resume(e.execution_id)).rejects.toThrow(
+        'RECONCILIATION_REQUIRED',
+      );
+      finance.settleGlobal(proof.operationId, {
+        actualCostUsd: '0.6',
+        evidenceReference: 'fixture:verified-billing',
+      });
+      await service.resume(e.execution_id);
+      await service.tick();
+      expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+      expect(finance.getGlobalOperation(proof.operationId)?.state).toBe(
+        'COMPLETED',
+      );
+    } finally {
+      spy.mockRestore();
+    }
+  });
+  it.each(['DAILY', 'MONTHLY'])(
+    'respects actual Finance %s commitments without calling providers',
+    async (period) => {
+      const finance = app.get(FinanceService);
+      if (period === 'MONTHLY')
+        finance.configureGlobal({
+          dailyUsd: '1',
+          monthlyUsd: '0.6',
+          timeZone: 'America/Sao_Paulo',
+        });
+      finance.reserveGlobal(
+        {
+          ...p2FinancialProof(),
+          operationId: 'budget_commitment',
+          maximumAmount: period === 'DAILY' ? '1' : '0.6',
+        },
+        new Date().toISOString(),
+      );
+      const spy = vi.spyOn(provider, 'ideas');
+      try {
+        const e = await service.schedule(body);
+        await service.tick();
+        expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+        expect(JSON.stringify(service.history(e.execution_id))).toContain(
+          `GLOBAL_${period}_BUDGET_EXCEEDED`,
+        );
+        expect(spy).not.toHaveBeenCalled();
+      } finally {
+        spy.mockRestore();
+      }
+    },
+  );
+
+  it('reconciles a crash after the native editorial effect and before its campaign checkpoint', async () => {
+    const e = await service.schedule(body),
+      db = new DatabaseSync(f.database),
+      r = new CampaignRepository(db);
+    let now = new Date().toISOString();
+    const workflow = app.get(NativeCampaignWorkflow),
+      runner = new CampaignOrchestrator(r, workflow, () => now, 1000);
+    const write = r.ownedEvent.bind(r),
+      scriptSpy = vi.spyOn(provider, 'script');
+    const checkpointSpy = vi
+      .spyOn(r, 'ownedEvent')
+      .mockImplementation((...args) => {
+        if (args[3] === 'STEP_DONE' && args[4].step === 'EDITORIAL')
+          throw new CampaignError('CLAIM_LOST');
+        return write(...args);
+      });
+    try {
+      await runner.tick();
+      expect(r.get(e.execution_id).status).toBe('RUNNING');
+      checkpointSpy.mockRestore();
+      now = new Date(Date.parse(now) + 2000).toISOString();
+      r.recover(now);
+      await runner.resume(e.execution_id);
+      await runner.tick();
+      expect(r.get(e.execution_id).status).toBe('WAITING_INPUT');
+      expect(scriptSpy).toHaveBeenCalledTimes(1);
+      expect(
+        r
+          .history(e.execution_id)
+          .filter(
+            (h) =>
+              h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+          ),
+      ).toHaveLength(1);
+    } finally {
+      checkpointSpy.mockRestore();
+      scriptSpy.mockRestore();
+      db.close();
+    }
+  });
+
+  it('accepts missing input references on resume and protects completed stages', async () => {
+    const e = await service.schedule(body);
+    await service.tick();
+    await request(app.getHttpServer())
+      .post(`${base}/${e.execution_id}/resume`)
+      .send({ generationRequestId: 'another_script' })
+      .expect(409);
+    await request(app.getHttpServer())
+      .post(`${base}/${e.execution_id}/resume`)
+      .send({ voiceTrackId: 'authorized_audio_pending' })
+      .expect(201);
+    await service.tick();
+    expect(service.get(e.execution_id).status).toBe('WAITING_INPUT');
+    expect(JSON.stringify(service.history(e.execution_id))).toContain(
+      'LOCAL_AUDIO_NOT_FOUND',
+    );
+    await request(app.getHttpServer())
+      .post(`${base}/${e.execution_id}/resume`)
+      .send({ voiceTrackId: 'replacement_voice' })
+      .expect(409);
+  });
+});
+
+// Real CATALOG/FIXED recurrence, frozen Affiliate binding and Publishing preparation.
+// Only local media/audio/render/QC are simulated; all databases are disposable.
+test.each(['CATALOG', 'FIXED', 'LEGACY'] as const)(
+  '%s daily packages retain frozen offer identity across D1/D2, restart and replay',
+  async (mode) => {
+    const f = p2EditorialFixture({ productionProfile: 'MIXED_MEDIA_V2' });
+    provisionSchema(f.base.db);
+    const fetch = vi
+      .spyOn(globalThis, 'fetch')
+      .mockRejectedValue(new Error('EXTERNAL_TRANSPORT_BLOCKED'));
+    const provider = new FakeEditorialProvider();
+    const generated = vi.spyOn(provider, 'script');
+    const hash = (value: string) =>
+      createHash('sha256').update(value).digest('hex');
+    const plans = new Map<string, any>(),
+      renders = new Map<string, any>(),
+      reports = new Map<string, any>(),
+      voices = new Map<string, any>();
+    const images = new Map<string, any>();
+    let clock = '2026-11-07T12:00:00.000Z';
+    let app!: INestApplication,
+      admin: CampaignAdministration,
+      operations: OperationsService,
+      publishing: PublishingService,
+      workflow: NativeCampaignWorkflow;
+    const local = {
+      prepareImage: vi.fn((scope: any) => {
+        const image = {
+          mediaAssetId: `image:${scope.pipelineRunId}`,
+          contentHash: hash(scope.pipelineRunId),
+          visualDirectionPosition: 1,
+          rights: { commercialUseAllowed: true },
+        };
+        images.set(image.mediaAssetId, image);
+        return image;
+      }),
+      automaticAudio: vi.fn(
+        async (scope: any, durationMilliseconds: number) => {
+          const voice = {
+            ...scope,
+            voiceTrackId: `voice:${scope.scriptId}`,
+            contentHash: hash(scope.scriptId),
+            durationMilliseconds,
+          };
+          voices.set(voice.voiceTrackId, voice);
+          return voice;
+        },
+      ),
+      authorizedAudio: (_run: string, script: string) =>
+        voices.get(`voice:${script}`) ?? null,
+      alignAudio: async (id: string) => ({
+        input: { scriptId: voices.get(id).scriptId, audioAssetId: id },
+        output: { alignmentId: id },
+      }),
+      subtitles: async (id: string) => ({ subtitleId: id }),
+      compose: vi.fn(async (input: any) => {
+        const plan = plans.get(input.compositionPlanId);
+        const render = {
+          ...plan,
+          videoRenderId: `render:${plan.pipelineRunId}`,
+          revision: 1,
+          contentHash: hash(plan.pipelineRunId),
+          logicalReference: `render:${plan.pipelineRunId}`,
+          origin: { rights: { commercialUseAuthorized: true } },
+        };
+        renders.set(render.videoRenderId, render);
+        return render;
+      }),
+      burn: async (id: string) => renders.get(id),
+      qc: async (id: string) => {
+        const render = renders.get(id);
+        const report = {
+          reportId: `qc:${render.pipelineRunId}`,
+          videoRenderId: id,
+          videoRenderContentHash: render.contentHash,
+          result: 'PASS',
+          approvalBlocked: false,
+          findings: [
+            'COMMERCIAL_RIGHTS',
+            'PROCESSING_RIGHTS',
+            'NARRATION_RIGHTS',
+          ].map((code) => ({ code, status: 'PASS' })),
+        };
+        reports.set(report.reportId, report);
+        return report;
+      },
+      preview: async () => ({ ready: true, url: 'offline-preview' }),
+    };
+    const media = {
+      registerCompositionPlan: (plan: any) => {
+        plans.set(plan.compositionPlanId, plan);
+        return plan;
+      },
+      getCompositionPlan: (id: string) => plans.get(id),
+      get: (id: string) => images.get(id),
+      getVideoRender: (id: string) => renders.get(id),
+      verifyMedia: (id: string) => renders.get(id)?.contentHash,
+      report: (id: string) => {
+        const q = reports.get(id),
+          render = renders.get(q.videoRenderId);
+        return {
+          ...q,
+          qualityControlReportId: id,
+          contentHash: hash(JSON.stringify(q)),
+          pipelineRunId: render.pipelineRunId,
+          projectId: render.projectId,
+          projectVersion: render.projectVersion,
+        };
+      },
+    };
+    const external = {
+      configuration: () => ({ mode: 'fake', accountId: '123456789' }),
+      execute: vi.fn(async () => {
+        throw new Error('PUBLICATION_FORBIDDEN');
+      }),
+      status: async () => null,
+    };
+    const start = async () => {
+      const module = await Test.createTestingModule({
+        imports: [OperationsModule],
+      })
+        .overrideProvider(EDITORIAL_PROVIDER)
+        .useValue(provider)
+        .overrideProvider(LocalFlowService)
+        .useValue(local)
+        .overrideProvider(MediaService)
+        .useValue(media)
+        .overrideProvider(InstagramPublicationService)
+        .useValue(external)
+        .compile();
+      admin = module.get(CampaignAdministration);
+      vi.spyOn(admin as any, 'now').mockImplementation(() => clock);
+      operations = module.get(OperationsService);
+      publishing = module.get(PublishingService);
+      workflow = module.get(NativeCampaignWorkflow);
+      app = module.createNestApplication();
+      await app.init();
+    };
+    const prefix = '/content-operations/campaign-executions';
+    for (const [key, value] of Object.entries({
+      PROJECT_API_DATABASE: f.database,
+      SOCIAL_HISTORY_DATABASE: f.database,
+      CAMPAIGN_SCHEDULER_ENABLED: 'false',
+      INSTAGRAM_SCHEDULER_ENABLED: 'false',
+      INSTAGRAM_PUBLICATION_MODE: 'fake',
+      INSTAGRAM_LIVE_POSTS_ENABLED: 'false',
+      INSTAGRAM_ACCOUNT_ID: '123456789',
+      INSTAGRAM_API_VERSION: 'v25.0',
+    }))
+      vi.stubEnv(key, value);
+    const identityFile = join(dirname(f.database), 'daily-reviewers.json'),
+      secretFile = join(dirname(f.database), 'daily-reviewer');
+
+    const catalog = new SqliteAffiliatePersistence(f.database).open();
+    const originalProduct = catalog.getProduct('prod_001', 1)!;
+    const originalCampaign = catalog.getCampaign('camp_001', 1)!;
+    const register = (
+      id: string,
+      productRevision: number,
+      offerRevision: number,
+      changed = false,
+      archived = false,
+    ) => {
+      const mediaReference = 'media:' + id;
+      const evidence = [
+        {
+          id: 'ev_rights',
+          kind: 'MEDIA_USAGE_RIGHT',
+          sourceRef: 'fixture:catalog-package-permission',
+          recordedAt: '2026-11-01T00:00:00Z',
+          mediaAuthorization: {
+            mediaRef: mediaReference,
+            contentHash: hash(mediaReference),
+            commercialUse: 'GRANTED',
+            processing: 'GRANTED',
+            localProcessing: true,
+            externalProviders: [],
+          },
+        },
+      ];
+      let product = originalProduct;
+      for (let revision = 1; revision <= productRevision; revision++) {
+        const existing = catalog.getProduct(id, revision);
+        product =
+          existing ??
+          catalog.registerProduct(
+            {
+              ...originalProduct,
+              productId: id,
+              revision,
+              name: id + (changed ? ' atualizado' : ''),
+              status: archived ? 'ARCHIVED' : 'ACTIVE',
+              media: [{ mediaRef: mediaReference, evidenceRef: 'ev_rights' }],
+              evidence: [
+                ...originalProduct.evidence.filter(
+                  (e) => e.kind === 'PRODUCT_SPECIFICATION',
+                ),
+                ...evidence,
+              ],
+              localImage: {
+                mediaReference,
+                contentHash: hash(mediaReference),
+                origin: 'OPERATOR_OWNED',
+                provider: null,
+                rights: {
+                  usageBasis: 'OWNED',
+                  commercialUseAllowed: true,
+                  evidence,
+                },
+              },
+            },
+            'product_' + id + '_' + revision,
+          );
+      }
+      let offer = originalCampaign;
+      for (let revision = 1; revision <= offerRevision; revision++) {
+        offer =
+          catalog.getCampaign('offer_' + id, revision) ??
+          catalog.registerCampaign(
+            {
+              ...originalCampaign,
+              campaignId: 'offer_' + id,
+              revision,
+              productId: id,
+              productRevision,
+              affiliateUrl:
+                'https://s.shopee.com.br/' + id + (changed ? '_updated' : ''),
+            },
+            'offer_' + id + '_' + revision,
+            true,
+          );
+      }
+      return { product, offer };
+    };
+    const a = register('prod_catalog_a', 2, 3);
+    const b = register('prod_catalog_b', 3, 2);
+    const expected =
+      mode === 'CATALOG'
+        ? [a, b]
+        : [
+            { product: originalProduct, offer: originalCampaign },
+            { product: originalProduct, offer: originalCampaign },
+          ];
+    const packages: any[] = [],
+      executions: any[] = [];
+    try {
+      await provisionQcReviewer(identityFile, 'daily_operator', secretFile);
+      vi.stubEnv('QC_IDENTITIES_FILE', identityFile);
+      const principal = await operationalQcIdentity.authenticate(
+        'Bearer ' + readFileSync(secretFile, 'utf8').trim(),
+        '127.0.0.1',
+      );
+      await start();
+      const input = {
+        campaignId: 'camp_001',
+        campaignRevision: 1,
+        projectVersion: 1,
+        requestId: 'catalog_package_096',
+        requestedAt: '2026-11-07T11:00:00Z',
+        ...(mode === 'LEGACY' ? {} : { selectionMode: mode }),
+        ...(mode === 'CATALOG'
+          ? {}
+          : { localImage: { mediaReference: 'authorized-image-001' } }),
+        recurrence: {
+          enabled: true,
+          time: '09:00',
+          timeZone: 'America/Sao_Paulo',
+        },
+      };
+      const first = (
+        await request(app.getHttpServer())
+          .post(prefix + '/local')
+          .send(input)
+          .expect(201)
+      ).body;
+      await request(app.getHttpServer())
+        .post(prefix + '/local')
+        .send(input)
+        .expect(201)
+        .expect((r) => expect(r.body.execution_id).toBe(first.execution_id));
+      for (let day = 0; day < 2; day++) {
+        clock =
+          day === 0 ? '2026-11-07T12:00:00.000Z' : '2026-11-08T12:00:00.000Z';
+        await Promise.all([admin!.tick(), admin!.tick()]);
+        const execution = admin!
+          .list()
+          .find((e) => e.production_date === clock.slice(0, 10))!;
+        executions.push(execution);
+        expect(execution.campaign_id).toBe('camp_001');
+        expect(execution.campaign_revision).toBe(1);
+        const view = admin!.get(execution.execution_id);
+        expect(view.selectionMode).toBe(
+          mode === 'CATALOG' ? 'CATALOG' : 'FIXED',
+        );
+        expect(view.finalization.pending?.code).toBe(
+          'EXACT_HUMAN_APPROVAL_REQUIRED',
+        );
+        expect(
+          (await admin!.result(execution.execution_id)).package,
+        ).toBeNull();
+        const binding = app.get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT);
+        const frozen = binding.resolveRunBriefing(execution.run_id)!;
+        const { product, offer } = expected[day];
+        expect(frozen).toMatchObject({
+          campaignId: offer.campaignId,
+          campaignRevision: offer.revision,
+          productId: product.productId,
+          productRevision: product.revision,
+          affiliateUrl: offer.affiliateUrl,
+        });
+        const selection = structuredClone(view.productSelection);
+        if (mode === 'CATALOG') {
+          expect(selection).toMatchObject({
+            method: 'ROUND_ROBIN_ID_V1',
+            productId: product.productId,
+            productRevision: product.revision,
+            sourceCampaignId: offer.campaignId,
+            sourceCampaignRevision: offer.revision,
+            briefingHash: frozen.contentHash,
+          });
+          register(
+            product.productId,
+            product.revision + 1,
+            offer.revision + 1,
+            true,
+          );
+        } else if (day === 0) {
+          catalog.registerProduct(
+            {
+              ...originalProduct,
+              revision: 2,
+              name: 'Produto atualizado fora do snapshot',
+            },
+            'fixed_product_2',
+          );
+          catalog.registerCampaign(
+            {
+              ...originalCampaign,
+              revision: 2,
+              productRevision: 2,
+              affiliateUrl: 'https://s.shopee.com.br/fixed_updated',
+            },
+            'fixed_offer_2',
+            true,
+          );
+        }
+        // Restart after selection/render: later catalog revisions cannot replace this run's binding.
+        await app.close();
+        await start();
+        expect(
+          app
+            .get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT)
+            .resolveRunBriefing(execution.run_id),
+        ).toEqual(frozen);
+        expect(admin!.get(execution.execution_id).productSelection).toEqual(
+          selection,
+        );
+        await operations!.finalDecision(
+          execution.execution_id,
+          { decision: 'APPROVED', justification: null },
+          principal,
+        );
+        let interrupted: any;
+        if (day === 1) {
+          const execute = workflow!.execute.bind(workflow!);
+          vi.spyOn(workflow!, 'execute').mockImplementationOnce(
+            async (...args) => {
+              const handoff = (await execute(...args)) as any;
+              interrupted = handoff.package;
+              throw new CampaignError('PACKAGE_CONNECTION_INTERRUPTED');
+            },
+          );
+        }
+        await admin!.tick();
+        if (day === 1 && interrupted) {
+          expect(admin!.get(execution.execution_id).status).toBe(
+            'WAITING_RECONCILIATION',
+          );
+          expect(publishing!.package(interrupted.contentHash)).toEqual(
+            interrupted,
+          );
+          await app.close();
+          await start();
+          await admin!.tick();
+        }
+        const result = await admin!.result(execution.execution_id);
+        expect(
+          result.package,
+          JSON.stringify(admin!.get(execution.execution_id).finalization),
+        ).not.toBeNull();
+        const pkg = result.package as any;
+        packages.push(pkg);
+        expect(pkg).toMatchObject({
+          campaignId: offer.campaignId,
+          campaignRevision: offer.revision,
+          productId: product.productId,
+          productRevision: product.revision,
+          link: offer.affiliateUrl,
+          rightsEvidence: product.evidence,
+          commercialApprovalRequired: true,
+        });
+        expect(pkg.identity.pipelineRunId).toBe(execution.run_id);
+        expect(publishing!.package(pkg.contentHash)).toEqual(pkg);
+        expect(publishing!.packageReview(pkg.contentHash)).toBeNull();
+        expect(
+          admin!
+            .history(execution.execution_id)
+            .filter((h) => h.event_type === 'HUMAN_APPROVAL'),
+        ).toHaveLength(1);
+        const completed = admin!.finalizationContext(
+          execution.execution_id,
+        ).completed;
+        expect(workflow!.coordinatedPackage(execution, completed)).toEqual(pkg);
+        if (mode === 'CATALOG') {
+          // Keep ManualDistribution's rejection: the recurring campaign cannot stand in for the selected offer.
+          expect(() =>
+            publishing!.prepare(
+              {
+                campaignId: 'camp_001',
+                campaignRevision: 1,
+                videoRenderId: pkg.identity.videoRenderId,
+                qualityControlReportId: pkg.identity.qualityControlReportId,
+                platform: pkg.platform,
+                account: pkg.account,
+                caption: pkg.caption,
+              },
+              'wrong_binding_' + day,
+            ),
+          ).toThrow('DISTRIBUTION_CAMPAIGN_BINDING_MISMATCH');
+        }
+        const missing = vi
+          .spyOn(
+            app.get<AffiliateRunContext>(AFFILIATE_RUN_CONTEXT),
+            'resolveRunBriefing',
+          )
+          .mockReturnValueOnce(null);
+        try {
+          expect(() =>
+            workflow!.coordinatedPackage(execution, completed),
+          ).toThrow('CAMPAIGN_CONTEXT_NOT_FOUND');
+        } finally {
+          missing.mockRestore();
+        }
+        await admin!.tick();
+        expect((await admin!.result(execution.execution_id)).package).toEqual(
+          pkg,
+        );
+      }
+      expect(executions[0].execution_id).not.toBe(executions[1].execution_id);
+      expect(packages[0].contentHash).not.toBe(packages[1].contentHash);
+      expect(admin!.list()).toHaveLength(2);
+      expect(generated).toHaveBeenCalledTimes(2);
+      expect(local.compose).toHaveBeenCalledTimes(2);
+      expect(
+        catalog.db
+          .prepare(
+            "SELECT count(*) n FROM manual_distribution_records WHERE kind='PACKAGE'",
+          )
+          .get()?.n,
+      ).toBe(2);
+      await app.close();
+      await start();
+      for (let day = 0; day < 2; day++)
+        expect(
+          (await admin!.result(executions[day].execution_id)).package,
+        ).toEqual(packages[day]);
+      if (mode === 'CATALOG') {
+        register(a.product.productId, 4, 5, true, true);
+        register(b.product.productId, 5, 4, true, true);
+        clock = '2026-11-09T12:00:00.000Z';
+        await admin!.tick();
+        const blocked = admin!
+          .list()
+          .find((e) => e.production_date === '2026-11-09')!;
+        expect(
+          admin!.get(blocked.execution_id).finalization.pending?.code,
+        ).toBe('CATALOG_PRODUCT_REQUIRED');
+        expect((await admin!.result(blocked.execution_id)).package).toBeNull();
+        expect(generated).toHaveBeenCalledTimes(2);
+      }
+      expect(f.base.db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+      expect(external.execute).not.toHaveBeenCalled();
+      expect(fetch).not.toHaveBeenCalled();
+    } finally {
+      await app?.close();
+      catalog.close();
+      vi.restoreAllMocks();
+      vi.unstubAllEnvs();
+      f.cleanup();
+    }
+  },
+  30000,
+);

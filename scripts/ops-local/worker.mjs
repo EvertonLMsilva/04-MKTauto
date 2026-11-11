@@ -35,9 +35,9 @@ try {
   if (existsSync(stateFile)) throw new Error('WORKER_STATE_ALREADY_EXISTS');
   state('starting');
   if (role === 'backend') {
-    const { validateConfiguration } = await import(pathToFileURL(join(config.backendRoot, 'backend', 'dist', 'bootstrap.js')).href);
-    const { AppModule } = await import(pathToFileURL(join(config.backendRoot, 'backend', 'dist', 'app.module.js')).href);
-    const require = createRequire(join(config.backendRoot, 'backend', 'package.json'));
+    const { validateConfiguration } = await import(pathToFileURL(join(config.backendRoot, 'dist', 'bootstrap.js')).href);
+    const { AppModule } = await import(pathToFileURL(join(config.backendRoot, 'dist', 'app.module.js')).href);
+    const require = createRequire(join(config.backendRoot, 'package.json'));
     const { NestFactory } = await import(pathToFileURL(require.resolve('@nestjs/core')).href);
     validateConfiguration(process.env);
     server = await NestFactory.create(AppModule, { logger: ['error', 'warn'] });

@@ -9,8 +9,8 @@ import {
   validateProject,
   validateProjectSnapshot,
   validateReferenceProfile,
-} from "../backend/dist/project/domain/project-contracts.js";
-import { ContractValidationError } from "../backend/dist/project/domain/project.errors.js";
+} from "../dist/modules/project/domain/project-contracts.js";
+import { ContractValidationError } from "../dist/modules/project/domain/project.errors.js";
 
 function validProject(overrides = {}) {
   return {

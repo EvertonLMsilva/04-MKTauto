@@ -130,7 +130,7 @@ export async function initialize(options, provision) {
     backendPort: port(options.backendPort ?? 3124), frontendPort: port(options.frontendPort ?? 5187),
     resources, identities, evidenceKey: randomBytes(32).toString('hex'), createdAt: new Date().toISOString() };
   if (config.backendPort === config.frontendPort) fail('PORTS_MUST_DIFFER');
-  const provisioner = join(repository, 'backend', 'dist', 'administration', 'schema-provisioner.js');
+  const provisioner = join(repository, 'dist', 'infrastructure', 'administration', 'schema-provisioner.js');
   if (!provision && !existsSync(provisioner)) fail('BACKEND_BUILD_REQUIRED');
   mkdirSync(root, { mode: 0o700 });
   protectDirectory(root);
@@ -256,8 +256,8 @@ export async function stop(input) {
   } finally { release(); }
 }
 function requiredRuntime(config) {
-  for (const file of ['bootstrap.js', 'app.module.js', 'administration/schema-provisioner.js']) if (!existsSync(join(repository, 'backend', 'dist', file))) fail('BACKEND_BUILD_REQUIRED');
-  for (const [base, name] of [[join(repository, 'backend'), '@nestjs/core'], [config.frontendRoot, 'vite']]) {
+  for (const file of ['bootstrap.js', 'app.module.js', 'infrastructure/administration/schema-provisioner.js']) if (!existsSync(join(repository, 'dist', file))) fail('BACKEND_BUILD_REQUIRED');
+  for (const [base, name] of [[repository, '@nestjs/core'], [config.frontendRoot, 'vite']]) {
     try { createRequire(join(base, 'package.json')).resolve(name); } catch { fail('RUNTIME_DEPENDENCIES_REQUIRED'); }
   }
 }

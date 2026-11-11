@@ -4,10 +4,10 @@ const PROJECT_SCHEMA_VERSION = 43;
 import assert from "node:assert/strict";
 import { withTemporarySqlite } from "./sqlite-test-fixture.js";
 import { DatabaseSync } from "node:sqlite";
-import { createProjectSnapshot } from "../backend/dist/project/domain/project-contracts.js";
-import { SqliteProjectRepository as ProjectRepository } from "../backend/dist/project/infrastructure/sqlite-project.repository.js";
-import { ProjectRepositoryError } from "../backend/dist/project/domain/project.errors.js";
-import { provisionSchema } from "../backend/dist/administration/schema-provisioner.js";
+import { createProjectSnapshot } from "../dist/modules/project/domain/project-contracts.js";
+import { SqliteProjectRepository as ProjectRepository } from "../dist/modules/project/infrastructure/sqlite-project.repository.js";
+import { ProjectRepositoryError } from "../dist/modules/project/domain/project.errors.js";
+import { provisionSchema } from "../dist/infrastructure/administration/schema-provisioner.js";
 
 const CREATED_AT = "2026-09-27T12:00:00.000Z";
 const UPDATED_AT = "2026-09-27T13:00:00.000Z";

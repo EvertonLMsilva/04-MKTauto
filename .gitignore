@@ -28,4 +28,5 @@ coverage/
 work/
 outputs/
 dist/
-/backend/tsconfig.build.tsbuildinfo
+/tsconfig.build.tsbuildinfo
+/tsconfig.tsbuildinfo
