@@ -48,6 +48,7 @@ export async function verifyCampaignSchema(
     const result = await database.query(
       'SELECT name,checksum FROM platform.schema_migrations WHERE version=$1',
       [5],
+      'campaign',
     );
     valid =
       result.rows[0]?.name === migration.name &&
@@ -96,10 +97,14 @@ export class PostgresCampaignSession {
     if (current) {
       if (!current.active)
         throw new CampaignError('CAMPAIGN_TRANSACTION_ENDED');
+      if (this.database.inUnitOfWork('campaign'))
+        return this.database.transaction(async () => await work(), 'campaign');
       return await work();
     }
     return this.database.transaction(async (client) => {
-      if (this.readOnly)
+      if (this.database.inUnitOfWork('campaign')) {
+        // The coordinator owns isolation and acquires all locks before reads.
+      } else if (this.readOnly)
         await client.query(
           'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
         );
@@ -114,7 +119,7 @@ export class PostgresCampaignSession {
       } finally {
         scope.active = false;
       }
-    });
+    }, 'campaign');
   }
   close(): void {
     this.closed = true;
@@ -124,6 +129,8 @@ export class PostgresCampaignSession {
     if (this.closed || !scope?.active)
       throw new CampaignError('CAMPAIGN_SESSION_INACTIVE');
     try {
+      if (this.readOnly && !/^\s*SELECT\b/i.test(sql))
+        throw new Error('CAMPAIGN_READ_ONLY');
       const result = await scope.client.query({
         text: statement(sql, returning),
         values,

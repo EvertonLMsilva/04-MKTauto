@@ -20,7 +20,8 @@ import type { DiscoverySourceFactory } from './application/ports/discovery.port.
 import type { ShopeeAffiliatePort } from './application/ports/shopee-affiliate.port.js';
 
 export interface AffiliatePostgresOptions {
-  readers: AffiliatePostgresReaders;
+  readers?: AffiliatePostgresReaders;
+  coordinateCampaign?: boolean;
   discovery?: DiscoverySourceFactory;
   shopee?: ShopeeAffiliatePort;
 }
@@ -147,6 +148,8 @@ export class AffiliateModule {
     config: PostgresConfig,
     options: AffiliatePostgresOptions,
   ): DynamicModule {
+    if (!options.coordinateCampaign && !options.readers)
+      throw new Error('AFFILIATE_CONTEXT_READERS_REQUIRED');
     const unavailable = async (): Promise<never> => {
       throw new Error('SHOPEE_POSTGRES_OFFLINE_PROVIDER_REQUIRED');
     };
@@ -180,7 +183,11 @@ export class AffiliateModule {
           provide: PostgresAffiliateSessionFactory,
           inject: [PostgresDatabase],
           useFactory: (database: PostgresDatabase) =>
-            new PostgresAffiliateSessionFactory(database, options.readers),
+            new PostgresAffiliateSessionFactory(
+              database,
+              options.readers,
+              options.coordinateCampaign,
+            ),
         },
         {
           provide: PostgresAffiliatePersistence,
@@ -297,6 +304,7 @@ export class AffiliateModule {
           useValue: {
             canActivate: (context: ExecutionContext) => {
               if (
+                !options.coordinateCampaign &&
                 context.getClass() === AffiliateRunContextController &&
                 context.getHandler().name === 'bindRun'
               )
@@ -310,6 +318,8 @@ export class AffiliateModule {
         },
       ],
       exports: [
+        AFFILIATE_RUN_CONTEXT_FACTORY,
+        PostgresAffiliatePersistence,
         AffiliateService,
         AFFILIATE_REPOSITORY,
         AFFILIATE_RUN_CONTEXT,
