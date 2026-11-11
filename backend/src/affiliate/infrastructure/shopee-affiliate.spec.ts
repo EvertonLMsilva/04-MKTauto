@@ -61,10 +61,12 @@ describe('internal Shopee affiliate fake', () => {
     },
   );
 
-  it('fails explicitly for unavailable live mode', () => {
+  it('requires private credentials for explicitly selected live mode', () => {
     vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
+    vi.stubEnv('SHOPEE_AFFILIATE_APP_ID', '');
+    vi.stubEnv('SHOPEE_AFFILIATE_SECRET', '');
     expect(() => shopeeAffiliateProvider.useFactory()).toThrow(
-      'SHOPEE_AFFILIATE_LIVE_UNAVAILABLE',
+      'SHOPEE_LIVE_CREDENTIALS_MISSING',
     );
   });
 

@@ -23,7 +23,7 @@ import {
 // Primary technical evidence: official Explorer source and embedded V2 schema.
 // https://open-api.affiliate.shopee.com.br/explorer
 // https://open-api.affiliate.shopee.com.br/explorer/v2
-// Keep this fixed read isolated from the module's normal (fake-only) provider.
+// Keep this controlled probe separate from the configured paginated facade.
 export const SHOPEE_OFFERS_QUERY =
   'query ControlledOffers { productOfferV2(page: 1, limit: 1) { nodes { itemId } } }';
 const ENDPOINT = 'https://open-api.affiliate.shopee.com.br/graphql';

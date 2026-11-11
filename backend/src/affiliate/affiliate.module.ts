@@ -7,6 +7,9 @@ import type { AffiliateRepositoryFactory } from './application/ports/affiliate-r
 import { FeedQualificationService } from './application/feed-qualification.service.js';
 import { FeedQualificationController } from './feed-qualification.controller.js';
 import { ShopeeCatalogService } from './application/shopee-catalog.service.js';
+import { ShopeeDynamicService } from './application/shopee-dynamic.service.js';
+import { ShopeeDynamicJournal } from './infrastructure/shopee-dynamic-journal.js';
+import { ShopeeCatalogCommit } from './infrastructure/shopee-catalog-commit.js';
 import { SHOPEE_AFFILIATE } from './application/ports/shopee-affiliate.port.js';
 import { shopeeAffiliateProvider } from './infrastructure/shopee-affiliate.provider.js';
 import { DiscoveryController } from './discovery.controller.js';
@@ -41,6 +44,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     DiscoveryController,
   ],
   exports: [
+    ShopeeDynamicService,
     ShopeeCatalogService,
     SHOPEE_AFFILIATE,
     AffiliateService,
@@ -49,6 +53,23 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     AffiliateDiscoveryService,
   ],
   providers: [
+    ShopeeCatalogCommit,
+    ShopeeDynamicJournal,
+    {
+      provide: ShopeeDynamicService,
+      useFactory: (
+        catalog: ShopeeCatalogService,
+        affiliate: AffiliateService,
+        journal: ShopeeDynamicJournal,
+        projects: ProjectSnapshotReader,
+      ) => new ShopeeDynamicService(catalog, affiliate, journal, projects),
+      inject: [
+        ShopeeCatalogService,
+        AffiliateService,
+        ShopeeDynamicJournal,
+        PROJECT_SNAPSHOT_READER,
+      ],
+    },
     {
       provide: QualificationPreviewService,
       useFactory: (

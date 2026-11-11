@@ -90,20 +90,20 @@ describe('Shopee transient catalog', () => {
     ).rejects.toThrow('invalid normalized source');
   });
 
-  it('keeps fake default and LIVE blocked', () => {
-    const previous = process.env.SHOPEE_AFFILIATE_MODE;
+  it('keeps fake default and enables LIVE only with explicit credentials', () => {
     try {
-      delete process.env.SHOPEE_AFFILIATE_MODE;
+      vi.stubEnv('SHOPEE_AFFILIATE_MODE', undefined);
       expect(shopeeAffiliateProvider.useFactory()).toBeInstanceOf(
         FakeShopeeAffiliate,
       );
-      process.env.SHOPEE_AFFILIATE_MODE = 'live';
-      expect(() => shopeeAffiliateProvider.useFactory()).toThrow(
-        'SHOPEE_AFFILIATE_LIVE_UNAVAILABLE',
+      vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'live');
+      vi.stubEnv('SHOPEE_AFFILIATE_APP_ID', 'synthetic-app');
+      vi.stubEnv('SHOPEE_AFFILIATE_SECRET', 'synthetic-secret');
+      expect(shopeeAffiliateProvider.useFactory()).not.toBeInstanceOf(
+        FakeShopeeAffiliate,
       );
     } finally {
-      if (previous === undefined) delete process.env.SHOPEE_AFFILIATE_MODE;
-      else process.env.SHOPEE_AFFILIATE_MODE = previous;
+      vi.unstubAllEnvs();
     }
   });
 });
