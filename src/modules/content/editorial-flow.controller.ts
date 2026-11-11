@@ -37,7 +37,11 @@ export class EditorialFlowController {
         if (body.code === 'EDITORIAL_PROVIDER_UNAVAILABLE')
           throw new ServiceUnavailableException(body);
         if (body.code.endsWith('NOT_FOUND')) throw new NotFoundException(body);
-        if (/CONFLICT|REUSED|RUNNING|UNKNOWN/.test(body.code))
+        if (
+          /CONFLICT|REUSED|RUNNING|UNKNOWN|CROSS_DOMAIN_TRANSACTION_REQUIRED/.test(
+            body.code,
+          )
+        )
           throw new ConflictException(body);
         throw new BadRequestException(body);
       }

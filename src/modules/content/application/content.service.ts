@@ -1,17 +1,32 @@
+import { runContentIo } from './content-io.js';
 import type { ContentStore, ContentRepository } from './content.port.js';
 
-export class ContentService {
-  constructor(private readonly store: ContentStore) {}
+export class ContentService<A extends boolean = false> {
+  constructor(private readonly store: ContentStore<A>) {}
   private session<T>(
     readOnly: boolean,
     operation: (repository: ContentRepository) => T,
-  ): T {
-    const repository = this.store.open(readOnly);
-    try {
-      return operation(repository);
-    } finally {
-      repository.close();
-    }
+  ): A extends true ? Promise<T> : T {
+    const store = this.store;
+    return runContentIo(
+      (function* (): Generator<unknown, T, any> {
+        const repository = yield store.open(readOnly);
+        let result!: T;
+        let failure: { error: unknown } | undefined;
+        try {
+          result = yield operation(repository);
+        } catch (error) {
+          failure = { error };
+        }
+        try {
+          yield repository.close();
+        } catch (error) {
+          if (!failure) throw error;
+        }
+        if (failure) throw failure.error;
+        return result;
+      })(),
+    );
   }
   registerBatch(value: unknown) {
     return this.session(false, (r) => r.registerBatch(value));

@@ -5,26 +5,27 @@ import type {
   EditorialScript,
 } from '../domain/content.types.js';
 
-export interface ContentRepository {
-  close(): void;
-  registerBatch(value: unknown): IdeaWithScore[];
-  getIdeaWithScore(id: string): IdeaWithScore | null;
-  listIdeasByPipelineRun(id: string): IdeaWithScore[];
-  registerSelection(value: unknown): IdeaSelection;
-  getSelection(id: string): IdeaSelection | null;
-  listSelectionsByPipelineRun(id: string): IdeaSelection[];
-  listSelectionsByBatch(id: string): IdeaSelection[];
+type Io<A extends boolean, T> = A extends true ? Promise<T> : T;
+export interface ContentRepository<A extends boolean = false> {
+  close(): Io<A, void>;
+  registerBatch(value: unknown): Io<A, IdeaWithScore[]>;
+  getIdeaWithScore(id: string): Io<A, IdeaWithScore | null>;
+  listIdeasByPipelineRun(id: string): Io<A, IdeaWithScore[]>;
+  registerSelection(value: unknown): Io<A, IdeaSelection>;
+  getSelection(id: string): Io<A, IdeaSelection | null>;
+  listSelectionsByPipelineRun(id: string): Io<A, IdeaSelection[]>;
+  listSelectionsByBatch(id: string): Io<A, IdeaSelection[]>;
   registerAffiliateEditorialSelection(
     value: unknown,
-  ): AffiliateEditorialSelection;
+  ): Io<A, AffiliateEditorialSelection>;
   getAffiliateEditorialSelection(
     id: string,
-  ): AffiliateEditorialSelection | null;
-  registerScript(value: unknown): EditorialScript;
-  getScript(id: string): EditorialScript | null;
-  listScriptsByPipelineRun(id: string): EditorialScript[];
-  listScriptsBySelection(id: string): EditorialScript[];
+  ): Io<A, AffiliateEditorialSelection | null>;
+  registerScript(value: unknown): Io<A, EditorialScript>;
+  getScript(id: string): Io<A, EditorialScript | null>;
+  listScriptsByPipelineRun(id: string): Io<A, EditorialScript[]>;
+  listScriptsBySelection(id: string): Io<A, EditorialScript[]>;
 }
-export interface ContentStore {
-  open(readOnly?: boolean): ContentRepository;
+export interface ContentStore<A extends boolean = false> {
+  open(readOnly?: boolean): Io<A, ContentRepository<A>>;
 }

@@ -53,10 +53,10 @@ export class ContentController {
   @Get('scripts/:id') getScript(@Param('id') id: string) {
     return this.respond(() => this.content.getScript(id));
   }
-  private respond<T>(operation: () => T): T {
-    let result: T;
+  private async respond<T>(operation: () => T): Promise<Awaited<T>> {
+    let result: Awaited<T>;
     try {
-      result = operation();
+      result = await operation();
     } catch (error) {
       if (
         error instanceof ContractValidationError ||
