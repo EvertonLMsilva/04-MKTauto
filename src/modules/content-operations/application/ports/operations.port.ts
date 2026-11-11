@@ -1,3 +1,4 @@
+import type { Io } from '../../infrastructure/sqlite-operations.repository.js';
 import type {
   Execution,
   PipelineRun,
@@ -9,30 +10,36 @@ export const CONTENT_OPERATIONS_DATABASE = Symbol(
 );
 export const CONTENT_OPERATIONS_STORE = Symbol('CONTENT_OPERATIONS_STORE');
 export const CONTENT_OPERATIONS = Symbol('CONTENT_OPERATIONS');
-export interface OperationsRepository {
-  close(): void;
+export interface OperationsRepository<A extends boolean = false> {
+  close(): Io<A, void>;
   startRun(value: {
     execution: Execution;
     projectSnapshot: ProjectSnapshot;
-  }): PipelineRun;
-  getRun(id: string): PipelineRun | null;
-  listRunsByProjectVersion(id: string, version: number): PipelineRun[];
+  }): Io<A, PipelineRun>;
+  getRun(id: string): Io<A, PipelineRun | null>;
+  listRunsByProjectVersion(id: string, version: number): Io<A, PipelineRun[]>;
   transitionRun(value: {
     pipelineRunId: string;
     nextState: string;
     completedAt?: string;
     error?: unknown;
-  }): PipelineRun;
-  resumeRun(value: { pipelineRunId: string; resumedAt: string }): PipelineRun;
+  }): Io<A, PipelineRun>;
+  resumeRun(value: {
+    pipelineRunId: string;
+    resumedAt: string;
+  }): Io<A, PipelineRun>;
 }
-export interface StageRepository {
-  findSucceeded(value: unknown): StageAttempt | null;
-  getLatestAttempt(id: string, stage: string): StageAttempt | null;
-  listAttempts(id: string): StageAttempt[];
+export interface StageRepository<A extends boolean = false> {
+  findSucceeded(value: unknown): Io<A, StageAttempt | null>;
+  getLatestAttempt(id: string, stage: string): Io<A, StageAttempt | null>;
+  listAttempts(id: string): Io<A, StageAttempt[]>;
   startAttempt(
     value: unknown,
-    options: { trigger: string; startedAt: string },
-  ): StageAttempt;
+    options: {
+      trigger: string;
+      startedAt: string;
+    },
+  ): Io<A, StageAttempt>;
   succeed(
     id: number,
     value: {
@@ -41,15 +48,20 @@ export interface StageRepository {
       artifactContentHash: string;
       result: unknown;
     },
-  ): StageAttempt;
+  ): Io<A, StageAttempt>;
   fail(
     id: number,
-    value: { completedAt: string; error: unknown },
-  ): StageAttempt;
+    value: {
+      completedAt: string;
+      error: unknown;
+    },
+  ): Io<A, StageAttempt>;
 }
-export interface OperationsSession extends OperationsRepository {
-  readonly stages: StageRepository;
+export interface OperationsSession<
+  A extends boolean = false,
+> extends OperationsRepository<A> {
+  readonly stages: StageRepository<A>;
 }
-export interface OperationsStore {
-  open(readOnly?: boolean): OperationsSession;
+export interface OperationsStore<A extends boolean = false> {
+  open(readOnly?: boolean): Io<A, OperationsSession<A>>;
 }

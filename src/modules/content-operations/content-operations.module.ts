@@ -1,3 +1,9 @@
+import {
+  campaignPostgresModule,
+  type CampaignPostgresOptions,
+} from './campaign-postgres.module.js';
+import type { PostgresConfig } from '../../infrastructure/database/postgres/index.js';
+import type { DynamicModule } from '@nestjs/common';
 import { Module } from '@nestjs/common';
 import { ProjectModule } from '../project/project.module.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
@@ -42,4 +48,11 @@ import { ContentOperationsController } from './content-operations.controller.js'
     { provide: CONTENT_OPERATIONS, useExisting: ContentOperationsService },
   ],
 })
-export class ContentOperationsModule {}
+export class ContentOperationsModule {
+  static postgres(
+    config: PostgresConfig,
+    options: CampaignPostgresOptions = {},
+  ): DynamicModule {
+    return campaignPostgresModule(config, options);
+  }
+}

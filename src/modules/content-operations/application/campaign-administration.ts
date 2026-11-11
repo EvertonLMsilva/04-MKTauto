@@ -1,3 +1,14 @@
+import type { PostgresCampaignRepository } from '../infrastructure/postgres-campaign.persistence.js';
+import type { CampaignExecution, CampaignEvent } from '../domain/campaign.js';
+import {
+  runCampaignIo,
+  iterateCampaignIo,
+  type Io,
+} from '../infrastructure/campaign.repository.js';
+export interface CampaignPostgresBackend {
+  readonly repository: PostgresCampaignRepository;
+  readonly canExecute?: boolean;
+}
 import { DatabaseSync } from 'node:sqlite';
 import { shopeeOperationalCycleId } from '../../affiliate/application/shopee-dynamic.service.js';
 import type { ShopeeDynamicService } from '../../affiliate/application/shopee-dynamic.service.js';
@@ -39,15 +50,17 @@ import {
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
 import { initialOccurrence } from '../domain/campaign-schedule.js';
 export const CAMPAIGN_DATABASE = Symbol('CAMPAIGN_DATABASE');
-export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
+export class CampaignAdministrationRuntime<A extends boolean = false>
+  implements OnModuleInit, OnModuleDestroy
+{
   private db?: DatabaseSync;
   private store?: CampaignRepository;
   private runner?: CampaignOrchestrator;
   private timer?: ReturnType<typeof setInterval>;
   private pending?: Promise<void>;
-  private readonly logger = new Logger(CampaignAdministration.name);
+  private readonly logger = new Logger('CampaignAdministration');
   constructor(
-    private readonly path: string | null,
+    private readonly path: string | null | CampaignPostgresBackend,
     readonly workflow: NativeCampaignWorkflow,
     private readonly enabled = false,
     private readonly now = () => new Date().toISOString(),
@@ -56,6 +69,15 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   ) {}
   private open() {
     if (this.store) return this.store;
+    if (this.path && typeof this.path !== 'string') {
+      this.store = this.path.repository as unknown as CampaignRepository;
+      this.runner = new CampaignOrchestrator(
+        this.path.repository,
+        this.workflow,
+        this.now,
+      );
+      return this.store;
+    }
     if (!this.path || !isAbsolute(this.path))
       throw new CampaignError('CAMPAIGN_DATABASE_REQUIRED');
     const db = new DatabaseSync(this.path, { readOnly: true });
@@ -100,46 +122,69 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (this.timer) clearInterval(this.timer);
     await this.pending;
     this.db?.close();
+    if (this.path && typeof this.path !== 'string')
+      await this.path.repository.close();
   }
-  async schedule(value: unknown) {
+  async schedule(value: unknown): Promise<CampaignExecution> {
     return this.scheduleRequest(value, false);
   }
-  private async scheduleRequest(value: unknown, controlled: boolean) {
-    if (document(value).legacyRecovery)
-      throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
-    if (
-      !controlled &&
-      (Object.hasOwn(document(value), 'fakeExecutionPolicy') ||
-        String(document(value).runId).startsWith(CONTROLLED_FAKE_RUN_PREFIX))
-    )
-      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
-    const r = campaignRequest(value);
-    if (
-      !controlled &&
-      this.open()
-        .recurrences(true)
-        .some(
-          (e) =>
-            e.config.request.campaignId === r.campaignId &&
-            assertFakeExecutionPolicy(e.config.request),
+  private async scheduleRequest(
+    value: unknown,
+    controlled: boolean,
+  ): Promise<CampaignExecution> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        if (document(value).legacyRecovery)
+          throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
+        if (
+          !controlled &&
+          (Object.hasOwn(document(value), 'fakeExecutionPolicy') ||
+            String(document(value).runId).startsWith(
+              CONTROLLED_FAKE_RUN_PREFIX,
+            ))
         )
-    )
-      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
-    if (r.selectionMode === 'CATALOG' || Object.hasOwn(r, 'catalogSelection'))
-      throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
-    await this.workflow.validate(r);
-    return this.open().schedule(
-      {
-        campaignId: String(r.campaignId),
-        campaignRevision: Number(r.campaignRevision),
-        scheduledAt: String(r.scheduledAt),
-        runId: String(r.runId),
-      },
-      r,
-      new Date().toISOString(),
+          throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+        const r = campaignRequest(value);
+        if (
+          !controlled &&
+          (yield (yield (yield this.open()).recurrences(true)).some(
+            (e: {
+              executionId: string;
+              config: import('../infrastructure/campaign.repository.js').CampaignRecurrence;
+            }) =>
+              e.config.request.campaignId === r.campaignId &&
+              assertFakeExecutionPolicy(e.config.request),
+          ))
+        )
+          throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+        if (
+          r.selectionMode === 'CATALOG' ||
+          Object.hasOwn(r, 'catalogSelection')
+        )
+          throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
+        if (
+          this.path &&
+          typeof this.path !== 'string' &&
+          (r.publication || r.videoProduction || r.mode !== 'LOCAL_VALIDATION')
+        )
+          throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
+        yield yield this.workflow.validate(r);
+        return yield (yield this.open()).schedule(
+          {
+            campaignId: String(r.campaignId),
+            campaignRevision: Number(r.campaignRevision),
+            scheduledAt: String(r.scheduledAt),
+            runId: String(r.runId),
+          },
+          r,
+          new Date().toISOString(),
+        );
+      }.call(this),
     );
   }
   async startControlledFake(value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     identifier(actorId);
     const request = await this.workflow.localRequest(value, actorId);
     if (!assertFakeExecutionPolicy(request))
@@ -147,6 +192,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.scheduleRequest(request, true);
   }
   controlledFake(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const store = this.open(),
       execution = store.get(identifier(id));
     const policy = assertFakeExecutionPolicy(
@@ -157,6 +204,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return { execution, policy };
   }
   async configureControlledFakeRecurrence(value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     identifier(actorId);
     const input = localRequestInput(value),
       enabled = localRecurrence(input),
@@ -168,7 +217,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (!enabled) {
       const existing = store
         .recurrences(true)
-        .find((e) => e.config.request.campaignId === input.campaignId);
+        .find(
+          (e: {
+            executionId: string;
+            config: import('../infrastructure/campaign.repository.js').CampaignRecurrence;
+          }) => e.config.request.campaignId === input.campaignId,
+        );
       if (!existing) throw new CampaignError('CAMPAIGN_RECURRENCE_NOT_FOUND');
       request = existing.config.request;
       if (!assertFakeExecutionPolicy(request))
@@ -218,7 +272,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
     const current = store
       .recurrences(true)
-      .find((e) => e.config.request.campaignId === input.campaignId)!.config;
+      .find(
+        (e: {
+          executionId: string;
+          config: import('../infrastructure/campaign.repository.js').CampaignRecurrence;
+        }) => e.config.request.campaignId === input.campaignId,
+      )!.config;
     return {
       execution,
       recurrence: {
@@ -229,13 +288,18 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     };
   }
   async startLocal(value: unknown) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const input = localRequestInput(value),
       enabled = localRecurrence(input);
     if (
       this.open()
         .recurrences(true)
         .some(
-          (e) =>
+          (e: {
+            executionId: string;
+            config: import('../infrastructure/campaign.repository.js').CampaignRecurrence;
+          }) =>
             e.config.request.campaignId === input.campaignId &&
             assertFakeExecutionPolicy(e.config.request),
         )
@@ -244,7 +308,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (enabled === false) {
       const existing = this.open()
         .recurrences(true)
-        .find((e) => e.config.request.campaignId === input.campaignId);
+        .find(
+          (e: {
+            executionId: string;
+            config: import('../infrastructure/campaign.repository.js').CampaignRecurrence;
+          }) => e.config.request.campaignId === input.campaignId,
+        );
       if (existing) {
         const seed = existing.config.request;
         const schedule = localSchedule(input);
@@ -296,11 +365,21 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     actorId: string,
     authorizationId?: string,
   ) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     identifier(actorId);
     const input = localRequestInput(value);
     if (input.selectionMode !== 'CATALOG' || localRecurrence(input) !== true)
       throw new CampaignError('SHOPEE_DYNAMIC_CATALOG_RECURRENCE_REQUIRED');
-    if (this.open().recurrences(true).some(e => e.config.request.campaignId === input.campaignId && e.config.request.fakeExecutionPolicy))
+    if (
+      this.open()
+        .recurrences(true)
+        .some(
+          (e) =>
+            e.config.request.campaignId === input.campaignId &&
+            e.config.request.fakeExecutionPolicy,
+        )
+    )
       throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     this.assertDynamicActivation(authorizationId);
     const request = await this.workflow.localRequest(value);
@@ -308,7 +387,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     if (configuration?.projectId !== projectId)
       throw new CampaignError('SHOPEE_DYNAMIC_PROJECT_MISMATCH');
     await this.shopee!.configure(configuration);
-    const activation = {enabled:true, actorId, mode:process.env.SHOPEE_AFFILIATE_MODE ?? 'fake', ...(authorizationId ? {authorizationId} : {})};
+    const activation = {
+      enabled: true,
+      actorId,
+      mode: process.env.SHOPEE_AFFILIATE_MODE ?? 'fake',
+      ...(authorizationId ? { authorizationId } : {}),
+    };
     await this.prepareDynamicCatalog(request, activation);
     return this.open().configureRecurrence(
       { ...request, shopeeDynamic: activation },
@@ -319,25 +403,54 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   async reviewLiveAuthorization(value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const input = document(value);
     if (!this.shopee) throw new CampaignError('SHOPEE_DYNAMIC_UNAVAILABLE');
-    if (typeof input.confirmed !== 'boolean' || Object.keys(input).some(k => !['configuration','scope','confirmed','expectedScopeHash'].includes(k)))
+    if (
+      typeof input.confirmed !== 'boolean' ||
+      Object.keys(input).some(
+        (k) =>
+          ![
+            'configuration',
+            'scope',
+            'confirmed',
+            'expectedScopeHash',
+          ].includes(k),
+      )
+    )
       throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_INVALID');
     const configuration = input.configuration as ShopeeDynamicConfiguration;
-    const scope = input.scope as import('../../affiliate/application/shopee-dynamic.service.js').ShopeeLiveAuthorizationScope;
-    if (!input.confirmed) return this.shopee.previewLiveAuthorization(configuration, scope);
-    if (typeof input.expectedScopeHash !== 'string' || !/^[a-f0-9]{64}$/.test(input.expectedScopeHash))
+    const scope =
+      input.scope as import('../../affiliate/application/shopee-dynamic.service.js').ShopeeLiveAuthorizationScope;
+    if (!input.confirmed)
+      return this.shopee.previewLiveAuthorization(configuration, scope);
+    if (
+      typeof input.expectedScopeHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.expectedScopeHash)
+    )
       throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_INVALID');
-    return this.shopee.approveLiveAuthorization(configuration, scope, input.expectedScopeHash, actorId);
+    return this.shopee.approveLiveAuthorization(
+      configuration,
+      scope,
+      input.expectedScopeHash,
+      actorId,
+    );
   }
   private assertDynamicActivation(authorizationId?: string) {
     if (!this.shopee) throw new CampaignError('SHOPEE_DYNAMIC_UNAVAILABLE');
     const mode = process.env.SHOPEE_AFFILIATE_MODE ?? 'fake';
-    if (mode !== 'fake' && mode !== 'live') throw new CampaignError('SHOPEE_AFFILIATE_MODE_INVALID');
-    if (mode === 'live' && !authorizationId) throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
-    if (mode === 'fake' && authorizationId) throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
+    if (mode !== 'fake' && mode !== 'live')
+      throw new CampaignError('SHOPEE_AFFILIATE_MODE_INVALID');
+    if (mode === 'live' && !authorizationId)
+      throw new CampaignError('SHOPEE_LIVE_AUTHORIZATION_REQUIRED');
+    if (mode === 'fake' && authorizationId)
+      throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
   }
-  private async prepareDynamicCatalog(request: Record<string, unknown>, activation?: Record<string, unknown>) {
+  private async prepareDynamicCatalog(
+    request: Record<string, unknown>,
+    activation?: Record<string, unknown>,
+  ) {
     const zone = request.schedule
       ? String(document(request.schedule).timeZone)
       : undefined;
@@ -352,16 +465,29 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     )
       return;
     const mode = activation?.mode ?? 'fake';
-    if (mode !== (process.env.SHOPEE_AFFILIATE_MODE ?? 'fake')) throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
-    const authorizationId = typeof activation?.authorizationId === 'string' ? activation.authorizationId : undefined;
+    if (mode !== (process.env.SHOPEE_AFFILIATE_MODE ?? 'fake'))
+      throw new CampaignError('SHOPEE_LIVE_SCOPE_MISMATCH');
+    const authorizationId =
+      typeof activation?.authorizationId === 'string'
+        ? activation.authorizationId
+        : undefined;
     this.assertDynamicActivation(authorizationId);
     const cycleId = shopeeOperationalCycleId(String(request.campaignId), day);
     try {
-      if (mode === 'live') await this.shopee!.runAuthorizedScheduledCycle(String(document(request.run).projectId),cycleId,authorizationId!,String(request.campaignId),day,Number(request.campaignRevision));
-      else await this.shopee!.runScheduledCycle(
-        String(document(request.run).projectId),
-        cycleId,
-      );
+      if (mode === 'live')
+        await this.shopee!.runAuthorizedScheduledCycle(
+          String(document(request.run).projectId),
+          cycleId,
+          authorizationId!,
+          String(request.campaignId),
+          day,
+          Number(request.campaignRevision),
+        );
+      else
+        await this.shopee!.runScheduledCycle(
+          String(document(request.run).projectId),
+          cycleId,
+        );
     } catch (error) {
       const code =
         error instanceof Error && /^SHOPEE_[A-Z_]+$/.test(error.message)
@@ -371,6 +497,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     }
   }
   async operatorReview(id: string, actor: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const store = this.open(),
       e = store.get(id);
     const snapshot = await this.workflow.operatorReview(
@@ -391,6 +519,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     kind: 'render' | 'package',
     input: unknown,
   ) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const v = document(input);
     if (
       Object.keys(v).sort().join(',') !==
@@ -470,6 +600,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return result;
   }
   result(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const store = this.open(),
       history = store.history(id);
     return this.workflow.result(
@@ -479,6 +611,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   async recoverLegacy(value: unknown) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const request = await this.workflow.recoverLegacy(value);
     return this.open().schedule(
       {
@@ -491,119 +625,44 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       new Date().toISOString(),
     );
   }
-  get(id: string) {
-    const store = this.open(),
-      execution = store.get(id),
-      history = store.history(id);
-    const last = history
-      .filter((event) =>
-        ['PAUSED', 'STEP_STARTED', 'STEP_DONE', 'COMPLETED'].includes(
-          event.event_type,
+  get(id: string): Io<A, ReturnType<typeof presentCampaignExecution>> {
+    if (this.path && typeof this.path !== 'string')
+      return this.path.repository.readSnapshot(async (repository) =>
+        presentCampaignExecution(
+          await repository.get(id),
+          await repository.history(id),
         ),
-      )
-      .at(-1);
-    const done = completedContext(history);
-    const code =
-      execution.status === 'WAITING_INPUT' ||
-      execution.status === 'FAILED' ||
-      execution.status === 'WAITING_RECONCILIATION'
-        ? String(history.at(-1)?.evidence.code ?? last?.evidence.code ?? '')
-        : null;
-    const messages: Record<string, string> = {
-      CATALOG_PRODUCT_REQUIRED:
-        'Nenhum produto elegível no catálogo. Cadastre uma revisão com link, evidências e imagem autorizada para as próximas ocorrências.',
-      REAL_VIDEO_MEDIA_REQUIRED: 'Associe um vídeo autorizado para cada cena.',
-      MEDIA_SELECTION_REQUIRED:
-        'Selecione a versão do vídeo que deve ser utilizada.',
-      AUTHENTICATED_MEDIA_REVIEW_REQUIRED:
-        'Revise o vídeo e a imagem de referência com uma identidade QC_REVIEWER.',
-      COMPLETE_TEMPORAL_QC_REQUIRED:
-        'Conclua a revisão autenticada das mídias.',
-      MEDIA_REVIEW_REJECTED:
-        'A revisão humana rejeitou esta mídia. A composição foi interrompida.',
-      MEDIA_QC_FAILED:
-        'O vídeo falhou na verificação técnica. Forneça uma mídia válida antes de retomar.',
-      GLOBAL_DAILY_BUDGET_EXCEEDED:
-        'O limite diário do Finance foi atingido. Aguarde a renovação da janela diária (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
-      GLOBAL_MONTHLY_BUDGET_EXCEEDED:
-        'O limite mensal do Finance foi atingido. Aguarde a renovação da janela mensal (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
-      AUDIO_REQUIRED:
-        'Disponibilize uma gravação autorizada vinculada ao roteiro.',
-      LOCAL_TTS_CONFIGURATION_REQUIRED:
-        'Configure um modelo TTS local com manifesto de licença e hashes aprovados, ou escolha gravação própria.',
-      LOCAL_TTS_LICENSE_REQUIRED:
-        'A licença ou identidade do TTS local não está comprovada. Revise o manifesto autorizado ou escolha gravação própria.',
-      LOCAL_TTS_EXECUTION_REQUIRED:
-        'A síntese local falhou. Verifique os recursos locais ou escolha gravação própria.',
-      LOCAL_TTS_BUSY_REQUIRED:
-        'Outra execução está produzindo esta narração. Aguarde a conclusão; uma trava abandonada exige verificação operacional.',
-      NARRATION_DURATION_REQUIRED:
-        'O conteúdo aprovado não cabe no vídeo em fala natural. A remoção de repetições não foi suficiente; revise o roteiro ou forneça gravação válida. Nenhuma palavra foi cortada.',
-      LOCAL_AUDIO_SELECTION_REQUIRED:
-        'Selecione uma das gravações autorizadas para este roteiro.',
-      ALIGNMENT_CONFIGURATION_REQUIRED:
-        'O alinhamento local exige um modelo e ambiente já instalados e configurados.',
-      COMPOSITION_RIGHTS_REQUIRED:
-        'Os direitos atuais permitem somente a revisão. A composição exige autorização própria.',
-      COMPOSITION_MEDIA_PROFILE_REQUIRED:
-        'A mídia precisa de metadados V2 verificados para composição. Solicite uma revisão de cadastro compatível, preservando os direitos e a origem.',
-      PRODUCTION_PROFILE_MISMATCH:
-        'A execução foi criada com outro perfil de produção. A composição V2 exige uma execução com perfil de mídia mista.',
-      COMPOSER_UNAVAILABLE:
-        'Os binários locais FFmpeg/FFprobe e os diretórios de mídia precisam estar configurados no ambiente.',
-      AUDIO_VIDEO_DURATION_REQUIRED:
-        'A duração do áudio não cabe nos vídeos disponíveis. Forneça uma gravação ou mídia compatível.',
-      EXACT_HUMAN_APPROVAL_REQUIRED:
-        'Revise e aprove a versão final exata para liberar o handoff manual.',
-      INTERRUPTED_EFFECT_REQUIRES_VERIFICATION:
-        'O processamento foi interrompido. Os artefatos persistidos precisam ser verificados antes da retomada.',
-    };
-    return {
-      ...execution,
-      selectionMode: history[0].evidence.selectionMode ?? 'FIXED',
-      schedule: history[0].evidence.schedule ?? null,
-      productSelection: history[0].evidence.catalogSelection ?? null,
-      provenance:
-        history[0].event_type === 'LEGACY_RECOVERY'
-          ? history[0].evidence.legacyRecovery
-          : null,
-      finalization: {
-        step: last?.evidence.step ?? null,
-        completedSteps: Object.keys(done),
-        pending: code
-          ? {
-              code,
-              message:
-                messages[code] ??
-                'Há uma pendência técnica ou de autorização. Consulte o histórico da execução.',
-            }
-          : null,
-        preview: done.PREVIEW ?? null,
-        availableActions:
-          execution.status === 'WAITING_INPUT'
-            ? [
-                'GLOBAL_DAILY_BUDGET_EXCEEDED',
-                'GLOBAL_MONTHLY_BUDGET_EXCEEDED',
-              ].includes(code ?? '')
-              ? ['WAIT_BUDGET_WINDOW', 'RESUME', 'CANCEL']
-              : code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
-                ? ['REVIEW_FINAL', 'RESUME', 'CANCEL']
-                : code === 'AUTHENTICATED_MEDIA_REVIEW_REQUIRED' ||
-                    code === 'COMPLETE_TEMPORAL_QC_REQUIRED'
-                  ? ['REVIEW_MEDIA', 'CANCEL']
-                  : ['SUPPLY_INPUT', 'RESUME', 'CANCEL']
-            : execution.status === 'WAITING_RECONCILIATION'
-              ? ['RECONCILE', 'CANCEL']
-              : [],
-      },
-    };
+      ) as Io<A, ReturnType<typeof presentCampaignExecution>>;
+
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        const store = yield this.open();
+        return presentCampaignExecution(
+          yield store.get(id),
+          yield store.history(id),
+        );
+      }.call(this),
+    );
   }
-  list() {
-    return this.open()
-      .listRecent()
-      .map((execution) => this.get(execution.execution_id));
+  list(): Io<A, Array<ReturnType<typeof presentCampaignExecution>>> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        return yield iterateCampaignIo(
+          yield (yield this.open()).listRecent(),
+          function* (
+            this: any,
+            execution: CampaignExecution,
+          ): Generator<unknown, any, any> {
+            return yield this.get(execution.execution_id);
+          }.bind(this),
+          'map',
+        );
+      }.call(this),
+    );
   }
   finalizationContext(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const store = this.open(),
       execution = store.get(id),
       history = store.history(id),
@@ -618,9 +677,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return { execution, history, request, completed };
   }
   publicationContext(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const c = this.finalizationContext(id),
       handoff = c.completed.HANDOFF ? document(c.completed.HANDOFF) : null;
-    if (assertFakeExecutionPolicy(c.request, c.execution)) throw new CampaignError('FAKE_EXECUTION_PUBLICATION_DISABLED');
+    if (assertFakeExecutionPolicy(c.request, c.execution))
+      throw new CampaignError('FAKE_EXECUTION_PUBLICATION_DISABLED');
     if (
       c.execution.status !== 'SUCCEEDED' ||
       !handoff ||
@@ -635,11 +697,15 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return { ...c, handoff };
   }
   async finalReviewContext(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const { execution, completed } = this.finalizationContext(id);
     return this.workflow.approvalEvidence(execution, completed);
   }
   private readonly advancing = new Map<string, Promise<void>>();
   async advanceFinalization(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const active = this.advancing.get(id);
     if (active) return active;
     this.finalizationContext(id);
@@ -651,77 +717,119 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       this.advancing.delete(id);
     }
   }
-  history(id: string) {
-    return this.open().history(id);
+  history(id: string): Io<A, CampaignEvent[]> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        return yield (yield this.open()).history(id);
+      }.call(this),
+    );
   }
-  cancel(id: string) {
-    return this.open().cancel(id, new Date().toISOString());
+  cancel(id: string): Io<A, CampaignExecution> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        return yield (yield this.open()).cancel(id, new Date().toISOString());
+      }.call(this),
+    );
   }
   async resume(id: string, value?: unknown) {
     return this.resumeRequest(id, value);
   }
   async resumeControlledFake(id: string, expectedVersion: number) {
-    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1) throw new CampaignError('INVALID_EXECUTION_VERSION');
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
+    if (!Number.isSafeInteger(expectedVersion) || expectedVersion < 1)
+      throw new CampaignError('INVALID_EXECUTION_VERSION');
     const { execution } = this.controlledFake(id);
-    if (execution.version !== expectedVersion) throw new CampaignError('EXECUTION_VERSION_CONFLICT');
+    if (execution.version !== expectedVersion)
+      throw new CampaignError('EXECUTION_VERSION_CONFLICT');
     return this.resumeRequest(id, undefined, true);
   }
-  private async resumeRequest(id: string, value?: unknown, controlledCommand = false) {
-    const store = this.open();
-    const current = store.get(id), persisted = executionRequest(store.history(id));
-    const controlled = assertFakeExecutionPolicy(persisted, current);
-    if (controlled) this.workflow.assertControlledRuntime(persisted, current);
-    if (controlled && value != null && Object.keys(document(value)).length) throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
-    if (controlled && !controlledCommand) throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
-    if (controlledCommand && !controlled) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
-    if (controlled && ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(current.status)) return current;
-    if (
-      (!value || Object.keys(document(value)).length === 0) &&
-      ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(store.get(id).status) &&
-      store
-        .history(id)
-        .some((event) => event.event_type === 'OPERATOR_REVIEW_PRESENTED')
-    )
-      return this.get(id);
-    if (
-      value !== undefined &&
-      value !== null &&
-      Object.keys(document(value)).length
-    ) {
-      const patch = document(value),
-        e = store.get(id),
-        history = store.history(id);
-      const stages: Record<string, string> = {
-        voiceTrackId: 'AUDIO',
-        audioMode: 'AUDIO',
-        audio: 'AUDIO',
-        alignment: 'ALIGNMENT',
-        composition: 'COMPOSITION',
-        publication: 'PUBLICATION',
-        sceneMediaAssetIds: 'MEDIA_QC',
-      };
-      if (
-        Object.keys(patch).some(
-          (k) =>
-            !stages[k] || Object.hasOwn(completedContext(history), stages[k]),
+  private async resumeRequest(
+    id: string,
+    value?: unknown,
+    controlledCommand = false,
+  ) {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        if (
+          this.path &&
+          typeof this.path !== 'string' &&
+          value != null &&
+          Object.keys(document(value)).length
         )
-      )
-        throw new CampaignError('COMPLETED_INPUT_CONFLICT');
-      const request = executionRequest(history);
-      if (request.legacyRecovery && patch.sceneMediaAssetIds !== undefined)
-        throw new CampaignError('LEGACY_MEDIA_IDENTITY_CONFLICT');
-      campaignRequest({ ...request, ...patch });
-      store.administrativeEvent(
-        id,
-        e.version,
-        new Date().toISOString(),
-        'INPUT_SUPPLIED',
-        patch,
-      );
-    }
-    return this.runner!.resume(id);
+          throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
+        const store = yield this.open();
+        const current = yield store.get(id),
+          persisted = executionRequest(yield store.history(id));
+        const controlled = assertFakeExecutionPolicy(persisted, current);
+        if (controlled)
+          this.workflow.assertControlledRuntime(persisted, current);
+        if (controlled && value != null && Object.keys(document(value)).length)
+          throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
+        if (controlled && !controlledCommand)
+          throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+        if (controlledCommand && !controlled)
+          throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+        if (
+          controlled &&
+          ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(current.status)
+        )
+          return current;
+        if (
+          (!value || Object.keys(document(value)).length === 0) &&
+          ['SCHEDULED', 'RUNNING', 'SUCCEEDED'].includes(
+            (yield store.get(id)).status,
+          ) &&
+          (yield (yield store.history(id)).some(
+            (event: CampaignEvent) =>
+              event.event_type === 'OPERATOR_REVIEW_PRESENTED',
+          ))
+        )
+          return yield this.get(id);
+        if (
+          value !== undefined &&
+          value !== null &&
+          Object.keys(document(value)).length
+        ) {
+          const patch = document(value),
+            e = yield store.get(id),
+            history = yield store.history(id);
+          const stages: Record<string, string> = {
+            voiceTrackId: 'AUDIO',
+            audioMode: 'AUDIO',
+            audio: 'AUDIO',
+            alignment: 'ALIGNMENT',
+            composition: 'COMPOSITION',
+            publication: 'PUBLICATION',
+            sceneMediaAssetIds: 'MEDIA_QC',
+          };
+          if (
+            Object.keys(patch).some(
+              (k) =>
+                !stages[k] ||
+                Object.hasOwn(completedContext(history), stages[k]),
+            )
+          )
+            throw new CampaignError('COMPLETED_INPUT_CONFLICT');
+          const request = executionRequest(history);
+          if (request.legacyRecovery && patch.sceneMediaAssetIds !== undefined)
+            throw new CampaignError('LEGACY_MEDIA_IDENTITY_CONFLICT');
+          campaignRequest({ ...request, ...patch });
+          yield store.administrativeEvent(
+            id,
+            e.version,
+            new Date().toISOString(),
+            'INPUT_SUPPLIED',
+            patch,
+          );
+        }
+        return this.runner!.resume(id);
+      }.call(this),
+    );
   }
   scriptRevisions(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const { execution, completed } = this.finalizationContext(id);
     if (!completed.EDITORIAL) return [];
     return this.workflow.scriptRevisions(
@@ -730,6 +838,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   framingContext(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const { completed } = this.finalizationContext(id);
     if (!completed.COMPOSITION) return null;
     return document(
@@ -739,6 +849,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     );
   }
   reviseComposition(id: string, value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const input = document(value),
       c = this.finalizationContext(id),
       store = this.open();
@@ -803,12 +915,16 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     });
   }
   compositionPreparation(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const { execution, completed } = this.finalizationContext(id);
     if (completed.COMPOSITION || completed.HANDOFF)
       throw new CampaignError('COMPOSITION_AUTHORIZATION_NOT_READY');
     return compositionScope(execution, completed);
   }
   authorizeComposition(id: string, value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const { execution, completed, history } = this.finalizationContext(id);
     const grant = compositionGrant(
       execution,
@@ -844,11 +960,14 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.get(id);
   }
   reviseScript(id: string, value: unknown, actorId: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const input = document(value),
       store = this.open(),
       execution = store.get(id),
       history = store.history(id);
-    if (assertFakeExecutionPolicy(executionRequest(history), execution)) throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
+    if (assertFakeExecutionPolicy(executionRequest(history), execution))
+      throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
     if (
       Object.keys(input).sort().join(',') !==
         'previousScriptContentHash,reason,scriptId' ||
@@ -869,7 +988,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       throw error;
     }
     const lastRevision = history
-      .filter((event) => event.event_type === 'SCRIPT_REVISED')
+      .filter((event: CampaignEvent) => event.event_type === 'SCRIPT_REVISED')
       .at(-1);
     if (
       lastRevision &&
@@ -917,6 +1036,12 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return this.get(id);
   }
   async tick() {
+    if (this.path && typeof this.path !== 'string') {
+      if (!this.path.canExecute)
+        throw new CampaignError('CAMPAIGN_WORKFLOW_REQUIRED');
+      this.open();
+      return this.runner!.tick();
+    }
     const store = this.open();
     for (const { config } of store.recurrences()) {
       try {
@@ -958,6 +1083,8 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     }
   }
   async approve(id: string, value: unknown) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('CAMPAIGN_CROSS_DOMAIN_REQUIRED');
     const r = this.open(),
       e = r.get(id),
       events = r.history(id);
@@ -994,7 +1121,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     const decision = service.decide(value) as Record<string, unknown>;
     if (
       events.some(
-        (event) =>
+        (event: CampaignEvent) =>
           event.event_type === 'HUMAN_APPROVAL' &&
           event.evidence.contentHash === decision.contentHash,
       )
@@ -1015,3 +1142,115 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     return decision;
   }
 }
+export function presentCampaignExecution(
+  execution: CampaignExecution,
+  history: CampaignEvent[],
+) {
+  const last = history
+    .filter((event) =>
+      ['PAUSED', 'STEP_STARTED', 'STEP_DONE', 'COMPLETED'].includes(
+        event.event_type,
+      ),
+    )
+    .at(-1);
+  const done = completedContext(history);
+  const code =
+    execution.status === 'WAITING_INPUT' ||
+    execution.status === 'FAILED' ||
+    execution.status === 'WAITING_RECONCILIATION'
+      ? String(history.at(-1)?.evidence.code ?? last?.evidence.code ?? '')
+      : null;
+  const messages: Record<string, string> = {
+    CATALOG_PRODUCT_REQUIRED:
+      'Nenhum produto elegível no catálogo. Cadastre uma revisão com link, evidências e imagem autorizada para as próximas ocorrências.',
+    REAL_VIDEO_MEDIA_REQUIRED: 'Associe um vídeo autorizado para cada cena.',
+    MEDIA_SELECTION_REQUIRED:
+      'Selecione a versão do vídeo que deve ser utilizada.',
+    AUTHENTICATED_MEDIA_REVIEW_REQUIRED:
+      'Revise o vídeo e a imagem de referência com uma identidade QC_REVIEWER.',
+    COMPLETE_TEMPORAL_QC_REQUIRED: 'Conclua a revisão autenticada das mídias.',
+    MEDIA_REVIEW_REJECTED:
+      'A revisão humana rejeitou esta mídia. A composição foi interrompida.',
+    MEDIA_QC_FAILED:
+      'O vídeo falhou na verificação técnica. Forneça uma mídia válida antes de retomar.',
+    GLOBAL_DAILY_BUDGET_EXCEEDED:
+      'O limite diário do Finance foi atingido. Aguarde a renovação da janela diária (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
+    GLOBAL_MONTHLY_BUDGET_EXCEEDED:
+      'O limite mensal do Finance foi atingido. Aguarde a renovação da janela mensal (America/Sao_Paulo) e clique em Retomar. A revisão aprovada permanece registrada.',
+    AUDIO_REQUIRED:
+      'Disponibilize uma gravação autorizada vinculada ao roteiro.',
+    LOCAL_TTS_CONFIGURATION_REQUIRED:
+      'Configure um modelo TTS local com manifesto de licença e hashes aprovados, ou escolha gravação própria.',
+    LOCAL_TTS_LICENSE_REQUIRED:
+      'A licença ou identidade do TTS local não está comprovada. Revise o manifesto autorizado ou escolha gravação própria.',
+    LOCAL_TTS_EXECUTION_REQUIRED:
+      'A síntese local falhou. Verifique os recursos locais ou escolha gravação própria.',
+    LOCAL_TTS_BUSY_REQUIRED:
+      'Outra execução está produzindo esta narração. Aguarde a conclusão; uma trava abandonada exige verificação operacional.',
+    NARRATION_DURATION_REQUIRED:
+      'O conteúdo aprovado não cabe no vídeo em fala natural. A remoção de repetições não foi suficiente; revise o roteiro ou forneça gravação válida. Nenhuma palavra foi cortada.',
+    LOCAL_AUDIO_SELECTION_REQUIRED:
+      'Selecione uma das gravações autorizadas para este roteiro.',
+    ALIGNMENT_CONFIGURATION_REQUIRED:
+      'O alinhamento local exige um modelo e ambiente já instalados e configurados.',
+    COMPOSITION_RIGHTS_REQUIRED:
+      'Os direitos atuais permitem somente a revisão. A composição exige autorização própria.',
+    COMPOSITION_MEDIA_PROFILE_REQUIRED:
+      'A mídia precisa de metadados V2 verificados para composição. Solicite uma revisão de cadastro compatível, preservando os direitos e a origem.',
+    PRODUCTION_PROFILE_MISMATCH:
+      'A execução foi criada com outro perfil de produção. A composição V2 exige uma execução com perfil de mídia mista.',
+    COMPOSER_UNAVAILABLE:
+      'Os binários locais FFmpeg/FFprobe e os diretórios de mídia precisam estar configurados no ambiente.',
+    AUDIO_VIDEO_DURATION_REQUIRED:
+      'A duração do áudio não cabe nos vídeos disponíveis. Forneça uma gravação ou mídia compatível.',
+    EXACT_HUMAN_APPROVAL_REQUIRED:
+      'Revise e aprove a versão final exata para liberar o handoff manual.',
+    INTERRUPTED_EFFECT_REQUIRES_VERIFICATION:
+      'O processamento foi interrompido. Os artefatos persistidos precisam ser verificados antes da retomada.',
+  };
+  return {
+    ...execution,
+    selectionMode: history[0].evidence.selectionMode ?? 'FIXED',
+    schedule: history[0].evidence.schedule ?? null,
+    productSelection: history[0].evidence.catalogSelection ?? null,
+    provenance:
+      history[0].event_type === 'LEGACY_RECOVERY'
+        ? history[0].evidence.legacyRecovery
+        : null,
+    finalization: {
+      step: last?.evidence.step ?? null,
+      completedSteps: Object.keys(done),
+      pending: code
+        ? {
+            code,
+            message:
+              messages[code] ??
+              'Há uma pendência técnica ou de autorização. Consulte o histórico da execução.',
+          }
+        : null,
+      preview: done.PREVIEW ?? null,
+      availableActions:
+        execution.status === 'WAITING_INPUT'
+          ? [
+              'GLOBAL_DAILY_BUDGET_EXCEEDED',
+              'GLOBAL_MONTHLY_BUDGET_EXCEEDED',
+            ].includes(code ?? '')
+            ? ['WAIT_BUDGET_WINDOW', 'RESUME', 'CANCEL']
+            : code === 'EXACT_HUMAN_APPROVAL_REQUIRED'
+              ? ['REVIEW_FINAL', 'RESUME', 'CANCEL']
+              : code === 'AUTHENTICATED_MEDIA_REVIEW_REQUIRED' ||
+                  code === 'COMPLETE_TEMPORAL_QC_REQUIRED'
+                ? ['REVIEW_MEDIA', 'CANCEL']
+                : ['SUPPLY_INPUT', 'RESUME', 'CANCEL']
+          : execution.status === 'WAITING_RECONCILIATION'
+            ? ['RECONCILE', 'CANCEL']
+            : [],
+    },
+  };
+}
+
+/** Preserve the synchronous Nest token inference for existing SQLite callers. */
+export type CampaignAdministration = CampaignAdministrationRuntime<false>;
+export const CampaignAdministration: new (
+  ...args: ConstructorParameters<typeof CampaignAdministrationRuntime<false>>
+) => CampaignAdministrationRuntime<false> = CampaignAdministrationRuntime;

@@ -1,4 +1,5 @@
-import type { CampaignRepository } from '../infrastructure/campaign.repository.js';
+import { runCampaignIo } from '../infrastructure/campaign.repository.js';
+import type { CampaignRepositoryPort } from '../infrastructure/postgres-campaign.persistence.js';
 import { CampaignError } from '../domain/campaign.js';
 import type { CampaignExecution, CampaignEvent } from '../domain/campaign.js';
 export interface CampaignWorkflow {
@@ -20,226 +21,275 @@ export interface CampaignWorkflow {
 }
 export class CampaignOrchestrator {
   constructor(
-    readonly repository: CampaignRepository,
+    readonly repository: CampaignRepositoryPort<boolean>,
     private readonly workflow: CampaignWorkflow,
     private readonly now = () => new Date().toISOString(),
-    private readonly ttl = 60_000,
+    private readonly ttl = 60000,
   ) {}
-  async tick(executionId?: string) {
-    this.repository.recover(this.now(), executionId);
-    for (const e of this.repository.pendingFinalization()) {
-      if (executionId && e.execution_id !== executionId) continue;
-      const history = this.repository.history(e.execution_id);
-      try {
-        if (e.status === 'WAITING_INPUT') {
-          if (await this.workflow.readyToResume?.(e, history))
-            this.repository.resume(e.execution_id, this.now(), e.version);
-        } else {
-          const request = executionRequest(history);
-          if (
-            !request.videoProduction ||
-            request.mode !== 'LOCAL_VALIDATION' ||
-            request.publication
-          )
-            continue;
-          const last = history
-            .filter((h) => h.event_type === 'STEP_STARTED')
-            .at(-1);
-          if (
-            !last ||
-            ![
-              'MEDIA_QC',
-              'AUDIO',
-              'ALIGNMENT',
-              'SUBTITLES',
-              'COMPOSITION',
-              'BURN',
-              'QC',
-              'PREVIEW',
-              'HANDOFF',
-            ].includes(String(last.evidence.step))
-          )
-            continue;
-          const proof = await this.workflow.reconcile(e, history);
-          if (proof?.verified === true)
-            this.repository.resume(
-              e.execution_id,
-              this.now(),
-              e.version,
-              proof,
-            );
+  async tick(executionId?: string): Promise<void> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        yield this.repository.recover(this.now(), executionId);
+        for (const e of yield this.repository.pendingFinalization()) {
+          if (executionId && e.execution_id !== executionId) continue;
+          const history = yield this.repository.history(e.execution_id);
+          try {
+            if (e.status === 'WAITING_INPUT') {
+              if (yield this.workflow.readyToResume?.(e, history))
+                yield this.repository.resume(
+                  e.execution_id,
+                  this.now(),
+                  e.version,
+                );
+            } else {
+              const request = executionRequest(history);
+              if (
+                !request.videoProduction ||
+                request.mode !== 'LOCAL_VALIDATION' ||
+                request.publication
+              )
+                continue;
+              const last = history
+                .filter((h: CampaignEvent) => h.event_type === 'STEP_STARTED')
+                .at(-1);
+              if (
+                !last ||
+                ![
+                  'MEDIA_QC',
+                  'AUDIO',
+                  'ALIGNMENT',
+                  'SUBTITLES',
+                  'COMPOSITION',
+                  'BURN',
+                  'QC',
+                  'PREVIEW',
+                  'HANDOFF',
+                ].includes(String(last.evidence.step))
+              )
+                continue;
+              const proof = yield this.workflow.reconcile(e, history);
+              if (proof?.verified === true)
+                yield this.repository.resume(
+                  e.execution_id,
+                  this.now(),
+                  e.version,
+                  proof,
+                );
+            }
+          } catch (error) {
+            if (!(
+              error instanceof CampaignError &&
+              error.code === 'EXECUTION_VERSION_CONFLICT'
+            ))
+              throw error;
+          }
         }
-      } catch (error) {
-        if (!(
-          error instanceof CampaignError &&
-          error.code === 'EXECUTION_VERSION_CONFLICT'
-        ))
-          throw error;
-      }
-    }
-    for (const e of this.repository.pendingPublicationPolls(this.now())) {
-      if (executionId) continue;
-      try {
-        this.repository.resume(e.execution_id, this.now(), e.version);
-      } catch (error) {
-        if (!(
-          error instanceof CampaignError &&
-          error.code === 'EXECUTION_VERSION_CONFLICT'
-        ))
-          throw error;
-      }
-    }
-    for (const e of this.repository.due(this.now(), executionId)) {
-      if (executionId && e.execution_id !== executionId) continue;
-      const claimed = this.repository.claim(
-        e.execution_id,
-        this.now(),
-        this.ttl,
-      );
-      if (claimed) await this.run(claimed);
-    }
+        for (const e of yield this.repository.pendingPublicationPolls(
+          this.now(),
+        )) {
+          if (executionId) continue;
+          try {
+            yield this.repository.resume(e.execution_id, this.now(), e.version);
+          } catch (error) {
+            if (!(
+              error instanceof CampaignError &&
+              error.code === 'EXECUTION_VERSION_CONFLICT'
+            ))
+              throw error;
+          }
+        }
+        for (const e of yield this.repository.due(this.now(), executionId)) {
+          if (executionId && e.execution_id !== executionId) continue;
+          const claimed = yield this.repository.claim(
+            e.execution_id,
+            this.now(),
+            this.ttl,
+          );
+          if (claimed) yield this.run(claimed);
+        }
+      }.call(this),
+    );
   }
-  async resume(id: string) {
-    const e = this.repository.get(id);
-    const verified =
-      e.status === 'WAITING_RECONCILIATION'
-        ? await this.workflow.reconcile(e, this.repository.history(id))
-        : null;
-    return this.repository.resume(id, this.now(), e.version, verified);
+  async resume(id: string): Promise<CampaignExecution> {
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        const e = yield this.repository.get(id);
+        const verified =
+          e.status === 'WAITING_RECONCILIATION'
+            ? yield this.workflow.reconcile(
+                e,
+                yield this.repository.history(id),
+              )
+            : null;
+        return yield this.repository.resume(
+          id,
+          this.now(),
+          e.version,
+          verified,
+        );
+      }.call(this),
+    );
   }
   private async run(e: CampaignExecution) {
-    const id = e.execution_id,
-      token = e.claim_token!;
-    let renewalFailure: unknown;
-    const heartbeat = setInterval(() => {
-      try {
-        this.repository.heartbeat(id, token, this.now(), this.ttl);
-      } catch (error) {
-        renewalFailure = error;
-      }
-    }, this.ttl / 3);
-    heartbeat.unref();
-    try {
-      const history = this.repository.history(id),
-        request = executionRequest(history);
-      const completed = completedContext(history);
-      for (const step of this.workflow.steps) {
-        if (renewalFailure) throw renewalFailure;
-        if (
-          Object.hasOwn(completed, step) ||
-          (request.legacyRecovery &&
-            ['CONTEXT', 'EDITORIAL', 'SCENES', 'VIDEO_GENERATION'].includes(
-              step,
-            ))
-        )
-          continue;
-        let attempts = this.repository
-          .history(id)
-          .filter(
-            (h) =>
-              h.event_type === 'STEP_FAILED' &&
-              h.sequence >
-                (history
-                  .filter((event) =>
-                    ['SCRIPT_REVISED', 'COMPOSITION_REVISED'].includes(
-                      event.event_type,
-                    ),
-                  )
-                  .at(-1)?.sequence ?? 0) &&
-              h.evidence.step === step &&
-              h.evidence.retrySafe === true,
-          ).length;
-        for (;;) {
-          if (attempts >= 3) {
-            this.repository.ownedEvent(
-              id,
-              token,
-              this.now(),
-              'RETRY_EXHAUSTED',
-              { step },
-              'FAILED',
-            );
-            return;
-          }
-          this.repository.ownedEvent(id, token, this.now(), 'STEP_STARTED', {
-            step,
+    return runCampaignIo(
+      function* (this: any): Generator<unknown, any, any> {
+        const id = e.execution_id,
+          token = e.claim_token!;
+        let renewalFailure: unknown;
+        let heartbeatWork = Promise.resolve();
+        const heartbeat = setInterval(() => {
+          heartbeatWork = heartbeatWork.then(async () => {
+            try {
+              await this.repository.heartbeat(id, token, this.now(), this.ttl);
+            } catch (error) {
+              renewalFailure = error;
+            }
           });
-          try {
-            const result = await this.workflow.execute(
-              step,
-              e,
-              request,
-              completed,
-            );
+        }, this.ttl / 3);
+        heartbeat.unref();
+        try {
+          const history = yield this.repository.history(id),
+            request = executionRequest(history);
+          const completed = completedContext(history);
+          for (const step of this.workflow.steps) {
             if (renewalFailure) throw renewalFailure;
-            this.repository.ownedEvent(id, token, this.now(), 'STEP_DONE', {
-              step,
-              result,
-            });
-            completed[step] = result;
-            break;
-          } catch (error) {
-            if (error instanceof CampaignError && error.code === 'CLAIM_LOST')
-              return;
-            const failure = error as {
-              code?: string;
-              transient?: boolean;
-              retrySafe?: boolean;
-            };
-            const code =
-              typeof failure?.code === 'string' &&
-              /^[A-Z][A-Z0-9_]{2,99}$/.test(failure.code)
-                ? failure.code
-                : 'CAMPAIGN_STEP_FAILED';
-            const uncertain =
-              /UNKNOWN|UNCERTAIN|RECONCILIATION|TIMEOUT|NETWORK|CONNECTION/.test(
-                code,
+            if (
+              Object.hasOwn(completed, step) ||
+              (request.legacyRecovery &&
+                ['CONTEXT', 'EDITORIAL', 'SCENES', 'VIDEO_GENERATION'].includes(
+                  step,
+                ))
+            )
+              continue;
+            let attempts = (yield (yield this.repository.history(id)).filter(
+              (h: CampaignEvent) =>
+                h.event_type === 'STEP_FAILED' &&
+                h.sequence >
+                  (history
+                    .filter((event: CampaignEvent) =>
+                      ['SCRIPT_REVISED', 'COMPOSITION_REVISED'].includes(
+                        event.event_type,
+                      ),
+                    )
+                    .at(-1)?.sequence ?? 0) &&
+                h.evidence.step === step &&
+                h.evidence.retrySafe === true,
+            )).length;
+            for (;;) {
+              if (attempts >= 3) {
+                yield this.repository.ownedEvent(
+                  id,
+                  token,
+                  this.now(),
+                  'RETRY_EXHAUSTED',
+                  { step },
+                  'FAILED',
+                );
+                return;
+              }
+              yield this.repository.ownedEvent(
+                id,
+                token,
+                this.now(),
+                'STEP_STARTED',
+                {
+                  step,
+                },
               );
-            const waiting =
-              /REQUIRED|UNAVAILABLE|NOT_FOUND|BUDGET_EXCEEDED|PRICE_UNPROVEN/.test(
-                code,
-              );
-            const safe =
-              !uncertain &&
-              !waiting &&
-              failure?.transient === true &&
-              failure?.retrySafe === true;
-            this.repository.ownedEvent(id, token, this.now(), 'STEP_FAILED', {
-              step,
-              code,
-              retrySafe: safe,
-            });
-            if (safe && ++attempts < 3) continue;
-            this.repository.ownedEvent(
-              id,
-              token,
-              this.now(),
-              'PAUSED',
-              { step, code },
-              uncertain
-                ? 'WAITING_RECONCILIATION'
-                : waiting
-                  ? 'WAITING_INPUT'
-                  : 'FAILED',
-            );
-            return;
+              try {
+                const result = yield this.workflow.execute(
+                  step,
+                  e,
+                  request,
+                  completed,
+                );
+                if (renewalFailure) throw renewalFailure;
+                yield this.repository.ownedEvent(
+                  id,
+                  token,
+                  this.now(),
+                  'STEP_DONE',
+                  {
+                    step,
+                    result,
+                  },
+                );
+                completed[step] = result;
+                break;
+              } catch (error) {
+                if (
+                  error instanceof CampaignError &&
+                  error.code === 'CLAIM_LOST'
+                )
+                  return;
+                const failure = error as {
+                  code?: string;
+                  transient?: boolean;
+                  retrySafe?: boolean;
+                };
+                const code =
+                  typeof failure?.code === 'string' &&
+                  /^[A-Z][A-Z0-9_]{2,99}$/.test(failure.code)
+                    ? failure.code
+                    : 'CAMPAIGN_STEP_FAILED';
+                const uncertain =
+                  /UNKNOWN|UNCERTAIN|RECONCILIATION|TIMEOUT|NETWORK|CONNECTION/.test(
+                    code,
+                  );
+                const waiting =
+                  /REQUIRED|UNAVAILABLE|NOT_FOUND|BUDGET_EXCEEDED|PRICE_UNPROVEN/.test(
+                    code,
+                  );
+                const safe =
+                  !uncertain &&
+                  !waiting &&
+                  failure?.transient === true &&
+                  failure?.retrySafe === true;
+                yield this.repository.ownedEvent(
+                  id,
+                  token,
+                  this.now(),
+                  'STEP_FAILED',
+                  {
+                    step,
+                    code,
+                    retrySafe: safe,
+                  },
+                );
+                if (safe && ++attempts < 3) continue;
+                yield this.repository.ownedEvent(
+                  id,
+                  token,
+                  this.now(),
+                  'PAUSED',
+                  { step, code },
+                  uncertain
+                    ? 'WAITING_RECONCILIATION'
+                    : waiting
+                      ? 'WAITING_INPUT'
+                      : 'FAILED',
+                );
+                return;
+              }
+            }
           }
+          yield this.repository.ownedEvent(
+            id,
+            token,
+            this.now(),
+            'COMPLETED',
+            { handoff: completed.HANDOFF },
+            'SUCCEEDED',
+          );
+        } catch (error) {
+          if (!(error instanceof CampaignError && error.code === 'CLAIM_LOST'))
+            throw error;
+        } finally {
+          clearInterval(heartbeat);
+          yield heartbeatWork;
         }
-      }
-      this.repository.ownedEvent(
-        id,
-        token,
-        this.now(),
-        'COMPLETED',
-        { handoff: completed.HANDOFF },
-        'SUCCEEDED',
-      );
-    } catch (error) {
-      if (!(error instanceof CampaignError && error.code === 'CLAIM_LOST'))
-        throw error;
-    } finally {
-      clearInterval(heartbeat);
-    }
+      }.call(this),
+    );
   }
 }
 export function executionRequest(
@@ -251,7 +301,9 @@ export function executionRequest(
       Object.assign(request, event.evidence);
     else if (event.event_type === 'SCRIPT_REVISED') {
       request.scriptId = (
-        event.evidence.script as { scriptId: string }
+        event.evidence.script as {
+          scriptId: string;
+        }
       ).scriptId;
       for (const key of [
         'voiceTrackId',
@@ -265,7 +317,6 @@ export function executionRequest(
       delete request.composition;
   return request;
 }
-
 const narrationDependents = [
   'COMPOSITION_REVISION',
   'COMPOSITION_AUTHORIZATION',
@@ -308,8 +359,13 @@ export function completedContext(
     } else if (event.event_type === 'SCRIPT_REVISED') {
       for (const step of narrationDependents) delete completed[step];
       if (
-        (history[0].evidence.videoProduction as { mode?: string } | undefined)
-          ?.mode === 'LOCAL_IMAGES'
+        (
+          history[0].evidence.videoProduction as
+            | {
+                mode?: string;
+              }
+            | undefined
+        )?.mode === 'LOCAL_IMAGES'
       )
         for (const step of ['SCENES', 'VIDEO_GENERATION', 'MEDIA_QC'])
           delete completed[step];
@@ -318,13 +374,14 @@ export function completedContext(
   }
   return completed;
 }
-
 /** Read-only context from a recovery event, never a completed editorial stage. */
 export function recoveredContext(
   history: CampaignEvent[],
 ): Record<string, unknown> {
   const event = history[0];
   if (event?.event_type !== 'LEGACY_RECOVERY') return {};
-  const recovery = event.evidence.legacyRecovery as { script: unknown };
+  const recovery = event.evidence.legacyRecovery as {
+    script: unknown;
+  };
   return { EDITORIAL: { script: recovery.script } };
 }

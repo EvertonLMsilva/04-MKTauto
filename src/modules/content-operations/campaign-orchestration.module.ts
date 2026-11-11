@@ -1,3 +1,9 @@
+import {
+  campaignPostgresModule,
+  type CampaignPostgresOptions,
+} from './campaign-postgres.module.js';
+import type { PostgresConfig } from '../../infrastructure/database/postgres/index.js';
+import type { DynamicModule } from '@nestjs/common';
 import { VideoProductionPreparationService } from '../media/application/video-production-preparation.service.js';
 import { VideoGenerationService } from '../media/application/video-generation.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
@@ -142,4 +148,11 @@ import { CampaignController } from './campaign.controller.js';
     },
   ],
 })
-export class CampaignOrchestrationModule {}
+export class CampaignOrchestrationModule {
+  static postgres(
+    config: PostgresConfig,
+    options: CampaignPostgresOptions = {},
+  ): DynamicModule {
+    return campaignPostgresModule(config, options);
+  }
+}

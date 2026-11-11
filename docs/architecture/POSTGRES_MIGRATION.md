@@ -188,3 +188,41 @@ O callback de reserva de orçamento/autorização do provider LIVE atual é sín
 ### Validação isolada
 
 `npm run test:postgres -- test/postgres/affiliate.integration.test.ts` reutiliza a harness PG-001 com PostgreSQL 18.6 real, tmpfs, rede própria, porta loopback efêmera e marcador independente da database. Os cenários comparam SQLite descartável e PG, incluindo histórico/checksums v1–v4, rollback de DDL, catálogo/revisões/briefing, proveniência e JSON, recibos, concorrência, reserva de descoberta, journal/claims, precisão decimal, WAITING/PREPARED, interrupção/reconciliação/recuperação e HTTP NestJS. Os providers são locais fake e nenhuma chamada Shopee real é efetuada. Testes SQLite congelados, concorrência em workers e controller continuam como regressão; os workers passam a incluir o pequeno interpretador de I/O sem mudar as asserções. Custos locais de CPU/energia indisponíveis; nenhuma execução paga realizada. PG-002 completo e cutover permanecem fora do escopo.
+
+## Campaign/Operations — CORE-PG-002-CAMPAIGN-OPERATIONS-001
+
+Esta entrega cobre a persistência operacional de Campaign/Operations. O opt-in isolado é `OperationsModule.postgres(config, options)`; `ContentOperationsModule.postgres` e `CampaignOrchestrationModule.postgres` expõem a mesma composição. Importar os módulos padrão continua selecionando SQLite. AppModule, Docker, configurações LIVE, Finance e demais frentes permanecem inalterados. Não há dual write, migração de dados reais, execução Shopee LIVE, publicação ou cutover.
+
+### Ownership e migration v5
+
+`CAMPAIGN_POSTGRES_MIGRATION_REGISTRY` estende o registro completo Affiliate v1–v4 com `005_campaign_operations`, versão 5. As versões anteriores e seus checksums permanecem intactos. O runner administrativo PG-001 aplica DDL somente por chamada explícita. Abertura de handles e startup verificam a versão 5/nome/checksum; não criam schema nem reescrevem o ledger.
+
+O schema `campaign` possui seis tabelas: pipeline_runs, pipeline_run_transitions, pipeline_run_recoveries, pipeline_stage_attempts, campaign_executions e campaign_execution_events. Runs, tentativas, reservas, claims/leases e eventos são responsabilidade operacional de Campaign. Campanhas comerciais canônicas continuam exclusivamente em `affiliate.affiliate_campaign_revisions`, referenciadas por FK composta; snapshots de projeto usam a FK real em `project.project_snapshots`. `run_id` de uma reserva pode preceder a criação do pipeline, conforme o contrato existente. Artefatos produzidos são referências opacas com hash, sem FKs inventadas para Media/Content ainda não participantes dessa unidade transacional.
+
+JSON nativo preserva a representação original com parser local em texto; os parsers globais do driver não mudam. IDs e ordenação textual usam collation C; números persistidos possuem limite inteiro seguro. O cursor global de eventos e IDs de tentativas/histórico são alocados sob o lock da mesma transação e não são consumidos após rollback, preservando a semântica de identidade SQLite. A sequência de cada execução continua contígua. O cursor interno `event_cursor` é exposto somente como o campo histórico `cursor`; não altera o JSON dos DTOs originais.
+
+Triggers protegem identidade, estados e histórico imutável (`P5001`/`P5002`). Constraints nativas cobrem integridade referencial, campanha/data única, run único, claim/token/lease coerentes e somente uma tentativa RUNNING por run/estágio.
+
+### Regras, I/O e commit antes de efeitos
+
+Os algoritmos atuais de runs, transições, recuperação, estágios e CampaignRepository são compartilhados pelos dois adapters através de etapas de I/O. `SqliteOperationsRepository` preserva sua herança Project, API síncrona e banco nativo; o core de runs não abre SQLite quando usado pelo facade PG. O pequeno interpretador permanece nos repositories existentes para preservar a dependência dos workers SQLite sem alterar os helpers fora da allowlist. Portas e serviços mantêm o modo síncrono por padrão e optam explicitamente por I/O assíncrono.
+
+`PostgresCampaignSession` utiliza exclusivamente `PostgresDatabase.transaction` e seu PoolClient, inclusive em chamadas aninhadas. Writers serializam com advisory lock do domínio; leituras compostas usam snapshot REPEATABLE READ READ ONLY. Handles fechados/read-only são protegidos e seu fechamento não encerra o pool. A projeção de execução e histórico usa readSnapshot na mesma sessão, impedindo mistura de versões durante avanço concorrente. Statements internos são qualificados e parametrizados. As diferenças físicas de rowid, JSON e retorno de IDs são adaptadas explicitamente; PostgreSQL não recebe PRAGMA, sqlite_master ou DDL SQLite. Erros do driver são sanitizados.
+
+`StageRecoveryService` aguarda o commit de startAttempt antes da operação e aguarda a persistência terminal. `CampaignOrchestrator` aguarda claim e STEP_STARTED antes de executar um passo, mantém heartbeat assíncrono serializado e aguarda renovações pendentes ao finalizar. Expiração de lease preserva WAITING_RECONCILIATION e exige verificação explícita antes de retomar. Novos workers não repetem checkpoints já concluídos. Recorrência fixa, reserva campanha/data, versão otimista, replay e histórico reutilizam as regras existentes.
+
+### Composição e fronteiras preservadas
+
+O módulo PG registra os controllers existentes de runs e campaign-executions, os serviços de ciclo de vida e o repository PG, sem importar a composição operacional NativeCampaignWorkflow. `options.workflow` é um port explícito para passos controlados e validação; sem ele não se agenda/executa trabalho por fallback. Não há scheduler habilitado no startup. A execução do runner é manual/explicita e os testes usam somente funções locais fake. O token Nest existente de CampaignAdministration preserva a inferência síncrona dos consumidores SQLite; `CampaignAdministrationRuntime<true>` identifica o serviço assíncrono do opt-in. A projeção HTTP existente foi extraída como função pura compartilhada, sem mudar mensagens, DTOs ou códigos de erro.
+
+As seguintes operações continuam bloqueadas antes de efeitos no opt-in:
+
+- Seleção de catálogo via callback externo, recorrência CATALOG e rotação entre domínios, pois o contrato atual não assegura que a leitura Affiliate participe da conexão/lock de Campaign. `ROUND_ROBIN_ID_V1` permanece intacta, sem rotação simulada entre bancos.
+- Claims/baselines de notificação que dependem de revalidação transacional em Notifications/Publishing, e revisão de composição que depende de reservas de publicação ainda não migradas.
+- NativeCampaignWorkflow comercial, geração/produção de conteúdo, revisões/aprovações, legacy recovery e ações que envolvam escrita em Content, Affiliate, Finance, Media ou Publishing. O opt-in rejeita payloads de produção/publicação e ações não suportadas; os guards operacionais padrão não são enfraquecidos.
+
+Esses limites usam `CAMPAIGN_CROSS_DOMAIN_REQUIRED`. O guard exclusivo do piloto rejeita endpoints não suportados antes de consultar identidade QC ou chamar controllers de efeitos. Nenhum bloqueio PG-002 Affiliate/Content foi removido nesta entrega: a coordenação transacional desses domínios requer contrato posterior explícito. A UI/dashboard Operations e os consumidores Notifications continuam na composição SQLite operacional.
+
+### Validação
+
+`npm run test:postgres -- test/postgres/campaign-operations.integration.test.ts` reutiliza a harness PG-001: PostgreSQL 18.6 local real, database marcada, tmpfs, rede dedicada e porta loopback efêmera. A fixture verifica sua identidade antes de DDL destrutivo e é removida ao terminar, sem acessar instâncias operacionais ou apagar volumes existentes. A cobertura inclui registro v1–v5, reexecução/checksum/rollback, paridade SQLite, hashes/identidade/JSON, transições, claims/leases, tentativa e recuperação após restart, recorrência fixa, concorrência e idempotência, rollback de reservas/eventos, bloqueios entre domínios, ausência de efeito antes do commit, histórico/read-only/handles fechados e HTTP NestJS. Nenhum resultado PostgreSQL é baseado apenas em mocks; somente os ports externos usam fakes. Build, TypeScript, lint direcionado, regressões dos módulos afetados e diff-check completam a validação. Custos locais de CPU/energia indisponíveis; nenhuma chamada paga realizada.
