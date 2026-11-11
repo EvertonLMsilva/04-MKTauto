@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { isControlledFakeRun } from '../../content-operations/application/fake-execution-policy.port.js';
 import type { CampaignOperationsSession } from '../../content-operations/application/campaign-operations.port.js';
 import type { PublishingOperationsPort } from '../../publishing/application/publishing-operations.port.js';
 import type {
@@ -33,7 +34,7 @@ export class OperationalNotificationRepository implements OperationalNotificatio
     );
   }
   facts(executionId?: string) {
-    return this.campaigns.facts(executionId).map((execution) => ({
+    return this.campaigns.facts(executionId).filter(execution => !isControlledFakeRun(execution.runId)).map((execution) => ({
       execution,
       packages: this.publishing.packages(execution.runId),
     }));

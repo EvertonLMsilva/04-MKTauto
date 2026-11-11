@@ -1,4 +1,6 @@
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
+import { assertFakeExecutionPolicy, createFakeExecutionPolicy, CONTROLLED_FAKE_RUN_PREFIX } from '../domain/fake-execution-policy.js';
+import { FakeEditorialProvider } from '../../content/infrastructure/fake-editorial.provider.js';
 import { freezeCatalogRequest } from '../domain/product-rotation.js';
 import { instagramCaption } from '../../publishing/domain/social-publication-contracts.js';
 import type { InstagramEditorialService } from '../../publishing/application/instagram-editorial.service.js';
@@ -141,6 +143,7 @@ export function campaignRequest(raw: unknown) {
     'selectionMode',
     'catalogSelection',
     'schedule',
+    'fakeExecutionPolicy',
   ];
   if (Object.keys(r).some((k) => !allowed.includes(k)))
     throw new CampaignError('INVALID_CAMPAIGN_REQUEST');
@@ -250,6 +253,7 @@ export function campaignRequest(raw: unknown) {
     )
       throw new CampaignError('INVALID_PUBLICATION_REQUEST');
   }
+  assertFakeExecutionPolicy(r);
   return JSON.parse(JSON.stringify(r)) as Record<string, unknown>;
 }
 export class NativeCampaignWorkflow implements CampaignWorkflow {
@@ -951,10 +955,19 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       assertCompositionGrant(e, done);
   }
   async validate(r: Record<string, unknown>) {
+    const policy = this.assertControlledRuntime(r);
     const campaign = await this.affiliate.getCampaign(
       String(r.campaignId),
       Number(r.campaignRevision),
     );
+    if (policy) {
+      if (!campaign || document(r.run).projectId !== campaign.projectId || document(r.run).pipelineRunId !== policy.runId)
+        throw new CampaignError('FAKE_EXECUTION_IDENTITY_MISMATCH');
+      const brief = await this.affiliate.getBriefing(String(r.briefingId));
+      if (brief && (brief.campaignId !== campaign.campaignId || brief.campaignRevision !== campaign.revision))
+        throw new CampaignError('CAMPAIGN_BRIEFING_MISMATCH');
+      return campaign;
+    }
     if (r.selectionMode === 'CATALOG') {
       if (!r.catalogSelection)
         throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
@@ -1010,8 +1023,18 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       previous,
     );
   }
-  async localRequest(value: unknown) {
+  /** A controlled command deliberately supports only a single local-image run.
+   * No browser-supplied provider, destination, recurrence or policy is accepted. */
+  assertControlledRuntime(r: Record<string, unknown>, e?: CampaignExecution) {
+    const policy = assertFakeExecutionPolicy(r, e);
+    if (policy && (!(this.provider instanceof FakeEditorialProvider) || this.provider.mode !== 'LOCAL' || this.provider.configurationVersion !== 'fake-editorial/1.0.0'))
+      throw new CampaignError('FAKE_EXECUTION_PROVIDER_FORBIDDEN');
+    return policy;
+  }
+  async localRequest(value: unknown, controlledActorId?: string) {
     const input = localRequestInput(value);
+    if (controlledActorId !== undefined && Object.keys(input).sort().join(',') !== 'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt')
+      throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
     const schedule = localSchedule(input);
     const requestId = identifier(input.requestId),
       at = schedule
@@ -1027,23 +1050,16 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       campaignId: campaign.campaignId,
       requestId,
     }).slice(0, 32);
-    const briefingId = `brief_${key}`,
-      runId = `run_${key}`;
-    if (input.selectionMode !== 'CATALOG')
-      await this.affiliate.createBriefing({
-        idempotencyKey: `brief_${key}`,
-        briefingId,
-        campaignId: campaign.campaignId,
-        campaignRevision: campaign.revision,
-      });
-    return campaignRequest({
+    const briefingId = `${controlledActorId !== undefined ? 'brief_controlled_fake_' : 'brief_'}${key}`,
+      runId = `${controlledActorId !== undefined ? CONTROLLED_FAKE_RUN_PREFIX : 'run_'}${key}`;
+    const request: Record<string, unknown> = {
       campaignId: campaign.campaignId,
       campaignRevision: campaign.revision,
       scheduledAt: at,
       ...(schedule ? { schedule } : {}),
       runId,
       briefingId,
-      generationRequestId: `editorial_${key}`,
+      generationRequestId: `${controlledActorId !== undefined ? 'editorial_controlled_fake_' : 'editorial_'}${key}`,
       researchShortlistId: null,
       mode: 'LOCAL_VALIDATION',
       videoProduction: { mode: 'LOCAL_IMAGES' },
@@ -1062,7 +1078,22 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
         projectVersion: input.projectVersion,
         startedAt: at,
       },
-    });
+    };
+    if (controlledActorId !== undefined) {
+      request.fakeExecutionPolicy = createFakeExecutionPolicy(request, requestId, controlledActorId);
+      campaignRequest(request);
+      this.assertControlledRuntime(request);
+    }
+    // Controlled preparation has no pre-persistence writes. The official
+    // CONTEXT stage creates/replays the briefing after SCHEDULED owns the policy.
+    if (controlledActorId === undefined && input.selectionMode !== 'CATALOG')
+      await this.affiliate.createBriefing({
+        idempotencyKey: briefingId,
+        briefingId,
+        campaignId: campaign.campaignId,
+        campaignRevision: campaign.revision,
+      });
+    return campaignRequest(request);
   }
   async recurringRequest(seed: Record<string, unknown>, now: string) {
     const schedule = seed.schedule ? dailySchedule(seed.schedule) : undefined;
@@ -1127,6 +1158,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     r: Record<string, unknown>,
     done: Record<string, unknown>,
   ) {
+    const policy = assertFakeExecutionPolicy(r, e);
     const briefing = await this.affiliate.getBriefing(String(r.briefingId));
     const script = done.EDITORIAL
       ? document(document(done.EDITORIAL).script)
@@ -1153,8 +1185,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       cta: briefing?.cta ?? null,
       affiliateUrl: briefing?.affiliateUrl ?? null,
       format: r.localImage ? 'AUTHORIZED_STATIC_IMAGE' : 'VIDEO',
-      publication:
+      publication: policy ? 'DISABLED_BY_FAKE_POLICY' :
         done.PUBLICATION ?? (r.publication ? 'REQUESTED' : 'NOT_REQUESTED'),
+      ...(policy ? { executionMode: policy.mode, fakeExecutionPolicy: policy } : {}),
       cost: { status: 'UNKNOWN', amount: null },
     };
   }
@@ -1186,7 +1219,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     r: Record<string, unknown>,
     done: Record<string, unknown>,
   ): Promise<unknown> {
+    const policy = this.assertControlledRuntime(r, e);
     if (step === 'PUBLICATION') {
+      if (policy) return { publication: 'DISABLED_BY_FAKE_POLICY', mode: policy.mode, policyVersion: policy.schemaVersion };
       if (
         !r.publication &&
         done.HANDOFF &&
@@ -1326,6 +1361,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     ))
       this.financeGate(r, new Date().toISOString());
     if (step === 'CONTEXT') {
+      if (policy) {
+        if (!this.affiliate.createBriefing) throw new CampaignError('CAMPAIGN_CONTEXT_NOT_FOUND');
+        await this.affiliate.createBriefing({ idempotencyKey: String(r.briefingId), briefingId: String(r.briefingId), campaignId: policy.campaignId, campaignRevision: policy.campaignRevision });
+      }
       if (r.selectionMode === 'CATALOG') {
         if (!r.catalogSelection)
           throw new CampaignError('CATALOG_PRODUCT_REQUIRED');
@@ -1843,7 +1882,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       // Preparation persists a draft; commercial/package approval and publishing
       // remain separate gates owned by Publishing. Legacy integrations keep their handoff.
       if (
-        r.localImage &&
+        !policy && r.localImage &&
         this.publishing.coordinatePackage &&
         (r.schedule || this.instagram?.configuration?.().accountId)
       ) {
@@ -1890,6 +1929,7 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
   async readyToResume(e: CampaignExecution, history: CampaignEvent[]) {
     const paused = history.filter((h) => h.event_type === 'PAUSED').at(-1);
     const r = executionRequest(history);
+    this.assertControlledRuntime(r, e);
     if (
       paused?.evidence.step === 'PUBLICATION' &&
       paused.evidence.code === 'FACEBOOK_EXECUTION_AUTHORIZATION_REQUIRED' &&
@@ -1992,6 +2032,9 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       .filter((h) => h.event_type === 'STEP_STARTED')
       .at(-1);
     const request = executionRequest(history);
+    const policy = this.assertControlledRuntime(request, e);
+    if (policy && publication?.evidence.step === 'PUBLICATION')
+      return { verified: true, step: 'PUBLICATION', result: { publication: 'DISABLED_BY_FAKE_POLICY', mode: policy.mode, policyVersion: policy.schemaVersion } };
     const destinations = Array.isArray(request.publication)
       ? request.publication.map(document)
       : [];
@@ -2157,6 +2200,10 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       return { verified: true, reason: 'OFFLINE_VIDEO_STAGE_REPLAY_SAFE' };
     }
     if (last.evidence.step === 'CONTEXT') {
+      // All controlled CONTEXT writes have stable official replay keys. A crash
+      // before the first run/binding receipt must re-enter the ordinary stage,
+      // not infer completion or retry an external operation.
+      if (policy) return { verified: true, reason: 'CONTROLLED_FAKE_CONTEXT_REPLAY_SAFE' };
       const run = this.operations.get(e.run_id);
       const binding = this.binding.getRunBinding(e.run_id);
       if (binding?.briefingId !== request.briefingId) return null;
