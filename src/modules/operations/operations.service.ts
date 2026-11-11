@@ -21,6 +21,17 @@ const fail = (code: string): never => {
 };
 @Injectable()
 export class OperationsService {
+  async startDynamicCatalog(value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    const input = document(value);
+    if (Object.keys(input).sort().join(',') !== 'configuration,request')
+      fail('SHOPEE_DYNAMIC_INPUT_INVALID');
+    return this.campaigns.startDynamicCatalog(
+      input.request,
+      input.configuration as import('../affiliate/domain/shopee-dynamic.js').ShopeeDynamicConfiguration,
+      actor.id,
+    );
+  }
   constructor(
     @Inject(CampaignAdministration)
     private readonly campaigns: CampaignAdministration,

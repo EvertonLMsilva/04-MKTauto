@@ -13,6 +13,7 @@ import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import { ResearchModule } from '../research/research.module.js';
 import { PublishingModule } from '../publishing/publishing.module.js';
 import { AffiliateService } from '../affiliate/application/affiliate.service.js';
+import { ShopeeDynamicService } from '../affiliate/application/shopee-dynamic.service.js';
 import {
   AFFILIATE_RUN_CONTEXT,
   type AffiliateRunContext,
@@ -122,11 +123,13 @@ import { CampaignController } from './campaign.controller.js';
         CAMPAIGN_DATABASE,
         NativeCampaignWorkflow,
         OperationalAlertsService,
+        ShopeeDynamicService,
       ],
       useFactory: (
         path: string | null,
         w: NativeCampaignWorkflow,
         notifications: OperationalAlertsService,
+        shopee: ShopeeDynamicService,
       ) =>
         new CampaignAdministration(
           path,
@@ -134,6 +137,7 @@ import { CampaignController } from './campaign.controller.js';
           process.env.CAMPAIGN_SCHEDULER_ENABLED === 'true',
           undefined,
           notifications,
+          shopee,
         ),
     },
   ],

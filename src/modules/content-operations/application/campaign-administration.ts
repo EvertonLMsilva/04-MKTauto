@@ -1,5 +1,11 @@
 import { DatabaseSync } from 'node:sqlite';
-import { assertFakeExecutionPolicy, CONTROLLED_FAKE_RUN_PREFIX } from '../domain/fake-execution-policy.js';
+import { createHash } from 'node:crypto';
+import type { ShopeeDynamicService } from '../../affiliate/application/shopee-dynamic.service.js';
+import type { ShopeeDynamicConfiguration } from '../../affiliate/domain/shopee-dynamic.js';
+import {
+  assertFakeExecutionPolicy,
+  CONTROLLED_FAKE_RUN_PREFIX,
+} from '../domain/fake-execution-policy.js';
 import type { OperationalAlertsService } from '../../notifications/application/operational-alerts.service.js';
 import { PRODUCT_FRAMING_POLICY } from '../../media/domain/product-framing.js';
 import {
@@ -46,6 +52,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     private readonly enabled = false,
     private readonly now = () => new Date().toISOString(),
     private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
+    private readonly shopee?: ShopeeDynamicService,
   ) {}
   private open() {
     if (this.store) return this.store;
@@ -280,6 +287,73 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
       this.now(),
       catalog,
     );
+  }
+  // Called only by authenticated Operations. The marker belongs to recurrence
+  // configuration, never to the production request or its frozen selection.
+  async startDynamicCatalog(
+    value: unknown,
+    configuration: ShopeeDynamicConfiguration,
+    actorId: string,
+  ) {
+    identifier(actorId);
+    const input = localRequestInput(value);
+    if (input.selectionMode !== 'CATALOG' || localRecurrence(input) !== true)
+      throw new CampaignError('SHOPEE_DYNAMIC_CATALOG_RECURRENCE_REQUIRED');
+    if (this.open().recurrences(true).some(e => e.config.request.campaignId === input.campaignId && e.config.request.fakeExecutionPolicy))
+      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    this.assertDynamicOffline();
+    const request = await this.workflow.localRequest(value);
+    const projectId = String(document(request.run).projectId);
+    if (configuration?.projectId !== projectId)
+      throw new CampaignError('SHOPEE_DYNAMIC_PROJECT_MISMATCH');
+    await this.shopee!.configure(configuration);
+    await this.prepareDynamicCatalog(request);
+    return this.open().configureRecurrence(
+      { ...request, shopeeDynamic: { enabled: true, actorId } },
+      true,
+      String(input.requestId),
+      this.now(),
+      (previous) => this.workflow.freezeCatalogRequest(request, previous),
+    );
+  }
+  private assertDynamicOffline() {
+    if (!this.shopee) throw new CampaignError('SHOPEE_DYNAMIC_UNAVAILABLE');
+    if ((process.env.SHOPEE_AFFILIATE_MODE ?? 'fake') !== 'fake')
+      throw new CampaignError('SHOPEE_DYNAMIC_LIVE_FORBIDDEN');
+  }
+  private async prepareDynamicCatalog(request: Record<string, unknown>) {
+    const zone = request.schedule
+      ? String(document(request.schedule).timeZone)
+      : undefined;
+    const day = productionDate(String(request.scheduledAt), zone);
+    if (
+      this.open()
+        .operationalExecutions()
+        .some(
+          (e) =>
+            e.campaign_id === request.campaignId && e.production_date === day,
+        )
+    )
+      return;
+    this.assertDynamicOffline();
+    const cycleId =
+      'ops_' +
+      createHash('sha256')
+        .update(canonicalJson({ campaignId: request.campaignId, day }))
+        .digest('hex')
+        .slice(0, 60);
+    try {
+      await this.shopee!.runScheduledCycle(
+        String(document(request.run).projectId),
+        cycleId,
+      );
+    } catch (error) {
+      const code =
+        error instanceof Error && /^SHOPEE_[A-Z_]+$/.test(error.message)
+          ? error.message
+          : 'SHOPEE_DYNAMIC_UNAVAILABLE';
+      throw new CampaignError(code);
+    }
   }
   async operatorReview(id: string, actor: string) {
     const store = this.open(),
@@ -831,11 +905,16 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
     const store = this.open();
     for (const { config } of store.recurrences()) {
       try {
-        const request = await this.workflow.recurringRequest(
-          config.request,
-          this.now(),
-        );
-        if (request)
+        const { shopeeDynamic, ...seed } = config.request;
+        const request = await this.workflow.recurringRequest(seed, this.now());
+        if (request) {
+          if (shopeeDynamic && document(shopeeDynamic).enabled === true) {
+            if (request.selectionMode !== 'CATALOG')
+              throw new CampaignError(
+                'SHOPEE_DYNAMIC_CATALOG_RECURRENCE_REQUIRED',
+              );
+            await this.prepareDynamicCatalog(request);
+          }
           store.scheduleRecurring(
             config,
             request,
@@ -845,6 +924,7 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
                   this.workflow.freezeCatalogRequest(request, previous)
               : undefined,
           );
+        }
       } catch (error) {
         // Report a failed configuration without starving other scheduled campaigns.
         this.logger.error(
