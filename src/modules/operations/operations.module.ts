@@ -1,3 +1,9 @@
+import {
+  campaignPostgresModule,
+  type CampaignPostgresOptions,
+} from '../content-operations/campaign-postgres.module.js';
+import type { PostgresConfig } from '../../infrastructure/database/postgres/index.js';
+import type { DynamicModule } from '@nestjs/common';
 import { PublishingModule } from '../publishing/publishing.module.js';
 import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import { FakeCampaignCommandController } from './fake-campaign-command.controller.js';
@@ -11,7 +17,12 @@ import { OperationsService } from './operations.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-summary.repository.js';
 @Module({
-  imports: [CampaignOrchestrationModule, MediaModule, PublishingModule, AffiliateModule],
+  imports: [
+    CampaignOrchestrationModule,
+    MediaModule,
+    PublishingModule,
+    AffiliateModule,
+  ],
   controllers: [OperationsController, FakeCampaignCommandController],
   providers: [
     OperationsService,
@@ -19,10 +30,20 @@ import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-sum
     FakeCampaignCommandGuard,
     {
       provide: DashboardSummaryService,
-      useFactory: () => new DashboardSummaryService(
-        new SqliteDashboardSummaryRepository(process.env.PROJECT_API_DATABASE ?? null),
-      ),
+      useFactory: () =>
+        new DashboardSummaryService(
+          new SqliteDashboardSummaryRepository(
+            process.env.PROJECT_API_DATABASE ?? null,
+          ),
+        ),
     },
   ],
 })
-export class OperationsModule {}
+export class OperationsModule {
+  static postgres(
+    config: PostgresConfig,
+    options: CampaignPostgresOptions = {},
+  ): DynamicModule {
+    return campaignPostgresModule(config, options);
+  }
+}
