@@ -109,10 +109,9 @@ export const runProcess: ProcessRunner = (command, args, options) => {
     options.signal?.addEventListener('abort', cancel, { once: true });
     if (options.signal?.aborted) cancel();
     const collect = (current: Buffer, chunk: Buffer): Buffer => {
-      const clean = Buffer.from(chunk.toString().replace(CONTROL_BYTES, ''));
       return Buffer.concat([
         current,
-        clean.subarray(-options.maxLogBytes),
+        chunk.subarray(-options.maxLogBytes),
       ]).subarray(-options.maxLogBytes);
     };
     child.stdout!.on('data', (chunk: Buffer) => {
@@ -151,8 +150,8 @@ export const runProcess: ProcessRunner = (command, args, options) => {
         );
       else
         resolve({
-          stdout: stdout.toString('utf8'),
-          stderr: stderr.toString('utf8'),
+          stdout: stdout.toString('utf8').replace(CONTROL_BYTES, ''),
+          stderr: stderr.toString('utf8').replace(CONTROL_BYTES, ''),
         });
     });
   });
