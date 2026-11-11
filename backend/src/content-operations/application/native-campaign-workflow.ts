@@ -1,3 +1,4 @@
+import { assertMediaProcessingRights } from '../../media/domain/media-processing-rights.js';
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
 import { assertFakeExecutionPolicy, createFakeExecutionPolicy, CONTROLLED_FAKE_RUN_PREFIX } from '../domain/fake-execution-policy.js';
 import { FakeEditorialProvider } from '../../content/infrastructure/fake-editorial.provider.js';
@@ -1023,17 +1024,28 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       previous,
     );
   }
-  /** A controlled command deliberately supports only a single local-image run.
-   * No browser-supplied provider, destination, recurrence or policy is accepted. */
+  /** Controlled local-image runs always use the persisted server-owned policy. */
   assertControlledRuntime(r: Record<string, unknown>, e?: CampaignExecution) {
     const policy = assertFakeExecutionPolicy(r, e);
-    if (policy && (!(this.provider instanceof FakeEditorialProvider) || this.provider.mode !== 'LOCAL' || this.provider.configurationVersion !== 'fake-editorial/1.0.0'))
+    if (
+      policy &&
+      (!(this.provider instanceof FakeEditorialProvider) ||
+        this.provider.mode !== 'LOCAL' ||
+        this.provider.configurationVersion !== 'fake-editorial/1.0.0')
+    )
       throw new CampaignError('FAKE_EXECUTION_PROVIDER_FORBIDDEN');
     return policy;
   }
   async localRequest(value: unknown, controlledActorId?: string) {
     const input = localRequestInput(value);
-    if (controlledActorId !== undefined && Object.keys(input).sort().join(',') !== 'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt')
+    if (
+      controlledActorId !== undefined &&
+      Object.keys(input)
+        .filter((key) => key !== 'recurrence')
+        .sort()
+        .join(',') !==
+        'campaignId,campaignRevision,localImage,projectVersion,requestId,requestedAt'
+    )
       throw new CampaignError('FAKE_EXECUTION_INPUT_FORBIDDEN');
     const schedule = localSchedule(input);
     const requestId = identifier(input.requestId),
@@ -1080,7 +1092,11 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       },
     };
     if (controlledActorId !== undefined) {
-      request.fakeExecutionPolicy = createFakeExecutionPolicy(request, requestId, controlledActorId);
+      request.fakeExecutionPolicy = createFakeExecutionPolicy(
+        request,
+        requestId,
+        controlledActorId,
+      );
       campaignRequest(request);
       this.assertControlledRuntime(request);
     }
@@ -1096,9 +1112,42 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
     return campaignRequest(request);
   }
   async recurringRequest(seed: Record<string, unknown>, now: string) {
+    const policy = this.assertControlledRuntime(seed);
     const schedule = seed.schedule ? dailySchedule(seed.schedule) : undefined;
     const at = dailyOccurrence(String(seed.scheduledAt), now, schedule);
     if (!at) return null;
+    if (policy) {
+      if (!schedule)
+        throw new CampaignError('FAKE_RECURRENCE_SCHEDULE_REQUIRED');
+      await this.validate(seed);
+      const image = document(seed.localImage);
+      assertMediaProcessingRights(
+        document(image.rights).evidence,
+        {
+          mediaRef: String(image.mediaReference),
+          contentHash: String(image.contentHash),
+        },
+        null,
+      );
+      const request = await this.localRequest(
+        {
+          campaignId: seed.campaignId,
+          campaignRevision: seed.campaignRevision,
+          projectVersion: document(seed.run).projectVersion,
+          requestId: `daily_${adaptationHash({ seed: seed.runId, day: productionDate(at, schedule.timeZone) }).slice(0, 32)}`,
+          requestedAt: at,
+          localImage: seed.localImage,
+          recurrence: {
+            enabled: true,
+            time: schedule.time,
+            timeZone: schedule.timeZone,
+          },
+        },
+        policy.actorId,
+      );
+      await this.validate(request);
+      return request;
+    }
     if (seed.selectionMode === 'CATALOG')
       return this.localRequest({
         campaignId: seed.campaignId,

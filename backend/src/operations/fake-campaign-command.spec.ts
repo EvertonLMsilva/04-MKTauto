@@ -1,8 +1,40 @@
 import {
   controlledFakeInput,
+  controlledFakeRecurrenceInput,
   registerFakeCampaignInput,
 } from './fake-campaign-command.contract.js';
 import { campaign } from '../../test/support/affiliate-fixture.js';
+
+test('recurrence requires a separate confirmed command with explicit time and zone', () => {
+  const base = localImageCommand();
+  const value = {
+    ...base,
+    request: {
+      ...base.request,
+      recurrence: {
+        enabled: true,
+        time: '09:00',
+        timeZone: 'America/Sao_Paulo',
+      },
+    },
+  };
+  expect(controlledFakeRecurrenceInput(value)).toEqual(value.request);
+  expect(() => controlledFakeInput(value)).toThrow();
+  for (const patch of [
+    { confirmation: false },
+    { mode: 'LIVE' },
+    { request: { ...value.request, recurrence: { enabled: true } } },
+    {
+      request: {
+        ...value.request,
+        recurrence: { ...value.request.recurrence, extra: true },
+      },
+    },
+  ])
+    expect(() =>
+      controlledFakeRecurrenceInput({ ...value, ...patch }),
+    ).toThrow();
+});
 
 export function localImageCommand() {
   const mediaReference = 'authorized-image-001',

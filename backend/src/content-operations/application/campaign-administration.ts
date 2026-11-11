@@ -28,6 +28,7 @@ import {
   identifier,
   instant,
   canonicalJson,
+  productionDate,
 } from '../domain/campaign.js';
 import { HumanApprovalService } from '../../publishing/application/human-approval.service.js';
 import { initialOccurrence } from '../domain/campaign-schedule.js';
@@ -99,9 +100,24 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   private async scheduleRequest(value: unknown, controlled: boolean) {
     if (document(value).legacyRecovery)
       throw new CampaignError('LEGACY_RECOVERY_ENDPOINT_REQUIRED');
-    if (!controlled && (Object.hasOwn(document(value), 'fakeExecutionPolicy') || String(document(value).runId).startsWith(CONTROLLED_FAKE_RUN_PREFIX)))
+    if (
+      !controlled &&
+      (Object.hasOwn(document(value), 'fakeExecutionPolicy') ||
+        String(document(value).runId).startsWith(CONTROLLED_FAKE_RUN_PREFIX))
+    )
       throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     const r = campaignRequest(value);
+    if (
+      !controlled &&
+      this.open()
+        .recurrences(true)
+        .some(
+          (e) =>
+            e.config.request.campaignId === r.campaignId &&
+            assertFakeExecutionPolicy(e.config.request),
+        )
+    )
+      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     if (r.selectionMode === 'CATALOG' || Object.hasOwn(r, 'catalogSelection'))
       throw new CampaignError('CATALOG_LOCAL_CONFIGURATION_REQUIRED');
     await this.workflow.validate(r);
@@ -119,18 +135,105 @@ export class CampaignAdministration implements OnModuleInit, OnModuleDestroy {
   async startControlledFake(value: unknown, actorId: string) {
     identifier(actorId);
     const request = await this.workflow.localRequest(value, actorId);
-    if (!assertFakeExecutionPolicy(request)) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+    if (!assertFakeExecutionPolicy(request))
+      throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
     return this.scheduleRequest(request, true);
   }
   controlledFake(id: string) {
-    const store = this.open(), execution = store.get(identifier(id));
-    const policy = assertFakeExecutionPolicy(executionRequest(store.history(id)), execution);
+    const store = this.open(),
+      execution = store.get(identifier(id));
+    const policy = assertFakeExecutionPolicy(
+      executionRequest(store.history(id)),
+      execution,
+    );
     if (!policy) throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
     return { execution, policy };
+  }
+  async configureControlledFakeRecurrence(value: unknown, actorId: string) {
+    identifier(actorId);
+    const input = localRequestInput(value),
+      enabled = localRecurrence(input),
+      schedule = localSchedule(input);
+    if (enabled === undefined || !schedule)
+      throw new CampaignError('FAKE_RECURRENCE_SCHEDULE_REQUIRED');
+    const store = this.open();
+    let request: Record<string, unknown>;
+    if (!enabled) {
+      const existing = store
+        .recurrences(true)
+        .find((e) => e.config.request.campaignId === input.campaignId);
+      if (!existing) throw new CampaignError('CAMPAIGN_RECURRENCE_NOT_FOUND');
+      request = existing.config.request;
+      if (!assertFakeExecutionPolicy(request))
+        throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+      if (
+        request.campaignRevision !== input.campaignRevision ||
+        document(request.run).projectVersion !== input.projectVersion ||
+        request.scheduledAt !==
+          initialOccurrence(instant(input.requestedAt), schedule) ||
+        canonicalJson(request.schedule) !== canonicalJson(schedule) ||
+        canonicalJson(request.localImage) !== canonicalJson(input.localImage)
+      )
+        throw new CampaignError('CAMPAIGN_RECURRENCE_CONFLICT');
+    } else {
+      request = await this.workflow.localRequest(value, actorId);
+      if (!assertFakeExecutionPolicy(request))
+        throw new CampaignError('FAKE_EXECUTION_POLICY_REQUIRED');
+      await this.workflow.validate(request);
+      const prior = store
+        .operationalExecutions()
+        .find(
+          (e) =>
+            e.campaign_id === request.campaignId &&
+            e.production_date ===
+              productionDate(String(request.scheduledAt), schedule.timeZone),
+        );
+      // The generic repository may reuse today's master; never attach controlled
+      // recurrence to an unprotected historical execution.
+      if (prior) this.controlledFake(prior.execution_id);
+      else
+        store.schedule(
+          {
+            campaignId: String(request.campaignId),
+            campaignRevision: Number(request.campaignRevision),
+            scheduledAt: String(request.scheduledAt),
+            runId: String(request.runId),
+          },
+          request,
+          this.now(),
+        );
+    }
+    const execution = store.configureRecurrence(
+      request,
+      enabled,
+      String(input.requestId),
+      this.now(),
+    );
+    const current = store
+      .recurrences(true)
+      .find((e) => e.config.request.campaignId === input.campaignId)!.config;
+    return {
+      execution,
+      recurrence: {
+        enabled: current.enabled,
+        revision: current.revision,
+        schedule: current.request.schedule,
+      },
+    };
   }
   async startLocal(value: unknown) {
     const input = localRequestInput(value),
       enabled = localRecurrence(input);
+    if (
+      this.open()
+        .recurrences(true)
+        .some(
+          (e) =>
+            e.config.request.campaignId === input.campaignId &&
+            assertFakeExecutionPolicy(e.config.request),
+        )
+    )
+      throw new CampaignError('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
     if (enabled === false) {
       const existing = this.open()
         .recurrences(true)

@@ -4,6 +4,7 @@ import { CampaignAdministration } from '../content-operations/application/campai
 import { operationalQcIdentity } from '../publishing/application/local-qc-identity.js';
 import {
   controlledFakeInput,
+  controlledFakeRecurrenceInput,
   controlledFakeResumeInput,
   FAKE_COMMAND_RESULT_VERSION,
   registerFakeCampaignInput,
@@ -58,6 +59,19 @@ export class FakeCampaignCommandService {
         updatedAt: execution.updated_at,
       },
       policy,
+    };
+  }
+  async configureRecurrence(value: unknown, principal: unknown) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    const { execution, recurrence } =
+      await this.campaigns.configureControlledFakeRecurrence(
+        controlledFakeRecurrenceInput(value),
+        actor.id,
+      );
+    return {
+      ...this.detail(execution.execution_id, principal),
+      result: 'RECURRENCE_CONFIGURED',
+      recurrence,
     };
   }
   async resume(id: string, value: unknown, principal: unknown) {
