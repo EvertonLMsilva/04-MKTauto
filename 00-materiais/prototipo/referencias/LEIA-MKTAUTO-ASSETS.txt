@@ -1,0 +1,18 @@
+PACOTE DE REFERÊNCIAS MKTAUTO — USO LOCAL
+
+Conteúdo:
+- mktauto-robotic-city-original.png: imagem original enviada pelo usuário (960x540).
+- mktauto-blue-neon-particles.mp4: arquivo original enviado pelo usuário (2560x1440, ~13.35 segundos).
+- mktauto-blue-neon-particles-web.mp4: versão otimizada 1280x720, 24 fps, H.264 para prévia local do hero.
+
+Destino recomendado para extrair os 3 arquivos:
+D:\04-Projetos\23-MKTauto\00-materiais\prototipo\referencias\
+
+IMPORTANTE SOBRE DIREITOS:
+O vídeo tem origem Vecteezy: https://www.vecteezy.com/video/2148416-abstract-motion-of-shining-blue-neon-particles-forming-a-futuristic-hologram
+A página informa Free License / Attribution Required. O contrato restringe redistribuição do vídeo como arquivo de origem. Nem o arquivo original nem a versão otimizada devem ser commitados no repositório GitHub público sem confirmação de direitos específicos.
+A titularidade/licença da imagem original enviada no chat também não foi verificada para publicação pública.
+Desenvolver e testar localmente é distinto de disponibilizar publicamente o arquivo.
+O uso em produto final, incluindo atribuição, deve observar a licença aplicável.
+
+Coloque os assets no diretório somente leitura de materiais, e para o Vite use cópia local ignorada pelo Git ou integração de caminho configurável com fallback CSS. O README do projeto pode referenciar a URL de crédito, sem incluir o arquivo binário no Git.

@@ -1,14 +1,4 @@
 # Operator originals, command snapshots and local document archive (not fixtures)
-/00-materiais
-/assets
-/pixabay-test.mp4
-/project-demo.json
-/project-games.json
-/project-games-v2.json
-/project-games-v2-export.json
-/project-games-v3.json
-/docs/MKTauto-docs.zip
-
 node_modules/
 .env
 .env_1
