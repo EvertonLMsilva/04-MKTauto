@@ -5,7 +5,7 @@ RUN npm ci
 COPY tsconfig*.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
-RUN npm prune --omit=dev --offline --no-audit --no-fund
+RUN npm ci --omit=dev --offline --no-audit --no-fund
 
 FROM python:3.12-slim-bookworm AS media-runtime
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libsndfile1 espeak-ng tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
