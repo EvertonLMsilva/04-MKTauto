@@ -312,3 +312,291 @@ test('HTTP preview rejects stale sources and payload scope changes while persist
     await app.close();
   }
 });
+
+async function batchInput(count = 1, incompleteSecond = false) {
+  const ids = Array.from({ length: count }, (_, i) =>
+    String(4251540175n + BigInt(i)),
+  );
+  writeFileSync(
+    join(root, 'feed.csv'),
+    'itemid,title,price,product_link,global_category2\n' +
+      ids
+        .map(
+          (id, i) =>
+            `${id},${i === 0 ? 'Cesto de fixture N04' : incompleteSecond && i === 1 ? '' : `Cesto ${i}`},45.9,https://shopee.com.br/product/7/${id},Kitchenware\n`,
+        )
+        .join(''),
+  );
+  const report = await feeds.analyze();
+  input.reportId = report.reportId;
+  return {
+    reportId: report.reportId,
+    projectId: input.projectId,
+    recordedAt: at,
+    candidates: ids.map((externalProductId, i) => ({
+      externalProductId,
+      source: { feedId: 'fixture', rowNumber: i + 2 },
+    })),
+  };
+}
+
+test.each([1, 20])(
+  'batch previews %i items with two consistent feed reads and deterministic ordering',
+  async (count) => {
+    const batch = await batchInput(count),
+      before = readFileSync(f.database);
+    const analyze = vi.spyOn(feeds, 'analyze');
+    const first = await preview.previewBatch({
+      ...batch,
+      candidates: [...batch.candidates].reverse(),
+    });
+    expect(analyze).toHaveBeenCalledTimes(2);
+    expect(first.items).toHaveLength(count);
+    expect(first.items.map((i) => i.identity.externalProductId)).toEqual(
+      batch.candidates.map((c) => c.externalProductId),
+    );
+    expect(first.registrationAuthorized).toBe(false);
+    expect(first.operationallyRegistered).toBe(false);
+    expect(first.reportId).toBe(batch.reportId);
+    expect(await preview.previewBatch(batch)).toEqual(first);
+    expect(readFileSync(f.database)).toEqual(before);
+  },
+);
+
+test('batch mixes complete and incomplete candidates without authorizing or changing individual policy', async () => {
+  const batch = await batchInput(2, true),
+    c = await complete();
+  const individual = await preview.preview(c.request);
+  const first = {
+    ...batch.candidates[0],
+    product: c.request.product,
+    campaign: c.request.campaign,
+    affiliateEvidence: c.request.affiliateEvidence,
+  };
+  const before = readFileSync(f.database);
+  const result = await preview.previewBatch({
+    ...batch,
+    candidates: [first, batch.candidates[1]],
+  });
+  expect(result.items[0].preview).toEqual(individual);
+  expect(result.items[0]).toMatchObject({
+    status: 'READY_FOR_OPERATOR_REVIEW',
+    associationVerified: false,
+    registrationAuthorized: false,
+    operationallyRegistered: false,
+  });
+  expect(result.items[0].evidence.present).toContain(
+    'DOCUMENTED_AFFILIATE_ASSOCIATION',
+  );
+  expect(result.items[1]).toMatchObject({
+    status: 'NOT_PREVIEWABLE',
+    preview: null,
+  });
+  expect(result.items[1].blockers).toContain('NAME_REQUIRED');
+  expect(readFileSync(f.database)).toEqual(before);
+});
+
+test.each(['rights', 'affiliate'])(
+  'batch preserves missing %s evidence as a per-candidate blocker',
+  async (kind) => {
+    const batch = await batchInput(),
+      c = await complete();
+    if (kind === 'rights') c.request.product.localImage.rights.evidence = [];
+    else delete (c.request as any).affiliateEvidence;
+    const result = await preview.previewBatch({
+      ...batch,
+      candidates: [
+        {
+          ...batch.candidates[0],
+          product: c.request.product,
+          campaign: c.request.campaign,
+          ...(c.request.affiliateEvidence
+            ? { affiliateEvidence: c.request.affiliateEvidence }
+            : {}),
+        },
+      ],
+    });
+    expect(result.items[0].status).toBe('BLOCKED');
+    expect(result.items[0].evidence.missing).toContain(
+      kind === 'rights'
+        ? 'REUSABLE_MEDIA_RIGHTS'
+        : 'DOCUMENTED_AFFILIATE_ASSOCIATION',
+    );
+    expect(result.items[0].registrationAuthorized).toBe(false);
+  },
+);
+
+test('batch rejects oversized/empty requests and duplicate product identities before reading feeds', async () => {
+  const batch = await batchInput(),
+    analyze = vi.spyOn(feeds, 'analyze');
+  for (const candidates of [
+    [],
+    Array(21).fill(batch.candidates[0]),
+    [
+      batch.candidates[0],
+      { ...batch.candidates[0], source: { feedId: 'other', rowNumber: 3 } },
+    ],
+  ])
+    await expect(
+      preview.previewBatch({ ...batch, candidates }),
+    ).rejects.toThrow('QUALIFICATION_PREVIEW_BATCH_');
+  expect(analyze).not.toHaveBeenCalled();
+});
+
+test('batch rejects both an obsolete report and a feed changed during processing', async () => {
+  const batch = await batchInput();
+  await expect(
+    preview.previewBatch({ ...batch, reportId: 'a'.repeat(64) }),
+  ).rejects.toThrow('FEED_QUALIFICATION_REPORT_CHANGED');
+  const get = projects.get;
+  projects.get = async (...args: any[]) => {
+    writeFileSync(
+      join(root, 'feed.csv'),
+      readFileSync(join(root, 'feed.csv'), 'utf8').replace('45.9', '46.9'),
+    );
+    return get(...args);
+  };
+  await expect(preview.previewBatch(batch)).rejects.toThrow(
+    'FEED_QUALIFICATION_REPORT_CHANGED',
+  );
+});
+
+test('batch identifies candidate failures and source mismatch without suppressing other results', async () => {
+  const batch = await batchInput(3);
+  const result = await preview.previewBatch({
+    ...batch,
+    candidates: [
+      { ...batch.candidates[0], product: { productId: 'wrong' } },
+      { ...batch.candidates[1], source: { feedId: 'fixture', rowNumber: 999 } },
+      batch.candidates[2],
+    ],
+  });
+  expect(result.items.map((i) => i.status)).toEqual([
+    'ERROR',
+    'ERROR',
+    'BLOCKED',
+  ]);
+  expect(result.items[0].error?.code).toBe(
+    'QUALIFICATION_PREVIEW_SCOPE_MISMATCH',
+  );
+  expect(result.items[1].error?.code).toBe(
+    'QUALIFICATION_PREVIEW_CANDIDATE_IDENTITY_MISMATCH',
+  );
+  expect(result.items[0].preview).toBeNull();
+});
+
+test('batch HTTP shares individual behavior, bounds requests and returns 409 for changed reports', async () => {
+  const batch = await batchInput();
+  const module = await Test.createTestingModule({
+    controllers: [QualificationPreviewController],
+    providers: [{ provide: QualificationPreviewService, useValue: preview }],
+  }).compile();
+  const app = module.createNestApplication();
+  try {
+    await app.init();
+    const before = readFileSync(f.database);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/batch')
+      .send(batch)
+      .expect(200)
+      .expect((r) =>
+        expect(r.body.items[0].registrationAuthorized).toBe(false),
+      );
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/batch')
+      .send({ ...batch, candidates: [] })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/batch')
+      .send({ ...batch, reportId: 'a'.repeat(64) })
+      .expect(409);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview')
+      .send(input)
+      .expect(200);
+    expect(readFileSync(f.database)).toEqual(before);
+  } finally {
+    await app.close();
+  }
+});
+
+test('batch preserves Int64 product identity and historical decimals and suppresses invalid offer drafts', async () => {
+  const id = '9007199254740993',
+    amount = '9007199254740993.123456789012345678';
+  writeFileSync(
+    join(root, 'feed.csv'),
+    `itemid,title,price,product_link,global_category2\n${id},Cesto preciso,${amount},https://shopee.com.br/product/7/${id},Kitchenware\n`,
+  );
+  const report = await feeds.analyze();
+  const result = await preview.previewBatch({
+    reportId: report.reportId,
+    projectId: input.projectId,
+    recordedAt: at,
+    candidates: [
+      { externalProductId: id, source: { feedId: 'fixture', rowNumber: 2 } },
+    ],
+  });
+  expect(result.items[0].identity.externalProductId).toBe(id);
+  expect(result.items[0].commercialSnapshot?.historicalPrice).toMatchObject({
+    amount,
+    current: false,
+    currency: null,
+  });
+  expect(result.items[0].productDraft).toBeNull();
+  expect(result.items[0].evidence.missing).toContain('PRODUCT_CONTRACT');
+  expect(result.items[0].productIssues.length).toBeGreaterThan(0);
+  expect(result.items[0].offerIssues.length).toBeGreaterThan(0);
+  expect(result.items[0].offerDraft).toBeNull();
+  expect(result.items[0].preview).toBeNull();
+  expect(result.items[0].previewHash).toMatch(/^[a-f0-9]{64}$/);
+  const { packageHash, ...body } = result;
+  expect(affiliateHash(body)).toBe(packageHash);
+});
+
+test('batch exposes unexpected candidate errors only as sanitized failures and continues reviewing', async () => {
+  const batch = await batchInput(2),
+    original = (preview as any).previewFromReport.bind(preview);
+  const invoke = vi
+    .spyOn(preview as any, 'previewFromReport')
+    .mockRejectedValueOnce(new Error('PRIVATE_INTERNAL_DETAIL'))
+    .mockImplementation(original);
+  const result = await preview.previewBatch(batch);
+  expect(result.items[0]).toMatchObject({
+    status: 'ERROR',
+    error: { code: 'QUALIFICATION_PREVIEW_UNAVAILABLE', stage: 'PREVIEW' },
+    evidence: { present: [], missing: [] },
+  });
+  expect(result.items[0].evidence.unverified.length).toBeGreaterThan(0);
+  expect(result.items[1].status).toBe('BLOCKED');
+  expect(JSON.stringify(result)).not.toContain('PRIVATE_INTERNAL_DETAIL');
+  invoke.mockRestore();
+});
+
+test('batch CLI is explicit, offline and writes a new artifact without overwriting previous results', async () => {
+  const batch = await batchInput(2),
+    path = join(root, 'batch-input.json'),
+    output = join(root, 'batch-output.json');
+  writeFileSync(path, JSON.stringify(batch));
+  const before = readFileSync(f.database);
+  await runQualificationPreview([
+    '--batch',
+    '--input',
+    path,
+    '--output',
+    output,
+  ]);
+  const bytes = readFileSync(output),
+    result = JSON.parse(bytes.toString('utf8'));
+  expect(result.items).toHaveLength(2);
+  expect(result.registrationAuthorized).toBe(false);
+  expect(
+    result.items.every((item: any) =>
+      item.evidence.missing.includes('PROJECT_SCOPE'),
+    ),
+  ).toBe(true);
+  await expect(
+    runQualificationPreview(['--batch', '--input', path, '--output', output]),
+  ).rejects.toThrow();
+  expect(readFileSync(output)).toEqual(bytes);
+  expect(readFileSync(f.database)).toEqual(before);
+});

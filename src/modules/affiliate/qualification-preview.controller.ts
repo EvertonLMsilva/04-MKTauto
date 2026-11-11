@@ -21,8 +21,16 @@ export class QualificationPreviewController {
   @Post()
   @HttpCode(200)
   async preview(@Body() input: unknown) {
+    return this.respond(() => this.service.preview(input));
+  }
+  @Post('batch')
+  @HttpCode(200)
+  async previewBatch(@Body() input: unknown) {
+    return this.respond(() => this.service.previewBatch(input));
+  }
+  private async respond<T>(operation: () => Promise<T>) {
     try {
-      return await this.service.preview(input);
+      return await operation();
     } catch (error) {
       const code = errorCode(error);
       if (code === 'FEED_QUALIFICATION_REPORT_CHANGED')
