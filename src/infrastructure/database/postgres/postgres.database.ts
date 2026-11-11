@@ -1,3 +1,4 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {
   Inject,
   Injectable,
@@ -24,11 +25,27 @@ import {
 
 export const POSTGRES_POOL_FACTORY = Symbol('POSTGRES_POOL_FACTORY');
 export type PostgresPoolFactory = (config: PoolConfig) => Pool;
+export type PostgresParticipant = 'content' | 'affiliate' | 'campaign';
+const participantLocks: Record<PostgresParticipant, number> = {
+  content: 3,
+  affiliate: 4,
+  campaign: 5,
+};
+interface UnitOfWork {
+  database: PostgresDatabase;
+  client: PoolClient;
+  participants: ReadonlySet<PostgresParticipant>;
+  active: boolean;
+  rollbackOnly: boolean;
+}
+const units = new AsyncLocalStorage<UnitOfWork>();
+const isolatedTransactions = new AsyncLocalStorage<{ active: boolean }>();
 export const createPostgresPool: PostgresPoolFactory = (config) =>
   new Pool(config);
 
 @Injectable()
 export class PostgresDatabase implements OnApplicationShutdown {
+  private readonly unit = units;
   private readonly pool: Pool;
   private closing?: Promise<void>;
   private readonly logger = new Logger(PostgresDatabase.name);
@@ -66,8 +83,19 @@ export class PostgresDatabase implements OnApplicationShutdown {
   async query<R extends QueryResultRow = QueryResultRow>(
     text: string,
     values?: unknown[],
+    participant?: PostgresParticipant,
   ): Promise<QueryResult<R>> {
     this.assertOpen();
+    const unit = this.unit.getStore();
+    if (unit) {
+      this.assertParticipation(unit, participant);
+      try {
+        return await unit.client.query<R>(text, values);
+      } catch (error) {
+        unit.rollbackOnly = true;
+        throw postgresFailure('POSTGRES_QUERY_FAILED', error);
+      }
+    }
     try {
       return await this.pool.query<R>(text, values);
     } catch (error) {
@@ -75,8 +103,24 @@ export class PostgresDatabase implements OnApplicationShutdown {
     }
   }
 
-  async transaction<T>(work: (client: PoolClient) => Promise<T>): Promise<T> {
+  /** Explicit enlistment only. An unadapted repository cannot silently open another transaction. */
+  async transaction<T>(
+    work: (client: PoolClient) => Promise<T>,
+    participant?: PostgresParticipant,
+  ): Promise<T> {
     this.assertOpen();
+    const unit = this.unit.getStore();
+    if (unit) {
+      this.assertParticipation(unit, participant);
+      try {
+        return await work(unit.client);
+      } catch (error) {
+        unit.rollbackOnly = true;
+        throw isPostgresDriverError(error)
+          ? postgresFailure('POSTGRES_TRANSACTION_FAILED', error)
+          : error;
+      }
+    }
     let client: PoolClient;
     try {
       client = await this.pool.connect();
@@ -92,7 +136,12 @@ export class PostgresDatabase implements OnApplicationShutdown {
       await client.query('BEGIN');
       started = true;
       stage = 'work';
-      value = await work(client);
+      const isolated = { active: true };
+      try {
+        value = await isolatedTransactions.run(isolated, () => work(client));
+      } finally {
+        isolated.active = false;
+      }
       stage = 'commit';
       await client.query('COMMIT');
     } catch (error) {
@@ -121,6 +170,82 @@ export class PostgresDatabase implements OnApplicationShutdown {
     }
     if (failure) throw failure.error;
     return value;
+  }
+
+  private assertParticipation(
+    unit: UnitOfWork,
+    participant?: PostgresParticipant,
+  ): void {
+    let code: string | undefined;
+    if (!unit.active) code = 'POSTGRES_UNIT_OF_WORK_ENDED';
+    else if (unit.database !== this) code = 'POSTGRES_DIFFERENT_DATABASE';
+    else if (unit.rollbackOnly) code = 'POSTGRES_UNIT_OF_WORK_ABORTED';
+    else if (!participant) code = 'POSTGRES_PARTICIPATION_REQUIRED';
+    else if (!unit.participants.has(participant))
+      code = 'POSTGRES_PARTICIPANT_NOT_ENLISTED';
+    if (code) {
+      unit.rollbackOnly = true;
+      throw new PostgresError(code);
+    }
+  }
+
+  inUnitOfWork(participant: PostgresParticipant): boolean {
+    const unit = this.unit.getStore();
+    if (!unit) return false;
+    this.assertParticipation(unit, participant);
+    return true;
+  }
+
+  /** Locks are acquired up front in domain order, before any repository observes state. */
+  async unitOfWork<T>(
+    participants: readonly PostgresParticipant[],
+    work: () => Promise<T>,
+  ): Promise<T> {
+    const existing = this.unit.getStore();
+    const ordered = [...new Set(participants)].sort(
+      (a, b) => participantLocks[a] - participantLocks[b],
+    );
+    if (
+      !ordered.length ||
+      ordered.some((p) => !Object.hasOwn(participantLocks, p))
+    ) {
+      if (existing) existing.rollbackOnly = true;
+      throw new PostgresError('POSTGRES_INVALID_PARTICIPANTS');
+    }
+    if (existing) {
+      try {
+        for (const participant of ordered)
+          this.assertParticipation(existing, participant);
+        return await work();
+      } catch (error) {
+        existing.rollbackOnly = true;
+        throw error;
+      }
+    }
+    if (isolatedTransactions.getStore()?.active)
+      throw new PostgresError('POSTGRES_UNIT_OF_WORK_REQUIRES_ROOT');
+    return this.transaction(async (client) => {
+      for (const participant of ordered)
+        await client.query('SELECT pg_catalog.pg_advisory_xact_lock($1,$2)', [
+          1296782401,
+          participantLocks[participant],
+        ]);
+      const unit: UnitOfWork = {
+        database: this,
+        client,
+        participants: new Set(ordered),
+        active: true,
+        rollbackOnly: false,
+      };
+      try {
+        const value = await this.unit.run(unit, work);
+        if (unit.rollbackOnly)
+          throw new PostgresError('POSTGRES_UNIT_OF_WORK_ABORTED');
+        return value;
+      } finally {
+        unit.active = false;
+      }
+    });
   }
 
   async healthcheck(): Promise<boolean> {

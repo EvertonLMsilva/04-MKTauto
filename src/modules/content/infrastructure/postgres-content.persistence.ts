@@ -11,13 +11,18 @@ import type { ContentSession, ContentSqlSession } from './content-database.js';
 import type { ContentOperationsService } from '../../content-operations/application/content-operations.service.js';
 import type { AffiliateRunContext } from '../../affiliate/application/ports/affiliate-run-context.port.js';
 import type { ResearchReader } from '../../research/application/research-reader.port.js';
+import { PostgresOperationsPersistence } from '../../content-operations/infrastructure/postgres-campaign.persistence.js';
+import { AffiliateRunContextService } from '../../affiliate/application/affiliate-run-context.service.js';
+import { PostgresAffiliatePersistence } from '../../affiliate/infrastructure/postgres-affiliate.persistence.js';
+import { PostgresAffiliateSessionFactory } from '../../affiliate/infrastructure/postgres-affiliate.session.js';
+import { OperationsError } from '../../content-operations/domain/operations-contracts.js';
 import { ScriptRepository } from './script.repository.js';
 import { CONTENT_POSTGRES_MIGRATIONS } from './postgres-content.migrations.js';
 import { postgresMigrationChecksum } from '../../../infrastructure/database/postgres/index.js';
 
 export interface ContentPostgresDependencies {
-  operations: Pick<ContentOperationsService, 'get'>;
-  affiliate: Pick<AffiliateRunContext, 'resolveRunBriefing'>;
+  operations: Pick<ContentOperationsService<boolean>, 'get'>;
+  affiliate: Pick<AffiliateRunContext<boolean>, 'resolveRunBriefing'>;
   research:
     | Pick<ResearchReader, 'getShortlist' | 'getInsight'>
     | Pick<ResearchReader<true>, 'getShortlist' | 'getInsight'>;
@@ -33,6 +38,7 @@ const tables = [
   'affiliate_editorial_selections',
   'scripts',
 ];
+const coordinatedContent = Symbol('COORDINATED_CONTENT');
 /** SQL originates exclusively in the shared Content repositories, never from HTTP input. */
 function postgresSql(sql: string): string {
   let position = 0;
@@ -56,6 +62,7 @@ class PostgresContentSession implements ContentSession {
     private readonly database: PostgresDatabase,
     dependencies: ContentPostgresDependencies,
     private readonly readOnly: boolean,
+    private readonly coordinated = false,
   ) {
     this.research = dependencies.research;
     this.db = {
@@ -77,28 +84,44 @@ class PostgresContentSession implements ContentSession {
   }
   async transaction<T>(operation: () => T): Promise<T> {
     if (this.closed) throw new Error('CONTENT_HANDLE_CLOSED');
+    if (this.database.inUnitOfWork('content') && !this.coordinated)
+      throw new Error('CONTENT_CROSS_DOMAIN_TRANSACTION_REQUIRED');
     const active = this.context.getStore();
     if (active) {
       if (!active.active) throw new Error('CONTENT_TRANSACTION_ENDED');
+      if (this.database.inUnitOfWork('content'))
+        return this.database.transaction(
+          async () => await operation(),
+          'content',
+        );
       return await operation();
     }
-    return this.database.transaction(async (client) => {
-      if (this.readOnly)
-        await client.query(
-          'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
-        );
-      else
-        await client.query(
-          'SELECT pg_catalog.pg_advisory_xact_lock($1,$2)',
-          [1296782401, 3],
-        );
-      const scope = { client, active: true };
-      try {
-        return await this.context.run(scope, operation);
-      } finally {
-        scope.active = false;
-      }
-    });
+    const transaction = () =>
+      this.database.transaction(async (client) => {
+        if (this.database.inUnitOfWork('content')) {
+          // Isolation and participant locks belong to the coordinator.
+        } else if (this.readOnly)
+          await client.query(
+            'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+          );
+        else
+          await client.query(
+            'SELECT pg_catalog.pg_advisory_xact_lock($1,$2)',
+            [1296782401, 3],
+          );
+        const scope = { client, active: true };
+        try {
+          return await this.context.run(scope, operation);
+        } finally {
+          scope.active = false;
+        }
+      }, 'content');
+    return this.coordinated
+      ? this.database.unitOfWork(
+          ['content', 'affiliate', 'campaign'],
+          transaction,
+        )
+      : transaction();
   }
   private async query(sql: string, values: unknown[]) {
     const context = this.context.getStore();
@@ -106,6 +129,8 @@ class PostgresContentSession implements ContentSession {
       throw new Error('CONTENT_SESSION_INACTIVE');
     let result;
     try {
+      if (this.readOnly && !/^\s*SELECT\b/i.test(sql))
+        throw new Error('CONTENT_READ_ONLY');
       result = await context.client.query({
         text: postgresSql(sql),
         values,
@@ -141,12 +166,51 @@ export class PostgresContentPersistence implements ContentStore<true> {
   constructor(
     private readonly database: PostgresDatabase,
     private readonly dependencies: ContentPostgresDependencies,
+    private readonly coordination?: typeof coordinatedContent,
   ) {}
+  /** Canonical PostgreSQL projections only; external callbacks cannot pose as participants. */
+  static coordinated(database: PostgresDatabase): PostgresContentPersistence {
+    const operations = new PostgresOperationsPersistence(database);
+    const affiliate = new AffiliateRunContextService<true>(
+      new PostgresAffiliatePersistence(
+        new PostgresAffiliateSessionFactory(database, undefined, true),
+      ),
+    );
+    const unsupported = async (): Promise<never> => {
+      throw new Error('CONTENT_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+    };
+    return new PostgresContentPersistence(
+      database,
+      {
+        operations: {
+          get: async (id: string) => {
+            const session = await operations.open(true);
+            try {
+              const run = await session.getRun(id);
+              if (!run)
+                throw new OperationsError(
+                  'PIPELINE_RUN_NOT_FOUND',
+                  'pipelineRunId',
+                );
+              return run;
+            } finally {
+              await session.close();
+            }
+          },
+        },
+        affiliate,
+        // Research/editorial generation/Finance are not enlisted by this composition.
+        research: { getShortlist: unsupported, getInsight: unsupported },
+      },
+      coordinatedContent,
+    );
+  }
   async open(readOnly = false): Promise<ContentRepository<true>> {
     const migration = CONTENT_POSTGRES_MIGRATIONS[0]!;
     const history = await this.database.query(
       'SELECT name,checksum FROM platform.schema_migrations WHERE version=$1',
       [3],
+      'content',
     );
     if (
       history.rows[0]?.name !== migration.name ||
@@ -157,6 +221,7 @@ export class PostgresContentPersistence implements ContentStore<true> {
       this.database,
       this.dependencies,
       readOnly,
+      this.coordination === coordinatedContent,
     );
     const repository = new ScriptRepository(
       session,

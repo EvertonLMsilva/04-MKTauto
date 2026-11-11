@@ -9,7 +9,15 @@ import type {
 import type {
   RunBriefingBinding,
   BindRunInput,
+  ScriptGenerationContext,
 } from '../domain/affiliate-run-context.js';
+import {
+  assertBindingBriefing,
+  assertNewBindingAllowed,
+  assertProjectScope,
+  validateGenerationIdentity,
+} from '../domain/affiliate-run-context.js';
+import { AffiliateRepositoryError } from '../domain/affiliate.errors.js';
 import { SqliteAffiliateRunContextRepository } from './sqlite-affiliate-run-context.repository.js';
 import {
   PostgresAffiliateSessionFactory,
@@ -39,17 +47,79 @@ export class PostgresAffiliateRepository
     return this.session.transaction(work);
   }
   async bindingCommand(
-    _input: BindRunInput,
-    _key: string,
-    _work: () => Promise<RunBriefingBinding>,
+    input: BindRunInput,
+    key: string,
+    work: () => Promise<RunBriefingBinding>,
   ): Promise<RunBriefingBinding> {
-    throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+    if (!this.session.coordinated)
+      throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+    return await this.session.transaction(() => {
+      this.session.requireCoordination();
+      return this.core.bindingCommand(
+        input,
+        key,
+        work as unknown as () => RunBriefingBinding,
+      );
+    });
   }
-  async insertRunBinding(_value: RunBriefingBinding): Promise<void> {
-    throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+  async insertRunBinding(value: RunBriefingBinding): Promise<void> {
+    if (!this.session.coordinated)
+      throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+    await this.session.transaction(async () => {
+      this.session.requireCoordination();
+      const run = await this.executions.getRun(value.pipelineRunId);
+      if (!run)
+        throw new AffiliateRepositoryError(
+          'PIPELINE_RUN_NOT_FOUND',
+          'pipelineRunId',
+        );
+      const briefing = await this.getBriefing(value.briefingId);
+      if (!briefing)
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_BRIEFING_NOT_FOUND',
+          'briefingId',
+        );
+      assertBindingBriefing(value, briefing);
+      const campaign = await this.getCampaign(
+        briefing.campaignId,
+        briefing.campaignRevision,
+      );
+      if (!campaign)
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_REFERENCE_MISSING',
+          'campaignId',
+        );
+      assertProjectScope(run, campaign.projectId);
+      assertNewBindingAllowed(
+        run,
+        (await this.activity.hasStarted(value.pipelineRunId)) ||
+          (await this.hasScriptContexts(value.pipelineRunId)),
+      );
+      await this.core.insertRunBinding(value);
+    });
   }
-  async insertScriptContext(): Promise<void> {
-    throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+  async insertScriptContext(value: ScriptGenerationContext): Promise<void> {
+    if (!this.session.coordinated)
+      throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
+    await this.session.transaction(async () => {
+      this.session.requireCoordination();
+      validateGenerationIdentity({
+        generationRequestId: value.generationRequestId,
+        contentHash: value.requestHash,
+      });
+      if (!(await this.executions.getRun(value.pipelineRunId)))
+        throw new AffiliateRepositoryError(
+          'PIPELINE_RUN_NOT_FOUND',
+          'pipelineRunId',
+        );
+      const binding = await this.getRunBinding(value.pipelineRunId);
+      if ((binding?.briefingHash ?? null) !== value.briefingHash)
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_SCRIPT_CONTEXT_CONFLICT',
+          'generationRequestId',
+        );
+      await this.core.insertScriptContext(value);
+    });
   }
   async replay<T>(
     ...args: Parameters<AffiliateRepository['replay']>

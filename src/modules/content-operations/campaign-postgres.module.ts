@@ -23,6 +23,8 @@ import type { NativeCampaignWorkflow } from './application/native-campaign-workf
 import { CampaignError } from './domain/campaign.js';
 import { OperationsError } from './domain/operations-contracts.js';
 import type { AffiliateRunContext } from '../affiliate/application/ports/affiliate-run-context.port.js';
+import { AFFILIATE_RUN_CONTEXT } from '../affiliate/application/ports/affiliate-run-context.port.js';
+import { AffiliateModule } from '../affiliate/affiliate.module.js';
 import {
   CONTENT_OPERATIONS,
   CONTENT_OPERATIONS_STORE,
@@ -36,6 +38,7 @@ export interface CampaignPostgresOptions {
     validate(request: Record<string, unknown>): Promise<void>;
   };
   affiliate?: Pick<AffiliateRunContext<boolean>, 'resolveRunBriefing'>;
+  coordinateAffiliate?: boolean;
 }
 @Module({})
 class CampaignPostgresPilotModule {}
@@ -63,7 +66,12 @@ export function campaignPostgresModule(
   };
   return {
     module: CampaignPostgresPilotModule,
-    imports: [PostgresModule.register(config)],
+    imports: [
+      PostgresModule.register(config),
+      ...(options.coordinateAffiliate
+        ? [AffiliateModule.postgres(config, { coordinateCampaign: true })]
+        : []),
+    ],
     controllers: [ContentOperationsController, CampaignController],
     providers: [
       {
@@ -86,11 +94,21 @@ export function campaignPostgresModule(
       },
       {
         provide: ContentOperationsService,
-        inject: [PostgresOperationsPersistence, PostgresProjectPersistence],
+        inject: [
+          PostgresOperationsPersistence,
+          PostgresProjectPersistence,
+          ...(options.coordinateAffiliate ? [AFFILIATE_RUN_CONTEXT] : []),
+        ],
         useFactory: (
           ops: PostgresOperationsPersistence,
           projects: PostgresProjectPersistence,
-        ) => new ContentOperationsService<true>(ops, projects, affiliate),
+          context?: AffiliateRunContext<true>,
+        ) =>
+          new ContentOperationsService<true>(
+            ops,
+            projects,
+            context ?? affiliate,
+          ),
       },
       { provide: CONTENT_OPERATIONS, useExisting: ContentOperationsService },
       {
