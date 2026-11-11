@@ -202,7 +202,8 @@ direitos comerciais, aprovação humana, auditoria e recuperação.
 ## Saída padrão do Codex
 
 ``` text
-STATUS: DONE | BLOCKED | FAILED
+STATUS: DONE | PARTIAL | BLOCKED | FAILED
+PARENT_STATUS: <estado do tópico-pai, conforme política abaixo>
 ALTERADO:
 - <arquivos>
 
@@ -227,3 +228,109 @@ Estas regras complementam todas as regras anteriores e orientam a entrega em and
 8. **Transparência:** não declarar DONE sem comprovar funcionamento; informar apenas bloqueios reais e comprovados, com evidência mínima, sem fabricar resultados ou aprovações.
 9. **Continuidade:** concluir a entrega em andamento antes de propor melhorias ou demandas futuras. Falhas internas necessárias ao aceite pertencem à entrega atual.
 10. **Fluxo de trabalho:** ChatGPT atua como Planner/Revisor e Codex como Executor. Usar um PR por entrega funcional, incluindo correções e regras pertinentes, sem merge automático.
+
+## Política de tópicos-pai — ChatGPT e Codex
+
+Aplica-se a CORE e às frentes A, B e C, preservando a matriz de
+responsabilidade, o isolamento e as proteções operacionais deste documento.
+
+### T01 — Planejamento pelo ChatGPT
+
+Antes de preparar um prompt de implementação, o ChatGPT deve:
+
+1. Identificar a frente responsável e consultar a governança vigente quando
+   tiver acesso ao repositório.
+2. Considerar o último tópico concluído, os PRs integrados e pendentes e as
+   dependências entre frentes.
+3. Definir um único tópico-pai, seus subtópicos executáveis e critérios
+   verificáveis de conclusão.
+4. Verificar o que já foi implementado para não recriar funcionalidades;
+   uma branch antiga não representa necessariamente a `main` atual.
+
+### T02 — Identificação antes do prompt
+
+Todo prompt apresentado pelo ChatGPT deve ser precedido de uma identificação
+breve, fora do prompt técnico: frente responsável, objetivo da implementação,
+ferramenta recomendada, modelo LLM recomendado e esforço de raciocínio.
+
+### T03 — Um prompt por tópico-pai
+
+**UM PROMPT = UM TÓPICO-PAI.** O prompt deve conter os subtópicos necessários
+à entrega completa. Não gerar um prompt separado por subtópico nem fragmentar
+uma entrega funcional em PRs artificiais. Todos os subtópicos permanecem na
+mesma branch e no mesmo PR; commits intermediários úteis são permitidos no
+fluxo autorizado pela seção Git.
+
+### T04 — Ciclo completo de implementação
+
+O Codex deve verificar baseline e checkout/worktree, identificar e ordenar os
+subtópicos, implementá-los, executar testes direcionados, corrigir falhas
+introduzidas, validar contratos e integração e realizar as verificações
+finais exigidas. Preparar commits e abrir o único PR somente no fechamento
+autorizado pela task ou pelo fluxo Git existente, após cumprir e validar
+todos os critérios obrigatórios do tópico-pai. Não executar merge.
+
+Em resultado PARTIAL/BLOCKED, preservar o trabalho válido na mesma branch.
+Após resolver o impedimento, retomar o mesmo tópico-pai e o mesmo PR, se já
+existir, sem abrir outro. Não abrir PR enquanto faltarem critérios
+obrigatórios. Tarefas exclusivamente documentais exigem validação documental,
+sem testes de aplicação alheios ao escopo.
+
+### T05 — Separação entre frentes
+
+Cada frente mantém seus próprios tópicos-pai, subtópicos, branches,
+worktrees, arquivos autorizados, testes e PRs. O ChatGPT deve distribuir
+implementações independentes entre as frentes para permitir execução
+paralela, respeitando a matriz de responsabilidade vigente. Não atribuir
+simultaneamente à mesma frente duas demandas que exijam tópicos-pai
+independentes.
+
+Declarar dependências entre frentes; não modificar implicitamente seu escopo.
+Permanece proibida a edição simultânea do mesmo arquivo por frentes distintas,
+inclusive em worktrees diferentes. Divergências de classificação de prompts
+devem ser registradas para decisão explícita, sem redistribuir ownership.
+
+### T06 — Controle de progresso
+
+Todo retorno de implementação deve complementar a saída padrão com:
+
+- Frente e tópico-pai.
+- Último tópico concluído, tópico atual e próximo tópico; informar quando
+  não houver próximo tópico definido/autorizado, sem antecipar sua execução.
+- Total de subtópicos, concluídos, parciais, pendentes e quantidade faltante
+  (parciais + pendentes).
+- Diretório de trabalho, branch, HEAD, status dos testes, estado do PR e
+  bloqueios remanescentes.
+
+Contar somente subtópicos realmente identificados e validados. O total deve
+corresponder à soma de concluídos, parciais e pendentes, sem percentuais
+inventados. Informar o estado real do PR, incluindo Draft quando aplicável.
+
+### T07 — Critérios de conclusão e evidência
+
+- **DONE:** todos os critérios obrigatórios foram cumpridos e validados.
+- **PARTIAL:** há implementação válida, mas faltam requisitos ou validações.
+- **BLOCKED:** um impedimento comprovado inviabiliza a continuação.
+- **READY_FOR_PR:** tópico-pai completo e validado, pronto para abrir o PR
+  quando seu fechamento estiver autorizado.
+- **PR_OPEN:** PR do tópico-pai criado; revisão e merge pertencem ao usuário.
+
+READY_FOR_PR e PR_OPEN descrevem a fase do tópico-pai em PARENT_STATUS;
+STATUS descreve o resultado da execução. PR aberto não significa integração
+nem autoriza cutover. FAILED permanece disponível para falha de execução,
+sem substituir a classificação de requisitos incompletos ou bloqueios.
+
+Diferenciar falhas introduzidas de falhas globais comprovadamente
+preexistentes. Não corrigir silenciosamente arquivos fora da allowlist nem
+declarar testes globais PASS quando houver falhas. Registrar falhas externas
+com evidência mínima e frente responsável, encaminhando-as pelo fluxo de
+coordenação autorizado, sem ampliar automaticamente a task. Distinguir
+testes focados de validação global e validação offline de execução real.
+
+### T08 — Revisão, merge e continuidade
+
+Mantêm-se um PR por tópico-pai, revisão manual pelo operador e
+`USER_ONLY_MERGE`, sem merge automático. Correções solicitadas na revisão
+permanecem na mesma branch/PR. Iniciar novo tópico-pai somente após fechamento
+do anterior ou decisão explícita de continuidade. Nenhuma dessas etapas
+dispensa as autorizações operacionais da seção correspondente.
