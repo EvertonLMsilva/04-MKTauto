@@ -1,3 +1,29 @@
+import {
+  type DynamicModule,
+  type ExecutionContext,
+  ConflictException,
+} from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
+import {
+  PostgresModule,
+  PostgresDatabase,
+  type PostgresConfig,
+} from '../../infrastructure/database/postgres/index.js';
+import { PostgresProjectPersistence } from '../project/infrastructure/postgres-project.persistence.js';
+import { PostgresAffiliatePersistence } from './infrastructure/postgres-affiliate.persistence.js';
+import {
+  PostgresAffiliateSessionFactory,
+  type AffiliatePostgresReaders,
+} from './infrastructure/postgres-affiliate.session.js';
+import { PostgresDiscoveryPersistence } from './infrastructure/postgres-discovery.persistence.js';
+import type { DiscoverySourceFactory } from './application/ports/discovery.port.js';
+import type { ShopeeAffiliatePort } from './application/ports/shopee-affiliate.port.js';
+
+export interface AffiliatePostgresOptions {
+  readers: AffiliatePostgresReaders;
+  discovery?: DiscoverySourceFactory;
+  shopee?: ShopeeAffiliatePort;
+}
 import { PROJECT_SNAPSHOT_READER } from '../project/application/ports/project-snapshot-reader.port.js';
 import type { ProjectSnapshotReader } from '../project/application/ports/project-snapshot-reader.port.js';
 import { Module } from '@nestjs/common';
@@ -115,4 +141,185 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     },
   ],
 })
-export class AffiliateModule {}
+export class AffiliateModule {
+  /** Explicit isolated composition; never loads SQLite providers or selects a LIVE provider. */
+  static postgres(
+    config: PostgresConfig,
+    options: AffiliatePostgresOptions,
+  ): DynamicModule {
+    const unavailable = async (): Promise<never> => {
+      throw new Error('SHOPEE_POSTGRES_OFFLINE_PROVIDER_REQUIRED');
+    };
+    const shopee: ShopeeAffiliatePort = options.shopee ?? {
+      queryOffers: unavailable,
+      generateLink: unavailable,
+    };
+    const discovery: DiscoverySourceFactory = options.discovery ?? {
+      open: async () => {
+        throw new Error('EXTERNAL_CATALOG_POSTGRES_SOURCE_UNAVAILABLE');
+      },
+    };
+    return {
+      module: PostgresAffiliatePilotModule,
+      imports: [PostgresModule.register(config)],
+      controllers: [
+        AffiliateController,
+        AffiliateRunContextController,
+        DiscoveryController,
+        FeedQualificationController,
+        QualificationPreviewController,
+      ],
+      providers: [
+        {
+          provide: PROJECT_SNAPSHOT_READER,
+          inject: [PostgresDatabase],
+          useFactory: (database: PostgresDatabase) =>
+            new PostgresProjectPersistence(database),
+        },
+        {
+          provide: PostgresAffiliateSessionFactory,
+          inject: [PostgresDatabase],
+          useFactory: (database: PostgresDatabase) =>
+            new PostgresAffiliateSessionFactory(database, options.readers),
+        },
+        {
+          provide: PostgresAffiliatePersistence,
+          inject: [PostgresAffiliateSessionFactory],
+          useFactory: (sessions: PostgresAffiliateSessionFactory) =>
+            new PostgresAffiliatePersistence(sessions),
+        },
+        {
+          provide: AFFILIATE_REPOSITORY,
+          useExisting: PostgresAffiliatePersistence,
+        },
+        {
+          provide: AFFILIATE_RUN_CONTEXT_FACTORY,
+          useExisting: PostgresAffiliatePersistence,
+        },
+        {
+          provide: ShopeeCatalogCommit,
+          inject: [PostgresAffiliatePersistence],
+          useFactory: (p: PostgresAffiliatePersistence) =>
+            new ShopeeCatalogCommit<true>(p),
+        },
+        {
+          provide: AffiliateService,
+          inject: [
+            PostgresAffiliatePersistence,
+            PROJECT_SNAPSHOT_READER,
+            ShopeeCatalogCommit,
+          ],
+          useFactory: (
+            p: PostgresAffiliatePersistence,
+            projects: ProjectSnapshotReader,
+            commit: ShopeeCatalogCommit<true>,
+          ) => new AffiliateService<true>(p, projects, commit),
+        },
+        {
+          provide: AffiliateRunContextService,
+          inject: [PostgresAffiliatePersistence],
+          useFactory: (p: PostgresAffiliatePersistence) =>
+            new AffiliateRunContextService<true>(p),
+        },
+        {
+          provide: AFFILIATE_RUN_CONTEXT,
+          useExisting: AffiliateRunContextService,
+        },
+        {
+          provide: PostgresDiscoveryPersistence,
+          inject: [PostgresAffiliateSessionFactory],
+          useFactory: (sessions: PostgresAffiliateSessionFactory) =>
+            new PostgresDiscoveryPersistence(sessions),
+        },
+        {
+          provide: DISCOVERY_REPOSITORY,
+          useExisting: PostgresDiscoveryPersistence,
+        },
+        { provide: DISCOVERY_SOURCE, useValue: discovery },
+        {
+          provide: AffiliateDiscoveryService,
+          inject: [
+            PostgresDiscoveryPersistence,
+            DISCOVERY_SOURCE,
+            PROJECT_SNAPSHOT_READER,
+          ],
+          useFactory: (
+            p: PostgresDiscoveryPersistence,
+            source: DiscoverySourceFactory,
+            projects: ProjectSnapshotReader,
+          ) => new AffiliateDiscoveryService<true>(p, source, projects),
+        },
+        { provide: SHOPEE_AFFILIATE, useValue: shopee },
+        ShopeeCatalogService,
+        {
+          provide: ShopeeDynamicJournal,
+          inject: [PostgresAffiliateSessionFactory],
+          useFactory: (sessions: PostgresAffiliateSessionFactory) =>
+            new ShopeeDynamicJournal<true>(sessions),
+        },
+        {
+          provide: ShopeeDynamicService,
+          inject: [
+            ShopeeCatalogService,
+            AffiliateService,
+            ShopeeDynamicJournal,
+            PROJECT_SNAPSHOT_READER,
+          ],
+          useFactory: (
+            catalog: ShopeeCatalogService,
+            affiliate: AffiliateService<true>,
+            journal: ShopeeDynamicJournal<true>,
+            projects: ProjectSnapshotReader,
+          ) =>
+            new ShopeeDynamicService<true>(
+              catalog,
+              affiliate,
+              journal,
+              projects,
+            ),
+        },
+        FeedQualificationService,
+        {
+          provide: QualificationPreviewService,
+          inject: [
+            FeedQualificationService,
+            PostgresAffiliatePersistence,
+            PROJECT_SNAPSHOT_READER,
+          ],
+          useFactory: (
+            feeds: FeedQualificationService,
+            p: PostgresAffiliatePersistence,
+            projects: ProjectSnapshotReader,
+          ) => new QualificationPreviewService(feeds, p, projects),
+        },
+        {
+          provide: APP_GUARD,
+          useValue: {
+            canActivate: (context: ExecutionContext) => {
+              if (
+                context.getClass() === AffiliateRunContextController &&
+                context.getHandler().name === 'bindRun'
+              )
+                throw new ConflictException({
+                  code: 'AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED',
+                  field: 'pipelineRunId',
+                });
+              return true;
+            },
+          },
+        },
+      ],
+      exports: [
+        AffiliateService,
+        AFFILIATE_REPOSITORY,
+        AFFILIATE_RUN_CONTEXT,
+        AffiliateDiscoveryService,
+        ShopeeCatalogService,
+        ShopeeDynamicService,
+        SHOPEE_AFFILIATE,
+      ],
+    };
+  }
+}
+@Module({})
+class PostgresAffiliatePilotModule {}
