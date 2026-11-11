@@ -33,6 +33,9 @@ export class FinanceController {
   @Get('usage') usage() {
     return this.respond(() => this.finance.getGlobalUsage());
   }
+  @Get('readiness') readiness() {
+    return this.respond(() => this.finance.getGlobalReadiness());
+  }
   @Get('campaigns/:id/usage') campaign(@Param('id') id: string) {
     return this.respond(() => this.finance.getUsage(id));
   }
@@ -60,7 +63,11 @@ export class FinanceController {
       if (error instanceof Error && 'code' in error) {
         const code = String(error.code),
           field = 'field' in error ? String(error.field) : undefined;
-        if (/PERSISTENCE_FAILED|INVALID_PERSISTED|SCHEMA_REQUIRED/.test(code))
+        if (
+          /PERSISTENCE_FAILED|INVALID_PERSISTED|SCHEMA_REQUIRED|FINANCE_POLICY_REQUIRED/.test(
+            code,
+          )
+        )
           throw new InternalServerErrorException({ code, field });
         if (/NOT_FOUND/.test(code))
           throw new NotFoundException({ code, field });
