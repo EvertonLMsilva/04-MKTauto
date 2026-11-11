@@ -57,6 +57,54 @@ type Discovery = Awaited<ReturnType<ShopeeCatalogService['discover']>>;
 // Public application entry point for Operations. configure once; runCycle receives
 // only project + occurrence identity. No timers, publishing or financial effects.
 export class ShopeeDynamicService {
+  // A lease spans the bounded discovery/link budget (at most 150s). A stopped
+  // worker may only be recovered after expiry, never while it still owns work.
+  async runScheduledCycle(
+    projectId: string,
+    cycleId: string,
+    now = Date.now(),
+  ) {
+    affiliateIdentifier(projectId, 'projectId');
+    affiliateIdentifier(cycleId, 'cycleId');
+    const key = affiliateHash({ projectId, cycleId });
+    const replay = this.journal.get<ShopeeDynamicResult>(
+      'CYCLE',
+      key,
+      'RESULT',
+    );
+    if (replay) return immutable(replay);
+    const previous = this.journal.get<{
+      generation: number;
+      expiresAt: number;
+    }>('SCHEDULER_LEASE', key);
+    if (
+      previous &&
+      previous.expiresAt > now &&
+      !this.journal.get('SCHEDULER_RELEASE', key, String(previous.generation))
+    )
+      throw new Error('SHOPEE_CYCLE_BUSY');
+    const generation = (previous?.generation ?? 0) + 1;
+    if (
+      !this.journal.put('SCHEDULER_LEASE', key, String(generation), {
+        generation,
+        expiresAt: now + 300000,
+      })
+    )
+      throw new Error('SHOPEE_CYCLE_BUSY');
+    try {
+      const claim = this.journal.get('CYCLE', key, 'CLAIM');
+      if (claim) {
+        if (!this.journal.get('CYCLE', key, 'DISCOVERY'))
+          throw new Error('SHOPEE_DISCOVERY_RECOVERY_UNAVAILABLE');
+        return await this.recoverCycle(projectId, cycleId);
+      }
+      return await this.runCycle(projectId, cycleId);
+    } finally {
+      this.journal.put('SCHEDULER_RELEASE', key, String(generation), {
+        generation,
+      });
+    }
+  }
   constructor(
     private readonly catalog: ShopeeCatalogService,
     private readonly affiliate: AffiliateService,

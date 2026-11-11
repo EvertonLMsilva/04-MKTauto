@@ -34,6 +34,13 @@ type QcRequest = Request & { [QC_REVIEWER_CONTEXT]?: unknown };
 
 @Controller('operations')
 export class OperationsController {
+  @Post('campaigns/shopee-dynamic')
+  @UseGuards(LocalQcGuard)
+  startDynamicCatalog(@Body() value: unknown, @Req() request: QcRequest) {
+    return this.respond(() =>
+      this.operations.startDynamicCatalog(value, request[QC_REVIEWER_CONTEXT]),
+    );
+  }
   constructor(
     @Inject(OperationsService) private readonly operations: OperationsService,
     @Optional()
