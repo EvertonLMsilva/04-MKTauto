@@ -6,7 +6,10 @@ import {
   validateAffiliateCampaign,
   affiliateIdentifier,
 } from '../affiliate/domain/affiliate-contracts.js';
-import { localRequestInput } from '../content-operations/application/native-campaign-workflow.js';
+import {
+  localRequestInput,
+  localSchedule,
+} from '../content-operations/application/native-campaign-workflow.js';
 import { assertMediaProcessingRights } from '../media/domain/media-processing-rights.js';
 import type { LocalImageSource } from '../media/application/local-flow.port.js';
 
@@ -85,6 +88,25 @@ export function controlledFakeInput(value: unknown) {
     { mediaRef: image.mediaReference, contentHash: image.contentHash },
     null,
   );
+  return r;
+}
+/** Separate opt-in command; the single-occurrence DTO never accepts recurrence. */
+export function controlledFakeRecurrenceInput(value: unknown) {
+  const input = confirmed(value, 'confirmation,mode,request');
+  const r = exact(
+    input.request,
+    'campaignId,campaignRevision,localImage,projectVersion,recurrence,requestId,requestedAt',
+  );
+  exact(r.recurrence, 'enabled,time,timeZone');
+  localRequestInput(r);
+  if (!localSchedule(r))
+    throw new CampaignError('FAKE_RECURRENCE_SCHEDULE_REQUIRED');
+  const { recurrence: _recurrence, ...single } = r;
+  controlledFakeInput({
+    mode: input.mode,
+    confirmation: input.confirmation,
+    request: single,
+  });
   return r;
 }
 /** Optimistic concurrency uses the official execution version. An ambiguous

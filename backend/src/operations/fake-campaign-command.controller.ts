@@ -67,6 +67,14 @@ export class FakeCampaignCommandController {
       this.commands.detail(id, req[QC_REVIEWER_CONTEXT]),
     );
   }
+  @Post('recurrences/fake') configureRecurrence(
+    @Body() value: unknown,
+    @Req() req: any,
+  ) {
+    return this.respond(() =>
+      this.commands.configureRecurrence(value, req[QC_REVIEWER_CONTEXT]),
+    );
+  }
   @Post('executions/:id/resume') resume(
     @Param('id') id: string,
     @Body() value: unknown,

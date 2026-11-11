@@ -21,10 +21,45 @@ import { EDITORIAL_PROVIDER } from '../content/application/editorial-provider.po
 import { FakeEditorialProvider } from '../content/infrastructure/fake-editorial.provider.js';
 import { FakeCampaignCommandService } from './fake-campaign-command.service.js';
 import { LocalEvidenceStorage } from '../media/infrastructure/local-evidence-storage.js';
+import { FinanceService } from '../finance/application/finance.service.js';
+import { CampaignRepository } from '../content-operations/infrastructure/campaign.repository.js';
+import { createFakeExecutionPolicy } from '../content-operations/domain/fake-execution-policy.js';
 
 // Real QC credentials are never read. This file creates a disposable identity,
 // official schema, repositories, Affiliate service and native workflow.
 const route = '/operations/campaign-commands';
+function recurringCommand() {
+  const single = command();
+  return {
+    ...single,
+    request: {
+      ...single.request,
+      recurrence: {
+        enabled: true,
+        time: '09:00',
+        timeZone: 'America/Sao_Paulo',
+      },
+    },
+  };
+}
+function assertNoReservations() {
+  const db = new DatabaseSync(fixture.database, { readOnly: true });
+  try {
+    for (const table of [
+      'global_paid_operations',
+      'instagram_publication_reservations',
+      'multi_network_publication_reservations',
+      'social_publication_operations',
+    ])
+      expect(
+        db.prepare(`SELECT count(*) AS n FROM ${table}`).get()?.n,
+        table,
+      ).toBe(0);
+  } finally {
+    db.close();
+  }
+  expect(noExternal).not.toHaveBeenCalled();
+}
 let app: INestApplication, fixture: ReturnType<typeof p2EditorialFixture>;
 let secret: string;
 let imageHash: string;
@@ -190,6 +225,323 @@ test('refuses a missing session and never creates an execution', async () => {
     .expect('Cache-Control', 'no-store');
   expect(app.get(CampaignAdministration).list()).toHaveLength(0);
   expect(noExternal).not.toHaveBeenCalled();
+});
+
+test('controlled daily recurrence uses the existing automatic worker across D1/D2, restart and LIVE flag changes', async () => {
+  const dailyRoute = `${route}/recurrences/fake`;
+  const input = recurringCommand();
+  await local(request(app.getHttpServer()).post(dailyRoute))
+    .send(input)
+    .expect(401);
+  const unauthorized = await login('operator_other');
+  await local(unauthorized.browser.post(dailyRoute))
+    .set('x-qc-csrf', unauthorized.csrf)
+    .send(input)
+    .expect(403);
+  let session = await login();
+  await local(session.browser.post(dailyRoute)).send(input).expect(403);
+  await local(session.browser.post(dailyRoute))
+    .set('x-qc-csrf', session.csrf)
+    .send({ ...input, confirmation: false })
+    .expect(400);
+  const submit = () =>
+    local(session.browser.post(dailyRoute))
+      .set('x-qc-csrf', session.csrf)
+      .send(input)
+      .expect(201);
+  const [first, duplicate] = await Promise.all([submit(), submit()]);
+  expect(duplicate.body).toEqual(first.body);
+  expect(first.body.recurrence).toMatchObject({ enabled: true, revision: 1 });
+  const d1 = first.body.execution.executionId;
+  let clock = '2026-11-10T11:59:59.000Z';
+  let worker = new CampaignAdministration(
+    fixture.database,
+    app.get(NativeCampaignWorkflow),
+    true,
+    () => clock,
+  );
+  try {
+    worker.onModuleInit();
+    clock = '2026-11-10T12:00:00.000Z';
+    await vi.waitFor(
+      () => expect(worker.get(d1).status).toBe('WAITING_INPUT'),
+      { timeout: 5000 },
+    );
+    expect(worker.get(d1).finalization.pending?.code).toBe(
+      'LOCAL_TTS_CONFIGURATION_REQUIRED',
+    );
+    const policy1 = worker.controlledFake(d1).policy;
+    await expect(
+      app.get(CampaignAdministration).startLocal(input.request),
+    ).rejects.toThrow('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    await expect(
+      app.get(CampaignAdministration).startLocal(command().request),
+    ).rejects.toThrow('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    const { fakeExecutionPolicy: _policy, ...unprotected } =
+      worker.history(d1)[0].evidence;
+    await expect(
+      app.get(CampaignAdministration).schedule({
+        ...unprotected,
+        runId: 'uncontrolled_override',
+      }),
+    ).rejects.toThrow('CONTROLLED_FAKE_COMMAND_ENDPOINT_REQUIRED');
+    await worker.onModuleDestroy();
+    await app.close();
+    await startApp();
+    session = await login();
+    vi.stubEnv('INSTAGRAM_PUBLICATION_MODE', 'live');
+    vi.stubEnv('FACEBOOK_PUBLICATION_MODE', 'live');
+    clock = '2026-11-11T11:59:59.000Z';
+    worker = new CampaignAdministration(
+      fixture.database,
+      app.get(NativeCampaignWorkflow),
+      true,
+      () => clock,
+    );
+    worker.onModuleInit();
+    expect(worker.list()).toHaveLength(1);
+    clock = '2026-11-11T12:00:00.000Z';
+    // No D2 command or manual tick: the official one-second worker creates it.
+    await vi.waitFor(
+      () => {
+        expect(worker.list()).toHaveLength(2);
+        expect(worker.list().every((e) => e.status === 'WAITING_INPUT')).toBe(
+          true,
+        );
+      },
+      { timeout: 5000 },
+    );
+    const d2 = worker.list().find((e) => e.execution_id !== d1)!;
+    expect(d2.production_date).toBe('2026-11-11');
+    expect(d2.run_id).not.toBe(first.body.execution.runId);
+    expect(worker.controlledFake(d1).policy).toEqual(policy1);
+    const policy2 = worker.controlledFake(d2.execution_id).policy;
+    expect(policy2).toMatchObject({
+      mode: 'FAKE',
+      providers: 'LOCAL_ONLY',
+      publication: 'DISABLED',
+      actorId: policy1.actorId,
+    });
+    expect(policy2.commandId).not.toBe(policy1.commandId);
+    expect(worker.history(d2.execution_id)[0].evidence).not.toHaveProperty(
+      'voiceTrackId',
+    );
+    expect(worker.history(d2.execution_id)[0].evidence).not.toHaveProperty(
+      'publication',
+    );
+    await Promise.all([worker.tick(), app.get(CampaignAdministration).tick()]);
+    expect(worker.list()).toHaveLength(2);
+    for (const e of worker.list()) {
+      expect(() => worker.publicationContext(e.execution_id)).toThrow(
+        'FAKE_EXECUTION_PUBLICATION_DISABLED',
+      );
+      expect(
+        worker
+          .history(e.execution_id)
+          .filter(
+            (h) =>
+              h.event_type === 'STEP_DONE' && h.evidence.step === 'EDITORIAL',
+          ),
+      ).toHaveLength(1);
+    }
+    expect((await submit()).body.recurrence.revision).toBe(1);
+    const stop = {
+      ...input,
+      request: {
+        ...input.request,
+        requestId: 'controlled_daily_stop',
+        recurrence: { ...input.request.recurrence, enabled: false },
+      },
+    };
+    const stopped = await local(session.browser.post(dailyRoute))
+      .set('x-qc-csrf', session.csrf)
+      .send(stop)
+      .expect(201);
+    expect(stopped.body.recurrence.enabled).toBe(false);
+    expect((await submit()).body.recurrence.enabled).toBe(false);
+    clock = '2026-11-12T12:00:00.000Z';
+    await worker.tick();
+    expect(worker.list()).toHaveLength(2);
+    const reenable = {
+      ...input,
+      request: { ...input.request, requestId: 'controlled_daily_reenable' },
+    };
+    const reenabled = await local(session.browser.post(dailyRoute))
+      .set('x-qc-csrf', session.csrf)
+      .send(reenable)
+      .expect(201);
+    expect(reenabled.body.recurrence).toMatchObject({
+      enabled: true,
+      revision: 3,
+    });
+    await worker.tick();
+    expect(worker.list()).toHaveLength(3);
+    expect(worker.controlledFake(d1).policy).toEqual(policy1);
+    expect(worker.controlledFake(d2.execution_id).policy).toEqual(policy2);
+    assertNoReservations();
+  } finally {
+    await worker.onModuleDestroy();
+  }
+}, 15000);
+
+test.each([
+  ['GLOBAL_DAILY_BUDGET_EXCEEDED', '1', '0'],
+  ['GLOBAL_MONTHLY_BUDGET_EXCEEDED', '0', '20'],
+])(
+  'recurring D1/D2 retain the official %s gate without reservations',
+  async (code, dailyUsd, monthlyUsd) => {
+    const { browser, csrf } = await login();
+    await local(browser.post(`${route}/recurrences/fake`))
+      .set('x-qc-csrf', csrf)
+      .send(recurringCommand())
+      .expect(201);
+    const finance = app.get(FinanceService),
+      usage = finance.getGlobalUsage();
+    vi.spyOn(finance, 'getGlobalUsage').mockReturnValue({
+      ...usage,
+      dailyUsd,
+      monthlyUsd,
+    });
+    const briefing = vi.spyOn(app.get(AffiliateService), 'createBriefing');
+    let clock = '2026-11-10T12:00:00.000Z';
+    const worker = new CampaignAdministration(
+      fixture.database,
+      app.get(NativeCampaignWorkflow),
+      false,
+      () => clock,
+    );
+    try {
+      await worker.tick();
+      clock = '2026-11-11T12:00:00.000Z';
+      await worker.tick();
+      expect(worker.list()).toHaveLength(2);
+      for (const e of worker.list()) {
+        expect(e.finalization.pending?.code).toBe(code);
+        expect(worker.controlledFake(e.execution_id).policy.mode).toBe('FAKE');
+      }
+      expect(briefing).not.toHaveBeenCalled();
+      assertNoReservations();
+    } finally {
+      await worker.onModuleDestroy();
+    }
+  },
+);
+
+test('recurrence revalidates campaign and rights; an ineligible campaign can still be explicitly stopped', async () => {
+  const { browser, csrf } = await login(),
+    input = recurringCommand();
+  const accepted = await local(browser.post(`${route}/recurrences/fake`))
+    .set('x-qc-csrf', csrf)
+    .send(input)
+    .expect(201);
+  const admin = app.get(CampaignAdministration),
+    workflow = app.get(NativeCampaignWorkflow);
+  const seed = admin.history(accepted.body.execution.executionId)[0].evidence;
+  const localImage = structuredClone(seed.localImage) as ReturnType<
+    typeof command
+  >['request']['localImage'];
+  localImage.rights.evidence[0].mediaAuthorization.processing = 'DENIED';
+  const denied: Record<string, unknown> = { ...seed, localImage };
+  denied.fakeExecutionPolicy = createFakeExecutionPolicy(
+    denied,
+    'rights_recheck',
+    'operator_fake',
+  );
+  const briefing = vi.spyOn(app.get(AffiliateService), 'createBriefing');
+  await expect(
+    workflow.recurringRequest(denied, '2026-11-11T12:00:00.000Z'),
+  ).rejects.toThrow('MEDIA_PROCESSING_RIGHTS_UNCONFIRMED');
+  vi.spyOn(app.get(AffiliateService), 'getCampaign').mockResolvedValue(null);
+  await expect(
+    workflow.recurringRequest(seed, '2026-11-11T12:00:00.000Z'),
+  ).rejects.toThrow('FAKE_EXECUTION_IDENTITY_MISMATCH');
+  const stop = {
+    ...input,
+    request: {
+      ...input.request,
+      requestId: 'stop_ineligible',
+      recurrence: { ...input.request.recurrence, enabled: false },
+    },
+  };
+  expect(
+    (
+      await local(browser.post(`${route}/recurrences/fake`))
+        .set('x-qc-csrf', csrf)
+        .send(stop)
+        .expect(201)
+    ).body.recurrence.enabled,
+  ).toBe(false);
+  expect(briefing).not.toHaveBeenCalled();
+  assertNoReservations();
+});
+
+test('recurring seed claim survives restart, expires once and resumes only at the confirmed current version', async () => {
+  let session = await login();
+  const accepted = await local(
+    session.browser.post(`${route}/recurrences/fake`),
+  )
+    .set('x-qc-csrf', session.csrf)
+    .send(recurringCommand())
+    .expect(201);
+  const id = accepted.body.execution.executionId;
+  const db = new DatabaseSync(fixture.database),
+    repository = new CampaignRepository(db);
+  let clock = '2026-11-10T12:00:00.000Z';
+  const claimed = repository.claim(id, clock, 1000)!;
+  await app.close();
+  await startApp();
+  session = await login();
+  vi.stubEnv('INSTAGRAM_PUBLICATION_MODE', 'live');
+  const worker = new CampaignAdministration(
+    fixture.database,
+    app.get(NativeCampaignWorkflow),
+    false,
+    () => clock,
+  );
+  const peer = new CampaignAdministration(
+    fixture.database,
+    app.get(NativeCampaignWorkflow),
+    false,
+    () => clock,
+  );
+  try {
+    await worker.tick();
+    expect(worker.get(id).status).toBe('RUNNING');
+    clock = '2026-11-10T12:00:02.000Z';
+    await Promise.all([worker.tick(), peer.tick()]);
+    expect(worker.get(id).status).toBe('WAITING_RECONCILIATION');
+    expect(
+      worker.history(id).filter((e) => e.event_type === 'CLAIM_EXPIRED'),
+    ).toHaveLength(1);
+    expect(() =>
+      repository.ownedEvent(id, claimed.claim_token!, clock, 'STEP_DONE', {}),
+    ).toThrow('CLAIM_LOST');
+    const body = {
+      mode: 'FAKE',
+      confirmation: true,
+      expectedVersion: worker.get(id).version,
+    };
+    const resume = () =>
+      local(session.browser.post(`${route}/executions/${id}/resume`))
+        .set('x-qc-csrf', session.csrf)
+        .send(body);
+    expect(
+      (await Promise.all([resume(), resume()]))
+        .map((r) => r.status)
+        .sort((a, b) => a - b),
+    ).toEqual([201, 409]);
+    await worker.tick();
+    expect(worker.get(id).finalization.pending?.code).toBe(
+      'LOCAL_TTS_CONFIGURATION_REQUIRED',
+    );
+    expect(worker.controlledFake(id).policy).toEqual(accepted.body.policy);
+    expect(worker.list()).toHaveLength(1);
+    assertNoReservations();
+  } finally {
+    await worker.onModuleDestroy();
+    await peer.onModuleDestroy();
+    db.close();
+  }
 });
 test('requires the legitimate QC role and a separate explicit command grant', async () => {
   await local(request(app.getHttpServer()).post('/operations/session'))
@@ -489,4 +841,20 @@ test('confirmed recovery uses the persisted policy and version; a stale retry ca
     service.history(id).filter((event) => event.event_type === 'RESUMED'),
   ).toHaveLength(1);
   expect(noExternal).not.toHaveBeenCalled();
+});
+
+test('a controlled recurrence cannot adopt a legacy unprotected occurrence', async () => {
+  const admin = app.get(CampaignAdministration);
+  const legacy = await admin.startLocal(command().request);
+  const { browser, csrf } = await login();
+  const response = await local(browser.post(`${route}/recurrences/fake`))
+    .set('x-qc-csrf', csrf)
+    .send(recurringCommand())
+    .expect(400);
+  expect(response.body.code).toBe('FAKE_EXECUTION_POLICY_REQUIRED');
+  expect(admin.list()).toHaveLength(1);
+  expect(admin.history(legacy.execution_id)[0].evidence).not.toHaveProperty(
+    'fakeExecutionPolicy',
+  );
+  assertNoReservations();
 });

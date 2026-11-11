@@ -6,6 +6,7 @@ import {
   instant,
 } from './campaign.js';
 import type { CampaignExecution } from './campaign.js';
+import { dailySchedule } from './campaign-schedule.js';
 
 /** Server-owned namespace: generated only by the controlled command, never
  * inferred for ordinary legacy runs. The unique run_id binds the policy to
@@ -34,6 +35,7 @@ function requestHash(request: Record<string, unknown>) {
   return createHash('sha256').update(canonicalJson(body)).digest('hex');
 }
 function safeShape(request: Record<string, unknown>) {
+  if (Object.hasOwn(request, 'schedule')) dailySchedule(request.schedule);
   const production = request.videoProduction as
     Record<string, unknown> | undefined;
   if (
@@ -43,7 +45,6 @@ function safeShape(request: Record<string, unknown>) {
     Object.keys(production).join(',') !== 'mode' ||
     [
       'publication',
-      'schedule',
       'catalogSelection',
       'selectionMode',
       'legacyRecovery',

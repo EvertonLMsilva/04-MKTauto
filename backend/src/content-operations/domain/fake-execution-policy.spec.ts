@@ -13,6 +13,32 @@ const request = () => ({
   videoProduction: { mode: 'LOCAL_IMAGES' },
   localImage: { contentHash: 'a'.repeat(64) },
 });
+
+test('daily schedule is validated and hash-bound without upgrading the FAKE policy', () => {
+  const r = {
+    ...request(),
+    schedule: { time: '09:00', timeZone: 'America/Sao_Paulo' },
+  };
+  const policy = createFakeExecutionPolicy(r, 'daily_command', 'operator_test');
+  expect(
+    assertFakeExecutionPolicy({ ...r, fakeExecutionPolicy: policy }),
+  ).toEqual(policy);
+  expect(() =>
+    assertFakeExecutionPolicy({
+      ...r,
+      schedule: { ...r.schedule, time: '10:00' },
+      fakeExecutionPolicy: policy,
+    }),
+  ).toThrow();
+  expect(() =>
+    createFakeExecutionPolicy(
+      { ...r, schedule: { ...r.schedule, time: '99:00' } },
+      'daily_command',
+      'operator_test',
+    ),
+  ).toThrow();
+  expect(policy).toMatchObject({ mode: 'FAKE', publication: 'DISABLED' });
+});
 test('policy is immutable, versioned and bound to the persisted request and logical execution identity', () => {
   const r = request(),
     policy = createFakeExecutionPolicy(r, 'command_test', 'operator_test');
