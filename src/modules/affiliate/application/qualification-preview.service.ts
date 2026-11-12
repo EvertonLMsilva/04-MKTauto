@@ -7,6 +7,17 @@ import {
   validateAffiliateCampaign,
 } from '../domain/affiliate-contracts.js';
 import { eligibleCatalogCandidate } from '../domain/affiliate-catalog.js';
+import { evaluateCatalogCandidate } from '../domain/affiliate-catalog.js';
+import type {
+  AffiliateProduct,
+  AffiliateCampaign,
+} from '../domain/affiliate-contracts.js';
+import {
+  validateFirstProductInput,
+  firstProductPreparationBody,
+  sealFirstProductPreparation,
+} from '../domain/first-product-preparation.js';
+import { AffiliateService } from './affiliate.service.js';
 import { DEFAULT_AFFILIATE_DISCOVERY_POLICY } from '../domain/affiliate-discovery.js';
 import { validateShopeeUrl } from '../domain/shopee-link-url.js';
 import { ContractValidationError } from '../domain/affiliate.errors.js';
@@ -28,6 +39,158 @@ export class QualificationPreviewService {
   ) {}
   async preview(raw: unknown) {
     return this.previewFromReport(raw);
+  }
+  // Preparation only. Never calls reviewed registration, creates a briefing or
+  // consults Shopee. No input means no feed, media, project or catalog reads.
+  async prepareFirstProduct(raw?: unknown) {
+    const body = firstProductPreparationBody();
+    if (raw === undefined) return sealFirstProductPreparation(body);
+    const input = validateFirstProductInput(raw);
+    body.inputHash = affiliateHash(input);
+    body.dataOrigin = input.dataOrigin;
+    body.realProductEvidenceStatus =
+      input.dataOrigin === 'SYNTHETIC_FIXTURE'
+        ? 'SYNTHETIC_ONLY'
+        : 'OPERATOR_PROVIDED_UNVERIFIED';
+    body.technicalBlockers = [];
+    let preview: Awaited<ReturnType<QualificationPreviewService['preview']>>;
+    try {
+      preview = await this.preview(input.previewRequest);
+    } catch (error) {
+      const code = errorCode(error);
+      body.technicalBlockers = [
+        error instanceof ContractValidationError ||
+        code?.startsWith('QUALIFICATION_PREVIEW_') ||
+        code?.startsWith('FEED_QUALIFICATION_') ||
+        code?.startsWith('EXTERNAL_CATALOG_')
+          ? (code ?? 'FIRST_PRODUCT_PREVIEW_INVALID')
+          : 'FIRST_PRODUCT_PREVIEW_UNAVAILABLE',
+      ];
+      return sealFirstProductPreparation(body);
+    }
+    body.preview = preview;
+    const externalProductId = preview.selectedProduct.externalProductId;
+    if (!externalProductId) {
+      body.technicalBlockers = ['PRODUCT_ID_REQUIRED'];
+      return sealFirstProductPreparation(body);
+    }
+    const product = preview.productDraft.product as AffiliateProduct,
+      campaign = preview.offerDraft.campaign as AffiliateCampaign;
+    const assessment = evaluateCatalogCandidate({ product, campaign });
+    body.catalog.draftEligibility = assessment;
+    body.product = product;
+    body.campaign = campaign;
+    body.provenance = preview.provenance;
+    let shopId: string | null = null;
+    try {
+      const url = new URL(preview.selectedProduct.productUrl!);
+      const match = /^\/product\/([1-9]\d*)\/([1-9]\d*)$/.exec(url.pathname);
+      if (
+        url.protocol === 'https:' &&
+        url.hostname === 'shopee.com.br' &&
+        match?.[2] === preview.selectedProduct.externalProductId
+      )
+        shopId = match[1];
+    } catch {
+      /* Unknown identity remains null, never guessed. */
+    }
+    body.candidate = {
+      externalProductId,
+      productId: product.productId,
+      shopId,
+      offerId: null,
+      productUrl: preview.selectedProduct.productUrl,
+      identityBasis: 'LOCAL_FEED_DECLARATION_NOT_REMOTE_VERIFICATION',
+    };
+    body.media = {
+      source: product.localImage ?? null,
+      physical: preview.mediaEvidence,
+      rightsEvidence: product.localImage?.rights.evidence ?? [],
+    };
+    body.affiliate = {
+      url: campaign.affiliateUrl ?? null,
+      documentaryAssociation: preview.affiliateEvidence,
+      associationVerified: false,
+    };
+    body.commercial.historicalPrice =
+      preview.commercialSnapshot.historicalPrice;
+    body.technicalBlockers = [
+      ...preview.pending,
+      ...assessment.technicalBlockers,
+    ];
+    body.operationalBlockers = [
+      ...body.operationalBlockers,
+      ...assessment.operationalBlockers,
+    ];
+    if (this.projects && this.persistence) {
+      try {
+        const project = await this.projects.get(
+          campaign.projectId,
+          input.projectVersion,
+        );
+        if (!project)
+          body.technicalBlockers.push('PROJECT_VERSION_UNAVAILABLE');
+        else if (
+          project.project.id !== campaign.projectId ||
+          project.project.version !== input.projectVersion ||
+          affiliateHash(project) !== preview.context.projectHash
+        )
+          body.technicalBlockers.push('PROJECT_CONTEXT_CHANGED');
+        else {
+          const projectHash = affiliateHash(project);
+          body.project = {
+            projectId: project.project.id,
+            projectVersion: project.project.version,
+            niche: project.project.niche,
+            subniches: [...project.project.subniches],
+            projectHash,
+          };
+          const catalog = await new AffiliateService(
+            this.persistence,
+            this.projects,
+          ).catalogReadiness(campaign.projectId, input.projectVersion);
+          if (catalog.projectHash !== projectHash)
+            body.technicalBlockers.push('PROJECT_CONTEXT_CHANGED');
+          body.catalog.snapshotHash = catalog.snapshotHash;
+          const item =
+            catalog.items.find(
+              (item) => item.campaign.campaignId === campaign.campaignId,
+            ) ??
+            catalog.items.find(
+              (item) => item.product.productId === product.productId,
+            );
+          body.catalog.persistedEntry = item ?? null;
+          body.catalog.registrationStatus = !item
+            ? 'NOT_REGISTERED'
+            : item.productHash === affiliateHash(product) &&
+                item.campaignHash === affiliateHash(campaign)
+              ? 'EXACT_REGISTERED_REVISIONS'
+              : 'DIFFERENT_REGISTERED_REVISIONS';
+          if (
+            body.catalog.registrationStatus === 'DIFFERENT_REGISTERED_REVISIONS'
+          )
+            body.technicalBlockers.push('CATALOG_REGISTERED_REVISIONS_DIFFER');
+        }
+      } catch {
+        body.technicalBlockers.push('CATALOG_CONTEXT_UNAVAILABLE');
+      }
+    }
+    body.technicalBlockers = [...new Set(body.technicalBlockers)].sort();
+    body.operationalBlockers = [...new Set(body.operationalBlockers)].sort();
+    if (
+      preview.status === 'READY_FOR_OPERATOR_REVIEW' &&
+      !body.technicalBlockers.length
+    ) {
+      body.technicalPreparationStatus = 'READY_FOR_OPERATOR_REVIEW';
+      body.handoff = {
+        method: 'POST',
+        path: '/affiliate/feed-qualifications/preview/register',
+        request: { expectedPackageHash: preview.packageHash, preview },
+        requiredHumanFields: ['idempotencyKey', 'confirmed', 'decision'],
+        serverActorRequired: true,
+      };
+    }
+    return sealFirstProductPreparation(body);
   }
   async revalidateRegistration(request: unknown, expectedPackageHash: string) {
     const current = await this.preview(request);
