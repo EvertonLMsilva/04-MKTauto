@@ -30,6 +30,7 @@ import type { ProjectSnapshotReader } from '../project/application/ports/project
 import { Module } from '@nestjs/common';
 import { QualificationPreviewController } from './qualification-preview.controller.js';
 import { QualificationPreviewService } from './application/qualification-preview.service.js';
+import { AffiliateReviewRegistrationService } from './application/affiliate-review-registration.service.js';
 import type { AffiliateRepositoryFactory } from './application/ports/affiliate-repository.port.js';
 import { FeedQualificationService } from './application/feed-qualification.service.js';
 import { FeedQualificationController } from './feed-qualification.controller.js';
@@ -80,6 +81,7 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     AffiliateDiscoveryService,
   ],
   providers: [
+    AffiliateReviewRegistrationService,
     ShopeeCatalogCommit,
     ShopeeDynamicJournal,
     {
@@ -173,6 +175,7 @@ export class AffiliateModule {
         QualificationPreviewController,
       ],
       providers: [
+        AffiliateReviewRegistrationService,
         {
           provide: PROJECT_SNAPSHOT_READER,
           inject: [PostgresDatabase],
@@ -205,9 +208,14 @@ export class AffiliateModule {
         },
         {
           provide: ShopeeCatalogCommit,
-          inject: [PostgresAffiliatePersistence],
-          useFactory: (p: PostgresAffiliatePersistence) =>
-            new ShopeeCatalogCommit<true>(p),
+          inject: [
+            PostgresAffiliatePersistence,
+            PostgresAffiliateSessionFactory,
+          ],
+          useFactory: (
+            p: PostgresAffiliatePersistence,
+            sessions: PostgresAffiliateSessionFactory,
+          ) => new ShopeeCatalogCommit<true>(p, sessions),
         },
         {
           provide: AffiliateService,
