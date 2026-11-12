@@ -4,6 +4,7 @@ import type {
   GlobalPolicy,
   GlobalUsage,
   FinanceReadiness,
+  RunFinanceReadiness,
   CampaignUsage,
   GlobalOperation,
   Reservation,
@@ -43,6 +44,7 @@ export interface FinanceRepository {
   getLedgerByPipelineRun(id: string): CostLedger;
   getGlobalUsage(now?: string): GlobalUsage;
   getGlobalReadiness(now?: string): FinanceReadiness;
+  getRunReadiness(id: string): RunFinanceReadiness;
   getUsage(id: string): CampaignUsage;
   configureCampaign(id: string, revision: number, value?: unknown): unknown;
   approveEstimate(request: unknown, quote: unknown, approval: unknown): unknown;

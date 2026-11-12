@@ -10,6 +10,7 @@ import {
 import { TtsFinanceRepository } from './tts-finance.repository.js';
 import type { TtsResult } from '../domain/tts-financial-contracts.js';
 import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
+import { RunFinanceProjection } from './run-finance.projection.js';
 
 export class FinanceSession extends FinanceGate {
   private readonly ledger: CostLedgerRepository;
@@ -43,6 +44,9 @@ export class FinanceSession extends FinanceGate {
   }
   getLedgerV2ByPipelineRun(id: string) {
     return new CostAdjustmentsRepository(this.ledger).ledgerV2(id);
+  }
+  getRunReadiness(id: string) {
+    return new RunFinanceProjection(this.ledger).read(id);
   }
   approveTts(plan: unknown, approval: unknown) {
     return this.ttsFinance.approveTts(plan, approval);
