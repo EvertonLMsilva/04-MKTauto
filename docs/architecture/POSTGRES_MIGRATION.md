@@ -763,3 +763,111 @@ planejar rollback e obter autorização específica para cutover. Nenhum dado
 real, banco ou Docker operacional foi acessado/alterado; nenhum render, TTS,
 CTC, publicação ou serviço pago foi executado. Custos de CPU/energia local são
 indisponíveis. Esta entrega não conclui Media PostgreSQL nem PG-002 inteiro.
+
+## VideoRender PostgreSQL — PG-002-MEDIA-RENDER-004
+
+O opt-in `MediaPostgresModule.register(config)` exporta
+`POSTGRES_MEDIA_RENDER` / `PostgresMediaRenderPersistence`, mantendo os
+opt-ins de catálogo, voz e composição. Construir/inicializar o módulo não
+executa queries, DDL ou produtores. `MediaModule`, `AppModule`, Composer,
+FFmpeg, produção local, QC e Publishing permanecem inalterados.
+
+### Migration e dados
+
+`MEDIA_RENDER_POSTGRES_MIGRATION_REGISTRY` estende o registro CompositionPlan
+v1–v9 com `010_media_video_renders`, versão 10. SQL, nomes e checksums
+históricos não mudaram. A única tabela nova é `media.video_renders`:
+VideoRenderId, run/projeto/versão, CompositionPlanId/hash, formato, duração,
+proporção, dimensões, ContentHash, LogicalReference, revisão/supersession,
+identidade e payload JSON canônico. Não há bytes de vídeo nem tabela de QC,
+P4 ou recibo de execução de composição.
+
+As FKs usam os registros canônicos de Project, Campaign, CompositionPlan e
+ArtifactLineage. Escopo, hash do plano, duração, proporção, dimensão/formato
+e revisão são protegidos pelo adapter e pelas constraints/triggers novas.
+LogicalReference segue o contrato lógico não sensível; referências físicas,
+URLs privadas, credenciais e paths não são aceitos. Proporções usam igualdade
+exata entre inteiros, sem tolerância/arredondamento. Histórico é imutável,
+revisões são únicas por plano e cada predecessor admite um único sucessor.
+
+### Port assíncrono e suporte
+
+`AsyncMediaRenderRepository` oferece `registerVideoRender`, `getVideoRender`,
+`listVideoRendersByCompositionPlan`, `listVideoRendersByPipelineRun`,
+`getVideoRenderSuccessor` e `close`. Todas as operações de I/O retornam
+Promises reais. O port SQLite síncrono e seus endpoints não foram alterados;
+nenhuma Promise foi apresentada como resposta síncrona por cast.
+
+Suporta metadados `video-render/1.0.0` sobre CompositionPlan V1 ou V2 elegível.
+Reutiliza `validateVideoRender`, `videoRenderIdentityHash`,
+`validateArtifactLineage` e o tipo canônico `CompositionRender`. O reader
+PostgreSQL CompositionPlan existente revalida, na mesma sessão, plano,
+roteiro, voz, ativos e seus vínculos/direitos. Não se aceita um hash de plano
+isolado como prova de integridade do contexto.
+
+Replay requer identidade integral igual. Novo ID com revisão já ocupada,
+reutilização de ID de outro artefato, predecessor inexistente/incompatível,
+revisão obsoleta ou não sequencial são recusados. Consultas preservam versões
+históricas e ordenação determinística; recuperar um sucessor não apaga o anterior.
+
+### Linhagem, transação e integridade
+
+A linhagem real permanece em `content.artifact_lineage`, com tipo
+`video_render`, contentIdentity `video-render:<compositionPlanId>`, revisão
+e ContentHash do render. O input canônico é o CompositionPlan/hash;
+generationMetadata é null. Não se cria prova de execução, burn-in ou QC a
+partir desses metadados. Linhagens especiais de legendagem/burn-in dependem
+de evidências próprias e não são importadas por este port.
+
+Render, linhagem e input usam a mesma `PostgresMediaCatalogSession` e o mesmo
+PoolClient/BEGIN/COMMIT ou ROLLBACK. O reader de plano recebe essa sessão;
+não há pool ou transação paralela. Mantém-se Content 3 → Affiliate 4 →
+Campaign 5 → Media 7, sem novo participante ou alistamento artificial de
+Finance. Unidades externas precisam alistar os quatro domínios antes das
+operações. `open(readOnly?)` só verifica migrations/checksums v1–v10.
+
+A trigger diferida `media_render_lineage_owner` exige proprietário para cada
+nova linhagem `video_render` no commit. Falha entre linhagem e render ou
+antes do commit remove todo o estado parcial. A leitura verifica payload,
+todas as colunas, identidade/hash, contexto canônico, cadeia sem ciclos e
+linhagem/inputs completos; não confia apenas no identity_hash armazenado.
+
+### V2/P4, paridade e limites de ativação
+
+`video-render/2.0.0` possui contrato P4 próprio: origem legada/geração,
+configuração de áudio, narração e linhagens/evidências correspondentes.
+Essas estruturas ainda não foram migradas. Um contrato V2/P4 válido é
+recusado com `MEDIA_RENDER_P4_DEPENDENCY_REQUIRED`, sem registros parciais
+ou entidades fictícias. A validação de forma continua no validador canônico.
+Isso não bloqueia um render V1 cujo CompositionPlan válido seja V2.
+
+Os bloqueios anteriores de QC temporal, Research e fontes de voz dependentes
+de Finance continuam sendo propagados pelos readers existentes. Esta task não
+persiste QualityControl nem concede aprovação, licença, autorização de custo
+ou publicação. Uma referência lógica/ContentHash não prova a existência física
+do vídeo: este adapter somente persiste metadados fornecidos.
+
+`test/postgres/media-render.integration.test.ts` usa PostgreSQL 18.6 real da
+harness PG-001 descartável. Cobre v10/checksums/reexecução/rollback DDL,
+contratos válidos, vínculos, dimensões/proporção/formato/referências, replay,
+revisões/supersession, concorrência/restart, conexão/locks, falhas SQL,
+ausência de órfãos, imutabilidade, ciclos/corrupção e startup Nest inativo.
+As fixtures são metadados sintéticos; não executam FFmpeg/TTS/CTC.
+
+Para o registro inicial, a paridade usa a API SQLite existente
+`registerVideoComposition` e seus readers. SQLite não expõe um
+`registerVideoRender` genérico público: nas revisões genéricas, a fixture
+insere metadados/linhagem canônicos pelas constraints SQL reais e compara
+payload, hashes, leitura e listagem pelo reader SQLite inalterado. Não se
+declara paridade de recibos de execução ou de efeitos físicos não implementados.
+As regressões preservam Media Catalog, VoiceTrack, CompositionPlan e os
+contratos SQLite VideoRender/CompositionPlan pertinentes.
+
+QualityControl PostgreSQL, contratos P4 e provas físicas de execução precisam
+de entregas próprias antes de uma ativação operacional. Nenhum próximo tópico
+é iniciado aqui. Futura migração deve verificar arquivos/hashes/referências,
+linhagens especiais, revisões, direitos e evidências, preparar rollback e
+obter autorização específica de cutover. Nenhum dado/banco/Docker operacional
+foi alterado, render físico executado ou serviço pago utilizado. Custos locais
+de CPU/energia são indisponíveis. Media PostgreSQL integral e PG-002 inteiro
+não são declarados concluídos.
