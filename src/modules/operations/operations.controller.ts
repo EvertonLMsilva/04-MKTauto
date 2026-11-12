@@ -15,6 +15,7 @@ import {
   UploadedFile,
   Optional,
   ServiceUnavailableException,
+  HttpCode,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Request, Response } from 'express';
@@ -24,6 +25,7 @@ import {
 } from '../publishing/application/local-qc.guard.js';
 import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
 import { OperationsService } from './operations.service.js';
+import { ProjectShopeeDiscoveryService } from './project-shopee-discovery.service.js';
 import { OperationsPreflightService } from './operations-preflight.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import {
@@ -35,6 +37,16 @@ type QcRequest = Request & { [QC_REVIEWER_CONTEXT]?: unknown };
 
 @Controller('operations')
 export class OperationsController {
+  @Post('projects/:projectId/shopee-discovery/preview')
+  @HttpCode(200)
+  @UseGuards(LocalQcGuard)
+  projectShopeeDiscovery(@Param('projectId') projectId: string, @Body() value: unknown) {
+    return this.respond(() => {
+      if (!this.projectDiscovery)
+        throw new ServiceUnavailableException({ code: 'SHOPEE_DISCOVERY_UNAVAILABLE' });
+      return this.projectDiscovery.preview(projectId, value);
+    });
+  }
   @Post('campaigns/shopee-live-authorization')
   @UseGuards(LocalQcGuard)
   reviewShopeeLiveAuthorization(
@@ -63,6 +75,9 @@ export class OperationsController {
     @Optional()
     @Inject(OperationsPreflightService)
     private readonly preflightService?: OperationsPreflightService,
+    @Optional()
+    @Inject(ProjectShopeeDiscoveryService)
+    private readonly projectDiscovery?: ProjectShopeeDiscoveryService,
   ) {}
   private async respond<T>(action: () => T | Promise<T>) {
     try {
