@@ -277,3 +277,18 @@ test('queue replay is deterministic and does not mutate its source', () => {
   );
   expect(source).toEqual(before);
 });
+
+test('receipt for a different package cannot complete the selected destination', () => {
+  const source = snapshot({
+    state: 'PUBLISHED',
+    packageHash: 'c'.repeat(64),
+    mediaId: 'fb_media',
+    remoteReceipt: { mediaId: 'fb_media' },
+  });
+  const item = projectOperationalQueue(source, 25, 0, now).items[0];
+  expect(item.destinations[0].pendingCode).toBe(
+    'SOCIAL_PUBLICATION_IDENTITY_CONFLICT',
+  );
+  expect(item.destinations[0].receipt).toBeNull();
+  expect(item.publicationComplete).toBe(false);
+});

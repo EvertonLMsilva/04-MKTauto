@@ -50,6 +50,9 @@ export class DestinationPublicationController {
   @Get(':id/destinations') status(@Param('id') id: string) {
     return this.service.status(id);
   }
+  @Get(':id/evidence') evidence(@Param('id') id: string) {
+    return this.respond(() => this.service.evidence(id));
+  }
   private async respond(action: () => unknown) {
     try {
       return await action();

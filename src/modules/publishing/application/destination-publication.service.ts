@@ -20,6 +20,7 @@ import { SocialPublicationService } from './social-publication.service.js';
 import { socialFail } from '../domain/social-publication-contracts.js';
 import type { FacebookCreateAcknowledgement } from '../domain/facebook-upload-session.js';
 import { projectOperationalQueue } from './operational-queue.js';
+import { projectPublicationEvidence } from './publication-evidence.js';
 
 // Explicit distribution of existing, approved media. No timer and no production pipeline.
 export class DestinationPublicationService {
@@ -33,6 +34,17 @@ export class DestinationPublicationService {
   ) {}
   status(id: string) {
     return this.store.readDestinations(id);
+  }
+  evidence(id: string) {
+    // Reuse the existing read-only queue store and its validated snapshots.
+    for (let offset = 0; ; offset += 100) {
+      const page = this.store.readOperationalQueue(100, offset);
+      const item = page.items.find((row) => row.execution.execution_id === id);
+      if (item)
+        return projectPublicationEvidence(item, this.status(id), this.now());
+      if (!page.items.length || offset + page.items.length >= page.total)
+        socialFail('SOCIAL_EXECUTION_NOT_FOUND');
+    }
   }
   queue(limit = 25, offset = 0) {
     if (

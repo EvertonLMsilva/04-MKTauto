@@ -99,6 +99,8 @@ export function projectOperationalQueue(
             );
             const op = row?.operation;
             const receipt =
+              pkg &&
+              op?.packageHash === pkg.contentHash &&
               op?.state === 'PUBLISHED' &&
               !op.requiresReconciliation &&
               !op.uncertainStage &&
