@@ -14,6 +14,8 @@ import { CampaignOrchestrationModule } from '../content-operations/campaign-orch
 import { MediaModule } from '../media/media.module.js';
 import { OperationsController } from './operations.controller.js';
 import { OperationsService } from './operations.service.js';
+import { ProjectShopeeDiscoveryService } from './project-shopee-discovery.service.js';
+import { ProjectModule } from '../project/project.module.js';
 import { OperationsPreflightService } from './operations-preflight.service.js';
 import { FinanceModule } from '../finance/finance.module.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
@@ -25,10 +27,12 @@ import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-sum
     PublishingModule,
     AffiliateModule,
     FinanceModule,
+    ProjectModule,
   ],
   controllers: [OperationsController, FakeCampaignCommandController],
   providers: [
     OperationsService,
+    ProjectShopeeDiscoveryService,
     OperationsPreflightService,
     FakeCampaignCommandService,
     FakeCampaignCommandGuard,
