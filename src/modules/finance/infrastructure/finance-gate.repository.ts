@@ -3,6 +3,10 @@ import type {
   GlobalPolicy,
   CampaignUsage,
   Reservation,
+  FinanceReadiness,
+  FinanceReadinessOperation,
+  FinanceReadinessPeriod,
+  FinanceReadinessReason,
 } from '../domain/finance.types.js';
 import {
   affiliateIdentifier,
@@ -36,6 +40,13 @@ const GLOBAL_DEFAULTS = Object.freeze({
   monthlyUsd: '20',
   timeZone: 'America/Sao_Paulo',
 });
+interface ReadinessDetails {
+  day: string;
+  dailyRecorded: bigint;
+  monthlyRecorded: bigint;
+  operations: FinanceReadinessOperation[];
+  reasons: Set<FinanceReadinessReason>;
+}
 export class FinanceGate {
   readonly db;
   constructor(
@@ -97,7 +108,7 @@ export class FinanceGate {
       return { dailyUsd: daily, monthlyUsd: monthly, timeZone };
     });
   }
-  #initializeGlobal(): any {
+  #initializeGlobal(readOnly = false): any {
     if (
       !this.db
         .prepare(
@@ -110,7 +121,8 @@ export class FinanceGate {
       !this.db
         .prepare('SELECT 1 FROM global_finance_policy WHERE singleton=1')
         .get()
-    )
+    ) {
+      if (readOnly) fail('FINANCE_POLICY_REQUIRED', 'global_finance_policy');
       this.db
         .prepare('INSERT INTO global_finance_policy VALUES(1,?,?,?)')
         .run(
@@ -118,10 +130,11 @@ export class FinanceGate {
           GLOBAL_DEFAULTS.monthlyUsd,
           GLOBAL_DEFAULTS.timeZone,
         );
+    }
   }
   // All liability is aggregated in the same SQLite boundary, across campaigns.
-  #globalUsage(now: string): GlobalUsage {
-    this.#initializeGlobal();
+  #globalUsage(now: string, details?: ReadinessDetails): GlobalUsage {
+    this.#initializeGlobal(details !== undefined);
     if (!Number.isFinite(Date.parse(now))) fail('GLOBAL_TIME_INVALID', 'now');
     const policy = this.db
       .prepare('SELECT * FROM global_finance_policy WHERE singleton=1')
@@ -139,14 +152,31 @@ export class FinanceGate {
     };
     const day = period(now),
       month = day.slice(0, 7);
+    if (details) details.day = day;
     let daily = 0n,
       monthly = 0n;
     const accounted = new Set();
-    const add = (at: any, amount: any, unresolved: any = false): any => {
+    const add = (
+      at: string,
+      amount: bigint,
+      unresolved = false,
+      recorded = 0n,
+      operation?: FinanceReadinessOperation,
+    ): void => {
       const date = period(at);
       if (date > day) fail('GLOBAL_TIME_INVALID', 'now');
       if (unresolved || date === day) daily += amount;
       if (unresolved || date.slice(0, 7) === month) monthly += amount;
+      if (details) {
+        if (unresolved || date === day) details.dailyRecorded += recorded;
+        if (unresolved || date.slice(0, 7) === month)
+          details.monthlyRecorded += recorded;
+        if (operation) details.operations.push(operation);
+      }
+    };
+    const ceilingBreach = () => {
+      if (details) details.reasons.add('PRICE_CEILING_BREACHED');
+      else fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
     };
     for (const row of this.db
       .prepare('SELECT * FROM global_paid_operations')
@@ -154,6 +184,8 @@ export class FinanceGate {
       if (JSON.parse(row.proof_json).kind === 'MANUAL_TTS_RESERVATION')
         continue; // Existing TTS liability below.
       let actual = usdUnits(row.actual_usd ?? '0');
+      let evidence: string | null = row.billing_reference;
+      let recorded: bigint | null = row.actual_usd === null ? null : actual;
       const maximum = usdUnits(row.maximum_usd);
       for (const telemetry of this.attribution.costEvents(
         row.provider,
@@ -164,6 +196,10 @@ export class FinanceGate {
         if (cost?.currency === 'USD') {
           const amount = usdUnits(cost.amount);
           if (amount > actual) actual = amount;
+          if (recorded === null || amount > recorded) {
+            recorded = amount;
+            evidence = `cost-event:${cost.costEventId}`;
+          }
           accounted.add(cost.costEventId);
         }
       }
@@ -173,9 +209,20 @@ export class FinanceGate {
         row.created_at,
         settled ? actual : actual > maximum ? actual : maximum,
         ['RESERVED', 'SUBMITTING', 'UNKNOWN'].includes(row.state),
+        recorded ?? 0n,
+        {
+          source: 'GLOBAL',
+          operationId: row.operation_id,
+          state: row.state,
+          createdAt: row.created_at,
+          actualCostUsd: recorded === null ? null : usdAmount(recorded),
+          evidenceReference: evidence,
+          reconciliationRequired:
+            ['SUBMITTING', 'UNKNOWN'].includes(row.state) ||
+            (row.state !== 'RESERVED' && (recorded === null || !evidence)),
+        },
       );
-      if (actual > maximum)
-        fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
+      if (actual > maximum) ceilingBreach();
     }
     for (const row of this.video.listActive()) {
       const op = this.getOperation(row.generation_request_id),
@@ -187,6 +234,19 @@ export class FinanceGate {
         op.createdAt,
         actual > maximum ? actual : maximum,
         ['RESERVED', 'SUBMITTING', 'SUBMITTED', 'UNKNOWN'].includes(op.state),
+        op.billing ? usdUnits(op.billing.actualCostUsd) : 0n,
+        {
+          source: 'VIDEO',
+          operationId: row.generation_request_id,
+          state: op.state,
+          createdAt: op.createdAt,
+          actualCostUsd: op.billing?.actualCostUsd ?? null,
+          evidenceReference: op.billing?.evidenceReference ?? null,
+          reconciliationRequired:
+            op.state !== 'RESERVED' &&
+            (!op.billing ||
+              ['SUBMITTING', 'SUBMITTED', 'UNKNOWN'].includes(op.state)),
+        },
       );
       const cost = this.repository.getCostEvent(op.costEventId);
       if (
@@ -197,8 +257,7 @@ export class FinanceGate {
         cost.origin === op.request.provider
       )
         accounted.add(cost.costEventId);
-      if (actual > maximum)
-        fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
+      if (actual > maximum) ceilingBreach();
     }
     if (this.tts.exists())
       for (const row of this.tts.list()) {
@@ -223,6 +282,17 @@ export class FinanceGate {
               ? realized
               : maximum,
           unresolved,
+          op.billing ? actual : 0n,
+          {
+            source: 'TTS',
+            operationId: row.operation_id,
+            state: op.state,
+            createdAt: op.createdAt,
+            actualCostUsd: op.billing ? usdAmount(actual) : null,
+            evidenceReference: op.billing?.evidenceReference ?? null,
+            reconciliationRequired:
+              !op.billing || !op.reconciliationReference || unresolved,
+          },
         );
         if (
           cost &&
@@ -235,7 +305,7 @@ export class FinanceGate {
         )
           accounted.add(cost.costEventId);
         if (!v2 && !isTtsRiskRequest(op.request) && actual > maximum)
-          fail('GLOBAL_PRICE_CEILING_BREACHED', 'actualCostUsd');
+          ceilingBreach();
       }
     for (const cost of this.db
       .prepare(
@@ -245,7 +315,12 @@ export class FinanceGate {
       if (accounted.has(cost.cost_event_id)) continue;
       if (cost.currency !== 'USD')
         fail('GLOBAL_COST_CURRENCY_UNSUPPORTED', 'currency');
-      add(cost.occurred_at, usdUnits(cost.amount));
+      add(
+        cost.occurred_at,
+        usdUnits(cost.amount),
+        false,
+        usdUnits(cost.amount),
+      );
     }
     return {
       dailyUsd: usdAmount(daily),
@@ -255,6 +330,79 @@ export class FinanceGate {
   }
   getGlobalUsage(now: string = new Date().toISOString()): GlobalUsage {
     return this.#transaction((): any => this.#globalUsage(now));
+  }
+  getGlobalReadiness(now: string = new Date().toISOString()): FinanceReadiness {
+    return this.#transaction(() => {
+      const details: ReadinessDetails = {
+        day: '',
+        dailyRecorded: 0n,
+        monthlyRecorded: 0n,
+        operations: [],
+        reasons: new Set(),
+      };
+      const usage = this.#globalUsage(now, details);
+      for (const op of details.operations) {
+        if (op.state === 'RESERVED') details.reasons.add('ACTIVE_RESERVATIONS');
+        if (['SUBMITTING', 'SUBMITTED'].includes(op.state))
+          details.reasons.add('OPERATIONS_IN_FLIGHT');
+        if (op.state === 'UNKNOWN') details.reasons.add('UNKNOWN_OPERATIONS');
+        if (op.actualCostUsd === null || !op.evidenceReference)
+          details.reasons.add('COST_EVIDENCE_UNAVAILABLE');
+        if (op.reconciliationRequired)
+          details.reasons.add('RECONCILIATION_REQUIRED');
+      }
+      const budget = (
+        period: string,
+        limit: string,
+        committed: string,
+        recorded: bigint,
+        exhausted: FinanceReadinessReason,
+      ): FinanceReadinessPeriod => {
+        const total = usdUnits(committed),
+          ceiling = usdUnits(limit);
+        if (total >= ceiling) details.reasons.add(exhausted);
+        return {
+          period,
+          limitUsd: limit,
+          committedUsd: committed,
+          recordedCostUsd: usdAmount(recorded),
+          reservedLiabilityUsd: usdAmount(total - recorded),
+          remainingUsd: usdAmount(total < ceiling ? ceiling - total : 0n),
+        };
+      };
+      const daily = budget(
+        details.day,
+        usage.policy.daily_usd,
+        usage.dailyUsd,
+        details.dailyRecorded,
+        'DAILY_BUDGET_EXHAUSTED',
+      );
+      const monthly = budget(
+        details.day.slice(0, 7),
+        usage.policy.monthly_usd,
+        usage.monthlyUsd,
+        details.monthlyRecorded,
+        'MONTHLY_BUDGET_EXHAUSTED',
+      );
+      return {
+        schemaVersion: 'finance-readiness/1.0.0',
+        evaluatedAt: now,
+        status: details.reasons.size ? 'NOT_READY' : 'READY',
+        scope: 'TECHNICAL_ONLY',
+        operationalAcceptance: 'NOT_ASSESSED',
+        spendingAuthorized: false,
+        timeZone: usage.policy.time_zone,
+        usage,
+        daily,
+        monthly,
+        operations: details.operations.sort(
+          (a, b) =>
+            a.source.localeCompare(b.source) ||
+            a.operationId.localeCompare(b.operationId),
+        ),
+        reasons: [...details.reasons].sort(),
+      };
+    }, true);
   }
   private settledFirstFal(row: any, proof: any): string[] | null {
     if (
@@ -733,9 +881,9 @@ export class FinanceGate {
       hasCeilingBreach,
     });
   }
-  #transaction<T>(operation: () => T): T {
+  #transaction<T>(operation: () => T, readOnly = false): T {
     try {
-      this.db.exec('BEGIN IMMEDIATE');
+      this.db.exec(readOnly ? 'BEGIN' : 'BEGIN IMMEDIATE');
       const result = operation();
       this.db.exec('COMMIT');
       return result;

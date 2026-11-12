@@ -58,6 +58,9 @@ export class FinanceService {
   getGlobalUsage(now?: string) {
     return this.session((r) => r.getGlobalUsage(now));
   }
+  getGlobalReadiness(now?: string) {
+    return this.session((r) => r.getGlobalReadiness(now));
+  }
   getUsage(id: string) {
     return this.session((r) => r.getUsage(id));
   }
