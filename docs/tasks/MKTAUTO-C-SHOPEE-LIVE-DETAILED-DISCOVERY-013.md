@@ -2,8 +2,11 @@
 
 Preparação em 12/11/2026, America/Sao_Paulo.
 
-**TASK_STATUS: READY_FOR_OPERATOR_APPROVAL.** A confirmação específica da consulta
-real C-013 ainda não foi recebida. Nenhuma chamada real foi executada nesta task.
+**TASK_STATUS: DONE.** Após a preparação offline, o operador confirmou
+explicitamente UMA consulta C-013 no HEAD
+`e7a32205d82ad876b95f341af2119152b50b8d2d`. A tentativa autorizada foi executada
+uma vez: HTTP 200, autenticação SUCCESS e uma oferta normalizada. A autorização
+está consumida; não permite repetição, página adicional ou mutation.
 
 ## Baseline e preservação
 
@@ -115,23 +118,27 @@ Dependências instaladas neste worktree pelo lockfile, offline, sem scripts de
 instalação e com configurações npm vazias explícitas. Nenhum .env privado foi
 lido durante a preparação; não foram acessados bancos operacionais.
 
-## Gate da consulta real — pendente
+## Confirmação e resultado da consulta real
 
 O aceite financeiro provisório é mantido:
 
 ```text
 COST_STATUS: PROVISIONAL_NO_CHARGE_ASSUMPTION_OPERATOR_ACCEPTED
 QUOTA_STATUS: NOT_VERIFIED
-LIVE_QUERY_AUTHORIZATION: PENDING_EXPLICIT_C013_CONFIRMATION
-REQUEST_COUNT: 0 real nesta task
-LIVE_DETAILED_DISCOVERY_STATUS: NOT_EXECUTED
+LIVE_QUERY_AUTHORIZATION: EXPLICIT_C013_CONFIRMATION_RECEIVED_AND_CONSUMED
+REQUEST_COUNT: 1 real nesta task
+HTTP_STATUS: 200
+LIVE_AUTHENTICATION_STATUS: VERIFIED
+OFFERS_RETURNED: 1
+LIVE_DETAILED_DISCOVERY_STATUS: VALIDATED_SINGLE_PAGE
 LINK_GENERATION_STATUS: NOT_EXECUTED
 ```
 
 Essa premissa não comprova gratuidade e não é um grant operacional. O PR não
-autoriza HTTP. A confirmação da C-012 não pode ser reutilizada.
+autoriza HTTP; a consulta ocorreu por confirmação humana específica posterior.
+A confirmação da C-012 não foi reutilizada.
 
-Antes de qualquer HTTP C-013, apresentar e confirmar com o operador:
+Perímetro apresentado e confirmado pelo operador antes do HTTP:
 
 1. HEAD exato publicado e checkout/compilado correspondente; sem alterações
    locais em código de execução.
@@ -143,30 +150,54 @@ Antes de qualquer HTTP C-013, apresentar e confirmar com o operador:
 5. Aceitação explícita do risco financeiro desse novo perímetro, sob a premissa
    provisória já declarada e com quotas não verificadas.
 
-**Comando futuro proposto — não executado com credenciais reais nesta task:**
+**Comando executado uma vez no HEAD autorizado — não repetir nesta task:**
 
 ```text
 node --env-file-if-exists=D:\04-Projetos\23-MKTauto\.env scripts/shopee-affiliate-detailed-once.mjs --execute-once
 ```
 
-O flag foi exercitado somente na função com doubles; o processo CLI real foi
-executado apenas sem argumentos. Não há leitura de credenciais reais nesses
-ensaios.
+Durante a preparação, o flag foi exercitado somente na função com doubles e o
+processo CLI foi executado sem argumentos. Depois da confirmação, o processo
+real foi executado uma vez, com credenciais carregadas pelo mecanismo .env
+existente sem exibir valores, representações ou conteúdo privado.
 
-Se houver confirmação específica, executar uma vez e preservar somente JSON
-sanitizado. Qualquer falha, timeout, HTTP 401/403/429, erro GraphQL ou resultado
-incerto encerra a autorização desta task; não repetir nem ajustar o contrato
-automaticamente para obter sucesso. Um novo processo não é um mecanismo de
-retry autorizado e exige avaliação humana do escopo.
+Resultado às **01:59:21 BRT de 12/11/2026** (04:59:21.811Z): todos os 14 campos
+solicitados presentes, nenhum ausente, nenhum código de erro. Indicadores
+HAS_PRODUCT_ID, HAS_SHOP_ID, HAS_PRODUCT_NAME, HAS_SHOP_NAME, HAS_PRICE,
+HAS_PRICE_RANGE, HAS_COMMISSION, HAS_COMMISSION_RATE, HAS_IMAGE_URL,
+HAS_PRODUCT_URL e HAS_OFFER_URL: todos TRUE.
+
+Tipos observados: itemId/shopId como INT64_STRING; preços como DECIMAL_STRING;
+comissão/taxa como DECIMAL_STRING_ESTIMATE; desconto como INTEGER; nomes como
+STRING; URLs como HTTPS_STRING. Nenhum valor de produto, preço, comissão, ID,
+nome ou URL foi persistido. pageInfo validado: page=1, limit=1,
+hasNextPage=true. Nenhuma segunda página foi consultada.
+
+Relatório sanitizado novo, criado exclusivamente sem sobrescrever arquivos:
+`D:\04-Projetos\MKTauto-runtime\acceptance\C\MKTAUTO-C-SHOPEE-LIVE-DETAILED-DISCOVERY-013-20261112T045921811Z-108071c8-bbc7-424c-85bd-189e379d5314.jsonl`.
+Contém somente intenção de execução e resultado sanitizado; nenhum corpo bruto.
+
+Preflight confirmou checkout limpo, runner igual ao commit autorizado e compilado
+correspondente ao fonte. Comparação interna de bytes confirmou .env inalterado,
+sem imprimir conteúdo ou hashes. Modo fake preservado. Nenhum banco operacional
+acessado; zero links gerados, cadastros, downloads, reservas financeiras,
+campanhas, scheduler, publicações ou retries. Código permaneceu intacto durante
+a execução; após ela, somente este documento foi atualizado.
+
+A confirmação desta task foi consumida. Não repetir o processo, consultar outra
+página nem ajustar contratos para ampliar este resultado. Um novo ensaio exige
+novo escopo e anuência humana; nenhum grant recorrente foi emitido.
 
 ## Estado de entrega
 
-Runner e validação offline concluídos. T06 permanece parcial aguardando a
-confirmação específica; T08 encerra a preparação com READY_FOR_OPERATOR_APPROVAL.
-Progresso: oito subtópicos, sete concluídos, um parcial, zero pendentes e um
-faltante. Um único Draft PR; merge exclusivo do usuário.
+Runner, validação offline e consulta real delimitada concluídos. T06 recebeu
+confirmação específica e T08 registra VALIDATED_SINGLE_PAGE. Progresso: oito
+subtópicos, oito concluídos, zero parciais, zero pendentes e zero faltantes.
+O mesmo Draft PR é atualizado com a evidência, sem outro PR; merge exclusivo do
+usuário. Os 167 testes offline e gates anteriores permanecem aplicáveis: não
+houve mudança de código após sua validação, apenas documentação do resultado.
 
-Nenhuma homologação real detalhada foi realizada nesta entrega. Mesmo após uma
-página válida, não ficam homologados paginação multipágina, ranking com amostra
+Foi validada uma única página real detalhada. Não ficam homologados paginação
+multipágina, ranking com amostra
 real, geração de links, direitos de mídia, elegibilidade de produto ou campanha
 comercial. C-010 continua BLOCKED_EXTERNAL_EVIDENCE.
