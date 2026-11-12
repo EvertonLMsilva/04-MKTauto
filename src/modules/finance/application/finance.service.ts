@@ -1,5 +1,6 @@
 import type { FinanceStore, FinanceRepository } from './finance.port.js';
 import type { TtsResult } from '../domain/tts-financial-contracts.js';
+import { projectRunCostCoverage } from './run-cost-coverage.projection.js';
 export class FinanceService {
   constructor(private readonly store: FinanceStore) {}
   getRunReadiness(id: string) {
@@ -7,6 +8,13 @@ export class FinanceService {
   }
   getPilotCostClosure(id: string, now?: string) {
     return this.session((r) => r.getPilotCostClosure(id, now));
+  }
+  getRunCostCoverage(id: string, declaration?: unknown, now?: string) {
+    return projectRunCostCoverage(
+      id,
+      this.getPilotCostClosure(id, now),
+      declaration,
+    );
   }
   registerTtsAdjustment(value: unknown) {
     return this.session((r) => r.registerTtsAdjustment(value));
