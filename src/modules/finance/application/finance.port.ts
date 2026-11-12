@@ -16,6 +16,7 @@ import type {
   TtsFinancialOperation,
   TtsResult,
 } from '../domain/tts-financial-contracts.js';
+import type { PilotCostClosure } from '../domain/pilot-cost-closure.types.js';
 export interface FinanceRepository {
   close(): void;
   registerTtsAdjustment(
@@ -45,6 +46,7 @@ export interface FinanceRepository {
   getGlobalUsage(now?: string): GlobalUsage;
   getGlobalReadiness(now?: string): FinanceReadiness;
   getRunReadiness(id: string): RunFinanceReadiness;
+  getPilotCostClosure(id: string, now?: string): PilotCostClosure;
   getUsage(id: string): CampaignUsage;
   configureCampaign(id: string, revision: number, value?: unknown): unknown;
   approveEstimate(request: unknown, quote: unknown, approval: unknown): unknown;

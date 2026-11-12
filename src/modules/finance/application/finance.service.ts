@@ -5,6 +5,9 @@ export class FinanceService {
   getRunReadiness(id: string) {
     return this.session((r) => r.getRunReadiness(id));
   }
+  getPilotCostClosure(id: string, now?: string) {
+    return this.session((r) => r.getPilotCostClosure(id, now));
+  }
   registerTtsAdjustment(value: unknown) {
     return this.session((r) => r.registerTtsAdjustment(value));
   }
