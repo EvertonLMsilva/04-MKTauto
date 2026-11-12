@@ -105,6 +105,17 @@ export class LocalFlowService {
   qc(videoId: string) {
     return this.runtime.qc(videoId);
   }
+  qcHandoffEvidence(videoId: string, reportId?: string) {
+    return this.runtime.qcHandoffEvidence?.(videoId, reportId) ?? null;
+  }
+  async ensureQcHandoffEvidence(videoId: string) {
+    if (this.runtime.ensureQcHandoffEvidence)
+      return this.runtime.ensureQcHandoffEvidence(videoId);
+    const prior = this.qcHandoffEvidence(videoId);
+    if (prior) return prior;
+    await this.qc(videoId);
+    return this.qcHandoffEvidence(videoId);
+  }
   preview(videoId: string) {
     return this.runtime.preview(videoId);
   }

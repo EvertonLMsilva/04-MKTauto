@@ -17,6 +17,25 @@ import {
   videoRenderIdentityHash,
 } from '../domain/video-render-contracts.js';
 export class LocalFlowRepository extends VideoRenderRepository {
+  localQcHandoffIds(videoId: string, hash: string): string[] {
+    return this.localQcIds('local_qc_handoff', videoId, hash);
+  }
+  localNativeQcIds(videoId: string, hash: string): string[] {
+    return this.localQcIds('local_qc', videoId, hash);
+  }
+  private localQcIds(
+    type: 'local_qc' | 'local_qc_handoff',
+    videoId: string,
+    hash: string,
+  ): string[] {
+    return this.db
+      .prepare(
+        `SELECT a.artifact_id FROM artifact_lineage a JOIN artifact_lineage_inputs i ON i.artifact_id=a.artifact_id
+      WHERE a.artifact_type=? AND i.input_id=? AND i.content_hash=? ORDER BY a.created_at,a.artifact_id`,
+      )
+      .all(type, videoId, hash)
+      .map((r: { artifact_id: string }) => r.artifact_id);
+  }
   paidTtsGrant(id: string) {
     const row = this.db
       .prepare(
