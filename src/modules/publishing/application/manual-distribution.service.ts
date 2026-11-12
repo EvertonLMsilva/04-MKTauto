@@ -1,6 +1,7 @@
 import { HumanApprovalService } from './human-approval.service.js';
 import { validateHumanApprovalIdentity } from '../domain/human-approval-contracts.js';
 import { manualReleaseHandoff } from './manual-release-handoff.js';
+import { manualReleaseReadiness } from './manual-release-readiness.js';
 import type { CampaignOperationalFacts } from '../../content-operations/application/campaign-operations.port.js';
 import {
   assertPackageApprovalBinding,
@@ -113,6 +114,8 @@ export class ManualDistributionService {
   #package(hash: any): any {
     const p: any = this.getPackage(hash);
     if (!p) fail('DISTRIBUTION_PACKAGE_NOT_FOUND');
+    if (p.contentHash !== hash || affiliateHash(p) !== hash)
+      fail('DISTRIBUTION_PERSISTED_INTEGRITY');
     return p;
   }
   #gate(p: any): any {
@@ -146,9 +149,9 @@ export class ManualDistributionService {
       r?.origin?.generationRequestId === 'live_01_aura_video_1'
     )
       fail('DISTRIBUTION_DEMO_INELIGIBLE');
+    if (!q) fail('DISTRIBUTION_QC_FAILED');
     if (
       !r ||
-      !q ||
       r.contentHash !== p.identity.videoRenderContentHash ||
       r.revision !== p.identity.videoRenderRevision ||
       r.logicalReference !== p.mediaReference
@@ -272,9 +275,14 @@ export class ManualDistributionService {
   }
   manualHandoff(hash: string) {
     const pkg = this.validateForPublication(hash);
-    if (pkg.contentHash !== hash || affiliateHash(pkg) !== hash)
-      fail('DISTRIBUTION_PERSISTED_INTEGRITY');
     return manualReleaseHandoff(pkg, this.getReview(hash));
+  }
+  manualReadiness(hash: string) {
+    return manualReleaseReadiness(
+      hash,
+      () => this.#package(hash),
+      () => this.manualHandoff(hash),
+    );
   }
   recordPublication(raw: any, key: any): any {
     const v: any = validatePublication(raw);

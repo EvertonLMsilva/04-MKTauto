@@ -11,6 +11,10 @@ import {
 import type { PublishingStore, PublishingMedia } from './publishing.port.js';
 import { distributionFail } from '../domain/manual-distribution-contracts.js';
 import type { ManualReleaseHandoff } from './manual-release-handoff.js';
+import {
+  manualReleaseReadiness,
+  type ManualReleaseReadiness,
+} from './manual-release-readiness.js';
 export class PublishingService {
   constructor(
     private readonly store: PublishingStore,
@@ -131,6 +135,20 @@ export class PublishingService {
   }
   manualHandoff(hash: string): ManualReleaseHandoff {
     return this.session(true, (s) => s.manual.manualHandoff(hash));
+  }
+  manualReadiness(hash: string): ManualReleaseReadiness {
+    try {
+      return this.session(true, (s) => s.manual.manualReadiness(hash));
+    } catch (error: unknown) {
+      // Persistence/configuration failures also mean unverified readiness.
+      return manualReleaseReadiness(
+        hash,
+        () => {
+          throw error;
+        },
+        () => undefined,
+      );
+    }
   }
   review(value: unknown, key: string) {
     const result = this.session(false, (s) => s.manual.review(value, key));
