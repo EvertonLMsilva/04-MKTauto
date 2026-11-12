@@ -90,6 +90,11 @@ export class PublishingController {
         : null;
     });
   }
+  @Get('packages/:hash/manual-handoff')
+  @UseGuards(LocalQcGuard)
+  manualHandoff(@Param('hash') hash: string) {
+    return this.respond(() => this.publishing.manualHandoff(hash));
+  }
   @Post('reviews') review(@Body() value: unknown) {
     return this.command(value, (input, key) =>
       this.publishing.review(input, key),

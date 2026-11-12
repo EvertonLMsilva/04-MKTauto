@@ -10,6 +10,7 @@ import {
 } from './human-approval.service.js';
 import type { PublishingStore, PublishingMedia } from './publishing.port.js';
 import { distributionFail } from '../domain/manual-distribution-contracts.js';
+import type { ManualReleaseHandoff } from './manual-release-handoff.js';
 export class PublishingService {
   constructor(
     private readonly store: PublishingStore,
@@ -121,10 +122,15 @@ export class PublishingService {
     return result;
   }
   validatePackage(hash: string, handoff?: CampaignOperationalFacts) {
-    return this.session(true, (s) => s.manual.validateForPublication(hash, handoff));
+    return this.session(true, (s) =>
+      s.manual.validateForPublication(hash, handoff),
+    );
   }
   package(hash: string) {
     return this.session(true, (s) => s.manual.getPackage(hash));
+  }
+  manualHandoff(hash: string): ManualReleaseHandoff {
+    return this.session(true, (s) => s.manual.manualHandoff(hash));
   }
   review(value: unknown, key: string) {
     const result = this.session(false, (s) => s.manual.review(value, key));

@@ -1,5 +1,6 @@
 import { HumanApprovalService } from './human-approval.service.js';
 import { validateHumanApprovalIdentity } from '../domain/human-approval-contracts.js';
+import { manualReleaseHandoff } from './manual-release-handoff.js';
 import type { CampaignOperationalFacts } from '../../content-operations/application/campaign-operations.port.js';
 import {
   assertPackageApprovalBinding,
@@ -269,6 +270,12 @@ export class ManualDistributionService {
     if (handoff) assertPublicationHandoff(handoff, p, q);
     return p;
   }
+  manualHandoff(hash: string) {
+    const pkg = this.validateForPublication(hash);
+    if (pkg.contentHash !== hash || affiliateHash(pkg) !== hash)
+      fail('DISTRIBUTION_PERSISTED_INTEGRITY');
+    return manualReleaseHandoff(pkg, this.getReview(hash));
+  }
   recordPublication(raw: any, key: any): any {
     const v: any = validatePublication(raw);
     return this.repository.command(
@@ -320,7 +327,7 @@ export class ManualDistributionService {
         });
         return this.repository.put('PUBLICATION', pub.publicationId, pub);
       },
-      (): any => this.#gate(this.#package(v.packageHash)),
+      (): any => this.validateForPublication(v.packageHash),
     );
   }
   getPublication(id: any): any {
