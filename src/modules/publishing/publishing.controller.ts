@@ -95,6 +95,11 @@ export class PublishingController {
   manualHandoff(@Param('hash') hash: string) {
     return this.respond(() => this.publishing.manualHandoff(hash));
   }
+  @Get('packages/:hash/manual-release-readiness')
+  @UseGuards(LocalQcGuard)
+  manualReadiness(@Param('hash') hash: string) {
+    return this.respond(() => this.publishing.manualReadiness(hash));
+  }
   @Post('reviews') review(@Body() value: unknown) {
     return this.command(value, (input, key) =>
       this.publishing.review(input, key),
