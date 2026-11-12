@@ -330,3 +330,115 @@ A harness PG-001 é reutilizada sem acessar bancos operacionais ou apagar
 volumes existentes. Somente providers externos são fake. Sem cutover, deploy,
 scheduler, publicação, chamada paga ou migração de dados reais. Custos locais
 de CPU/energia indisponíveis; nenhuma execução paga realizada.
+
+## Finance ledger — CORE-PG-002-FINANCE-LEDGER-001
+
+### Inventário e ownership da fundação
+
+O ledger existente usa cost-event/1.0.0, identidade por costEventId e SHA-256
+do evento normalizado, histórico ordenado por occurredAt/costEventId e
+cost-ledger/1.0.0 com totais exatos por moeda. validateCostEvent normaliza
+decimais positivos em texto (40 dígitos inteiros/18 fracionários), datas e
+campos explícitos. createCostLedger soma com BigInt. Esses validadores e
+regras puras são reutilizados, sem duplicar aritmética ou política Finance.
+
+Cost-adjustment/2.0.0 representa deltaUnits inteiro assinado em escala 18,
+evidenceReference/evidenceHash, idempotencyKey e contentHash. Sua escrita
+atual depende de operação TTS canônica, billing, estado e referência de
+reconciliação, evidência e saldo líquido validados pela Frente D. Esses
+contratos ainda não estão disponíveis em PostgreSQL neste escopo; validar
+somente o hash do ajuste não autoriza sua aplicação.
+
+O registro completo v1–v5 é estendido por FINANCE_LEDGER_POSTGRES_MIGRATION_REGISTRY
+com a versão 6, 006_finance_ledger_foundation. Nomes e checksums anteriores
+permanecem intactos. O runner PG-001 continua sendo o único mecanismo de
+DDL, acionado explicitamente; startup/open não provisionam schemas.
+
+| Tabela finance | Responsabilidade e referências |
+| --- | --- |
+| cost_events | Evento original imutável; FKs reais para campaign.pipeline_runs, project.project_snapshots e content.artifact_lineage quando artifactId não é null |
+| ledger_receipts | Resultado normalizado e hashes por costEventId; recibo/evento confirmados juntos, com FKs recíprocas e constraint deferida |
+| cost_adjustments | Formato histórico imutável de ajuste, com FK para o custo original; ttsOperationId é referência opaca, sem inventar entidade/FK TTS ainda não migrada |
+
+Não são duplicadas entidades Project, Campaign, Affiliate ou Content.
+Artefatos ainda ausentes da linhagem PostgreSQL não podem ser usados como
+se existissem. A identidade/linhagem canônica é validada antes do registro;
+constraints PostgreSQL preservam as regras existentes de escopo do run,
+artefato e contentIdentity. CORE possui esta infraestrutura; regras Finance,
+reconciliação, limites, billing e autorização permanecem com D.
+
+### Operações disponíveis e precisão
+
+FinancePostgresModule.register(config) é uma composição interna independente
+do FinanceModule operacional. Exporta somente PostgresFinanceLedgerPersistence
+e o token POSTGRES_FINANCE_LEDGER. open(readOnly?) verifica as versões/checksums
+e devolve um handle com estas operações assíncronas:
+
+- registerCostEvent, getCostEvent, listCostEventsByPipelineRun e
+  getCostLedgerByPipelineRun: eventos originais e ledger V1.
+- getReceipt: replay/integridade do resultado e identidade persistidos.
+- listAdjustmentRecords: leitura do formato histórico validado por
+  validateAdjustment; não representa extrato reconciliado ou custo líquido.
+- close: encerra somente o handle, preservando o pool compartilhado.
+
+Montantes usam NUMERIC sem typmod com checks explícitos de positividade,
+limite de 40 dígitos inteiros e escala máxima 18. Assim excesso de escala
+é recusado em vez de arredondado. O driver retorna os montantes como texto;
+nenhum valor monetário passa por Number. Somente metadados BIGINT limitados
+pelos contratos de inteiro seguro são convertidos. deltaUnits permanece TEXT.
+As somas e normalizações vêm exclusivamente das funções de domínio existentes.
+Zero e custos desconhecidos continuam inválidos no contrato de CostEvent;
+ausência de evidência não produz custo zero, autorização ou saldo disponível.
+
+Todas as consultas são qualificadas e parametrizadas. Cada operação usa
+PostgresDatabase.transaction e um PoolClient. O registro serializa writers
+com os locks existentes de Campaign (5) e Finance (6), nessa ordem, antes de
+reconstruir o run e escrever evento/recibo. Isso mantém a projeção canônica
+estável durante suas leituras. Leituras usam REPEATABLE READ READ ONLY;
+chamadas internas reutilizam a mesma sessão. Falha intermediária reverte
+evento e recibo; replays/conflitos preservam o contrato de identidade. Não
+há pool/runner adicional, chamada externa ou regra de orçamento no adapter.
+
+### Fronteiras e dependências remanescentes
+
+Inserções em cost_adjustments são recusadas no próprio PostgreSQL com
+COST_ADJUSTMENT_RECONCILIATION_REQUIRED (P6009). Não existe API de escrita de
+ajustes neste opt-in. Os testes de leitura histórica semeiam registros apenas
+na fixture identificada, suspendendo e restaurando esse gate dentro de uma
+transação de teste; nenhum importador operacional é disponibilizado. Uma
+entrega futura de D/CORE precisa fornecer a reconciliação TTS canônica e uma
+nova migration explícita para substituir o gate, sem editar v6 já integrada.
+
+Permanecem exclusivamente SQLite: FinanceService/FinanceController,
+orçamento global e por campanha, US$ 1/dia e US$ 20/mês, reservas e limites,
+aprovações, dispatch/settlement, telemetry, vídeo/FAL/TTS, reconciliação,
+escrita de ajustes, extratos/ledger V2 e readiness funcional da Frente D.
+Não são expostos métodos FinanceRepository completos, endpoints ou providers
+pagos. AppModule e o runtime padrão não mudam; não há dual write.
+
+O coordenador PG-171 alista somente Content/Affiliate/Campaign. Finance não
+é declarado participante por cast/alias e recusa abertura dentro dessa
+unidade com FINANCE_CROSS_DOMAIN_TRANSACTION_REQUIRED. Esta fundação abre
+suas operações de ledger como transações independentes de topo; não deve ser
+chamada dentro de transações isoladas de outros repositories como se pudesse
+aderir a elas. Coordenação de escritas multidomínio, commits antes de efeitos
+financeiros e ativação de flows completos continuam dependências explícitas
+de CORE/D/E e não foram simulados com leituras externas ou transações SQLite.
+
+### Validação e limites de ativação
+
+test/postgres/finance-ledger.integration.test.ts reutiliza a harness PG-001
+com PostgreSQL 18.6 descartável e marcado. Cobre v1–v6, checksums/reexecução,
+rollback de DDL, precisão máxima/subunidades, rejeição de custos inválidos,
+recibos, concorrência, imutabilidade, referências, integridade, histórico,
+replay após recriar o pool, rollback de recibo, proteção read-only, startup
+sem DDL e composição Nest. A paridade consulta um Finance SQLite sintético
+com handle read-only, nunca um banco operacional. Não há chamadas pagas ou
+efeitos externos; os resultados de persistência usam PostgreSQL real.
+
+O futuro cutover exige os contratos de D e dos participantes ainda ausentes,
+provas das operações adicionais, plano de migração/reconciliação/rollback e
+autorização operacional específica. Nenhum dado real foi migrado ou banco
+operacional acessado. Não há mudança em Docker LIVE, deploy ou cutover.
+Custos locais de CPU/energia indisponíveis; nenhuma execução paga realizada.
+Finance PostgreSQL completo e PG-002 inteiro não são declarados concluídos.
