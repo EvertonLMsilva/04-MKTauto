@@ -8,12 +8,20 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes, scryptSync } from 'node:crypto';
+import { AffiliateReviewRegistrationService } from './application/affiliate-review-registration.service.js';
+import { ShopeeCatalogCommit } from './infrastructure/shopee-catalog-commit.js';
+import { operationalQcIdentity } from '../publishing/application/local-qc-identity.js';
+import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
+import { DatabaseSync } from 'node:sqlite';
+import { PostgresAffiliatePersistence } from './infrastructure/postgres-affiliate.persistence.js';
+import type { PostgresAffiliateSessionFactory } from './infrastructure/postgres-affiliate.session.js';
 import { Test } from '@nestjs/testing';
 import request from 'supertest';
 import { FeedQualificationService } from './application/feed-qualification.service.js';
 import { QualificationPreviewService } from './application/qualification-preview.service.js';
 import { QualificationPreviewController } from './qualification-preview.controller.js';
+import { AffiliateModule } from './affiliate.module.js';
 import { AffiliateService } from './application/affiliate.service.js';
 import { SqliteAffiliatePersistence } from './infrastructure/sqlite-affiliate.persistence.js';
 import { affiliateHash } from './domain/affiliate-contracts.js';
@@ -599,4 +607,492 @@ test('batch CLI is explicit, offline and writes a new artifact without overwriti
   ).rejects.toThrow();
   expect(readFileSync(output)).toEqual(bytes);
   expect(readFileSync(f.database)).toEqual(before);
+});
+
+async function reviewFixture() {
+  const c = await complete(),
+    artifact = await preview.preview(c.request);
+  const secret = randomBytes(32).toString('base64url'),
+    salt = randomBytes(16).toString('hex');
+  const identities = join(root, 'review-identities.json');
+  writeFileSync(
+    identities,
+    JSON.stringify({
+      version: 1,
+      identities: [
+        {
+          id: 'operator_fixture',
+          salt,
+          hash: scryptSync(secret, Buffer.from(salt, 'hex'), 64, {
+            N: 32768,
+            r: 8,
+            p: 1,
+            maxmem: 67108864,
+          }).toString('hex'),
+          roles: ['QC_REVIEWER'],
+          revoked: false,
+        },
+      ],
+    }),
+    { mode: 0o600 },
+  );
+  vi.stubEnv('QC_IDENTITIES_FILE', identities);
+  const principal = await operationalQcIdentity.authenticate(
+    `Bearer operator_fixture.${secret}`,
+    '127.0.0.1',
+  );
+  const affiliate = new AffiliateService(
+    factory,
+    projects,
+    new ShopeeCatalogCommit(f.database),
+  );
+  const registration = new AffiliateReviewRegistrationService(
+    preview,
+    affiliate,
+  );
+  const command = {
+    idempotencyKey: 'review_registration_001',
+    confirmed: true,
+    decision: 'REGISTER',
+    expectedPackageHash: artifact.packageHash,
+    preview: artifact,
+  };
+  return {
+    c,
+    artifact,
+    principal,
+    secret,
+    identities,
+    registration,
+    affiliate,
+    command,
+  };
+}
+
+test('a ready batch item uses the same explicit single-item registration contract', async () => {
+  const r = await reviewFixture();
+  const batch = await preview.previewBatch({
+    reportId: input.reportId,
+    projectId: input.projectId,
+    recordedAt: input.recordedAt,
+    candidates: [
+      {
+        externalProductId: input.externalProductId,
+        source: { feedId: 'fixture', rowNumber: 2 },
+        product: r.c.request.product,
+        campaign: r.c.request.campaign,
+        affiliateEvidence: r.c.request.affiliateEvidence,
+      },
+    ],
+  });
+  expect(batch.items[0].preview).toEqual(r.artifact);
+  const before = readFileSync(f.database);
+  await expect(
+    r.registration.register({ ...r.command, preview: batch }, r.principal),
+  ).rejects.toThrow();
+  expect(readFileSync(f.database)).toEqual(before);
+  expect(
+    await r.registration.register(
+      { ...r.command, preview: batch.items[0].preview },
+      r.principal,
+    ),
+  ).toMatchObject({
+    status: 'REGISTERED',
+    productHash: affiliateHash(r.c.request.product),
+    campaignHash: affiliateHash(r.c.request.campaign),
+  });
+});
+
+test('revoked operator cannot register or replay a historical receipt', async () => {
+  const r = await reviewFixture();
+  await r.registration.register(r.command, r.principal);
+  const identity = JSON.parse(readFileSync(r.identities, 'utf8'));
+  identity.identities[0].revoked = true;
+  writeFileSync(r.identities, JSON.stringify(identity));
+  const before = readFileSync(f.database);
+  await expect(
+    r.registration.register(r.command, r.principal),
+  ).rejects.toThrow();
+  await expect(
+    r.registration.register(
+      { ...r.command, idempotencyKey: 'revoked_new' },
+      r.principal,
+    ),
+  ).rejects.toThrow();
+  expect(readFileSync(f.database)).toEqual(before);
+});
+
+test('revalidation rejects changed feed during the review and rechecks operator before commit', async () => {
+  const r = await reviewFixture(),
+    original = preview.preview.bind(preview);
+  vi.spyOn(preview, 'preview').mockImplementationOnce(async (raw) => {
+    const artifact = await original(raw);
+    writeFileSync(
+      join(root, 'feed.csv'),
+      readFileSync(join(root, 'feed.csv'), 'utf8').replace('45.9', '46.9'),
+    );
+    return artifact;
+  });
+  const before = readFileSync(f.database);
+  await expect(r.registration.register(r.command, r.principal)).rejects.toThrow(
+    'FEED_QUALIFICATION_REPORT_CHANGED',
+  );
+  expect(readFileSync(f.database)).toEqual(before);
+  vi.restoreAllMocks();
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(
+    new Error('NETWORK_FORBIDDEN'),
+  );
+  writeFileSync(
+    join(root, 'feed.csv'),
+    readFileSync(join(root, 'feed.csv'), 'utf8').replace('46.9', '45.9'),
+  );
+  // File metadata is part of the report; regenerate the exact package first.
+  const refreshed = {
+    ...r.c.request,
+    reportId: (await feeds.analyze()).reportId,
+  };
+  const artifact = await preview.preview(refreshed);
+  const real = preview.revalidateRegistration.bind(preview);
+  vi.spyOn(preview, 'revalidateRegistration').mockImplementationOnce(
+    async (...args) => {
+      const valid = await real(...args);
+      const identity = JSON.parse(readFileSync(r.identities, 'utf8'));
+      identity.identities[0].revoked = true;
+      writeFileSync(r.identities, JSON.stringify(identity));
+      return valid;
+    },
+  );
+  await expect(
+    r.registration.register(
+      {
+        ...r.command,
+        preview: artifact,
+        expectedPackageHash: artifact.packageHash,
+      },
+      r.principal,
+    ),
+  ).rejects.toThrow();
+  expect(readFileSync(f.database)).toEqual(before);
+}, 15000);
+
+test('historical replay performs no revalidation or new writes; changed idempotent payload conflicts', async () => {
+  const r = await reviewFixture(),
+    receipt = await r.registration.register(r.command, r.principal);
+  writeFileSync(r.c.path, 'NO_LONGER_USABLE');
+  writeFileSync(join(root, 'feed.csv'), 'changed');
+  const revalidate = vi.spyOn(preview, 'revalidateRegistration'),
+    before = readFileSync(f.database);
+  expect(await r.registration.register(r.command, r.principal)).toEqual(
+    receipt,
+  );
+  expect(revalidate).not.toHaveBeenCalled();
+  const artifact = structuredClone(r.artifact) as any;
+  artifact.productDraft.product.attributes[0].value = 'another reviewed value';
+  artifact.finalPayload.product = artifact.productDraft;
+  const { packageHash: _previous, ...body } = artifact;
+  artifact.packageHash = affiliateHash(body);
+  await expect(
+    r.registration.register(
+      {
+        ...r.command,
+        preview: artifact,
+        expectedPackageHash: artifact.packageHash,
+      },
+      r.principal,
+    ),
+  ).rejects.toThrow('AFFILIATE_IDEMPOTENCY_CONFLICT');
+  expect(readFileSync(f.database)).toEqual(before);
+});
+
+test('a newer product revision invalidates an uncommitted review without overwriting history', async () => {
+  const r = await reviewFixture();
+  await r.affiliate.registerProduct({
+    idempotencyKey: 'prior_product_001',
+    product: r.c.request.product,
+  });
+  await r.affiliate.registerProduct({
+    idempotencyKey: 'prior_product_002',
+    product: { ...r.c.request.product, revision: 2 },
+  });
+  const before = readFileSync(f.database);
+  await expect(r.registration.register(r.command, r.principal)).rejects.toThrow(
+    'AFFILIATE_REVIEW_BLOCKED',
+  );
+  expect(readFileSync(f.database)).toEqual(before);
+  expect(
+    await r.affiliate.getCampaign(r.c.request.campaign.campaignId, 1),
+  ).toBeNull();
+});
+
+test('opt-in asynchronous session uses existing repository commands, awaits rollback and closes every handle', async () => {
+  const r = await reviewFixture();
+  const commandsBefore = f.base.db
+    .prepare('SELECT COUNT(*) n FROM affiliate_commands')
+    .get()?.n;
+  let handles = 0,
+    transactions = 0;
+  // A disposable async SQL contract double, not a PostgreSQL integration test.
+  const sessions = {
+    open: async (readOnly: boolean) => {
+      const db = new DatabaseSync(f.database, { readOnly });
+      handles++;
+      return {
+        executions: { getRun: async () => null },
+        activity: { hasStarted: async () => false },
+        sql: {
+          prepare: (sql: string) => ({
+            get: async (...args: any[]) => db.prepare(sql).get(...args),
+            all: async (...args: any[]) => db.prepare(sql).all(...args),
+            run: async (...args: any[]) => db.prepare(sql).run(...args),
+          }),
+        },
+        transaction: async <T>(work: () => T | Promise<T>): Promise<T> => {
+          if (db.isTransaction) return await work();
+          transactions++;
+          db.exec(readOnly ? 'BEGIN' : 'BEGIN IMMEDIATE');
+          try {
+            const result = await work();
+            db.exec('COMMIT');
+            return result;
+          } catch (error) {
+            db.exec('ROLLBACK');
+            throw error;
+          }
+        },
+        close: () => {
+          db.close();
+          handles--;
+        },
+      };
+    },
+  } as unknown as PostgresAffiliateSessionFactory;
+  const commit = new ShopeeCatalogCommit<true>(
+    new PostgresAffiliatePersistence(sessions),
+    sessions,
+  );
+  const registration = new AffiliateReviewRegistrationService(
+    preview,
+    new AffiliateService(factory, projects, commit),
+  );
+  f.base.db.exec(
+    "CREATE TRIGGER injected_async_review BEFORE INSERT ON affiliate_campaign_revisions BEGIN SELECT RAISE(ABORT,'INJECTED_ASYNC_REVIEW'); END",
+  );
+  await expect(registration.register(r.command, r.principal)).rejects.toThrow(
+    'INJECTED_ASYNC_REVIEW',
+  );
+  expect(
+    await r.affiliate.getProduct(r.c.request.product.productId, 1),
+  ).toBeNull();
+  expect(handles).toBe(0);
+  expect(
+    f.base.db.prepare('SELECT COUNT(*) n FROM affiliate_commands').get()?.n,
+  ).toBe(commandsBefore);
+  f.base.db.exec('DROP TRIGGER injected_async_review');
+  const receipt = await registration.register(r.command, r.principal);
+  expect(await registration.register(r.command, r.principal)).toEqual(receipt);
+  expect(handles).toBe(0);
+  expect(transactions).toBe(5);
+});
+
+test('default Nest composition resolves registration without opening a database or making remote calls', async () => {
+  vi.stubEnv('PROJECT_API_DATABASE', '');
+  const module = await Test.createTestingModule({
+    imports: [AffiliateModule],
+  }).compile();
+  try {
+    expect(module.get(AffiliateReviewRegistrationService)).toBeInstanceOf(
+      AffiliateReviewRegistrationService,
+    );
+  } finally {
+    await module.close();
+  }
+});
+
+test('exact operator review registers product and campaign atomically and replays after restart', async () => {
+  const r = await reviewFixture();
+  const result = await r.registration.register(r.command, r.principal);
+  expect(result).toMatchObject({
+    status: 'REGISTERED',
+    actorId: 'operator_fixture',
+    previewPackageHash: r.artifact.packageHash,
+    associationVerified: false,
+    liveAuthorized: false,
+    publicationAuthorized: false,
+  });
+  expect(
+    await r.affiliate.getProduct(r.c.request.product.productId, 1),
+  ).toEqual(r.c.request.product);
+  expect(
+    await r.affiliate.getCampaign(r.c.request.campaign.campaignId, 1),
+  ).toEqual(r.c.request.campaign);
+  const restarted = new AffiliateReviewRegistrationService(
+    new QualificationPreviewService(feeds, factory, projects),
+    new AffiliateService(
+      factory,
+      projects,
+      new ShopeeCatalogCommit(f.database),
+    ),
+  );
+  expect(await restarted.register(r.command, r.principal)).toEqual(result);
+  expect((await preview.preview(r.c.request)).registrationAuthorized).toBe(
+    false,
+  );
+});
+
+test.each([
+  'missing-confirmation',
+  'other-package',
+  'tampered-evidence',
+  'stale-report',
+  'corrupt-media',
+  'denied-rights',
+  'wrong-campaign',
+  'blocked',
+  'client-actor',
+])(
+  'review registration rejects %s with no product/campaign writes',
+  async (kind) => {
+    const r = await reviewFixture(),
+      command = structuredClone(r.command) as any;
+    if (kind === 'missing-confirmation') delete command.confirmed;
+    if (kind === 'other-package') command.expectedPackageHash = 'a'.repeat(64);
+    if (kind === 'tampered-evidence')
+      command.preview.affiliateEvidence.sourceRef = 'tampered';
+    if (kind === 'stale-report')
+      writeFileSync(
+        join(root, 'feed.csv'),
+        readFileSync(join(root, 'feed.csv'), 'utf8').replace('45.9', '46.9'),
+      );
+    if (kind === 'corrupt-media') writeFileSync(r.c.path, 'CORRUPT');
+    if (kind === 'denied-rights') {
+      const p = structuredClone(r.c.request);
+      p.product.localImage.rights.evidence = [];
+      command.preview = await preview.preview(p);
+      command.expectedPackageHash = command.preview.packageHash;
+    }
+    if (kind === 'wrong-campaign') {
+      command.preview.offerDraft.campaign.projectId = 'other_project';
+      const { packageHash: _old, ...body } = command.preview;
+      command.preview.packageHash = affiliateHash(body);
+      command.expectedPackageHash = command.preview.packageHash;
+    }
+    if (kind === 'blocked') {
+      command.preview = await preview.preview(input);
+      command.expectedPackageHash = command.preview.packageHash;
+    }
+    if (kind === 'client-actor') command.actorId = 'forged_operator';
+    const before = readFileSync(f.database);
+    const counts = () =>
+      [
+        'affiliate_product_revisions',
+        'affiliate_campaign_revisions',
+        'affiliate_commands',
+      ].map(
+        (table) =>
+          f.base.db.prepare(`SELECT COUNT(*) n FROM ${table}`).get()?.n,
+      );
+    const countsBefore = counts();
+    await expect(
+      r.registration.register(command, r.principal),
+    ).rejects.toThrow();
+    expect(readFileSync(f.database)).toEqual(before);
+    expect(counts()).toEqual(countsBefore);
+  },
+);
+
+test('review registration rolls back an intermediate failure, supports concurrency and never duplicates revisions', async () => {
+  const r = await reviewFixture();
+  f.base.db.exec(
+    "CREATE TRIGGER injected_review_failure BEFORE INSERT ON affiliate_campaign_revisions WHEN NEW.campaign_id='offer_shopee_4251540175' BEGIN SELECT RAISE(ABORT,'INJECTED_REVIEW_FAILURE'); END",
+  );
+  await expect(r.registration.register(r.command, r.principal)).rejects.toThrow(
+    'INJECTED_REVIEW_FAILURE',
+  );
+  expect(
+    await r.affiliate.getProduct(r.c.request.product.productId, 1),
+  ).toBeNull();
+  f.base.db.exec('DROP TRIGGER injected_review_failure');
+  const [a, b] = await Promise.all([
+    r.registration.register(r.command, r.principal),
+    r.registration.register(r.command, r.principal),
+  ]);
+  expect(a).toEqual(b);
+  await r.registration.register(
+    { ...r.command, idempotencyKey: 'another_review' },
+    r.principal,
+  );
+  expect(
+    f.base.db
+      .prepare(
+        'SELECT COUNT(*) n FROM affiliate_product_revisions WHERE product_id=?',
+      )
+      .get(r.c.request.product.productId)?.n,
+  ).toBe(1);
+  expect(
+    f.base.db
+      .prepare(
+        'SELECT COUNT(*) n FROM affiliate_campaign_revisions WHERE campaign_id=?',
+      )
+      .get(r.c.request.campaign.campaignId)?.n,
+  ).toBe(1);
+  expect(() =>
+    f.base.db.exec("UPDATE affiliate_commands SET result_json='{}'"),
+  ).toThrow('IMMUTABLE_AFFILIATE_COMMAND');
+});
+
+test('write endpoint reuses real operator session, origin and CSRF protection; caller cannot provide actor', async () => {
+  const r = await reviewFixture();
+  const module = await Test.createTestingModule({
+    controllers: [QualificationPreviewController],
+    providers: [
+      { provide: QualificationPreviewService, useValue: preview },
+      { provide: AffiliateReviewRegistrationService, useValue: r.registration },
+    ],
+  }).compile();
+  const app = module.createNestApplication();
+  const browser = {
+    method: 'POST',
+    headers: { host: 'localhost:3000', origin: 'http://localhost:3000' },
+    socket: { remoteAddress: '127.0.0.1' },
+  };
+  const session = await operationalQcSessions.login(
+    { operatorId: 'operator_fixture', secret: r.secret },
+    browser,
+  );
+  const cookie = session.cookie.split(';')[0];
+  try {
+    await app.init();
+    const before = readFileSync(f.database);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/register')
+      .send(r.command)
+      .expect(401);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/register')
+      .set('Host', 'localhost:3000')
+      .set('Origin', 'http://localhost:3000')
+      .set('Cookie', cookie)
+      .send(r.command)
+      .expect(403);
+    expect(readFileSync(f.database)).toEqual(before);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/register')
+      .set('Host', 'localhost:3000')
+      .set('Origin', 'http://localhost:3000')
+      .set('Cookie', cookie)
+      .set('x-qc-csrf', session.csrfToken)
+      .send({ ...r.command, actorId: 'forged' })
+      .expect(400);
+    await request(app.getHttpServer())
+      .post('/affiliate/feed-qualifications/preview/register')
+      .set('Host', 'localhost:3000')
+      .set('Origin', 'http://localhost:3000')
+      .set('Cookie', cookie)
+      .set('x-qc-csrf', session.csrfToken)
+      .send(r.command)
+      .expect(200)
+      .expect((res) => expect(res.body.actorId).toBe('operator_fixture'));
+  } finally {
+    await app.close();
+  }
 });

@@ -29,6 +29,21 @@ export class QualificationPreviewService {
   async preview(raw: unknown) {
     return this.previewFromReport(raw);
   }
+  async revalidateRegistration(request: unknown, expectedPackageHash: string) {
+    const current = await this.preview(request);
+    const report = await this.feeds.analyze();
+    if (report.reportId !== current.reportId)
+      throw catalogError('FEED_QUALIFICATION_REPORT_CHANGED');
+    if (
+      current.status !== 'READY_FOR_OPERATOR_REVIEW' ||
+      !current.finalPayload ||
+      current.pending.length
+    )
+      throw catalogError('AFFILIATE_REVIEW_BLOCKED');
+    if (current.packageHash !== expectedPackageHash)
+      throw catalogError('AFFILIATE_REVIEW_STALE');
+    return current;
+  }
   // A private snapshot parameter prevents callers from supplying a forged report.
   private async previewFromReport(
     raw: unknown,

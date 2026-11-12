@@ -7,6 +7,7 @@ import {
 } from '../domain/affiliate-campaign-source.js';
 import { Inject, Injectable, Optional } from '@nestjs/common';
 import { ShopeeCatalogCommit } from '../infrastructure/shopee-catalog-commit.js';
+import type { ReviewedRegistrationPayload } from '../domain/reviewed-registration.js';
 import { AFFILIATE_REPOSITORY } from './ports/affiliate-repository.port.js';
 import type {
   AffiliateRepository,
@@ -58,6 +59,25 @@ export class AffiliateService<A extends boolean = false> {
     @Inject(ShopeeCatalogCommit)
     private readonly shopeeCommit?: ShopeeCatalogCommit<boolean>,
   ) {}
+  async replayReviewedRegistration(
+    payload: ReviewedRegistrationPayload,
+    key: string,
+  ) {
+    if (!this.shopeeCommit)
+      throw new Error('AFFILIATE_REVIEW_COMMIT_UNAVAILABLE');
+    return this.shopeeCommit.replayReviewed(payload, key);
+  }
+  async registerReviewedRegistration(
+    payload: ReviewedRegistrationPayload,
+    key: string,
+  ) {
+    validateAffiliateProduct(payload.product);
+    validateAffiliateCampaign(payload.campaign);
+    if (!this.shopeeCommit)
+      throw new Error('AFFILIATE_REVIEW_COMMIT_UNAVAILABLE');
+    await this.verifyProject(payload.campaign);
+    return this.shopeeCommit.commitReviewed(payload, key);
+  }
   async prepareShopeeCatalog(
     productValue: unknown,
     campaignValue: unknown,
