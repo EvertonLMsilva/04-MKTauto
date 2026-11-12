@@ -147,6 +147,67 @@ describe('internal Shopee affiliate fake', () => {
     },
   );
 
+  it('preserves a complete synthetic offer through paginated discovery without granting evidence', async () => {
+    const fake = new FakeShopeeAffiliate();
+    const [offer] = await fake.queryOffers();
+    const first = await fake.queryOfferPage({ page: 1, limit: 1 });
+    const complete = first.offers[0];
+    expect(complete).toMatchObject(offer);
+    expect(complete.productId).toMatch(/^\d+$/);
+    expect(complete.shopId).toMatch(/^\d+$/);
+    expect(complete.productUrl).toBe(
+      `https://shopee.com.br/product/${complete.shopId}/${complete.productId}`,
+    );
+    expect(complete.affiliateUrl).toBe(
+      `https://shopee-affiliate.invalid/link/${complete.offerId}`,
+    );
+    expect(complete.price.amount).toBe('9007199254740993.01');
+    expect(complete.estimatedCommission.rate).toBe('0.012345');
+    expect(first.pageInfo).toEqual({
+      page: 1,
+      limit: 1,
+      hasNextPage: true,
+      nextPage: 2,
+    });
+    const second = await fake.queryOfferPage({ page: 2, limit: 1 });
+    expect(second.offers[0]).toMatchObject({
+      shopId: null,
+      productUrl: null,
+      affiliateUrl: null,
+    });
+    expect(second.pageInfo).toEqual({
+      page: 2,
+      limit: 1,
+      hasNextPage: false,
+      nextPage: null,
+    });
+    const input = {
+      offerId: complete.offerId,
+      originUrl: complete.productUrl!,
+      subIds: ['FICTITIOUS_TEST_ONLY', 'project001'],
+    };
+    const link = await fake.generateLink(input);
+    expect(link).toEqual(await fake.generateLink(input));
+    expect(link).toMatchObject({
+      ...input,
+      url: complete.affiliateUrl,
+      associationVerified: false,
+      provenance: complete.provenance,
+    });
+    expect(new URL(link.url).protocol).toBe('https:');
+    expect(new URL(link.url).hostname).toBe('shopee-affiliate.invalid');
+    input.subIds.push('later');
+    expect(link.subIds).toEqual(['FICTITIOUS_TEST_ONLY', 'project001']);
+    for (const key of [
+      'authorizations',
+      'mediaRightsEvidence',
+      'commercialApproval',
+      'affiliateAssociationEvidence',
+    ]) {
+      expect(complete).not.toHaveProperty(key);
+    }
+  });
+
   it.each(['HTTP_429', 'GRAPHQL_10030'])(
     'does not retry rate limit %s through the authorized LIVE facade',
     async (kind) => {

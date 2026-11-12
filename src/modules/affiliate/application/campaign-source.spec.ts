@@ -5,8 +5,12 @@ import { join } from 'node:path';
 import { provisionSchema } from '../../../infrastructure/administration/schema-provisioner.js';
 import { SqliteAffiliateRepository } from '../infrastructure/sqlite-affiliate.repository.js';
 import { AffiliateService } from './affiliate.service.js';
+import { affiliateHash } from '../domain/affiliate-contracts.js';
 import { validateAffiliateCampaignSource } from '../domain/affiliate-campaign-source.js';
-import { product, campaign } from '../../../../test/support/affiliate-fixture.js';
+import {
+  product,
+  campaign,
+} from '../../../../test/support/affiliate-fixture.js';
 import { falFixture } from '../../../../test/support/fal-fixture.js';
 import { raceCampaignSources } from '../../../../test/support/affiliate-concurrency.js';
 
@@ -34,6 +38,114 @@ export const source = (overrides: Record<string, unknown> = {}) => ({
   ...overrides,
 });
 const refs = ['authorized-image-001'];
+
+describe('campaign source URL policy by provenance', () => {
+  const synthetic = 'https://shopee-affiliate.invalid/link/offer-001';
+  const liveProvenance = {
+    source: 'SHOPEE_LIVE',
+    fixtureVersion: null,
+    observedAt: '2026-11-12T12:00:00Z',
+  };
+  const live = (affiliateUrl: string) =>
+    source({
+      affiliateUrl,
+      offer: { ...source().offer, provenance: liveProvenance },
+    });
+
+  it('accepts only the exact synthetic link under the known FAKE fixture version', () => {
+    const input = source({ affiliateUrl: synthetic });
+    const result = validateAffiliateCampaignSource(input);
+    expect(result).toEqual(input);
+    expect(result.offer.provenance.source).toBe('FAKE');
+    expect(Object.isFrozen(result.offer.provenance)).toBe(true);
+    expect(result).not.toHaveProperty('approved');
+    expect(result).not.toHaveProperty('associationVerified');
+  });
+
+  it('keeps valid LIVE and historical FAKE short links compatible', () => {
+    expect(
+      validateAffiliateCampaignSource(live(source().affiliateUrl)),
+    ).toEqual(live(source().affiliateUrl));
+    const historical = source({
+      offer: {
+        ...source().offer,
+        provenance: {
+          source: 'FAKE',
+          fixtureVersion: 'historical/1',
+          observedAt: null,
+        },
+      },
+    });
+    expect(validateAffiliateCampaignSource(historical)).toEqual(historical);
+  });
+
+  it.each([
+    synthetic,
+    'https://s.shopee.com.br.invalid/link/offer-001',
+    'https://other.invalid/link/offer-001',
+    'http://s.shopee.com.br/abc',
+    'https://s.shopee.com.br:443/abc',
+    'https://user:password@s.shopee.com.br/abc',
+    'https://s.shopee.com.br/abc?redirect=https://evil.invalid',
+    'https://s.shopee.com.br/abc?token=synthetic',
+    'https://s.shopee.com.br/abc#fragment',
+  ])('preserves LIVE rejection for %s', (url) => {
+    expect(() => validateAffiliateCampaignSource(live(url))).toThrow(
+      'INVALID_AFFILIATE_CAMPAIGN_SOURCE',
+    );
+  });
+
+  it.each([
+    'https://shopee-affiliate.invalid/link/another-offer',
+    'https://shopee-affiliate.invalid/link/offer-001/',
+    'https://shopee-affiliate.invalid/link/%6Fffer-001',
+    'https://shopee-affiliate.invalid/x/../link/offer-001',
+    'https://shopee-affiliate.invalid/link/offer-001?anything=1',
+    'https://shopee-affiliate.invalid/link/offer-001?redirect=https://evil.invalid',
+    'https://other.invalid/link/offer-001',
+    'https://shopee-affiliate.invalid.evil.invalid/link/offer-001',
+    'http://shopee-affiliate.invalid/link/offer-001',
+    'https://user:password@shopee-affiliate.invalid/link/offer-001',
+    'https://shopee-affiliate.invalid:443/link/offer-001',
+    'https://shopee-affiliate.invalid/link/offer-001#fragment',
+    'https://shopee-affiliate.invalid/link/offer-001\n',
+  ])('rejects arbitrary or unsafe synthetic URL %s', (affiliateUrl) => {
+    expect(() =>
+      validateAffiliateCampaignSource(source({ affiliateUrl })),
+    ).toThrow('INVALID_AFFILIATE_CAMPAIGN_SOURCE');
+  });
+
+  it.each([
+    {
+      source: 'FAKE',
+      fixtureVersion: 'shopee-affiliate-fake/2',
+      observedAt: null,
+    },
+    { source: 'FAKE', fixtureVersion: 'other/1', observedAt: null },
+    {
+      source: 'FAKE',
+      fixtureVersion: 'shopee-affiliate-fake/1',
+      observedAt: '2026-11-12T12:00:00Z',
+    },
+    { source: 'FAKE', observedAt: null },
+    {
+      source: 'UNKNOWN',
+      fixtureVersion: 'shopee-affiliate-fake/1',
+      observedAt: null,
+    },
+    { ...liveProvenance, fixtureVersion: 'shopee-affiliate-fake/1' },
+    { ...liveProvenance, observedAt: 'yesterday' },
+  ])('rejects incompatible or malformed provenance %j', (provenance) => {
+    expect(() =>
+      validateAffiliateCampaignSource(
+        source({
+          affiliateUrl: synthetic,
+          offer: { ...source().offer, provenance },
+        }),
+      ),
+    ).toThrow('INVALID_AFFILIATE_CAMPAIGN_SOURCE');
+  });
+});
 
 describe('versioned Shopee campaign source, offline', () => {
   let f: ReturnType<typeof falFixture>;
@@ -174,6 +286,27 @@ describe('versioned Shopee campaign source, offline', () => {
     expect(repo.getProduct('prod_001', 1)?.evidence).toEqual(
       product().evidence,
     );
+  });
+  it('replays the exact synthetic source hash and rejects a changed external identity', async () => {
+    const affiliateUrl = 'https://shopee-affiliate.invalid/link/offer-001';
+    repo.registerCampaign(
+      campaign({ revision: 2, affiliateUrl }),
+      'synthetic_campaign_two',
+      true,
+    );
+    const value = source({ campaignRevision: 2, affiliateUrl });
+    const result = await service.associateCampaignSource(command(value));
+    expect(
+      affiliateHash(await service.associateCampaignSource(command(value))),
+    ).toBe(affiliateHash(result));
+    expect(
+      await service.getCampaignSource(value.sourceId, value.revision),
+    ).toEqual(value);
+    const changed = { ...value, offer: { ...value.offer, productId: '999' } };
+    await expect(
+      service.associateCampaignSource(command(changed)),
+    ).rejects.toThrow('AFFILIATE_IDEMPOTENCY_CONFLICT');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
   it('requires explicit confirmation before opening persistence', async () => {
     const open = vi.fn();

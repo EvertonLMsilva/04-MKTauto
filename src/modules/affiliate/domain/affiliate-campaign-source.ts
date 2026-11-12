@@ -42,7 +42,7 @@ function exact(
   )
     invalid(path);
 }
-function externalId(value: unknown, path: string) {
+function externalId(value: unknown, path: string): asserts value is string {
   if (
     typeof value !== 'string' ||
     !/^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$/.test(value)
@@ -110,9 +110,18 @@ export function validateAffiliateCampaignSource(
       invalid('offer.provenance');
   } else invalid('offer.provenance');
   // Structural policy only: never claims that an affiliate association was verified.
+  // Only the existing FAKE fixture may use its exact non-routable link. Historical
+  // FAKE short links keep their policy; LIVE never gains a synthetic host.
+  const syntheticFixtureLink =
+    p.source === 'FAKE' &&
+    p.fixtureVersion === 'shopee-affiliate-fake/1' &&
+    raw.affiliateUrl ===
+      `https://shopee-affiliate.invalid/link/${raw.offer.offerId}`;
   validateShopeeUrl(
     raw.affiliateUrl,
-    new Set(['s.shopee.com.br']),
+    new Set(
+      syntheticFixtureLink ? ['shopee-affiliate.invalid'] : ['s.shopee.com.br'],
+    ),
     'affiliateUrl',
     invalid,
   );
