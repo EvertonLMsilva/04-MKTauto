@@ -25,11 +25,13 @@ import {
 
 export const POSTGRES_POOL_FACTORY = Symbol('POSTGRES_POOL_FACTORY');
 export type PostgresPoolFactory = (config: PoolConfig) => Pool;
-export type PostgresParticipant = 'content' | 'affiliate' | 'campaign';
+export type PostgresParticipant =
+  'content' | 'affiliate' | 'campaign' | 'media';
 const participantLocks: Record<PostgresParticipant, number> = {
   content: 3,
   affiliate: 4,
   campaign: 5,
+  media: 7,
 };
 interface UnitOfWork {
   database: PostgresDatabase;
