@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { affiliateHash as createConfigurationHash } from '../affiliate/domain/affiliate-contracts.js';
 import { readFileSync } from 'node:fs';
 import { p2EditorialFixture } from '../../../test/support/p2-editorial-fixture.js';
 import { provisionSchema } from '../../infrastructure/administration/schema-provisioner.js';
@@ -88,6 +89,40 @@ test.each([0, 1])(
         createHash('sha256').update(readFileSync(f.database)).digest('hex');
       const before = digest();
       expect(affiliate.catalogCandidates('project_empty')).toEqual([]);
+      // C-016 resolves the project-only discovery boundary independently of the
+      // historical campaign scope. A preview is neither a grant nor link permission.
+      const projectAuthorization = dynamic.projectLiveAuthorization();
+      const projectPreview = await projectAuthorization.previewDiscovery(
+        configuration,
+        {
+          schemaVersion: 'shopee-project-discovery-authorization/1.0.0',
+          kind: 'PROJECT_DISCOVERY_AUTHORIZATION',
+          authorizationId: 'fixture_project_proposal',
+          projectId: 'project_empty',
+          projectVersion: 1,
+          occurrenceId: 'fixture_occurrence',
+          configurationHash: createConfigurationHash(configuration),
+          notBefore: scope.notBefore,
+          expiresAt: scope.expiresAt,
+          evidenceRef: scope.evidenceRef,
+          costBasis: 'UNKNOWN',
+          costEvidenceRef: null,
+          maxOfferPages: 1,
+          maxLinks: 0,
+        },
+      );
+      expect(projectPreview.authorizationStatus).toBe('NOT_GRANTED');
+      expect(projectPreview.scope.maxLinks).toBe(0);
+      expect(projectPreview.blockers).toContain('BLOCKED_COST_UNCONFIRMED');
+      expect(
+        (
+          await projectAuthorization.inspectDiscovery({
+            projectId: 'project_empty',
+            projectVersion: 1,
+            occurrenceId: 'fixture_occurrence',
+          })
+        ).status,
+      ).toBe('NOT_STARTED');
       await expect(
         dynamic.previewLiveAuthorization(configuration, scope),
       ).rejects.toThrow('SHOPEE_LIVE_SCOPE_MISMATCH');

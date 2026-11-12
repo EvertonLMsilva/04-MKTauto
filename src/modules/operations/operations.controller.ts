@@ -26,6 +26,7 @@ import {
 import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
 import { OperationsService } from './operations.service.js';
 import { ProjectShopeeHandoffService } from './project-shopee-handoff.service.js';
+import { ProjectShopeeLivePreflightService } from './project-shopee-live-preflight.service.js';
 import { ProjectShopeeDiscoveryService } from './project-shopee-discovery.service.js';
 import { OperationsPreflightService } from './operations-preflight.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
@@ -38,6 +39,28 @@ type QcRequest = Request & { [QC_REVIEWER_CONTEXT]?: unknown };
 
 @Controller('operations')
 export class OperationsController {
+  @Post('projects/:projectId/shopee-live/preflight')
+  @HttpCode(200)
+  @UseGuards(LocalQcGuard)
+  projectShopeeLivePreflight(
+    @Param('projectId') projectId: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+    @Res({ passthrough: true }) response: Response,
+  ) {
+    response.set('Cache-Control', 'no-store');
+    return this.respond(() => {
+      if (!this.projectLivePreflight)
+        throw new ServiceUnavailableException({
+          code: 'SHOPEE_PROJECT_PREFLIGHT_UNAVAILABLE',
+        });
+      return this.projectLivePreflight.preview(
+        projectId,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      );
+    });
+  }
   @Post('projects/:projectId/shopee-discovery/prepare')
   @UseGuards(LocalQcGuard)
   prepareProjectShopee(
@@ -99,6 +122,9 @@ export class OperationsController {
     @Optional()
     @Inject(ProjectShopeeHandoffService)
     private readonly projectHandoff?: ProjectShopeeHandoffService,
+    @Optional()
+    @Inject(ProjectShopeeLivePreflightService)
+    private readonly projectLivePreflight?: ProjectShopeeLivePreflightService,
   ) {}
   private async respond<T>(action: () => T | Promise<T>) {
     try {
