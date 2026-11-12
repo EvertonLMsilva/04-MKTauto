@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { ProjectShopeePreparationLock } from './project-shopee-preparation-lock.js';
 import { InstagramEditorialService } from '../publishing/application/instagram-editorial.service.js';
 import { PublishingService } from '../publishing/application/publishing.service.js';
 import { InstagramPublicationService } from '../publishing/application/instagram-publication.service.js';
@@ -38,12 +39,16 @@ export class OperationsService {
       input.configuration as import('../affiliate/domain/shopee-dynamic.js').ShopeeDynamicConfiguration,
       actor.id,
     ] as const;
-    return input.authorizationId === undefined
-      ? this.campaigns.startDynamicCatalog(...args)
-      : this.campaigns.startDynamicCatalog(
-          ...args,
-          input.authorizationId as string,
-        );
+    const start = () =>
+      input.authorizationId === undefined
+        ? this.campaigns.startDynamicCatalog(...args)
+        : this.campaigns.startDynamicCatalog(
+            ...args,
+            input.authorizationId as string,
+          );
+    return this.projectPreparationLock
+      ? this.projectPreparationLock.run(args[1], start)
+      : start();
   }
   async reviewShopeeLiveAuthorization(value: unknown, principal: unknown) {
     const actor = operationalQcIdentity.assertActive(principal);
@@ -75,6 +80,9 @@ export class OperationsService {
     @Optional()
     @Inject(InstagramEditorialService)
     private readonly captions?: InstagramEditorialService,
+    @Optional()
+    @Inject(ProjectShopeePreparationLock)
+    private readonly projectPreparationLock?: ProjectShopeePreparationLock,
   ) {}
   private async captionContext(id: string) {
     const c = this.campaigns.finalizationContext(id);

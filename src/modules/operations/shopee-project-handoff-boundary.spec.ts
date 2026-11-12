@@ -12,7 +12,7 @@ import { validateDynamicConfiguration } from '../affiliate/domain/shopee-dynamic
 
 // Diagnostic of the unmodified production FAKE provider, not a replacement provider.
 // Uses only a disposable SQLite fixture; no operational evidence or approval is created.
-test('reproduces the existing FAKE provider boundary before project-first catalog preparation', async () => {
+test('preserves incomplete offers while complete FAKE data waits for explicit authorization', async () => {
   const f = p2EditorialFixture();
   vi.stubEnv('SHOPEE_AFFILIATE_MODE', 'fake');
   vi.stubGlobal(
@@ -72,22 +72,22 @@ test('reproduces the existing FAKE provider boundary before project-first catalo
       configuration.maxPages,
     );
     expect(discovery.offers).toHaveLength(2);
-    expect(
-      discovery.offers.every(
-        (o) => o.productUrl === null && o.affiliateUrl === null,
-      ),
-    ).toBe(true);
+    expect(discovery.offers[0].productUrl).toBeTruthy();
+    expect(discovery.offers[0].affiliateUrl).toBeTruthy();
+    expect(discovery.offers[1].productUrl).toBeNull();
     await dynamic.configure(configuration);
     const result = await dynamic.runCycle(
       'project_empty',
       'isolated_occurrence_1',
     );
-    expect(
-      result.decisions.every(
-        (d) =>
-          d.status === 'WAITING' && d.reasons.includes('OFFER_DATA_INCOMPLETE'),
-      ),
-    ).toBe(true);
+    expect(result.decisions[0]).toMatchObject({
+      status: 'WAITING',
+      reasons: ['PRODUCT_AUTHORIZATION_REQUIRED'],
+    });
+    expect(result.decisions[1]).toMatchObject({
+      status: 'WAITING',
+      reasons: ['OFFER_DATA_INCOMPLETE', 'OBSERVED_PRICE_REQUIRED'],
+    });
     expect(affiliate.catalogCandidates('project_empty')).toEqual([]);
     expect(link).not.toHaveBeenCalled();
     expect(
@@ -102,10 +102,10 @@ test('reproduces the existing FAKE provider boundary before project-first catalo
   }
 });
 
-test('reproduces incompatible shop identity and generated FAKE URL in existing Affiliate contracts', async () => {
+test('complete FAKE shop identity and generated link satisfy the corrected source contract', async () => {
   const provider = new FakeShopeeAffiliate();
   const offer = (await provider.queryOfferPage()).offers[0];
-  expect(offer.shopId).toBe('fake-shop-001');
+  expect(offer.shopId).toMatch(/^\d{1,20}$/);
   expect(() =>
     validateDynamicConfiguration({
       projectId: 'project_empty',
@@ -126,7 +126,7 @@ test('reproduces incompatible shop identity and generated FAKE URL in existing A
         },
       ],
     }),
-  ).toThrow('SHOPEE_CONFIGURATION_INVALID');
+  ).not.toThrow();
   // Control: configuration validation accepts the same structural scope with a numeric shop.
   // Product/media placeholders are not approvals and no preparation is invoked here.
   expect(() =>
@@ -172,9 +172,7 @@ test('reproduces incompatible shop identity and generated FAKE URL in existing A
     briefingId: null,
     affiliateUrl: link.url,
   };
-  expect(() => validateAffiliateCampaignSource(source)).toThrow(
-    'INVALID_AFFILIATE_CAMPAIGN_SOURCE',
-  );
+  expect(() => validateAffiliateCampaignSource(source)).not.toThrow();
   expect(() =>
     validateAffiliateCampaignSource({
       ...source,

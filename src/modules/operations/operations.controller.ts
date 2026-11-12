@@ -25,6 +25,7 @@ import {
 } from '../publishing/application/local-qc.guard.js';
 import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
 import { OperationsService } from './operations.service.js';
+import { ProjectShopeeHandoffService } from './project-shopee-handoff.service.js';
 import { ProjectShopeeDiscoveryService } from './project-shopee-discovery.service.js';
 import { OperationsPreflightService } from './operations-preflight.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
@@ -37,6 +38,23 @@ type QcRequest = Request & { [QC_REVIEWER_CONTEXT]?: unknown };
 
 @Controller('operations')
 export class OperationsController {
+  @Post('projects/:projectId/shopee-discovery/prepare')
+  @UseGuards(LocalQcGuard)
+  prepareProjectShopee(
+    @Param('projectId') projectId: string,
+    @Body() value: unknown,
+    @Req() request: QcRequest,
+  ) {
+    return this.respond(() => {
+      if (!this.projectHandoff)
+        throw new ServiceUnavailableException({ code: 'SHOPEE_HANDOFF_UNAVAILABLE' });
+      return this.projectHandoff.prepare(
+        projectId,
+        value,
+        request[QC_REVIEWER_CONTEXT],
+      );
+    });
+  }
   @Post('projects/:projectId/shopee-discovery/preview')
   @HttpCode(200)
   @UseGuards(LocalQcGuard)
@@ -78,6 +96,9 @@ export class OperationsController {
     @Optional()
     @Inject(ProjectShopeeDiscoveryService)
     private readonly projectDiscovery?: ProjectShopeeDiscoveryService,
+    @Optional()
+    @Inject(ProjectShopeeHandoffService)
+    private readonly projectHandoff?: ProjectShopeeHandoffService,
   ) {}
   private async respond<T>(action: () => T | Promise<T>) {
     try {

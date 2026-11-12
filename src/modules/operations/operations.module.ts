@@ -14,6 +14,9 @@ import { CampaignOrchestrationModule } from '../content-operations/campaign-orch
 import { MediaModule } from '../media/media.module.js';
 import { OperationsController } from './operations.controller.js';
 import { OperationsService } from './operations.service.js';
+import { ProjectShopeeHandoffService } from './project-shopee-handoff.service.js';
+import { ProjectShopeePreparationLock } from './project-shopee-preparation-lock.js';
+import { ShopeeDynamicJournal } from '../affiliate/infrastructure/shopee-dynamic-journal.js';
 import { ProjectShopeeDiscoveryService } from './project-shopee-discovery.service.js';
 import { ProjectModule } from '../project/project.module.js';
 import { OperationsPreflightService } from './operations-preflight.service.js';
@@ -32,6 +35,13 @@ import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-sum
   controllers: [OperationsController, FakeCampaignCommandController],
   providers: [
     OperationsService,
+    ProjectShopeeHandoffService,
+    ProjectShopeePreparationLock,
+    {
+      provide: ShopeeDynamicJournal,
+      useFactory: () =>
+        new ShopeeDynamicJournal(process.env.PROJECT_API_DATABASE ?? null),
+    },
     ProjectShopeeDiscoveryService,
     OperationsPreflightService,
     FakeCampaignCommandService,
