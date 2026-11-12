@@ -1,5 +1,9 @@
 import { runAffiliateIo } from './affiliate-io.js';
 import type { Io } from './affiliate-io.js';
+import {
+  ShopeeProjectLiveAuthorizationService,
+  type ShopeeProjectLiveCostEvidenceReader,
+} from './shopee-project-live-authorization.service.js';
 import { randomUUID } from 'node:crypto';
 import { ShopeeCatalogService } from './shopee-catalog.service.js';
 import { AffiliateService } from './affiliate.service.js';
@@ -77,6 +81,15 @@ type Discovery = Awaited<ReturnType<ShopeeCatalogService['discover']>>;
 // Public application entry point for Operations. configure once; runCycle receives
 // only project + occurrence identity. No timers, publishing or financial effects.
 export class ShopeeDynamicService<A extends boolean = false> {
+  projectLiveAuthorization(costs?: ShopeeProjectLiveCostEvidenceReader) {
+    return new ShopeeProjectLiveAuthorizationService(
+      this.catalog,
+      this.affiliate,
+      this.journal,
+      this.projects,
+      costs,
+    );
+  }
   async previewLiveAuthorization(
     raw: ShopeeDynamicConfiguration,
     rawScope: ShopeeLiveAuthorizationScope,
