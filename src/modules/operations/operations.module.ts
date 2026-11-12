@@ -14,6 +14,8 @@ import { CampaignOrchestrationModule } from '../content-operations/campaign-orch
 import { MediaModule } from '../media/media.module.js';
 import { OperationsController } from './operations.controller.js';
 import { OperationsService } from './operations.service.js';
+import { OperationsPreflightService } from './operations-preflight.service.js';
+import { FinanceModule } from '../finance/finance.module.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-summary.repository.js';
 @Module({
@@ -22,10 +24,12 @@ import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-sum
     MediaModule,
     PublishingModule,
     AffiliateModule,
+    FinanceModule,
   ],
   controllers: [OperationsController, FakeCampaignCommandController],
   providers: [
     OperationsService,
+    OperationsPreflightService,
     FakeCampaignCommandService,
     FakeCampaignCommandGuard,
     {

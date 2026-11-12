@@ -24,6 +24,7 @@ import {
 } from '../publishing/application/local-qc.guard.js';
 import { operationalQcSessions } from '../publishing/application/local-qc-session.js';
 import { OperationsService } from './operations.service.js';
+import { OperationsPreflightService } from './operations-preflight.service.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import {
   operationsPage,
@@ -59,6 +60,9 @@ export class OperationsController {
     @Optional()
     @Inject(DashboardSummaryService)
     private readonly dashboardSummary?: DashboardSummaryService,
+    @Optional()
+    @Inject(OperationsPreflightService)
+    private readonly preflightService?: OperationsPreflightService,
   ) {}
   private async respond<T>(action: () => T | Promise<T>) {
     try {
@@ -240,6 +244,15 @@ export class OperationsController {
     return this.respond(() =>
       this.operations.reviseScript(id, value, request[QC_REVIEWER_CONTEXT]),
     );
+  }
+  @Get('executions/:id/preflight') @UseGuards(LocalQcGuard) preflight(
+    @Param('id') id: string,
+  ) {
+    return this.respond(() => {
+      if (!this.preflightService)
+        throw new ServiceUnavailableException({ code: 'OPERATIONS_PREFLIGHT_UNAVAILABLE' });
+      return this.preflightService.inspect(id);
+    });
   }
   @Get('executions/:id') @UseGuards(LocalQcGuard) detail(
     @Param('id') id: string,
