@@ -36,6 +36,11 @@ export class FinanceController {
   @Get('readiness') readiness() {
     return this.respond(() => this.finance.getGlobalReadiness());
   }
+  @Get('runs/:pipelineRunId/readiness') runReadiness(
+    @Param('pipelineRunId') id: string,
+  ) {
+    return this.respond(() => this.finance.getRunReadiness(id));
+  }
   @Get('campaigns/:id/usage') campaign(@Param('id') id: string) {
     return this.respond(() => this.finance.getUsage(id));
   }

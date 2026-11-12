@@ -2,6 +2,9 @@ import type { FinanceStore, FinanceRepository } from './finance.port.js';
 import type { TtsResult } from '../domain/tts-financial-contracts.js';
 export class FinanceService {
   constructor(private readonly store: FinanceStore) {}
+  getRunReadiness(id: string) {
+    return this.session((r) => r.getRunReadiness(id));
+  }
   registerTtsAdjustment(value: unknown) {
     return this.session((r) => r.registerTtsAdjustment(value));
   }

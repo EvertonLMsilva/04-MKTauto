@@ -115,3 +115,37 @@ export interface Settlement {
 export interface AuthorizationOptions {
   authorizationMode?: string;
 }
+export interface RunFinancialOperation {
+  source: 'TTS' | 'GLOBAL' | 'VIDEO';
+  operationId: string;
+  requestHash: string;
+  state: string;
+  currency: 'USD';
+  actualCostUsd: string | null;
+  evidenceReference: string | null;
+  reconciled: boolean;
+  costEventIds: string[];
+}
+export interface RunFinanceReadiness {
+  schemaVersion: 'run-finance-readiness/1.0.0';
+  pipelineRunId: string;
+  runIdentityHash: string;
+  scope: 'RECORDED_FINANCE_DATA';
+  status: 'RECONCILED' | 'PENDING' | 'UNKNOWN';
+  // Recorded data cannot attest that every external cost of the run was supplied.
+  totalRunCost: null;
+  ledger: import('./cost-adjustment-contracts.js').CostLedgerV2;
+  recordedTotalsByCurrency: { currency: string; amount: string }[];
+  provenEventTotalsByCurrency: { currency: string; amount: string }[];
+  entries: {
+    costEventId: string;
+    currency: string;
+    netAmount: string;
+    reconciled: boolean;
+  }[];
+  operations: RunFinancialOperation[];
+  evidence: string[];
+  missingEvidence: string[];
+  unknownCosts: string[];
+  pendingClosure: string[];
+}
