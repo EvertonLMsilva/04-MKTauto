@@ -11,6 +11,7 @@ import { TtsFinanceRepository } from './tts-finance.repository.js';
 import type { TtsResult } from '../domain/tts-financial-contracts.js';
 import { CostAdjustmentsRepository } from './cost-adjustments.repository.js';
 import { RunFinanceProjection } from './run-finance.projection.js';
+import { projectPilotCostClosure } from '../application/pilot-cost-closure.projection.js';
 
 export class FinanceSession extends FinanceGate {
   private readonly ledger: CostLedgerRepository;
@@ -47,6 +48,20 @@ export class FinanceSession extends FinanceGate {
   }
   getRunReadiness(id: string) {
     return new RunFinanceProjection(this.ledger).read(id);
+  }
+  getPilotCostClosure(id: string, now = new Date().toISOString()) {
+    // Both existing readers own their transactions. data_version detects commits
+    // by other connections across them; reject mixed data without changing either reader.
+    const version = () =>
+      this.db.prepare('PRAGMA data_version').get().data_version;
+    const before = version();
+    const run = this.getRunReadiness(id);
+    const budget = this.getGlobalReadiness(now);
+    if (version() !== before)
+      throw Object.assign(new Error('FINANCE_CLOSURE_SNAPSHOT_CONFLICT'), {
+        code: 'FINANCE_CLOSURE_SNAPSHOT_CONFLICT',
+      });
+    return projectPilotCostClosure(run, budget);
   }
   approveTts(plan: unknown, approval: unknown) {
     return this.ttsFinance.approveTts(plan, approval);
