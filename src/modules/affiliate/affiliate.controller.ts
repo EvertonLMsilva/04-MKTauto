@@ -2,6 +2,8 @@ import {
   Body,
   Controller,
   Get,
+  Query,
+  Header,
   Inject,
   Param,
   Post,
@@ -26,6 +28,19 @@ export class AffiliateController {
   constructor(
     @Inject(AffiliateService) private readonly affiliate: AffiliateService,
   ) {}
+  @Get('projects/:projectId/catalog')
+  @Header('Cache-Control', 'no-store')
+  catalogReadiness(
+    @Param('projectId') projectId: string,
+    @Query('projectVersion') version?: string,
+  ) {
+    return this.respond(() =>
+      this.affiliate.catalogReadiness(
+        projectId,
+        version === undefined ? undefined : this.parseRevision(version),
+      ),
+    );
+  }
   @Post('products')
   registerProduct(@Body() command: RegisterProductDto) {
     return this.respond(() => this.affiliate.registerProduct(command));

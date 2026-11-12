@@ -1,6 +1,7 @@
 import { runAffiliateIo } from './affiliate-io.js';
 import type { Io } from './affiliate-io.js';
 import type { AffiliateCatalogCandidate } from '../domain/affiliate-catalog.js';
+import { evaluateCatalogCandidate } from '../domain/affiliate-catalog.js';
 import {
   type AffiliateCampaignSourceV1,
   validateAffiliateCampaignSource,
@@ -17,6 +18,7 @@ import { PROJECT_SNAPSHOT_READER } from '../../project/application/ports/project
 import type { ProjectSnapshotReader } from '../../project/application/ports/project-snapshot-reader.port.js';
 import {
   affiliateIdentifier,
+  affiliateHash,
   validateAffiliateProduct,
   validateAffiliateCampaign,
   collectAffiliateProductIssues,
@@ -116,6 +118,45 @@ export class AffiliateService<A extends boolean = false> {
         }
       }.call(this),
     );
+  }
+  // Read-only projection of the existing catalog. Current revisions are not a
+  // replacement for an occurrence's persisted selection or briefing snapshot.
+  async catalogReadiness(projectId: string, projectVersion?: number) {
+    affiliateIdentifier(projectId, 'projectId');
+    if (projectVersion !== undefined) this.revision(projectVersion);
+    const project = await this.projects.get(projectId, projectVersion);
+    if (!project)
+      throw new AffiliateRepositoryError('PROJECT_NOT_FOUND', 'projectId');
+    if (
+      project.project.id !== projectId ||
+      (projectVersion !== undefined &&
+        project.project.version !== projectVersion)
+    )
+      throw new AffiliateRepositoryError(
+        'AFFILIATE_SCOPE_MISMATCH',
+        'projectId',
+      );
+    const candidates = await this.catalogCandidates(projectId);
+    if (
+      candidates.some((candidate) => candidate.campaign.projectId !== projectId)
+    )
+      throw new AffiliateRepositoryError(
+        'AFFILIATE_SCOPE_MISMATCH',
+        'projectId',
+      );
+    const body = {
+      schemaVersion: 'affiliate-catalog-readiness/1.0.0' as const,
+      projectId: project.project.id,
+      projectVersion: project.project.version,
+      projectHash: affiliateHash(project),
+      items: candidates.map((candidate) => ({
+        ...candidate,
+        productHash: affiliateHash(candidate.product),
+        campaignHash: affiliateHash(candidate.campaign),
+        eligibility: evaluateCatalogCandidate(candidate),
+      })),
+    };
+    return immutable({ ...body, snapshotHash: affiliateHash(body) });
   }
   async createCatalogBriefing(
     value: {
