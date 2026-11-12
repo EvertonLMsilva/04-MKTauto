@@ -554,3 +554,98 @@ supersession, preparar rollback e obter autorização específica de cutover.
 Nenhum dado real foi migrado, serviço operacional alterado ou chamada paga
 executada. CPU/energia local têm custo indisponível. Media PostgreSQL completo
 e PG-002 inteiro não são declarados concluídos.
+
+## Media Voice PostgreSQL — PG-002-MEDIA-VOICE-002
+
+Ativação exclusivamente opt-in por `MediaPostgresModule.register(config)` e
+`POSTGRES_MEDIA_VOICE` / `PostgresMediaVoicePersistence`. O mesmo módulo
+continua exportando o catálogo; nenhum caminho operacional SQLite, service,
+controller, readiness ou `AppModule` foi alterado. A construção Nest não
+consulta o banco, executa DDL ou inicia providers de áudio. `open(readOnly?)`
+verifica o histórico e checksums v1–v8, sem aplicar migrations.
+
+### Schema e contratos
+
+`MEDIA_VOICE_POSTGRES_MIGRATION_REGISTRY` estende o registro Media Catalog
+v1–v7 com a versão 8, `008_media_voice_tracks`. Os SQLs, nomes e checksums
+históricos permanecem intactos. A única tabela nova é `media.voice_tracks`:
+identidade/hash, run/projeto/versão, roteiro/hash, idioma/estilo, duração/formato,
+hash de áudio, referência opaca de armazenamento, origem/provider, direitos,
+revisão/supersession, payload JSON e hashes do documento e da evidência de
+direitos. Duração, revisão e versão usam inteiros seguros, sem arredondamento.
+WAV, MP3 e outros bytes permanecem fora do PostgreSQL.
+
+O port `AsyncMediaVoiceRepository` retorna Promises explicitamente. Suporta
+`registerLocalVoice(value, documentHash, rightsHash)`, `getVoiceTrack`,
+`listVoiceTracksByPipelineRun`, `listVoiceTracksByScript`,
+`getVoiceTrackSuccessor` e `close`. Revisões usam o mesmo registro com novo ID,
+revisão sequencial e supersession no mesmo run/projeto/roteiro/idioma/estilo.
+Listagens incluem histórico e ordenação determinística. Replay exige a mesma
+identidade e os mesmos hashes de evidência; conflitos não sobrescrevem registros.
+
+Reutilizam-se `validateVoiceTrack`, `voiceTrackIdentityHash` e
+`validateArtifactLineage`. São aceitas gravações próprias/autorizadas com
+provider nulo, base OWNED/LICENSED e uso comercial permitido; vozes sintéticas
+locais `local_piper`, `local_espeak_ng` e `local_kokoro` requerem base LICENSED
+e referências de evidência. A referência CAS `object:voice/sha256/<hash>`,
+quando declarada, deve corresponder ao hash de áudio. Outras referências
+opacas continuam sujeitas ao validador canônico de referências não sensíveis.
+
+Assim como `LocalFlowRepository.registerLocalVoice`, este adapter registra
+metadados e hashes de evidências já fornecidas. Não cria autorizações ou
+aprovações, não verifica fisicamente áudio/documentos/licenças e não substitui
+os gates de ingestão ou de produção da Frente B. Os documentos privados
+referenciados continuam fora do Git e do banco; não há reprodução, síntese,
+inferência, alinhamento ou validação acústica nesta entrega.
+
+### Linhagem e atomicidade
+
+A linhagem canônica `voice_track` permanece em `content.artifact_lineage`,
+com script/hash como input interno e `rights:<rightsHash>` como input externo.
+Preserva o formato do registro SQLite local: `contentIdentity: null`, revisão,
+hash de áudio e generationMetadata `local/local-flow/1/local-evidence`, cuja
+configurationHash é o hash do documento. Não são criados artefatos fictícios
+ou entidades paralelas para run, roteiro, evidências ou projeto.
+
+O adapter reutiliza integralmente `PostgresMediaCatalogSession` e a unidade
+existente Content 3 → Affiliate 4 → Campaign 5 → Media 7. Leituras canônicas,
+linhagem/inputs e voz usam um PoolClient e um único BEGIN/COMMIT ou ROLLBACK.
+Não existe novo pool, lock, runner ou alistamento artificial de Finance.
+Unidades externas precisam alistar os quatro participantes antecipadamente.
+Os handles preservam as proteções read-only/closed da sessão compartilhada.
+
+FKs, escopo e revisão são verificados no banco e no adapter. A trigger
+`media_voice_lineage_owner`, diferida ao commit e restrita a novas linhagens
+`voice_track`, impede órfãos. A trigger de catálogo v7 permanece intacta.
+Imutabilidade, unicidade de `(script_id, revision)` e de supersession
+preservam o histórico. A leitura revalida payload, todas as colunas, hashes,
+cadeia de revisão, documento/direitos e conteúdo integral da linhagem/inputs,
+sem confiar somente no identity_hash armazenado.
+
+### Dependências, validação e evolução
+
+O contexto comercial `script/2.0.0` usa o reader coordenado Content/Affiliate
+existente. Roteiros `script/1.0.0` continuam bloqueados por
+`MEDIA_CONTENT_CONTEXT_REQUIRED`: a composição canônica ainda depende de
+Research não coordenado. Áudio sintético remoto/pago ou provider desconhecido
+é recusado por `MEDIA_VOICE_FINANCE_DEPENDENCY_REQUIRED`; o ledger Finance
+v6 não fornece automaticamente autorização TTS, evidências de dispatch ou
+accounting. Não há registro de custo, grants, dual write ou chamadas pagas.
+
+`test/postgres/media-voice.integration.test.ts` usa a harness PG-001 descartável
+com PostgreSQL 18.6 real e SQLite descartável para paridade. Cobre histórico e
+checksum v8, rollback DDL, origens suportadas/bloqueadas, evidências, direitos,
+referências, escopo, revisões, replay, concorrência, reinício do pool, conexão
+única/locks, rollback após linhagem e antes do commit, ausência de órfãos,
+imutabilidade, corrupção e composição Nest inativa. As fixtures são metadados
+sintéticos; não executam TTS, CTC ou serviços externos. Regressões pertinentes
+de catálogo, Content, Campaign, Finance e SQLite Media são preservadas.
+
+CompositionPlan, Render e QC permanecem sem persistência PostgreSQL nesta
+entrega. A evolução precisa reutilizar voz/linhagem canônicas e os contratos
+da Frente B, preservando seus gates; não autoriza iniciar essa implementação.
+Uma futura migração deve verificar áudio e documentos físicos, hashes,
+direitos, identidades, revisões e referências, preparar rollback e obter
+autorização específica para dados reais/cutover. Nenhum banco operacional,
+Docker LIVE ou dado real foi acessado ou alterado. Custos locais de CPU/energia
+são indisponíveis. Esta entrega não conclui Media PostgreSQL nem PG-002 inteiro.
