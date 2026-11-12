@@ -106,6 +106,22 @@ describe('controlled Shopee read transport (offline)', () => {
     ).toThrow('SHOPEE_LIVE_CREDENTIALS_MISSING');
   });
 
+  it.each([
+    { appId: ' \t ', secret: 'synthetic-test-secret' },
+    { appId: '123456', secret: ' \n ' },
+    { appId: ' ', secret: '\t' },
+  ])(
+    'rejects blank credential configuration before consuming an HTTP attempt',
+    async (invalid) => {
+      const fetch = vi.fn(async () => success());
+      await expect(async () => {
+        const live = new ShopeeAffiliateLive(invalid, { fetch });
+        await live.queryOffers();
+      }).rejects.toThrow('SHOPEE_LIVE_CREDENTIALS_MISSING');
+      expect(fetch).not.toHaveBeenCalled();
+    },
+  );
+
   it.each(['HTTP_429', 'GRAPHQL_10030'])(
     'retains sanitized rate-limit metadata and consumes the sole attempt for %s',
     async (kind) => {

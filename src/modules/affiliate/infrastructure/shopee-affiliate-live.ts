@@ -81,7 +81,7 @@ export class ShopeeAffiliateLive implements ShopeeOfferPagePort {
   };
 
   constructor(credentials: Credentials, dependencies: Dependencies) {
-    if (!credentials.appId || !credentials.secret)
+    if (!credentials.appId?.trim() || !credentials.secret?.trim())
       fail('SHOPEE_LIVE_CREDENTIALS_MISSING');
     this.#credentials = { ...credentials };
     this.#fetch = dependencies.fetch;
