@@ -588,8 +588,20 @@ export class ShopeeProjectLiveAuthorizationService {
     return immutable({
       scope,
       scopeHash,
-      preparation,
+      // Reuse C-015's selection/evidence projection without presenting its
+      // historical campaign-bound authorization policy as this scope's gate.
+      preparation: {
+        sourcePreviewHash: preparation.previewHash,
+        context: preparation.context,
+        observation: preparation.observation,
+        liveOfferSnapshotStatus: preparation.liveOfferSnapshotStatus,
+        selection: preparation.selection,
+        evidenceReferences: preparation.evidenceReferences,
+        missingFields: preparation.missingFields,
+        rightsAndCommercialStatus: preparation.rightsAndCommercialStatus,
+      },
       blockers,
+      pendingAfterLink: ['RETURNED_LINK_ASSOCIATION_EVIDENCE_REQUIRED'],
       authorizationStatus: 'NOT_GRANTED' as const,
       associationVerified: false as const,
       mutationExecuted: false as const,

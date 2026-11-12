@@ -596,6 +596,11 @@ test('a separate selected-offer grant binds frozen selection, revisions and oper
   const preview = await service.previewLink(request, linkDraft(), evidence);
   expect(readFileSync(database)).toEqual(beforePreview);
   expect(preview.blockers).toEqual([]);
+  expect(preview.blockers).not.toContain('REGISTERED_CAMPAIGN_REQUIRED');
+  expect(preview.preparation).not.toHaveProperty('authorizationDependency');
+  expect(preview.pendingAfterLink).toContain(
+    'RETURNED_LINK_ASSOCIATION_EVIDENCE_REQUIRED',
+  );
   expect(preview.scope).toMatchObject({
     kind: 'SELECTED_OFFER_LINK_AUTHORIZATION',
     productId,
