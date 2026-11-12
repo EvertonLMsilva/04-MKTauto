@@ -4,7 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { SHOPEE_AFFILIATE } from '../application/ports/shopee-affiliate.port.js';
 import type { ShopeeAffiliatePort } from '../application/ports/shopee-affiliate.port.js';
 import type {
-  ShopeeAffiliateOffer,
+  ShopeeAffiliateOfferDetails,
   ShopeeAffiliateLink,
   ShopeeAffiliateProvenance,
   ShopeeAffiliateLinkInput,
@@ -82,19 +82,7 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
     const offset = (page - 1) * limit;
     const hasNextPage = offset + limit < offers.length;
     return {
-      offers: offers.slice(offset, offset + limit).map((offer) => ({
-        ...offer,
-        description: null,
-        availability: null,
-        shopName: null,
-        productUrl: null,
-        affiliateUrl: null,
-        priceRange: {
-          min: { amount: null, currency: null },
-          max: { amount: null, currency: null },
-        },
-        discountPercent: null,
-      })),
+      offers: offers.slice(offset, offset + limit),
       pageInfo: {
         page,
         limit,
@@ -103,13 +91,16 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
       },
     };
   }
-  async queryOffers(): Promise<ShopeeAffiliateOffer[]> {
+  async queryOffers(): Promise<ShopeeAffiliateOfferDetails[]> {
     return [
       {
         offerId: 'fake-offer-001',
         productId: '9007199254740993',
-        shopId: 'fake-shop-001',
+        shopId: '9007199254740991',
         name: 'Synthetic fixture with image',
+        shopName: 'Synthetic fixture shop',
+        description: null,
+        availability: null,
         price: { amount: '9007199254740993.01', currency: 'BRL' },
         estimatedCommission: {
           amount: '0.000001',
@@ -117,6 +108,15 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
           rate: '0.012345',
         },
         imageUrl: 'https://shopee-affiliate.invalid/fixture/image-001.png',
+        // Canonical identity only: never fetch this synthetic product URL.
+        productUrl:
+          'https://shopee.com.br/product/9007199254740991/9007199254740993',
+        affiliateUrl: 'https://shopee-affiliate.invalid/link/fake-offer-001',
+        priceRange: {
+          min: { amount: null, currency: null },
+          max: { amount: null, currency: null },
+        },
+        discountPercent: null,
         provenance: provenance(),
       },
       {
@@ -124,9 +124,19 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
         productId: 'fake-product-002',
         shopId: null,
         name: null,
+        shopName: null,
+        description: null,
+        availability: null,
         price: { amount: null, currency: null },
         estimatedCommission: { amount: null, currency: null, rate: null },
         imageUrl: null,
+        productUrl: null,
+        affiliateUrl: null,
+        priceRange: {
+          min: { amount: null, currency: null },
+          max: { amount: null, currency: null },
+        },
+        discountPercent: null,
         provenance: provenance(),
       },
     ];

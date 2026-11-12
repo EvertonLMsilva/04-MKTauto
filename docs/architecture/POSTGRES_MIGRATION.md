@@ -649,3 +649,117 @@ direitos, identidades, revisões e referências, preparar rollback e obter
 autorização específica para dados reais/cutover. Nenhum banco operacional,
 Docker LIVE ou dado real foi acessado ou alterado. Custos locais de CPU/energia
 são indisponíveis. Esta entrega não conclui Media PostgreSQL nem PG-002 inteiro.
+
+## CompositionPlan PostgreSQL — PG-002-MEDIA-COMPOSITION-003
+
+O opt-in interno `MediaPostgresModule.register(config)` passa a exportar
+`POSTGRES_MEDIA_COMPOSITION` / `PostgresMediaCompositionPersistence`.
+O runtime SQLite, `MediaModule`, `AppModule`, serviços e regras da Frente B
+permanecem intactos. Construir/inicializar o módulo não consulta o banco,
+aplica migrations ou inicia FFmpeg, voz, alinhamento, render, QC, scheduler,
+providers remotos ou publicação.
+
+### Migration e vínculos
+
+`MEDIA_COMPOSITION_POSTGRES_MIGRATION_REGISTRY` estende integralmente o
+registro Media Voice v1–v8 com `009_media_composition_plans`, versão 9.
+Nenhuma migration anterior, nome ou checksum foi alterado. São criadas:
+
+| Tabela | Conteúdo |
+| --- | --- |
+| media.composition_plans | Identidade/hash do plano, run/projeto/versão, script/hash, VoiceTrack/hash, proporção, timeline, duração, revisão/supersession, propriedades V2 e payload canônico |
+| media.composition_plan_segments | Ordem, direção visual, MediaAsset/hash, início/fim, tipo/trim/loop, áudio original silenciado, enquadramento, transição e intenção opcional de movimento |
+
+As entidades continuam canônicas em `project.project_snapshots`,
+`campaign.pipeline_runs`, `content.scripts`, `media.voice_tracks`,
+`media.media_assets` e `content.artifact_lineage`. Não há cópia de entidades,
+bytes de mídia, projeção V1 artificial para payload V2 ou novas tabelas de
+geração/render/QC. As duas versões são armazenadas diretamente com sua
+schemaVersion real, preservando os hashes e JSON públicos; o layout físico
+difere do SQLite sem alterar seus contratos.
+
+FKs, unicidade por roteiro/revisão e supersession, triggers de escopo e
+imutabilidade preservam referências e histórico. O commit exige segmentos
+completos, continuidade, cobertura visual e inputs de linhagem correspondentes.
+A trigger diferida `media_composition_lineage_owner` impede novas linhagens
+`composition_plan` sem plano proprietário. As triggers de catálogo v7 e voz
+v8 não foram alteradas.
+
+### Contratos suportados e integridade
+
+`AsyncMediaCompositionRepository` é explicitamente assíncrono e oferece
+`registerCompositionPlan`, `getCompositionPlan`,
+`listCompositionPlansByPipelineRun`, `listCompositionPlansByScript`,
+`getCompositionPlanSuccessor` e `close`. Revisão usa novo ID com predecessor
+imediato no mesmo escopo. Replay preserva a identidade completa; conflitos
+não sobrescrevem versões. Listagens incluem histórico em ordem determinística.
+Não há cast de Promise para interfaces síncronas SQLite.
+
+Reutilizam-se `validateCompositionPlan`, `compositionPlanIdentityHash`,
+`validateArtifactLineage` e `visualScriptMatches`. Os readers canônicos
+PostgreSQL de Media Catalog e VoiceTrack são usados dentro da mesma sessão,
+sem reader fictício ou acesso a SQLite durante operações do adapter.
+Os roteiros/revisões são carregados assincronamente e o validador visual puro
+existente decide a compatibilidade. Projeto, versão, run e roteiro/hash,
+voz/roteiro/hash/duração/direitos, proporção do snapshot, cobertura das direções,
+ativos/hash/tipo/duração/proveniência e cadeia de revisões são verificados.
+
+V1 suporta imagens e vídeos do próprio roteiro/hash cujo trecho caiba na
+duração cadastrada. O trigger SQLite V1 exige esse vínculo exato mesmo quando
+o validador visual puro aceita uma revisão somente de narração; o adapter e
+o trigger PostgreSQL preservam essa restrição com
+`COMPOSITION_PLAN_SCOPE_MISMATCH`, sem alterar a Frente B. V2 permite
+reaproveitamento visual em revisões somente de narração quando comprovado pelo
+validador canônico e seus roteiros reais. V2 requer
+snapshot `MIXED_MEDIA_V2`, política existente, imagens ou vídeos elegíveis,
+trim/loop, início válido, áudio original silenciado, enquadramento
+`COVER_CROP_9_16` ou `CONTAIN_9_16` e transição CUT. A intenção opcional
+`STATIC_ALLOWED` permanece na identidade e na representação relacional.
+Os limites e políticas de timeline continuam no validador canônico.
+
+A leitura não confia apenas em identity_hash: revalida payload, colunas,
+segmentos, dependências, hashes, histórico sem ciclos e linhagem completa.
+Alterar um campo mantendo o hash anterior não produz um plano válido.
+Direitos/documentos físicos e bytes continuam nos gates existentes da Frente B;
+a persistência não emite aprovações nem confirma existência física dos arquivos.
+
+### Atomicidade e limites
+
+Plano, segmentos e linhagem verdadeira compartilham o mesmo PoolClient e um
+único BEGIN/COMMIT ou ROLLBACK. A linhagem mantém o formato SQLite:
+`composition-plan:<scriptId>`, revisão/hash do plano, inputs ordenados
+script/hash, VoiceTrack/hash e MediaAssets/hashes, sem generationMetadata.
+O adapter reutiliza `PostgresMediaCatalogSession` e os locks
+Content 3 → Affiliate 4 → Campaign 5 → Media 7. Não cria pool, runner,
+participante ou lock; Finance não é alistado por alias. Unidades externas
+precisam declarar os quatro participantes antes das operações.
+`open(readOnly?)` somente verifica migrations/checksums v1–v9.
+
+Vídeos V2 com `REAL_MOTION_REQUIRED` ou origem `PROVIDER_GENERATED`
+permanecem bloqueados por `MEDIA_COMPOSITION_TEMPORAL_QC_DEPENDENCY_REQUIRED`:
+as evidências canônicas e a validação de QC temporal ainda não foram migradas.
+Não se simula QC PASS nem se substitui sua revisão humana/assinatura.
+O erro explícito preserva o gate existente, inclusive ao nível do novo trigger.
+Scripts dependentes de Research continuam bloqueados por
+`MEDIA_CONTENT_CONTEXT_REQUIRED`; vozes remotas/pagas permanecem sujeitas
+ao bloqueio Finance do opt-in VoiceTrack. Não há gravação de custo ou grants.
+
+### Validação e evolução
+
+`test/postgres/media-composition.integration.test.ts` usa exclusivamente a
+harness PG-001 marcada, com PostgreSQL 18.6 real e SQLite descartável para
+comparar contratos suportados, hashes, JSON, linhagem, revisões e erros.
+Cobre v9/checksum/reexecução/rollback DDL, relações, direitos, duração/proporção,
+trim/loop, perfis, múltiplos segmentos, replay/concorrência, reinício do pool,
+conexão/locks, falhas SQL intermediárias, rollback antes do commit, ausência
+de órfãos, imutabilidade e corrupção. Mantém regressões de catálogo, voz e
+CompositionPlan SQLite, além das regressões PostgreSQL pertinentes.
+
+VideoRender e QC precisam de persistências/evidências canônicas e contratos
+próprios antes de qualquer futura composição operacional. Essa dependência
+não autoriza iniciar o próximo tópico. Ativação/migração de dados reais deve
+verificar arquivos/hashes/direitos, vínculos históricos e referências externas,
+planejar rollback e obter autorização específica para cutover. Nenhum dado
+real, banco ou Docker operacional foi acessado/alterado; nenhum render, TTS,
+CTC, publicação ou serviço pago foi executado. Custos de CPU/energia local são
+indisponíveis. Esta entrega não conclui Media PostgreSQL nem PG-002 inteiro.
