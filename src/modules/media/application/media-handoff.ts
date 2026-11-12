@@ -5,6 +5,8 @@ import {
 import { validateCompositionPlan } from '../domain/composition-plan-contracts.js';
 import { validateQualityControlReport } from '../domain/quality-control-contracts.js';
 import type { MediaService } from './media.service.js';
+import { validateLocalQcHandoff } from './local-qc-handoff.js';
+import { adaptationHash } from '../domain/media-hash.js';
 
 export interface MediaHandoffRequest {
   videoRenderId: string;
@@ -28,7 +30,7 @@ export interface MediaHandoff {
   } | null;
   script: { id: string; contentHash: string } | null;
   composition: 'CONSISTENT' | 'MISSING' | 'UNVERIFIED';
-  qc: 'PASS' | 'WARN' | 'FAIL' | 'MISSING' | 'UNVERIFIED';
+  qc: 'PASS' | 'WARN' | 'FAIL' | 'UNKNOWN' | 'MISSING' | 'UNVERIFIED';
   present: string[];
   absent: string[];
   blockers: string[];
@@ -53,6 +55,7 @@ export function projectMediaHandoff(
   >,
   request: MediaHandoffRequest,
   revisions: (planId: string) => unknown[] | null,
+  localEvidence?: (videoId: string) => unknown,
 ): MediaHandoff {
   const result: MediaHandoff = {
     schemaVersion: 'media-handoff/1.0.0',
@@ -202,6 +205,70 @@ export function projectMediaHandoff(
     result.present.push('PHYSICAL_HASH');
     const storedQc = media.report(request.qualityControlReportId);
     if (!storedQc) {
+      if (localEvidence) {
+        try {
+          const raw = localEvidence(render.videoRenderId);
+          if (raw) {
+            const local = validateLocalQcHandoff(raw),
+              c = local.context;
+            if (
+              local.reportId !== request.qualityControlReportId ||
+              c.renderId !== render.videoRenderId ||
+              c.renderHash !== render.contentHash ||
+              c.renderRevision !== render.revision ||
+              c.pipelineRunId !== render.pipelineRunId ||
+              c.projectId !== render.projectId ||
+              c.projectVersion !== render.projectVersion
+            )
+              return stop('QC_BINDING_MISMATCH');
+            if (
+              c.scriptId !== plan.scriptId ||
+              c.scriptHash !== plan.scriptContentHash ||
+              c.planId !== plan.compositionPlanId ||
+              c.planHash !== plan.contentHash ||
+              c.voiceId !== plan.voiceTrackId ||
+              c.voiceHash !== plan.voiceTrackContentHash ||
+              adaptationHash(c.assets) !==
+                adaptationHash(
+                  plan.segments.map((s: any) => ({
+                    position: s.position,
+                    id: s.mediaAssetId,
+                    contentHash: s.mediaAssetContentHash,
+                  })),
+                )
+            )
+              return stop('QC_LINEAGE_MISMATCH');
+            if (Date.parse(local.checkedAt) < Date.parse(render.createdAt))
+              return stop('QC_PREDATES_RENDER');
+            result.qc = local.report.result;
+            result.present.push('QC', 'LOCAL_QC_VALIDATED_LINEAGE');
+            result.references.qc = {
+              id: local.reportId,
+              contentHash: adaptationHash(local.report),
+              policyVersion: local.report.policyVersion,
+            };
+            if (local.report.result === 'UNKNOWN')
+              return stop('QC_INSUFFICIENT', true);
+            if (local.report.result !== 'PASS') return stop('QC_NOT_PASS');
+            result.status = 'READY_TECHNICAL';
+            return result;
+          }
+        } catch (error) {
+          const code = (error as { code?: string }).code;
+          if (code === 'QC_NOT_PASS') {
+            result.qc = 'FAIL';
+            return stop(code);
+          }
+          if (code === 'QC_INSUFFICIENT') {
+            result.qc = 'UNKNOWN';
+            return stop(code, true);
+          }
+          if (code === 'QC_TIMESTAMP_REQUIRED') return stop(code, true);
+          if (code === 'QC_BINDING_MISMATCH' || code === 'QC_LINEAGE_MISMATCH')
+            return stop(code);
+          return stop('HANDOFF_EVIDENCE_UNVERIFIABLE');
+        }
+      }
       result.qc = 'MISSING';
       result.absent.push('QC');
       return stop('QC_MISSING');

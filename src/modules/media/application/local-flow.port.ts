@@ -74,6 +74,13 @@ export interface LocalAudiovisualPort {
   compose(value: unknown): Promise<unknown>;
   burn(videoId: string, subtitleId: string): Promise<unknown>;
   qc(videoId: string): Promise<unknown>;
+  qcHandoffEvidence?(
+    videoId: string,
+    reportId?: string,
+  ): import('./local-qc-handoff.js').LocalQcHandoffEvidence | null;
+  ensureQcHandoffEvidence?(
+    videoId: string,
+  ): Promise<import('./local-qc-handoff.js').LocalQcHandoffEvidence | null>;
   preview(videoId: string): Promise<unknown>;
   previewBytes(videoId: string): Promise<Buffer>;
 }

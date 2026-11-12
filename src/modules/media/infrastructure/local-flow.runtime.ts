@@ -1,4 +1,10 @@
+import { LocalQcReadStorage } from '../application/local-qc-handoff-storage.js';
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
+import {
+  validateLocalQcHandoff,
+  type LocalQcContext,
+  type LocalQcHandoffEvidence,
+} from '../application/local-qc-handoff.js';
 import { visualScriptMatches } from '../../content/domain/script-visual-lineage.js';
 import {
   publicationScope,
@@ -762,20 +768,26 @@ export class LocalFlowRuntime {
     private readonly aligner: AudioAligner = new LocalPythonAligner(env),
     private readonly finance?: Pick<FinanceService, 'getTts'>,
   ) {}
+  private inspectingQc = false;
+  private evidenceStorage(root: string) {
+    return this.inspectingQc
+      ? new LocalQcReadStorage(root)
+      : new LocalEvidenceStorage(root);
+  }
   private files() {
     const root = this.env.LOCAL_MEDIA_EVIDENCE_ROOT;
     if (!root) localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
-    return new LocalEvidenceStorage(resolve(root));
+    return this.evidenceStorage(resolve(root));
   }
   private voiceFiles() {
     if (!this.env.FFMPEG_VOICE_ROOT)
       localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
-    return new LocalEvidenceStorage(resolve(this.env.FFMPEG_VOICE_ROOT));
+    return this.evidenceStorage(resolve(this.env.FFMPEG_VOICE_ROOT));
   }
   private renderFiles() {
     if (!this.env.FFMPEG_RENDER_ROOT)
       localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
-    return new LocalEvidenceStorage(resolve(this.env.FFMPEG_RENDER_ROOT));
+    return this.evidenceStorage(resolve(this.env.FFMPEG_RENDER_ROOT));
   }
   private session<T>(action: (r: LocalFlowRepository) => T): T {
     const r = this.open();
@@ -1419,7 +1431,7 @@ export class LocalFlowRuntime {
       };
     });
   }
-  async qc(videoId: string) {
+  async qc(videoId: string, includeHandoffEvidence = false) {
     const render = this.session((r) => r.getVideoRender(videoId));
     if (!render) localFail('LOCAL_RENDER_NOT_FOUND');
     const findings: { code: string; status: 'PASS' | 'FAIL' | 'UNKNOWN' }[] =
@@ -1482,7 +1494,9 @@ export class LocalFlowRuntime {
         });
       }
     }
-    const result = findings.some((f) => f.status === 'FAIL')
+    const result: 'PASS' | 'FAIL' | 'UNKNOWN' = findings.some(
+      (f) => f.status === 'FAIL',
+    )
       ? 'FAIL'
       : findings.some((f) => f.status === 'UNKNOWN')
         ? 'UNKNOWN'
@@ -1498,8 +1512,9 @@ export class LocalFlowRuntime {
       cost: { status: 'UNKNOWN', amount: null },
     };
     const reportId = `local_qc:${adaptationHash(report)}`;
+    const checkedAt = new Date().toISOString();
     this.session((r) =>
-      r.transaction(() =>
+      r.transaction(() => {
         r.saveDocument(
           reportId,
           'local_qc',
@@ -1507,10 +1522,189 @@ export class LocalFlowRuntime {
           render,
           [{ inputId: videoId, contentHash: render.contentHash }],
           this.files(),
-        ),
-      ),
+        );
+        if (!includeHandoffEvidence) return;
+        // Native result and provenance are atomic. No historical checkedAt is inferred.
+        let context: LocalQcContext;
+        try {
+          context = this.qcContext(r, render);
+        } catch {
+          return;
+        }
+        const evidence: LocalQcHandoffEvidence = {
+          schemaVersion: 'local-qc-handoff/1',
+          reportId,
+          report,
+          checkedAt,
+          context,
+        };
+        const id = `local_qc_handoff:${adaptationHash(evidence)}`;
+        r.saveDocument(
+          id,
+          'local_qc_handoff',
+          evidence,
+          { ...render, createdAt: checkedAt },
+          [
+            { inputId: reportId, contentHash: adaptationHash(report) },
+            { inputId: videoId, contentHash: render.contentHash },
+          ],
+          this.files(),
+        );
+      }),
     );
     return { reportId, ...report };
+  }
+  private qcContext(r: LocalFlowRepository, render: any): LocalQcContext {
+    const plan = r.getCompositionPlan(render.compositionPlanId),
+      script = r.getScript(plan.scriptId),
+      voice = r.getVoiceTrack(plan.voiceTrackId);
+    const subtitleId = r.getArtifact(render.videoRenderId)?.inputs[2]?.inputId;
+    if (!subtitleId || !script || !voice) localFail('QC_LINEAGE_MISMATCH');
+    const subtitle = this.subtitle(r, subtitleId);
+    if (
+      script.contentHash !== plan.scriptContentHash ||
+      voice.contentHash !== plan.voiceTrackContentHash ||
+      subtitle.scriptId !== script.scriptId ||
+      subtitle.voiceTrackId !== voice.voiceTrackId
+    )
+      localFail('QC_LINEAGE_MISMATCH');
+    this.renderFiles().read(render.contentHash, 'mp4');
+    const assets = plan.segments.map((s: any) => {
+      const asset = this.media.get(s.mediaAssetId);
+      if (!asset || asset.contentHash !== s.mediaAssetContentHash)
+        localFail('QC_LINEAGE_MISMATCH');
+      return {
+        position: s.position,
+        id: asset.mediaAssetId,
+        contentHash: asset.contentHash,
+      };
+    });
+    return {
+      renderId: render.videoRenderId,
+      renderHash: render.contentHash,
+      renderRevision: render.revision,
+      pipelineRunId: render.pipelineRunId,
+      projectId: render.projectId,
+      projectVersion: render.projectVersion,
+      scriptId: script.scriptId,
+      scriptHash: script.contentHash,
+      scriptRevision: script.revision,
+      planId: plan.compositionPlanId,
+      planHash: plan.contentHash,
+      voiceId: voice.voiceTrackId,
+      voiceHash: voice.contentHash,
+      assets,
+      subtitle: {
+        id: subtitleId,
+        contentHash: adaptationHash(subtitle),
+        srtHash: subtitle.srtHash,
+        assHash: subtitle.assHash,
+      },
+    };
+  }
+  qcHandoffEvidence(
+    videoId: string,
+    reportId?: string,
+  ): LocalQcHandoffEvidence | null {
+    const previous = this.inspectingQc;
+    this.inspectingQc = true;
+    try {
+      return this.session((r) => {
+        const render = r.getVideoRender(videoId);
+        if (!render) localFail('LOCAL_RENDER_NOT_FOUND');
+        const ids = r.localQcHandoffIds(videoId, render.contentHash);
+        if (!ids.length) {
+          // Legacy evidence is not silently re-evaluated to manufacture provenance.
+          reportId ??= r.localNativeQcIds(videoId, render.contentHash).at(-1);
+          if (
+            reportId &&
+            r.getArtifact(reportId)?.artifactType === 'local_qc'
+          ) {
+            const raw: any = r.document(reportId, 'local_qc', this.files());
+            if (
+              raw.videoRenderId !== videoId ||
+              raw.videoRenderContentHash !== render.contentHash ||
+              `local_qc:${adaptationHash(raw)}` !== reportId
+            )
+              localFail('QC_BINDING_MISMATCH');
+            if (raw.result === 'FAIL') localFail('QC_NOT_PASS');
+            if (raw.result === 'UNKNOWN') localFail('QC_INSUFFICIENT');
+            localFail('QC_TIMESTAMP_REQUIRED');
+          }
+          return null;
+        }
+        const all = ids
+          .map((id) =>
+            validateLocalQcHandoff(
+              r.document(id, 'local_qc_handoff', this.files()),
+            ),
+          )
+          .sort((a, b) => Date.parse(a.checkedAt) - Date.parse(b.checkedAt));
+        const evidence = all[all.length - 1];
+        if (
+          all.some(
+            (other) =>
+              other !== evidence &&
+              other.checkedAt === evidence.checkedAt &&
+              other.reportId !== evidence.reportId,
+          )
+        )
+          localFail('QC_TIMESTAMP_REQUIRED');
+        const native = r.document(evidence.reportId, 'local_qc', this.files());
+        if (adaptationHash(native) !== adaptationHash(evidence.report))
+          localFail('QC_BINDING_MISMATCH');
+        if (
+          adaptationHash(this.qcContext(r, render)) !==
+          adaptationHash(evidence.context)
+        )
+          localFail('QC_LINEAGE_MISMATCH');
+        return evidence;
+      });
+    } finally {
+      this.inspectingQc = previous;
+    }
+  }
+  async ensureQcHandoffEvidence(
+    videoId: string,
+  ): Promise<LocalQcHandoffEvidence | null> {
+    const prior = this.qcHandoffEvidence(videoId);
+    if (prior) return prior;
+    const key = `ensure-qc:${videoId}`;
+    const running = this.inFlight.get(key);
+    if (running) return running;
+    const operation = (async () => {
+      const root = this.files().root,
+        lock = join(root, `qc_${adaptationHash(videoId)}.lock`);
+      const deadline = Date.now() + 185000;
+      for (;;) {
+        try {
+          await mkdir(lock);
+          break;
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
+          const saved = this.qcHandoffEvidence(videoId);
+          if (saved) return saved;
+          if (Date.now() > deadline) localFail('LOCAL_QC_BUSY_REQUIRED');
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+      try {
+        const saved = this.qcHandoffEvidence(videoId);
+        if (saved) return saved;
+        const actual = await this.qc(videoId, true);
+        if (actual.result === 'FAIL') localFail('QC_NOT_PASS');
+        if (actual.result === 'UNKNOWN') localFail('QC_INSUFFICIENT');
+        return this.qcHandoffEvidence(videoId);
+      } finally {
+        await rmdir(lock);
+      }
+    })();
+    this.inFlight.set(key, operation);
+    try {
+      return await operation;
+    } finally {
+      this.inFlight.delete(key);
+    }
   }
   async preview(videoId: string) {
     const report = await this.qc(videoId);

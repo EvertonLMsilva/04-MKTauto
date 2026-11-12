@@ -21,16 +21,29 @@ export class MediaService {
     private readonly store: MediaStore,
     private readonly composer?: VideoComposer,
   ) {}
-  handoff(request: MediaHandoffRequest) {
-    return projectMediaHandoff(this, request, (planId) => {
-      if (!this.store.openInitialRender) return null;
-      const repository = this.store.openInitialRender(true);
-      try {
-        return repository.listVideoRendersByCompositionPlan(planId);
-      } finally {
-        repository.close();
-      }
-    });
+  handoff(
+    request: MediaHandoffRequest,
+    local?: Pick<
+      import('./local-flow.service.js').LocalFlowService,
+      'qcHandoffEvidence'
+    >,
+  ) {
+    return projectMediaHandoff(
+      this,
+      request,
+      (planId) => {
+        if (!this.store.openInitialRender) return null;
+        const repository = this.store.openInitialRender(true);
+        try {
+          return repository.listVideoRendersByCompositionPlan(planId);
+        } finally {
+          repository.close();
+        }
+      },
+      local
+        ? (id) => local.qcHandoffEvidence(id, request.qualityControlReportId)
+        : undefined,
+    );
   }
   async compose(value: unknown, options: { signal?: AbortSignal } = {}) {
     if (!this.store.openInitialRender || !this.composer)
