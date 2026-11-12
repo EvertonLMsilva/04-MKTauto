@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { provisionSchema } from './schema-provisioner.js';
@@ -86,12 +87,16 @@ describe('administrative schema provisioning', () => {
         .get(),
     ).toBeUndefined();
     db.exec("UPDATE schema_migrations SET name='wrong' WHERE version=38");
-    expect(() => provisionSchema(db, 40)).toThrow('SCHEMA_HISTORY_INCOMPATIBLE');
+    expect(() => provisionSchema(db, 40)).toThrow(
+      'SCHEMA_HISTORY_INCOMPATIBLE',
+    );
   });
 
   it('rejects a nonempty unversioned database and active transactions', () => {
     db.exec('CREATE TABLE private_data(id TEXT)');
-    expect(() => provisionSchema(db, 40)).toThrow('SCHEMA_HISTORY_INCOMPATIBLE');
+    expect(() => provisionSchema(db, 40)).toThrow(
+      'SCHEMA_HISTORY_INCOMPATIBLE',
+    );
     db.exec('BEGIN');
     expect(() => provisionSchema(db, 40)).toThrow('SCHEMA_TRANSACTION_ACTIVE');
     db.exec('ROLLBACK');
@@ -104,5 +109,73 @@ describe('administrative schema provisioning', () => {
     expect(() => provisionSchema(db, 40)).toThrow();
     expect(version()).toBe(40);
     expect(snapshot()).toEqual(before);
+  });
+
+  it('adds immutable manual reconciliation without changing 001-044, original records or Finance/Fal', () => {
+    provisionSchema(db, 44);
+    const history = snapshot();
+    const originalDdl = db
+      .prepare(
+        "SELECT sql FROM sqlite_master WHERE name='manual_distribution_records'",
+      )
+      .get();
+    const before = db
+      .prepare('SELECT * FROM schema_lineage_extensions_v1')
+      .all();
+    provisionSchema(db, 44);
+    expect(snapshot()).toEqual(history);
+    expect(version()).toBe(44);
+    expect(
+      db
+        .prepare(
+          "SELECT sql FROM sqlite_master WHERE name='manual_distribution_records'",
+        )
+        .get(),
+    ).toEqual(originalDdl);
+    expect(
+      db.prepare('SELECT * FROM schema_lineage_extensions_v1').all(),
+    ).toEqual(before);
+    expect(
+      db
+        .prepare(
+          "SELECT name,sql_sha256 FROM schema_lineage_extensions_v1 WHERE lineage='manual-publication-reconciliation'",
+        )
+        .get(),
+    ).toMatchObject({
+      name: 'manual_publication_reconciliation_v1',
+      sql_sha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(db.prepare('PRAGMA foreign_key_check').all()).toEqual([]);
+  });
+
+  it('rejects modified extension checksum and missing objects atomically', () => {
+    provisionSchema(db, 43);
+    const history = snapshot();
+    db.exec(
+      "UPDATE schema_lineage_extensions_v1 SET sql_sha256='wrong' WHERE lineage='manual-publication-reconciliation'",
+    );
+    expect(() => provisionSchema(db, 43)).toThrow(
+      'SCHEMA_EXTENSION_INCOMPATIBLE',
+    );
+    expect(snapshot()).toEqual(history);
+    // Deliberate administrative schema-damage fixture, never a normal data write.
+    const checksum = createHash('sha256')
+      .update(
+        readFileSync(
+          new URL(
+            '../database/migrations/manual_publication_reconciliation_v1.sql',
+            import.meta.url,
+          ),
+          'utf8',
+        ).replace(/\r\n/g, '\n'),
+      )
+      .digest('hex');
+    db.prepare(
+      "UPDATE schema_lineage_extensions_v1 SET sql_sha256=? WHERE lineage='manual-publication-reconciliation'",
+    ).run(checksum);
+    db.exec('DROP INDEX manual_reconciliation_package_v1');
+    expect(() => provisionSchema(db, 43)).toThrow(
+      'SCHEMA_EXTENSION_INCOMPATIBLE',
+    );
   });
 });

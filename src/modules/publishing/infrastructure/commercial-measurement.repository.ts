@@ -57,6 +57,9 @@ export class CommercialMeasurementRepository {
       const execution = new CampaignRepository(db).get(target.id);
       const publications = this.records
         .list('PUBLICATION')
+        .map(
+          (p) => this.records.effectivePublication(p.publicationId).publication,
+        )
         .filter(
           (p) =>
             p.state === 'PUBLISHED' &&
@@ -90,7 +93,9 @@ export class CommercialMeasurementRepository {
     } else if (target.kind === 'operation')
       fail('DISTRIBUTION_CONFIRMED_PUBLICATION_REQUIRED');
     else if (target.kind === 'publication') {
-      publication = this.records.get('PUBLICATION', target.id);
+      publication = this.records.get('PUBLICATION', target.id)
+        ? this.records.effectivePublication(target.id).publication
+        : null;
       packageHash = publication?.packageHash;
     } else packageHash = publication?.packageHash;
     if (!publication || (!operation && publication.state !== 'PUBLISHED'))

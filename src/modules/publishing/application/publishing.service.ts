@@ -168,6 +168,17 @@ export class PublishingService {
     this.signalNotifications();
     return result;
   }
+  reconcilePublication(value: unknown, key: string, principal: unknown) {
+    return this.session(false, (s) =>
+      s.manual.reconcilePublication(value, key, principal),
+    );
+  }
+  effectivePublication(id: string) {
+    return this.session(true, (s) => s.manual.effectivePublication(id));
+  }
+  reconciliations(id: string) {
+    return this.session(true, (s) => s.manual.reconciliations(id));
+  }
   publication(id: string) {
     return this.session(true, (s) => s.manual.getPublication(id));
   }

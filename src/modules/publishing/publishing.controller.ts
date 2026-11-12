@@ -122,6 +122,35 @@ export class PublishingController {
   @Get('manual-publications/:id') publication(@Param('id') id: string) {
     return this.respond(() => this.publishing.publication(id));
   }
+  @Post('manual-publications/:id/reconciliations')
+  @UseGuards(LocalQcGuard)
+  reconcilePublication(
+    @Param('id') id: string,
+    @Body() value: unknown,
+    @Req() request: any,
+  ) {
+    return this.command(value, (input: any, key) => {
+      if (input?.publicationId !== id)
+        throw new BadRequestException({
+          code: 'DISTRIBUTION_RECONCILIATION_SCOPE_MISMATCH',
+        });
+      return this.publishing.reconcilePublication(
+        input,
+        key,
+        request[QC_REVIEWER_CONTEXT],
+      );
+    });
+  }
+  @Get('manual-publications/:id/effective')
+  @UseGuards(LocalQcGuard)
+  effectivePublication(@Param('id') id: string) {
+    return this.respond(() => this.publishing.effectivePublication(id));
+  }
+  @Get('manual-publications/:id/reconciliations')
+  @UseGuards(LocalQcGuard)
+  reconciliations(@Param('id') id: string) {
+    return this.respond(() => this.publishing.reconciliations(id));
+  }
   @Post('results') recordResults(@Body() value: unknown) {
     return this.command(value, (input, key) =>
       this.publishing.recordResults(input, key),

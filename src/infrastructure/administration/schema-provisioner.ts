@@ -199,6 +199,51 @@ function campaignSourceExtension(db: DatabaseSync) {
   }
 }
 
+function manualReconciliationExtension(db: DatabaseSync) {
+  const name = 'manual_publication_reconciliation_v1';
+  const sql = extension(name);
+  const hash = createHash('sha256')
+    .update(sql.replace(/\r\n/g, '\n'))
+    .digest('hex');
+  const prior = db
+    .prepare(
+      'SELECT name,sql_sha256 FROM schema_lineage_extensions_v1 WHERE lineage=? AND version=1',
+    )
+    .get('manual-publication-reconciliation');
+  if (!prior) {
+    db.exec(sql);
+    db.prepare(
+      'INSERT INTO schema_lineage_extensions_v1 VALUES(?,?,?,?,?)',
+    ).run(
+      'manual-publication-reconciliation',
+      1,
+      name,
+      hash,
+      new Date().toISOString(),
+    );
+  } else if (prior.name !== name || prior.sql_sha256 !== hash)
+    throw new Error('SCHEMA_EXTENSION_INCOMPATIBLE');
+  const expected = new DatabaseSync(':memory:');
+  try {
+    expected.exec(sql);
+    const normalize = (value: string) => value.replace(/\s+/g, ' ').trim();
+    for (const row of expected
+      .prepare('SELECT name,sql FROM sqlite_master WHERE sql IS NOT NULL')
+      .all()) {
+      const actual = db
+        .prepare('SELECT sql FROM sqlite_master WHERE name=?')
+        .get(row.name!);
+      if (
+        typeof actual?.sql !== 'string' ||
+        normalize(actual.sql) !== normalize(String(row.sql))
+      )
+        throw new Error('SCHEMA_EXTENSION_INCOMPATIBLE');
+    }
+  } finally {
+    expected.close();
+  }
+}
+
 export function provisionSchema(db: DatabaseSync, target = 43): void {
   if (db.isTransaction) throw new Error('SCHEMA_TRANSACTION_ACTIVE');
   if (!Number.isInteger(target) || target < 1 || target > 44)
@@ -269,6 +314,7 @@ export function provisionSchema(db: DatabaseSync, target = 43): void {
     if (target >= 42) {
       db.exec(extension('instagram_editorial_v1'));
       campaignSourceExtension(db);
+      manualReconciliationExtension(db);
       provisionSocialContext(db);
       db.prepare(
         'SELECT review_hash FROM instagram_approval_revocations LIMIT 0',

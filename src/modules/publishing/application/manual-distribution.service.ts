@@ -1,4 +1,6 @@
 import { HumanApprovalService } from './human-approval.service.js';
+import { operationalQcIdentity } from './local-qc-identity.js';
+import { validateReconciliationInput } from '../domain/manual-publication-reconciliation.contracts.js';
 import { validateHumanApprovalIdentity } from '../domain/human-approval-contracts.js';
 import { manualReleaseHandoff } from './manual-release-handoff.js';
 import { manualReleaseReadiness } from './manual-release-readiness.js';
@@ -322,6 +324,11 @@ export class ManualDistributionService {
             if (existing[k] !== v[k]) fail('DISTRIBUTION_PUBLICATION_CONFLICT');
           return existing;
         }
+        this.repository.assertExternalAvailable({
+          ...v,
+          publicationId: `manual_publication:${p.contentHash}`,
+          platform: p.platform,
+        });
         const pub: any = seal({
           schemaVersion: 'manual-publication/1.0.0',
           publicationId: `manual_publication:${p.contentHash}`,
@@ -342,13 +349,39 @@ export class ManualDistributionService {
     publicText(id, 'publicationId');
     return this.repository.get('PUBLICATION', id);
   }
+  reconcilePublication(raw: unknown, key: string, principal: unknown) {
+    const input = validateReconciliationInput(raw);
+    const reviewer = operationalQcIdentity.assertActive(principal);
+    return this.repository.reconcile(input, reviewer.id, key, this.now, () => {
+      operationalQcIdentity.assertActive(principal);
+      const pkg = this.validateForPublication(input.packageHash);
+      if (
+        pkg.qualityControl?.evidence?.publicationAuthorization?.grant?.scope
+          ?.mode === 'fake' ||
+        this.evidence.getQualityControlReport(
+          pkg.identity.qualityControlReportId,
+        )?.evidence?.publicationAuthorization?.grant?.scope?.mode === 'fake'
+      )
+        fail('DISTRIBUTION_FAKE_ONLY');
+      if (pkg.platform !== input.platform || pkg.account !== input.account)
+        fail('DISTRIBUTION_RECONCILIATION_SCOPE_MISMATCH');
+    });
+  }
+  effectivePublication(id: string) {
+    return this.repository.effectivePublication(id);
+  }
+  reconciliations(id: string) {
+    return this.repository.reconciliations(id);
+  }
   listPublications(hash: any): any {
     return this.repository.list('PUBLICATION', hash);
   }
   recordResults(raw: any, key: any): any {
     const v: any = validateResults(raw);
     return this.repository.command('RESULTS', v, key, (): any => {
-      const pub: any = this.getPublication(v.publicationId);
+      const pub: any = this.getPublication(v.publicationId)
+        ? this.repository.effectivePublication(v.publicationId).publication
+        : null;
       if (!pub || pub.state !== 'PUBLISHED')
         fail('DISTRIBUTION_CONFIRMED_PUBLICATION_REQUIRED');
       const identity: any = affiliateHash({
