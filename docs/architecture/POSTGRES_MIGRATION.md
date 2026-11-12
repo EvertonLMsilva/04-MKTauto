@@ -442,3 +442,115 @@ autorização operacional específica. Nenhum dado real foi migrado ou banco
 operacional acessado. Não há mudança em Docker LIVE, deploy ou cutover.
 Custos locais de CPU/energia indisponíveis; nenhuma execução paga realizada.
 Finance PostgreSQL completo e PG-002 inteiro não são declarados concluídos.
+
+## Media Catalog — CORE-PG-002-MEDIA-CATALOG-001
+
+### Fronteira e ownership
+
+Esta fundação trata somente metadados de ativos, proveniência, aquisição e
+seleção. Reutiliza validateMediaAsset (V1/V2), mediaAssetIdentityHash,
+validateMediaAcquisitionRequest, validateMediaSelectionRequest,
+assertNewPhysicalMediaIdentity e validateArtifactLineage, sem alterar os
+validadores ou repositories SQLite da Frente B. Não produz, transfere ou
+armazena bytes de mídia. O hash físico e a referência CAS são preservados
+conforme o contrato existente; registrar metadados não verifica a existência
+dos bytes nem substitui os gates de processamento, direitos, QC ou publicação.
+
+MEDIA_CATALOG_POSTGRES_MIGRATION_REGISTRY estende integralmente o registro
+Finance v1–v6 com 007_media_catalog_foundation, versão 7. Nenhuma migration
+anterior, nome ou checksum mudou. As únicas tabelas novas são:
+
+| Tabela | Conteúdo |
+| --- | --- |
+| media.media_assets | Identidade/hash do ativo, run/projeto, script/hash/direção, tipo, propriedades técnicas, referência, direitos, revisão/supersession e JSON validado |
+| media.media_asset_sources | Provider, ID externo, licença, autoria e URLs de proveniência vinculados ao ativo |
+| media.media_acquisition_requests | Pedido versionado/hash e vínculo ao ativo; origem do recibo de aquisição |
+| media.media_selection_requests | Pedido versionado/hash, perfil, tipos solicitado/selecionado e fallback explícito; origem do recibo de seleção |
+
+Project, Campaign, Script e ArtifactLineage continuam canônicos nos schemas
+existentes. As FKs usam project.project_snapshots, campaign.pipeline_runs,
+content.scripts e content.artifact_lineage. Não há tabelas de render, TTS,
+CTC, composição, QC, publicação, modelos ou blobs nesta entrega.
+
+### Atomicidade Content/Media e locks
+
+O participante media foi adicionado ao PostgresDatabase com lock 7. A ordem
+global anterior é preservada: Content 3 → Affiliate 4 → Campaign 5 → Media 7.
+Finance mantém seu contrato independente e seu lock 6; não é alistado por
+alias nesta unidade. Cada operação do catálogo inicia ou adere explicitamente
+a unitOfWork(['content','affiliate','campaign','media']) antes das leituras.
+Os quatro locks estabilizam run, roteiro, contexto comercial e revisões.
+
+Media e a linhagem Content usam o mesmo PoolClient e um único BEGIN/COMMIT
+ou ROLLBACK. Queries de linhagem declaram o participante content; queries do
+catálogo declaram media. Não há segundo pool, runner ou transação independente
+entre os dois schemas. Uma unidade externa deve alistar os quatro domínios
+antecipadamente; participantes ausentes, expansão de unidade e tentativa de
+promover uma transação isolada são recusados, sem simular adesão.
+
+O registro cria a linhagem verdadeira do ativo: script/hash como primeiro
+input, ativo anterior/hash como segundo input em revisões, contentIdentity
+media-asset por script/direção/tipo, revisão e hash do ativo. As colunas,
+inputs, hash e conteúdo integral da linhagem persistida são revalidados na
+leitura, além da identidade do ativo e proveniência. Direitos comerciais,
+escopo, hash do script, direção visual e sucessão imediata são preservados.
+
+Uma constraint trigger diferida aplica-se somente a novas linhagens Content
+do tipo media_asset e exige seu ativo proprietário no commit. Outra exige
+proveniência quando o payload contém source. Isso permite a ordem normal
+linhagem → ativo → source na mesma transação, impedindo órfãos e resultados
+parciais. Triggers de imutabilidade cobrem as quatro tabelas; unicidade e
+locks impedem revisões/supersession/recibos duplicados. Não são inseridas
+linhagens fictícias para satisfazer FKs.
+
+### Opt-in, contratos suportados e bloqueios
+
+MediaPostgresModule.register(config) exporta apenas
+PostgresMediaCatalogPersistence e POSTGRES_MEDIA_CATALOG. open(readOnly?)
+verifica v1–v7/checksums; startup não executa DDL ou queries e não instancia
+MediaModule, produtores, providers, downloaders ou schedulers. O runtime
+operacional SQLite e AppModule permanecem intactos.
+
+O port próprio AsyncMediaCatalogRepository retorna Promises explicitamente,
+mantendo o port SQLite síncrono. Nenhuma Promise é apresentada por cast como
+resultado síncrono. São suportados registro/consulta/listagem por run, script
+e direção, aquisição e recibo, seleção e recibo, replay, revisões/supersession
+e close do handle, sem encerrar o pool.
+
+MediaAsset V1/V2 é suportado para roteiros comerciais script/2.0.0 cuja
+composição Content/Affiliate canônica já está coordenada. Essa composição
+revalida o roteiro existente, sem gerar conteúdo. Roteiros script/1.0.0
+dependem de leituras Research que o opt-in coordenado de Content ainda não
+fornece: MEDIA_CONTENT_CONTEXT_REQUIRED preserva esse limite. O teste usa um
+roteiro V1 válido, registrado pela composição Content existente com Research
+de fixture, e confirma a recusa sem inserir ativo ou linhagem Media. Não se
+assume que readers externos ou dados SQLite participam da transação.
+
+Aquisição significa registrar pedido/ativo/recibo fornecidos, sem executar
+aquisição remota. Telemetry/costEvent não nulos continuam bloqueados por
+MEDIA_FINANCE_DEPENDENCY_REQUIRED; Finance ledger v6 não habilita accounting,
+billing ou transporte pago. Seleção usa ativo persistido e preserva o fallback
+VIDEO → IMAGE somente com PROVIDER_NO_ELIGIBLE_VIDEO. Nenhuma política de
+seleção, licença, custo ou geração da Frente B foi alterada.
+
+### Validação e limites futuros
+
+test/postgres/media-catalog.integration.test.ts usa a fixture PG-001 marcada
+com PostgreSQL 18.6 real. Cobre v7/checksum/reexecução/rollback de DDL e do
+trigger de integração; ativos, direitos/proveniência, run/script/hash/direção,
+revisões, aquisição/seleção/fallback, replay, concorrência, imutabilidade,
+falha entre linhagem e ativo, ausência de órfãos, corrupção de proveniência e
+linhagem, reinício do pool e proteção read-only. Observa uma conexão e um
+BEGIN/COMMIT físicos, zero queries independentes ao pool e locks 3/4/5/7.
+Compara as operações suportadas com SQLite real descartável e preserva as
+regressões Content/Campaign/Finance/coordenação e Media/readiness local.
+
+Composição/render/QC, áudio/TTS/CTC, processamento físico e publicação ainda
+exigem suas próprias persistências, contratos e gates da Frente B e demais
+frentes. Integrar Research ao contexto Content e Finance aos efeitos pagos
+são dependências explícitas. Migração futura de dados precisa verificar
+bytes/hashes/referências, direitos, proveniência, identidade histórica e
+supersession, preparar rollback e obter autorização específica de cutover.
+Nenhum dado real foi migrado, serviço operacional alterado ou chamada paga
+executada. CPU/energia local têm custo indisponível. Media PostgreSQL completo
+e PG-002 inteiro não são declarados concluídos.
