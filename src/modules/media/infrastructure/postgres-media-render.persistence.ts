@@ -16,9 +16,21 @@ import { MediaAssetRepositoryError } from './media-asset.repository.js';
 import { PostgresMediaCompositionRepository } from './postgres-media-composition.persistence.js';
 import { PostgresMediaCatalogSession } from './postgres-media-catalog.session.js';
 import { MEDIA_RENDER_POSTGRES_MIGRATION_REGISTRY } from './postgres-media-render.migrations.js';
+import {
+  burnedRenderLineage,
+  type LocalSubtitleProof,
+} from './postgres-media-subtitle.contracts.js';
+import { PostgresMediaSubtitleRepository } from './postgres-media-subtitle.persistence.js';
+import { MEDIA_SUBTITLE_POSTGRES_MIGRATIONS } from './postgres-media-subtitle.migrations.js';
+import { adaptationHash } from '../domain/media-hash.js';
+import { digest, documentBytes } from './local-evidence-storage.js';
 
 export interface AsyncMediaRenderRepository {
   registerVideoRender(value: unknown): Promise<CompositionRender>;
+  registerBurned(
+    value: unknown,
+    subtitleId: string,
+  ): Promise<CompositionRender>;
   getVideoRender(id: string): Promise<CompositionRender | null>;
   listVideoRendersByCompositionPlan(id: string): Promise<CompositionRender[]>;
   listVideoRendersByPipelineRun(id: string): Promise<CompositionRender[]>;
@@ -124,7 +136,10 @@ function lineage(r: CompositionRender) {
 }
 export class PostgresMediaRenderRepository implements AsyncMediaRenderRepository {
   private readonly plans: PostgresMediaCompositionRepository;
-  constructor(private readonly session: PostgresMediaCatalogSession) {
+  constructor(
+    private readonly session: PostgresMediaCatalogSession,
+    private readonly subtitleProof?: LocalSubtitleProof,
+  ) {
     this.plans = new PostgresMediaCompositionRepository(session);
   }
   async close(): Promise<void> {
@@ -264,47 +279,249 @@ export class PostgresMediaRenderRepository implements AsyncMediaRenderRepository
         );
       await this.related(r);
       await this.previous(r, new Set([r.videoRenderId]));
-      const a = lineage(r);
+      return this.persist(r, lineage(r));
+    }, true);
+  }
+  private async persist(
+    r: CompositionRender,
+    a: ReturnType<typeof validateArtifactLineage>,
+  ): Promise<CompositionRender> {
+    await this.session.query(
+      'content',
+      'INSERT INTO content.artifact_lineage(artifact_id,schema_version,artifact_type,artifact_version,identity_hash,pipeline_run_id,project_id,project_version,content_identity,hash_algorithm,content_hash,generation_metadata_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)',
+      [
+        a.artifactId,
+        a.schemaVersion,
+        a.artifactType,
+        a.artifactVersion,
+        hash(a),
+        a.pipelineRunId,
+        a.projectId,
+        a.projectVersion,
+        a.contentIdentity,
+        a.hashAlgorithm,
+        a.contentHash,
+        a.generationMetadata === null
+          ? null
+          : JSON.stringify(a.generationMetadata),
+        a.createdAt,
+      ],
+    );
+    for (const input of a.inputs)
       await this.session.query(
         'content',
-        'INSERT INTO content.artifact_lineage(artifact_id,schema_version,artifact_type,artifact_version,identity_hash,pipeline_run_id,project_id,project_version,content_identity,hash_algorithm,content_hash,generation_metadata_json,created_at) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,NULL,$12)',
-        [
-          a.artifactId,
-          a.schemaVersion,
-          a.artifactType,
-          a.artifactVersion,
-          hash(a),
-          a.pipelineRunId,
-          a.projectId,
-          a.projectVersion,
-          a.contentIdentity,
-          a.hashAlgorithm,
-          a.contentHash,
-          a.createdAt,
-        ],
-      );
-      await this.session.query(
-        'content',
-        'INSERT INTO content.artifact_lineage_inputs(artifact_id,position,kind,input_id,content_hash) VALUES($1,1,$2,$3,$4)',
+        'INSERT INTO content.artifact_lineage_inputs(artifact_id,position,kind,input_id,content_hash) VALUES($1,$2,$3,$4,$5)',
         [
           r.videoRenderId,
-          'INTERNAL_ARTIFACT',
-          r.compositionPlanId,
-          r.compositionPlanContentHash,
+          input.position,
+          input.kind,
+          input.inputId,
+          input.contentHash,
         ],
       );
-      const c = columns(r);
-      // Only fixed column names from the mapping are interpolated; all data is parameterized.
+    const c = columns(r);
+    // Only fixed column names from the mapping are interpolated; all data is parameterized.
+    await this.session.query(
+      'media',
+      `INSERT INTO media.video_renders(${Object.keys(c).join(',')}) VALUES(${Object.keys(
+        c,
+      )
+        .map((_, i) => `$${i + 1}`)
+        .join(',')})`,
+      Object.values(c),
+    );
+    return (await this.read(r.videoRenderId, new Set()))!;
+  }
+  private async burninSchema() {
+    const m = MEDIA_SUBTITLE_POSTGRES_MIGRATIONS[0];
+    const row = (
       await this.session.query(
         'media',
-        `INSERT INTO media.video_renders(${Object.keys(c).join(',')}) VALUES(${Object.keys(
-          c,
-        )
-          .map((_, i) => `$${i + 1}`)
-          .join(',')})`,
-        Object.values(c),
+        'SELECT name,checksum FROM platform.schema_migrations WHERE version=$1',
+        [m.version],
+      )
+    ).rows[0];
+    if (
+      !row ||
+      row.name !== m.name ||
+      row.checksum !== postgresMigrationChecksum(m.sql)
+    )
+      throw fail(
+        'MEDIA_SUBTITLE_SCHEMA_VERSION_UNSUPPORTED',
+        'schemaVersion',
+        'migration v11 requerida',
       );
-      return (await this.read(r.videoRenderId, new Set()))!;
+  }
+  private async burninContext(r: CompositionRender, subtitleId: string) {
+    if (!r.supersedesVideoRenderId)
+      throw fail(
+        'LOCAL_RENDER_BINDING_INVALID',
+        'supersedesVideoRenderId',
+        'render original requerido',
+      );
+    const source = await this.read(
+      r.supersedesVideoRenderId,
+      new Set([r.videoRenderId]),
+    );
+    const subtitle = await new PostgresMediaSubtitleRepository(
+      this.session,
+      this.subtitleProof,
+    ).getLocalSubtitle(subtitleId);
+    if (!source || source.revision !== 1 || r.revision !== 2 || !subtitle)
+      throw fail(
+        'LOCAL_RENDER_BINDING_INVALID',
+        'subtitleId',
+        'render original ou legenda ausentes',
+      );
+    for (const k of [
+      'pipelineRunId',
+      'projectId',
+      'projectVersion',
+      'compositionPlanId',
+      'compositionPlanContentHash',
+      'containerFormat',
+      'durationMilliseconds',
+      'outputAspectRatio',
+      'widthPixels',
+      'heightPixels',
+      'createdAt',
+    ] as const)
+      if (source[k] !== r[k])
+        throw fail(
+          'LOCAL_RENDER_BINDING_INVALID',
+          k,
+          'render original incompatível',
+        );
+    const plan = await this.plans.getCompositionPlan(r.compositionPlanId);
+    if (
+      !plan ||
+      subtitle.pipelineRunId !== r.pipelineRunId ||
+      subtitle.projectId !== r.projectId ||
+      subtitle.projectVersion !== r.projectVersion ||
+      subtitle.document.scriptId !== plan.scriptId ||
+      subtitle.document.scriptContentHash !== plan.scriptContentHash ||
+      subtitle.document.voiceTrackId !== plan.voiceTrackId
+    )
+      throw fail(
+        'LOCAL_SUBTITLE_BINDING_INVALID',
+        'subtitleId',
+        'legenda fora do contexto',
+      );
+    if (
+      r.videoRenderId !==
+      `video_render:local:${adaptationHash({ videoId: source.videoRenderId, subtitleId })}`
+    )
+      throw fail(
+        'LOCAL_RENDER_BINDING_INVALID',
+        'videoRenderId',
+        'identidade local divergente',
+      );
+    return {
+      source,
+      subtitle,
+      lineage: burnedRenderLineage(r, source, {
+        subtitleId,
+        documentHash: subtitle.documentHash,
+      }),
+    };
+  }
+  private async expectedLineage(r: CompositionRender) {
+    const table = (
+      await this.session.query(
+        'media',
+        "SELECT pg_catalog.to_regclass('media.video_render_burnins') AS name",
+      )
+    ).rows[0].name;
+    if (!table) return lineage(r);
+    const binding = (
+      await this.session.query(
+        'media',
+        'SELECT * FROM media.video_render_burnins WHERE video_render_id=$1',
+        [r.videoRenderId],
+      )
+    ).rows[0];
+    if (!binding) return lineage(r);
+    await this.burninSchema();
+    const context = await this.burninContext(r, binding.subtitle_id);
+    if (
+      binding.source_render_id !== context.source.videoRenderId ||
+      binding.document_hash !== digest(documentBytes(r))
+    )
+      throw fail(
+        'INVALID_PERSISTED_VIDEO_RENDER',
+        'videoRenderId',
+        'binding burn-in divergente',
+      );
+    return context.lineage;
+  }
+  async registerBurned(
+    value: unknown,
+    subtitleId: string,
+  ): Promise<CompositionRender> {
+    let r: CompositionRender;
+    try {
+      r = validated(value);
+    } catch (error) {
+      throw mapped(error);
+    }
+    identifier(subtitleId, 'subtitleId');
+    return this.run(async () => {
+      await this.burninSchema();
+      const prior = (
+        await this.session.query(
+          'media',
+          'SELECT identity_hash FROM media.video_renders WHERE video_render_id=$1',
+          [r.videoRenderId],
+        )
+      ).rows[0];
+      if (prior) {
+        const binding = (
+          await this.session.query(
+            'media',
+            'SELECT subtitle_id FROM media.video_render_burnins WHERE video_render_id=$1',
+            [r.videoRenderId],
+          )
+        ).rows[0];
+        if (
+          prior.identity_hash !== videoRenderIdentityHash(r) ||
+          !binding ||
+          binding.subtitle_id !== subtitleId
+        )
+          throw fail(
+            'VIDEO_RENDER_ID_REUSED',
+            'videoRenderId',
+            'identidade burn-in divergente',
+          );
+        return (await this.read(r.videoRenderId, new Set()))!;
+      }
+      if (
+        (
+          await this.session.query(
+            'media',
+            'SELECT 1 FROM media.video_renders WHERE composition_plan_id=$1 AND revision=$2',
+            [r.compositionPlanId, r.revision],
+          )
+        ).rows.length
+      )
+        throw fail(
+          'VIDEO_RENDER_REVISION_CONFLICT',
+          'revision',
+          'revisão já registrada',
+        );
+      await this.related(r);
+      await this.previous(r, new Set([r.videoRenderId]));
+      const context = await this.burninContext(r, subtitleId);
+      await this.session.query(
+        'media',
+        'INSERT INTO media.video_render_burnins(video_render_id,source_render_id,subtitle_id,document_hash) VALUES($1,$2,$3,$4)',
+        [
+          r.videoRenderId,
+          context.source.videoRenderId,
+          subtitleId,
+          digest(documentBytes(r)),
+        ],
+      );
+      return this.persist(r, context.lineage);
     }, true);
   }
   async getVideoRender(id: string): Promise<CompositionRender | null> {
@@ -373,7 +590,7 @@ export class PostgresMediaRenderRepository implements AsyncMediaRenderRepository
       });
       if (
         stored.identity_hash !== hash(actual) ||
-        JSON.stringify(actual) !== JSON.stringify(lineage(r))
+        JSON.stringify(actual) !== JSON.stringify(await this.expectedLineage(r))
       )
         throw new Error('INVALID_LINEAGE');
       return r;
@@ -431,7 +648,10 @@ export class PostgresMediaRenderRepository implements AsyncMediaRenderRepository
   }
 }
 export class PostgresMediaRenderPersistence {
-  constructor(private readonly database: PostgresDatabase) {}
+  constructor(
+    private readonly database: PostgresDatabase,
+    private readonly subtitleProof?: LocalSubtitleProof,
+  ) {}
   async open(readOnly = false): Promise<AsyncMediaRenderRepository> {
     await PostgresMediaCatalogSession.verify(this.database);
     const rows = (
@@ -459,6 +679,7 @@ export class PostgresMediaRenderPersistence {
       );
     return new PostgresMediaRenderRepository(
       new PostgresMediaCatalogSession(this.database, readOnly),
+      this.subtitleProof,
     );
   }
 }

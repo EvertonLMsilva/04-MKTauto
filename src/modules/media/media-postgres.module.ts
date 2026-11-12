@@ -8,22 +8,38 @@ import { PostgresMediaCatalogPersistence } from './infrastructure/postgres-media
 import { PostgresMediaVoicePersistence } from './infrastructure/postgres-media-voice.persistence.js';
 import { PostgresMediaCompositionPersistence } from './infrastructure/postgres-media-composition.persistence.js';
 import { PostgresMediaRenderPersistence } from './infrastructure/postgres-media-render.persistence.js';
+import { PostgresMediaSubtitlePersistence } from './infrastructure/postgres-media-subtitle.persistence.js';
+import type { LocalSubtitleProof } from './infrastructure/postgres-media-subtitle.contracts.js';
 export const POSTGRES_MEDIA_CATALOG = Symbol('POSTGRES_MEDIA_CATALOG');
 export const POSTGRES_MEDIA_VOICE = Symbol('POSTGRES_MEDIA_VOICE');
 export const POSTGRES_MEDIA_COMPOSITION = Symbol('POSTGRES_MEDIA_COMPOSITION');
 export const POSTGRES_MEDIA_RENDER = Symbol('POSTGRES_MEDIA_RENDER');
+export const POSTGRES_MEDIA_SUBTITLE = Symbol('POSTGRES_MEDIA_SUBTITLE');
 @Module({})
 export class MediaPostgresModule {
-  static register(config: PostgresConfig): DynamicModule {
+  static register(
+    config: PostgresConfig,
+    options: { subtitleProof?: LocalSubtitleProof } = {},
+  ): DynamicModule {
     return {
       module: MediaPostgresModule,
       imports: [PostgresModule.register(config)],
       providers: [
         {
+          provide: PostgresMediaSubtitlePersistence,
+          inject: [PostgresDatabase],
+          useFactory: (db: PostgresDatabase) =>
+            new PostgresMediaSubtitlePersistence(db, options.subtitleProof),
+        },
+        {
+          provide: POSTGRES_MEDIA_SUBTITLE,
+          useExisting: PostgresMediaSubtitlePersistence,
+        },
+        {
           provide: PostgresMediaRenderPersistence,
           inject: [PostgresDatabase],
           useFactory: (db: PostgresDatabase) =>
-            new PostgresMediaRenderPersistence(db),
+            new PostgresMediaRenderPersistence(db, options.subtitleProof),
         },
         {
           provide: POSTGRES_MEDIA_RENDER,
@@ -61,6 +77,8 @@ export class MediaPostgresModule {
         },
       ],
       exports: [
+        POSTGRES_MEDIA_SUBTITLE,
+        PostgresMediaSubtitlePersistence,
         POSTGRES_MEDIA_RENDER,
         PostgresMediaRenderPersistence,
         POSTGRES_MEDIA_COMPOSITION,
