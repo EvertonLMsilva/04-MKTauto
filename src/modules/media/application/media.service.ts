@@ -1,5 +1,9 @@
 import { operationalQcIdentity } from '../../publishing/application/local-qc-identity.js';
 import { adaptationHash } from '../domain/media-hash.js';
+import {
+  projectMediaHandoff,
+  type MediaHandoffRequest,
+} from './media-handoff.js';
 import type {
   MediaStore,
   MediaRepository,
@@ -17,6 +21,17 @@ export class MediaService {
     private readonly store: MediaStore,
     private readonly composer?: VideoComposer,
   ) {}
+  handoff(request: MediaHandoffRequest) {
+    return projectMediaHandoff(this, request, (planId) => {
+      if (!this.store.openInitialRender) return null;
+      const repository = this.store.openInitialRender(true);
+      try {
+        return repository.listVideoRendersByCompositionPlan(planId);
+      } finally {
+        repository.close();
+      }
+    });
+  }
   async compose(value: unknown, options: { signal?: AbortSignal } = {}) {
     if (!this.store.openInitialRender || !this.composer)
       throw new VideoCompositionError(
@@ -96,7 +111,7 @@ export class MediaService {
     }
   }
   private quality<T>(action: (repository: QualityRepository) => T) {
-    const r = this.store.openQuality();
+    const r = this.store.openQuality(true);
     try {
       return action(r);
     } finally {
