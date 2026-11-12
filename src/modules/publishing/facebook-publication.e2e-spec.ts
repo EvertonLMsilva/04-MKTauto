@@ -933,6 +933,15 @@ test('schema 44 Facebook occurrence accepts only its own unexpired grant across 
       .reopen()
       .execute(f.execution.execution_id, 'FACEBOOK_REELS', grant.accountId);
     expect(replay.receipt).toEqual(result.receipt);
+    const expiredReplay = await f
+      .reopen(() => new Date(Date.parse(grant.expiresAt) + 1000).toISOString())
+      .execute(
+        f.execution.execution_id,
+        'FACEBOOK_REELS',
+        grant.accountId,
+        grant,
+      );
+    expect(expiredReplay.receipt).toEqual(result.receipt);
     expect(f.posts).toEqual(['create', 'upload', 'publish']);
   } finally {
     f.cleanup();

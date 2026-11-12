@@ -445,12 +445,13 @@ export class DestinationPublicationService {
         previous.remoteReceipt &&
         !previous.requiresReconciliation
       ) {
-        if (operationalAuthorization)
-          s.social.authorizePublication(
-            previous,
-            this.now(),
-            operationalAuthorization,
-          );
+        // Replay only reads the confirmed receipt; expired mutation authority
+        // cannot undo a completed publication. Keep the package binding check.
+        if (
+          operationalAuthorization &&
+          operationalAuthorization.packageHash !== previous.packageHash
+        )
+          socialFail('SOCIAL_FACEBOOK_AUTHORIZATION_REQUIRED');
         return this.result(previous);
       }
       if (
