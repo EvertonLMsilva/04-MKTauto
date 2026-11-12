@@ -1,4 +1,5 @@
 import type { MediaAsset } from '../domain/media.types.js';
+import type { LocalMediaReadiness } from './local-media-readiness.js';
 export type LocalImageSource = Pick<
   MediaAsset,
   'mediaReference' | 'contentHash' | 'origin' | 'provider' | 'rights'
@@ -33,6 +34,7 @@ export interface LocalAudiovisualPort {
     durationMs: number,
   ): Promise<AuthorizedLocalAudio>;
   automaticAudioReady?(): boolean;
+  readiness?(): LocalMediaReadiness;
   automaticAudio?(
     scope: {
       pipelineRunId: string;

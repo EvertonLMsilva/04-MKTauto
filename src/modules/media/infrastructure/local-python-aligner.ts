@@ -1,9 +1,14 @@
 import { spawn } from 'node:child_process';
-import { createHmac, timingSafeEqual } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
+import { accessSync, constants, readFileSync, statSync } from 'node:fs';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { isAbsolute, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  readinessCheck,
+  type LocalReadinessCode,
+} from '../application/local-media-readiness.js';
 import type {
   AudioAligner,
   AlignmentProvenanceVerifier,
@@ -77,11 +82,7 @@ export class LocalPythonAligner
       Buffer.from(receipt(evidence, key), 'hex'),
     );
   }
-  async align(
-    input: AlignmentInput,
-    audio: Buffer,
-    signal?: AbortSignal,
-  ): Promise<AlignmentEvidence> {
+  private configuration() {
     const python = this.env.LOCAL_ALIGNMENT_PYTHON;
     const model = this.env.LOCAL_ALIGNMENT_MODEL_ROOT;
     const manifest = this.env.LOCAL_ALIGNMENT_MODEL_SHA256;
@@ -99,15 +100,161 @@ export class LocalPythonAligner
       key.length < 32
     )
       localFail('ALIGNMENT_CONFIGURATION_REQUIRED');
+    return { python, model, manifest, key, textPolicy };
+  }
+  private device() {
+    const device = this.env.LOCAL_ALIGNMENT_DEVICE ?? 'cpu';
+    if (!['cpu', 'auto'].includes(device))
+      localFail('ALIGNMENT_CONFIGURATION_REQUIRED');
+    return device;
+  }
+  /** Inspect bounded descriptors and resource presence, never import Python or weights. */
+  readiness() {
+    const codes: LocalReadinessCode[] = [
+      'LOCAL_READINESS_INSPECTION_LIMIT',
+      'ALIGNMENT_CONFIGURATION_REQUIRED',
+      'ALIGNMENT_PYTHON_UNAVAILABLE',
+      'ALIGNMENT_MODEL_UNAVAILABLE',
+      'ALIGNMENT_MODEL_TAMPERED',
+      'ALIGNMENT_MODEL_INCOMPATIBLE',
+      'ALIGNMENT_ENVIRONMENT_UNAVAILABLE',
+      'ALIGNMENT_ENVIRONMENT_TAMPERED',
+      'ALIGNMENT_ENVIRONMENT_INCOMPATIBLE',
+    ];
+    try {
+      const { python, model, manifest } = this.configuration();
+      this.device();
+      try {
+        if (!statSync(python).isFile())
+          localFail('ALIGNMENT_PYTHON_UNAVAILABLE');
+        accessSync(python, constants.X_OK);
+      } catch {
+        localFail('ALIGNMENT_PYTHON_UNAVAILABLE');
+      }
+      const read = (path: string, unavailable: LocalReadinessCode) => {
+        try {
+          const stat = statSync(path);
+          if (!stat.isFile()) localFail(unavailable);
+          if (stat.size > 1048576)
+            localFail('LOCAL_READINESS_INSPECTION_LIMIT');
+          return readFileSync(path);
+        } catch (error) {
+          if (
+            (error as { code?: string }).code ===
+            'LOCAL_READINESS_INSPECTION_LIMIT'
+          )
+            throw error;
+          return localFail(unavailable);
+        }
+      };
+      const hash = (bytes: Buffer) =>
+        createHash('sha256').update(bytes).digest('hex');
+      const raw = read(
+        join(model, 'manifest.json'),
+        'ALIGNMENT_MODEL_UNAVAILABLE',
+      );
+      if (hash(raw) !== manifest) localFail('ALIGNMENT_MODEL_TAMPERED');
+      const m = JSON.parse(raw.toString('utf8'));
+      if (
+        !m ||
+        m.model !== 'jonatasgrosman/wav2vec2-large-xlsr-53-portuguese' ||
+        m.revision !== REVISION ||
+        !m.files ||
+        typeof m.files !== 'object' ||
+        Array.isArray(m.files) ||
+        [
+          'config.json',
+          'preprocessor_config.json',
+          'vocab.json',
+          'special_tokens_map.json',
+          'pytorch_model.bin',
+        ].some((name) => !Object.hasOwn(m.files, name))
+      )
+        localFail('ALIGNMENT_MODEL_INCOMPATIBLE');
+      if (Object.keys(m.files).length > 64)
+        localFail('LOCAL_READINESS_INSPECTION_LIMIT');
+      for (const [name, expected] of Object.entries(m.files)) {
+        if (
+          !name ||
+          name === '.' ||
+          name === '..' ||
+          /[\\/:]/.test(name) ||
+          typeof expected !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(expected)
+        )
+          localFail('ALIGNMENT_MODEL_INCOMPATIBLE');
+        const path = join(model, name);
+        try {
+          if (!statSync(path).isFile())
+            localFail('ALIGNMENT_MODEL_UNAVAILABLE');
+          accessSync(path, constants.R_OK);
+        } catch {
+          localFail('ALIGNMENT_MODEL_UNAVAILABLE');
+        }
+        // Check small metadata hashes; defer all binary weight integrity to execution.
+        if (name.endsWith('.json')) {
+          const bytes = read(path, 'ALIGNMENT_MODEL_UNAVAILABLE');
+          if (hash(bytes) !== expected) localFail('ALIGNMENT_MODEL_TAMPERED');
+          const metadata = JSON.parse(bytes.toString('utf8'));
+          if (name === 'config.json' && metadata?.model_type !== 'wav2vec2')
+            localFail('ALIGNMENT_MODEL_INCOMPATIBLE');
+        }
+      }
+      const environment = read(
+        join(model, 'environment.json'),
+        'ALIGNMENT_ENVIRONMENT_UNAVAILABLE',
+      );
+      if (hash(environment) !== m.environmentSha256)
+        localFail('ALIGNMENT_ENVIRONMENT_TAMPERED');
+      let packages: unknown;
+      try {
+        packages = JSON.parse(environment.toString('utf8'))?.packages;
+      } catch {
+        localFail('ALIGNMENT_ENVIRONMENT_INCOMPATIBLE');
+      }
+      if (
+        !Array.isArray(packages) ||
+        packages.some(
+          (p) =>
+            !p ||
+            typeof p.name !== 'string' ||
+            !p.name ||
+            typeof p.version !== 'string' ||
+            !p.version,
+        )
+      )
+        localFail('ALIGNMENT_ENVIRONMENT_INCOMPATIBLE');
+      if (packages.length > 1000) localFail('LOCAL_READINESS_INSPECTION_LIMIT');
+      read(
+        fileURLToPath(
+          new URL('../../../../python/alignment/align.py', import.meta.url),
+        ),
+        'ALIGNMENT_MODEL_UNAVAILABLE',
+      );
+      return readinessCheck('READY');
+    } catch (error) {
+      const code = codes.find(
+        (c) => c === (error as { code?: string } | null)?.code,
+      );
+      return readinessCheck(
+        code === 'LOCAL_READINESS_INSPECTION_LIMIT' ? 'UNKNOWN' : 'NOT_READY',
+        code ?? 'ALIGNMENT_MODEL_INCOMPATIBLE',
+      );
+    }
+  }
+  async align(
+    input: AlignmentInput,
+    audio: Buffer,
+    signal?: AbortSignal,
+  ): Promise<AlignmentEvidence> {
+    const { python, model, manifest, key, textPolicy } = this.configuration();
     if (
       audio.length > 20971520 ||
       input.durationMs > 60000 ||
       input.canonicalText.length > 6000
     )
       localFail('ALIGNMENT_INPUT_LIMIT');
-    const device = this.env.LOCAL_ALIGNMENT_DEVICE ?? 'cpu';
-    if (!['cpu', 'auto'].includes(device))
-      localFail('ALIGNMENT_CONFIGURATION_REQUIRED');
+    const device = this.device();
     if (signal?.aborted) localFail('ALIGNMENT_CANCELLED');
     if (this.active) localFail('ALIGNMENT_BUSY_CONFLICT');
     this.active = true;

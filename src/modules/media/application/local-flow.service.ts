@@ -3,6 +3,7 @@ import type {
   LocalMediaScope,
   LocalImageSource,
 } from './local-flow.port.js';
+import { localMediaReadiness } from './local-media-readiness.js';
 export class LocalFlowService {
   constructor(private readonly runtime: LocalAudiovisualPort) {}
   prepareImage(scope: LocalMediaScope, source: LocalImageSource) {
@@ -34,6 +35,9 @@ export class LocalFlowService {
   }
   automaticAudioReady() {
     return this.runtime.automaticAudioReady?.() ?? false;
+  }
+  readiness() {
+    return this.runtime.readiness?.() ?? localMediaReadiness();
   }
   automaticAudio(
     scope: Parameters<NonNullable<LocalAudiovisualPort['automaticAudio']>>[0],

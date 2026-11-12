@@ -1,4 +1,11 @@
-import { lstatSync, readFileSync, realpathSync, existsSync } from 'node:fs';
+import {
+  lstatSync,
+  readFileSync,
+  realpathSync,
+  existsSync,
+  accessSync,
+  constants,
+} from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -7,6 +14,7 @@ import { localFail } from '../domain/alignment-contracts.js';
 import { digest } from './local-evidence-storage.js';
 import { inspectMvpWav } from './physical-media-inspection.js';
 import { runProcess, type ProcessRunner } from './ffmpeg-process.js';
+import { readinessCheck } from '../application/local-media-readiness.js';
 
 export function adaptLocalNarration(
   original: string,
@@ -99,7 +107,12 @@ export class LocalPiperTts {
     private readonly platform: NodeJS.Platform = process.platform,
     private readonly architecture: string = process.arch,
   ) {}
-  private file(path: unknown, expected: unknown, max: number) {
+  private file(
+    path: unknown,
+    expected: unknown,
+    max: number,
+    verifyContent = true,
+  ) {
     if (
       typeof path !== 'string' ||
       !isAbsolute(path) ||
@@ -114,11 +127,18 @@ export class LocalPiperTts {
       realpathSync(path as string) !== resolve(path as string)
     )
       localFail('LOCAL_TTS_LICENSE_REQUIRED');
+    if (!verifyContent) {
+      accessSync(path as string, constants.R_OK);
+      return Buffer.alloc(0);
+    }
     const bytes = readFileSync(path as string);
     if (digest(bytes) !== expected) localFail('LOCAL_TTS_LICENSE_REQUIRED');
     return bytes;
   }
   configuration(expectedHash?: string) {
+    return this.resolveConfiguration(expectedHash);
+  }
+  private resolveConfiguration(expectedHash?: string, inspectOnly = false) {
     if (!this.env.LOCAL_TTS_MANIFEST || !this.env.LOCAL_TTS_MANIFEST_SHA256)
       localFail('LOCAL_TTS_CONFIGURATION_REQUIRED');
     try {
@@ -152,6 +172,8 @@ export class LocalPiperTts {
       }
       const bytes = this.file(manifestPath, manifestHash, 65536);
       const m = JSON.parse(bytes.toString());
+      if (inspectOnly && m.engine !== 'piper')
+        localFail('LOCAL_TTS_PIPER_REQUIRED');
       let historicalFiles: Record<string, string> | undefined;
       if (
         expectedHash !== undefined &&
@@ -178,13 +200,18 @@ export class LocalPiperTts {
       }
       // Relocate original bytes by their pinned hash, never by substituting a
       // current executable/model. New synthesis never uses historical locations.
-      const readPinned = (location: unknown, hash: unknown, max: number) => {
+      const readPinned = (
+        location: unknown,
+        hash: unknown,
+        max: number,
+        verifyContent = true,
+      ) => {
         if (historicalFiles) {
           if (typeof hash !== 'string' || !Object.hasOwn(historicalFiles, hash))
             localFail('LOCAL_TTS_LICENSE_REQUIRED');
           location = historicalFiles[hash];
         }
-        return this.file(location, hash, max);
+        return this.file(location, hash, max, verifyContent);
       };
       if (
         m.schemaVersion !== 'local-tts-license/1' ||
@@ -213,7 +240,7 @@ export class LocalPiperTts {
         !/^https:\/\/[^\s@]+$/.test(m.licenseSource)
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
-      readPinned(m.modelPath, m.modelSha256, 536870912);
+      readPinned(m.modelPath, m.modelSha256, 536870912, !inspectOnly);
       if (m.engine === 'espeak-ng') {
         const inventory = JSON.parse(
           readPinned(m.modelPath, m.modelSha256, 1048576).toString(),
@@ -359,7 +386,7 @@ export class LocalPiperTts {
         licenseURL.hash
       )
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
-      readPinned(m.executablePath, m.executableSha256, 536870912);
+      readPinned(m.executablePath, m.executableSha256, 536870912, !inspectOnly);
       readPinned(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
       return {
         ...m,
@@ -368,9 +395,30 @@ export class LocalPiperTts {
         configurationHash: digest(bytes),
       };
     } catch (error) {
+      if (
+        inspectOnly &&
+        (error as { code?: string }).code === 'LOCAL_TTS_PIPER_REQUIRED'
+      )
+        throw error;
       if ((error as { code?: string }).code === 'LOCAL_TTS_LICENSE_REQUIRED')
         throw error;
       return localFail('LOCAL_TTS_LICENSE_REQUIRED');
+    }
+  }
+  readiness() {
+    try {
+      const config = this.resolveConfiguration(undefined, true);
+      accessSync(config.executablePath, constants.X_OK);
+      return readinessCheck('READY');
+    } catch (error) {
+      return readinessCheck(
+        'NOT_READY',
+        (error as { code?: string }).code === 'LOCAL_TTS_CONFIGURATION_REQUIRED'
+          ? 'LOCAL_TTS_CONFIGURATION_REQUIRED'
+          : (error as { code?: string }).code === 'LOCAL_TTS_PIPER_REQUIRED'
+            ? 'LOCAL_TTS_PIPER_REQUIRED'
+            : 'LOCAL_TTS_LICENSE_REQUIRED',
+      );
     }
   }
   ready() {

@@ -8,11 +8,17 @@ import {
   PRODUCT_FRAMING_STRATEGY,
   PRODUCT_CAPTION_STYLE,
 } from '../domain/product-framing.js';
-import { writeFileSync, readFileSync } from 'node:fs';
+import {
+  writeFileSync,
+  readFileSync,
+  statSync,
+  accessSync,
+  constants,
+} from 'node:fs';
 import { mkdir, rmdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import type { FinanceService } from '../../finance/application/finance.service.js';
-import { join, resolve } from 'node:path';
+import { isAbsolute, join, resolve } from 'node:path';
 import type { MediaService } from '../application/media.service.js';
 import type {
   AudioAligner,
@@ -44,6 +50,10 @@ import type {
   LocalMediaScope,
   LocalImageSource,
 } from '../application/local-flow.port.js';
+import {
+  localMediaReadiness,
+  readinessCheck,
+} from '../application/local-media-readiness.js';
 import {
   LocalPiperTts,
   adaptLocalNarration,
@@ -352,6 +362,51 @@ export class LocalFlowRuntime {
   }
   automaticAudioReady() {
     return new LocalPiperTts(this.env, this.runner).ready();
+  }
+  readiness() {
+    const executable = (path: string | undefined) => {
+      if (!path || !isAbsolute(path))
+        return readinessCheck(
+          'NOT_READY',
+          'LOCAL_MEDIA_CONFIGURATION_REQUIRED',
+        );
+      try {
+        if (!statSync(path).isFile()) throw new Error();
+        accessSync(path, constants.X_OK);
+        return readinessCheck('READY');
+      } catch {
+        return readinessCheck('NOT_READY', 'LOCAL_DEPENDENCY_UNAVAILABLE');
+      }
+    };
+    const roots = [
+      this.env.FFMPEG_MEDIA_ROOT,
+      this.env.FFMPEG_VOICE_ROOT,
+      this.env.FFMPEG_RENDER_ROOT,
+      this.env.LOCAL_MEDIA_EVIDENCE_ROOT,
+    ];
+    let storage = readinessCheck('READY');
+    if (roots.some((root) => !root))
+      storage = readinessCheck(
+        'NOT_READY',
+        'LOCAL_MEDIA_CONFIGURATION_REQUIRED',
+      );
+    else {
+      try {
+        for (const root of roots) {
+          if (!statSync(resolve(root!)).isDirectory()) throw new Error();
+          accessSync(resolve(root!), constants.R_OK);
+        }
+      } catch {
+        storage = readinessCheck('NOT_READY', 'LOCAL_STORAGE_UNAVAILABLE');
+      }
+    }
+    return localMediaReadiness({
+      piper: new LocalPiperTts(this.env, this.runner).readiness(),
+      ctc: new LocalPythonAligner(this.env).readiness(),
+      ffmpeg: executable(this.env.FFMPEG_PATH),
+      ffprobe: executable(this.env.FFPROBE_PATH),
+      storage,
+    });
   }
   async automaticAudio(
     scope: Parameters<NonNullable<LocalAudiovisualPort['automaticAudio']>>[0],
