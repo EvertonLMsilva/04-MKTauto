@@ -116,8 +116,11 @@ export class ContentModule {
   /** Isolated opt-in; dependencies expose read contracts only, never live writes. */
   static postgres(
     config: PostgresConfig,
-    dependencies: ContentPostgresDependencies,
+    dependencies: ContentPostgresDependencies | undefined,
+    options: { coordinateCampaignAffiliate?: boolean } = {},
   ): DynamicModule {
+    if (!options.coordinateCampaignAffiliate && !dependencies)
+      throw new Error('CONTENT_POSTGRES_DEPENDENCIES_REQUIRED');
     return {
       module: PostgresContentPilotModule,
       imports: [PostgresModule.register(config)],
@@ -127,7 +130,9 @@ export class ContentModule {
           provide: PostgresContentPersistence,
           inject: [PostgresDatabase],
           useFactory: (database: PostgresDatabase) =>
-            new PostgresContentPersistence(database, dependencies),
+            options.coordinateCampaignAffiliate
+              ? PostgresContentPersistence.coordinated(database)
+              : new PostgresContentPersistence(database, dependencies!),
         },
         {
           provide: ContentService,
@@ -147,7 +152,7 @@ export class ContentModule {
           },
         },
       ],
-      exports: [ContentService],
+      exports: [ContentService, PostgresContentPersistence],
     };
   }
 }

@@ -690,6 +690,49 @@ test('a changed idempotent payload conflicts without creating a second execution
     .expect(409);
   expect(app.get(CampaignAdministration).list()).toHaveLength(1);
 });
+test('failure before the scheduling commit rolls back the occurrence and policy; restart and retry reserve it once', async () => {
+  const session = await login();
+  const db = new DatabaseSync(fixture.database);
+  try {
+    db.exec(`CREATE TRIGGER isolated_schedule_failure
+      BEFORE INSERT ON campaign_execution_events WHEN NEW.event_type='SCHEDULED'
+      BEGIN SELECT RAISE(ABORT,'SIMULATED_FAILURE_BEFORE_COMMIT'); END`);
+    await local(session.browser.post(`${route}/executions/fake`))
+      .set('x-qc-csrf', session.csrf)
+      .send(command())
+      .expect(500);
+    for (const table of ['campaign_executions', 'campaign_execution_events'])
+      expect(
+        db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n,
+        table,
+      ).toBe(0);
+    expect(db.isTransaction).toBe(false);
+  } finally {
+    db.exec('DROP TRIGGER IF EXISTS isolated_schedule_failure');
+    db.close();
+  }
+  await app.close();
+  await startApp();
+  const retrySession = await login();
+  const submit = () =>
+    local(retrySession.browser.post(`${route}/executions/fake`))
+      .set('x-qc-csrf', retrySession.csrf)
+      .send(command())
+      .expect(201);
+  const [accepted, replay] = await Promise.all([submit(), submit()]);
+  expect(replay.body).toEqual(accepted.body);
+  const admin = app.get(CampaignAdministration);
+  expect(admin.list()).toHaveLength(1);
+  expect(admin.get(accepted.body.execution.executionId).status).toBe(
+    'SCHEDULED',
+  );
+  expect(admin.history(accepted.body.execution.executionId)).toHaveLength(1);
+  expect(
+    admin.controlledFake(accepted.body.execution.executionId).policy,
+  ).toEqual(accepted.body.policy);
+  assertNoReservations();
+});
+
 test('a response failure after the real commit does not duplicate a later confirmed retry', async () => {
   const { browser, csrf } = await login();
   const commands = app.get(FakeCampaignCommandService),

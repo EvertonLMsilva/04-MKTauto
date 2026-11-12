@@ -7,19 +7,24 @@ import { errorCode } from './infrastructure/discovery-error.js';
 
 // Offline preview intentionally has no operational repository/project reader.
 export async function runQualificationPreview(args: string[]) {
+  const batch = args[0] === '--batch';
+  const options = batch ? args.slice(1) : args;
   if (
-    args.length !== 4 ||
-    args[0] !== '--input' ||
-    args[2] !== '--output' ||
-    !args[1] ||
-    !args[3]
+    options.length !== 4 ||
+    options[0] !== '--input' ||
+    options[2] !== '--output' ||
+    !options[1] ||
+    !options[3]
   )
     throw new Error('PREVIEW_ARGUMENTS_REQUIRED');
-  const input = JSON.parse(await readFile(resolve(args[1]), 'utf8'));
-  const result = await new QualificationPreviewService(
+  const input = JSON.parse(await readFile(resolve(options[1]), 'utf8'));
+  const service = new QualificationPreviewService(
     new FeedQualificationService(),
-  ).preview(input);
-  await writeFile(resolve(args[3]), JSON.stringify(result, null, 2) + '\n', {
+  );
+  const result = batch
+    ? await service.previewBatch(input)
+    : await service.preview(input);
+  await writeFile(resolve(options[3]), JSON.stringify(result, null, 2) + '\n', {
     encoding: 'utf8',
     flag: 'wx',
   });

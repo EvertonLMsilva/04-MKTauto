@@ -1,6 +1,13 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { types, type PoolClient } from 'pg';
 import { AffiliateRepositoryError } from '../domain/affiliate.errors.js';
+import { immutable } from '../domain/affiliate-contracts.js';
+import {
+  validateExecutionProjection,
+  type ExecutionContext,
+} from '../domain/affiliate-run-context.js';
+import { verifyCampaignSchema } from '../../content-operations/infrastructure/postgres-campaign.session.js';
+import { CONTENT_POSTGRES_MIGRATIONS } from '../../content/infrastructure/postgres-content.migrations.js';
 import {
   PostgresDatabase,
   postgresMigrationChecksum,
@@ -40,11 +47,62 @@ export class PostgresAffiliateSession implements AffiliateSession {
   readonly activity: AffiliatePostgresReaders['activity'];
   constructor(
     private readonly database: PostgresDatabase,
-    readers: AffiliatePostgresReaders,
+    readers: AffiliatePostgresReaders | undefined,
     private readonly readOnly: boolean,
+    readonly coordinated = false,
   ) {
-    this.executions = readers.executions;
-    this.activity = readers.activity;
+    if (!coordinated && !readers)
+      throw new Error('AFFILIATE_CONTEXT_READERS_REQUIRED');
+    this.executions = coordinated
+      ? {
+          getRun: (id: string) =>
+            this.transaction(async () => {
+              const row = (
+                await this.query(
+                  'SELECT pipeline_run_id,schema_version,project_id,project_version,state,project_snapshot_json::text AS project_snapshot_json FROM campaign.pipeline_runs WHERE pipeline_run_id=?',
+                  [id],
+                )
+              ).rows[0];
+              if (!row) return null;
+              try {
+                if (row.schema_version !== 'pipeline-run/1.0.0')
+                  throw new Error('INVALID_SCHEMA');
+                return immutable(
+                  validateExecutionProjection(
+                    {
+                      pipelineRunId: row.pipeline_run_id,
+                      projectId: row.project_id,
+                      projectVersion: row.project_version,
+                      state: row.state as ExecutionContext['state'],
+                    },
+                    JSON.parse(row.project_snapshot_json),
+                  ),
+                );
+              } catch {
+                throw new AffiliateRepositoryError(
+                  'INVALID_PERSISTED_PIPELINE_RUN',
+                  'pipelineRunId',
+                );
+              }
+            }),
+        }
+      : readers!.executions;
+    this.activity = coordinated
+      ? {
+          hasStarted: (id: string) =>
+            this.transaction(async () =>
+              Boolean(
+                (
+                  await this.query(
+                    `SELECT 1 FROM content.scripts WHERE pipeline_run_id=?
+        UNION ALL SELECT 1 FROM campaign.pipeline_stage_attempts WHERE pipeline_run_id=? AND stage='SCRIPT' LIMIT 1`,
+                    [id, id],
+                  )
+                ).rows[0],
+              ),
+            ),
+        }
+      : readers!.activity;
     this.sql = {
       prepare: (sql) => ({
         get: async (...values) => (await this.query(sql, values)).rows[0],
@@ -55,30 +113,52 @@ export class PostgresAffiliateSession implements AffiliateSession {
       }),
     };
   }
-  async transaction<T>(work: () => T): Promise<T> {
+  async transaction<T>(work: () => T | Promise<T>): Promise<T> {
     if (this.closed) throw new Error('AFFILIATE_HANDLE_CLOSED');
+    if (this.database.inUnitOfWork('affiliate') && !this.coordinated)
+      throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
     const active = this.context.getStore();
     if (active) {
       if (!active.active) throw new Error('AFFILIATE_TRANSACTION_ENDED');
+      if (this.database.inUnitOfWork('affiliate'))
+        return this.database.transaction(async () => await work(), 'affiliate');
       return await work();
     }
-    return this.database.transaction(async (client) => {
-      if (this.readOnly)
-        await client.query(
-          'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
-        );
-      else
-        await client.query(
-          'SELECT pg_catalog.pg_advisory_xact_lock($1,$2)',
-          [1296782401, 4],
-        );
-      const scope = { client, active: true };
-      try {
-        return await this.context.run(scope, work);
-      } finally {
-        scope.active = false;
-      }
-    });
+    const transaction = () =>
+      this.database.transaction(async (client) => {
+        if (this.database.inUnitOfWork('affiliate')) {
+          // Locks and the common connection belong to the explicit coordinator.
+        } else if (this.readOnly)
+          await client.query(
+            'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+          );
+        else
+          await client.query(
+            'SELECT pg_catalog.pg_advisory_xact_lock($1,$2)',
+            [1296782401, 4],
+          );
+        const scope = { client, active: true };
+        try {
+          return await this.context.run(scope, work);
+        } finally {
+          scope.active = false;
+        }
+      }, 'affiliate');
+    return this.coordinated
+      ? this.database.unitOfWork(
+          ['content', 'affiliate', 'campaign'],
+          transaction,
+        )
+      : transaction();
+  }
+  requireCoordination(): void {
+    if (
+      !this.coordinated ||
+      !this.database.inUnitOfWork('affiliate') ||
+      !this.database.inUnitOfWork('campaign') ||
+      !this.database.inUnitOfWork('content')
+    )
+      throw new Error('AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED');
   }
   close() {
     this.closed = true;
@@ -92,6 +172,8 @@ export class PostgresAffiliateSession implements AffiliateSession {
       .replace(new RegExp(`\\b(${tables.join('|')})\\b`, 'g'), 'affiliate.$1')
       .replace(/\?/g, () => `$${++position}`);
     try {
+      if (this.readOnly && !/^\s*SELECT\b/i.test(sql))
+        throw new Error('AFFILIATE_READ_ONLY');
       const result = await scope.client.query({
         text,
         values,
@@ -129,7 +211,8 @@ export class PostgresAffiliateSession implements AffiliateSession {
 export class PostgresAffiliateSessionFactory {
   constructor(
     private readonly database: PostgresDatabase,
-    private readonly readers: AffiliatePostgresReaders,
+    private readonly readers: AffiliatePostgresReaders | undefined,
+    private readonly coordinated = false,
   ) {}
   async verify() {
     const migration = AFFILIATE_POSTGRES_MIGRATIONS[0]!;
@@ -138,6 +221,7 @@ export class PostgresAffiliateSessionFactory {
       const result = await this.database.query(
         'SELECT name,checksum FROM platform.schema_migrations WHERE version=$1',
         [4],
+        'affiliate',
       );
       valid =
         result.rows[0]?.name === migration.name &&
@@ -156,10 +240,32 @@ export class PostgresAffiliateSessionFactory {
         'AFFILIATE_SCHEMA_VERSION_UNSUPPORTED',
         'schemaVersion',
       );
+    if (this.coordinated) {
+      await verifyCampaignSchema(this.database);
+      const migration = CONTENT_POSTGRES_MIGRATIONS[0]!;
+      const content = await this.database.query(
+        'SELECT name,checksum FROM platform.schema_migrations WHERE version=$1',
+        [3],
+        'content',
+      );
+      if (
+        content.rows[0]?.name !== migration.name ||
+        content.rows[0]?.checksum !== postgresMigrationChecksum(migration.sql)
+      )
+        throw new AffiliateRepositoryError(
+          'AFFILIATE_SCHEMA_VERSION_UNSUPPORTED',
+          'schemaVersion',
+        );
+    }
   }
   async open(readOnly = false) {
     await this.verify();
-    return new PostgresAffiliateSession(this.database, this.readers, readOnly);
+    return new PostgresAffiliateSession(
+      this.database,
+      this.readers,
+      readOnly,
+      this.coordinated,
+    );
   }
   async withSession<T>(
     readOnly: boolean,

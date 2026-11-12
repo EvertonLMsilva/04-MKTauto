@@ -42,6 +42,47 @@ export interface GlobalUsage {
     time_zone: string;
   };
 }
+export interface FinanceReadinessPeriod {
+  period: string;
+  limitUsd: string;
+  committedUsd: string;
+  recordedCostUsd: string;
+  // Includes conservative headroom retained by the existing gate after settlement.
+  reservedLiabilityUsd: string;
+  remainingUsd: string;
+}
+export interface FinanceReadinessOperation {
+  source: 'GLOBAL' | 'VIDEO' | 'TTS';
+  operationId: string;
+  state: string;
+  createdAt: string;
+  actualCostUsd: string | null;
+  evidenceReference: string | null;
+  reconciliationRequired: boolean;
+}
+export type FinanceReadinessReason =
+  | 'ACTIVE_RESERVATIONS'
+  | 'OPERATIONS_IN_FLIGHT'
+  | 'UNKNOWN_OPERATIONS'
+  | 'COST_EVIDENCE_UNAVAILABLE'
+  | 'RECONCILIATION_REQUIRED'
+  | 'PRICE_CEILING_BREACHED'
+  | 'DAILY_BUDGET_EXHAUSTED'
+  | 'MONTHLY_BUDGET_EXHAUSTED';
+export interface FinanceReadiness {
+  schemaVersion: 'finance-readiness/1.0.0';
+  evaluatedAt: string;
+  status: 'READY' | 'NOT_READY';
+  scope: 'TECHNICAL_ONLY';
+  operationalAcceptance: 'NOT_ASSESSED';
+  spendingAuthorized: false;
+  timeZone: string;
+  usage: GlobalUsage;
+  daily: FinanceReadinessPeriod;
+  monthly: FinanceReadinessPeriod;
+  operations: FinanceReadinessOperation[];
+  reasons: FinanceReadinessReason[];
+}
 export interface CampaignUsage {
   campaignId: string;
   totalUsd: string;

@@ -119,3 +119,57 @@ it('reports model absence explicitly and never accepts a success without acousti
   child.emit('close', 1);
   await expect(pending).rejects.toThrow('ALIGNMENT_MODEL_UNAVAILABLE');
 });
+
+it.each(['Olá!', 'Ola\u0301!'])(
+  'preserves exact Unicode in fragmented native CTC evidence: %s',
+  async (text) => {
+    const child = processFixture(),
+      aligner = new LocalPythonAligner(env);
+    const pending = aligner.align(
+      { ...input, canonicalText: text, scriptTextSha256: alignmentHash(text) },
+      Buffer.alloc(1),
+    );
+    await spawned();
+    const bytes = Buffer.from(
+      JSON.stringify({
+        modelVersion: '634ac655299bcdc46c83bc01da9bab52d2987e4f',
+        algorithm: 'ctc-viterbi-1',
+        emissionsSha256: 'b'.repeat(64),
+        device: 'cpu',
+        cer: 0,
+        latencyMs: 20,
+        peakMemoryBytes: 100,
+        segments: [
+          {
+            startMs: 100,
+            endMs: 800,
+            text,
+            textStartOffset: 0,
+            textEndOffset: text.length,
+          },
+        ],
+      }),
+    );
+    for (const byte of bytes) child.stdout.write(Buffer.from([byte]));
+    child.emit('close', 0);
+    const evidence = await pending;
+    expect(evidence.output.segments[0]!.text).toBe(text);
+    expect(evidence.input.canonicalText).toBe(text);
+  },
+);
+it('preserves independent acoustic text divergence and allows a later attempt after process failure', async () => {
+  const aligner = new LocalPythonAligner(env),
+    child = processFixture();
+  const failed = aligner.align(input, Buffer.alloc(1));
+  await spawned();
+  child.stdout.write(JSON.stringify({ error: 'ALIGNMENT_TEXT_DIVERGENT' }));
+  child.emit('close', 1);
+  await expect(failed).rejects.toThrow('ALIGNMENT_TEXT_DIVERGENT');
+  vi.mocked(spawn).mockClear();
+  const next = processFixture(),
+    again = aligner.align(input, Buffer.alloc(1));
+  await spawned();
+  next.stdout.write(JSON.stringify({ error: 'ALIGNMENT_MODEL_UNAVAILABLE' }));
+  next.emit('close', 1);
+  await expect(again).rejects.toThrow('ALIGNMENT_MODEL_UNAVAILABLE');
+});

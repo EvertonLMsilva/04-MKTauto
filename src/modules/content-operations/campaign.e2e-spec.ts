@@ -777,7 +777,7 @@ describe('P4 native HTTP and Content/Research/Affiliate/Finance integration', ()
           .filter((p) => p !== null)
           .join('\n\n');
         revision.contentHash = scriptContentHash(revision);
-        app.get(ContentService).registerScript(revision);
+        await app.get(ContentService).registerScript(revision);
         const revise = () =>
           browser
             .post(`/operations/executions/${e.execution_id}/script-revision`)

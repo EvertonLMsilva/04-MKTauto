@@ -181,7 +181,7 @@ Os ports têm modo assíncrono explícito com padrão síncrono. Serviços já a
 
 ### Fronteiras que continuam bloqueadas
 
-`options.readers` fornece somente projeções de execução e atividade de scripts. Não se inventa uma FK para Operations ainda em SQLite e não se afirma que uma leitura externa participa da transação PostgreSQL. A associação de um run deve competir atomicamente com seu início de geração/atividade. Por isso `bindingCommand`, `insertRunBinding` e novas inserções de script context falham no opt-in antes da primeira escrita com `AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED`. Leituras e verificação/replay de contextos históricos continuam disponíveis. `POST /affiliate/run-bindings` retorna 409 por um guard exclusivo do módulo PG; o controller SQLite mantém seu mapeamento original. Histórico nos testes é semeado somente na fixture, sem criar caminho de importação operacional.
+Na composição isolada PG-004, `options.readers` fornece somente projeções de execução e atividade de scripts. Não se afirma que uma leitura externa participa da transação PostgreSQL. A associação de um run deve competir atomicamente com seu início de geração/atividade. Sem a coordenação explícita descrita abaixo, `bindingCommand`, `insertRunBinding` e novas inserções de script context continuam falhando antes da primeira escrita com `AFFILIATE_CROSS_DOMAIN_TRANSACTION_REQUIRED`. Leituras e verificação/replay de contextos históricos continuam disponíveis. Nessa composição, `POST /affiliate/run-bindings` retorna 409 por um guard exclusivo do módulo PG; o controller SQLite mantém seu mapeamento original. A entrega PG-004 semeou histórico somente na fixture, sem criar caminho de importação operacional.
 
 O callback de reserva de orçamento/autorização do provider LIVE atual é síncrono e deve reservar antes do efeito externo. `runAuthorizedScheduledCycle` rejeita o journal PG com `SHOPEE_POSTGRES_LIVE_RESERVATION_UNSUPPORTED` antes de consultar grants ou chamar o provider. Não se converte essa reserva em Promise sem suporte do contrato da Frente C. Endpoints, assinaturas, autenticação, limites e regras do provider LIVE permanecem intactos; sua homologação e ativação não fazem parte desta entrega. O restante do ciclo local é validado com fake e banco real.
 
@@ -221,8 +221,112 @@ As seguintes operações continuam bloqueadas antes de efeitos no opt-in:
 - Claims/baselines de notificação que dependem de revalidação transacional em Notifications/Publishing, e revisão de composição que depende de reservas de publicação ainda não migradas.
 - NativeCampaignWorkflow comercial, geração/produção de conteúdo, revisões/aprovações, legacy recovery e ações que envolvam escrita em Content, Affiliate, Finance, Media ou Publishing. O opt-in rejeita payloads de produção/publicação e ações não suportadas; os guards operacionais padrão não são enfraquecidos.
 
-Esses limites usam `CAMPAIGN_CROSS_DOMAIN_REQUIRED`. O guard exclusivo do piloto rejeita endpoints não suportados antes de consultar identidade QC ou chamar controllers de efeitos. Nenhum bloqueio PG-002 Affiliate/Content foi removido nesta entrega: a coordenação transacional desses domínios requer contrato posterior explícito. A UI/dashboard Operations e os consumidores Notifications continuam na composição SQLite operacional.
+Esses limites usam `CAMPAIGN_CROSS_DOMAIN_REQUIRED`. O guard exclusivo do piloto rejeita endpoints não suportados antes de consultar identidade QC ou chamar controllers de efeitos. A entrega Campaign/Operations inicial preservou os bloqueios PG-002 Affiliate/Content; a coordenação elegível posterior está descrita abaixo. A UI/dashboard Operations e os consumidores Notifications continuam na composição SQLite operacional.
 
 ### Validação
 
 `npm run test:postgres -- test/postgres/campaign-operations.integration.test.ts` reutiliza a harness PG-001: PostgreSQL 18.6 local real, database marcada, tmpfs, rede dedicada e porta loopback efêmera. A fixture verifica sua identidade antes de DDL destrutivo e é removida ao terminar, sem acessar instâncias operacionais ou apagar volumes existentes. A cobertura inclui registro v1–v5, reexecução/checksum/rollback, paridade SQLite, hashes/identidade/JSON, transições, claims/leases, tentativa e recuperação após restart, recorrência fixa, concorrência e idempotência, rollback de reservas/eventos, bloqueios entre domínios, ausência de efeito antes do commit, histórico/read-only/handles fechados e HTTP NestJS. Nenhum resultado PostgreSQL é baseado apenas em mocks; somente os ports externos usam fakes. Build, TypeScript, lint direcionado, regressões dos módulos afetados e diff-check completam a validação. Custos locais de CPU/energia indisponíveis; nenhuma chamada paga realizada.
+
+## Coordenação Campaign/Affiliate/Content — CORE-PG-002-CROSS-DOMAIN-002
+
+### Diagnóstico e fronteiras elegíveis
+
+As três sessões anteriores abriam transações independentes. O uso do mesmo
+PostgresDatabase não bastava para compartilhar o PoolClient; callbacks de
+execução/atividade externos ao PostgreSQL não protegiam o vínculo contra
+início concorrente de atividade. Content também reabria sessões ao consultar
+Operations/Affiliate. A coordenação abaixo resolve essas fronteiras sem
+alterar migrations v1–v5, seus nomes/checksums, tabelas ou regras comerciais.
+
+| Fronteira | Resultado desta entrega |
+| --- | --- |
+| Affiliate run binding ↔ pipeline run | Identidade e snapshot revalidados na mesma conexão; reserva e recibo atômicos |
+| Script context ↔ run/briefing/atividade | Reserva canônica por generationRequestId/requestHash/run/briefingHash; replay e recuperação preservados |
+| Content editorial afiliado manual ↔ Affiliate/Operations | Projeções PostgreSQL consistentes; roteiro, seleção e linhagem podem participar da unidade comum |
+| Campaign claim/reserva/eventos ↔ vínculos/contextos/Content | Participação explícita em uma única transação, sem efeitos externos no callback |
+| Editorial generation/Finance, NativeCampaignWorkflow, Media, Publishing e Notifications | Bloqueios preservados; persistência disponível não autoriza seus efeitos |
+
+### Unidade de trabalho explícita
+
+`PostgresDatabase.unitOfWork(['content', 'affiliate', 'campaign'], work)`
+obtém uma única conexão e executa um único BEGIN/COMMIT ou ROLLBACK.
+Advisory locks existentes são adquiridos antes das leituras, em ordem fixa
+3 → 4 → 5, independentemente da ordem solicitada. Os writers isolados
+continuam usando os mesmos locks; a coordenação espera seu commit antes
+de revalidar atividade. O isolamento da unidade é READ COMMITTED; os locks
+mantêm estáveis as projeções dos participantes durante a operação.
+
+As sessões autorizadas declaram seu participante em transaction/query e
+reutilizam o cliente via AsyncLocalStorage. Consultas sem participação,
+outro PostgresDatabase/pool e expansão de participantes de uma unidade
+aninhada são recusados. Falhas participantes tornam a unidade rollback-only,
+mesmo se capturadas pelo chamador. Contextos assíncronos encerrados não
+podem continuar consultando. Iniciar uma unidade dentro de uma transação
+isolada já aberta falha com POSTGRES_UNIT_OF_WORK_REQUIRES_ROOT: o chamador
+deve iniciar a coordenação antes de qualquer repository, sem promover locks
+fora de ordem ou abrir uma segunda transação silenciosa.
+
+O callback contém somente trabalho de banco. Providers, callbacks de efeitos
+e runner devem ser executados depois que a Promise da unidade resolver.
+O runner existente permanece fora dessa unidade, confirma claim/auditoria
+antes do passo e não é um participante transacional. Os testes observam
+esses commits por outra conexão real antes de executar o passo local fake.
+Não há transações distribuídas, dual write ou novo pool/runner.
+
+Sessões isoladas mantêm seu comportamento anterior. Handles read-only
+preservam a proteção contra escrita também dentro da unidade compartilhada;
+fora dela mantêm REPEATABLE READ READ ONLY. Callbacks externos da composição
+isolada Affiliate/Content não são admitidos como participantes coordenados.
+
+### Opt-in e identidade
+
+- `AffiliateModule.postgres(config, { coordinateCampaign: true })` habilita
+  o vínculo HTTP e usa projeções canônicas do PostgreSQL. O modo sem essa
+  opção continua exigindo readers e mantendo o guard original.
+- `new PostgresAffiliateSessionFactory(database, undefined, true)` expõe a
+  mesma coordenação para os serviços existentes. A projeção de run reutiliza
+  validateExecutionProjection; atividade consulta content.scripts e tentativas
+  SCRIPT em campaign. Reservas affiliate_script_contexts também impedem um
+  vínculo tardio, inclusive quando briefingHash é null.
+- `OperationsModule.postgres(config, { coordinateAffiliate: true })` compõe
+  o Affiliate opt-in e usa seu contexto canônico nas leituras de Operations.
+- `ContentModule.postgres(config, undefined, { coordinateCampaignAffiliate: true })`
+  ou `PostgresContentPersistence.coordinated(database)` compõe as projeções
+  canônicas sem aceitar callbacks externos como prova de participação.
+  A composição isolada anterior continua disponível sem essa opção.
+
+BindingCommand, insertRunBinding e insertScriptContext reutilizam os
+algoritmos/validadores existentes. A fronteira PostgreSQL revalida existência
+e escopo do run, revisão e hash do briefing e atividade sob os locks comuns.
+Reservas mantêm a identidade do pedido de geração fornecida por Content,
+não a confundem com scriptId/hash do artefato produzido. Não são importados
+pedidos operacionais de geração nem habilitada geração por IA. Identidade
+divergente, run inexistente e hash de briefing forjado são rejeitados antes
+da escrita; recibos, reservas, histórico e linhagem são revertidos juntos.
+Um handle read-only de outro schema não inicia outra transação nessa unidade.
+
+### Bloqueios remanescentes e validação
+
+CONTENT_CROSS_DOMAIN_TRANSACTION_REQUIRED permanece em editorial-generations
+(Finance/geração/auditoria ainda não participantes) e nos callbacks Research
+da nova composição coordenada, cujo contrato não foi adaptado nesta task.
+A composição isolada Content/Research existente não muda. O pipeline
+NativeCampaignWorkflow e os endpoints de produção, aprovação, QC e publicação
+continuam bloqueados no piloto. Notificações e revisão de composição também
+dependem de domínios não participantes. Callbacks arbitrários de catálogo e
+CATALOG/rotação não constituem prova de coordenação: seus fluxos completos
+usam contratos NativeCampaignWorkflow fora deste escopo. O guard permanece,
+ROUND_ROBIN_ID_V1 e elegibilidade comercial não mudam. Nenhuma mudança em
+SHOPEE_POSTGRES_LIVE_RESERVATION_UNSUPPORTED ou contrato Shopee LIVE.
+
+`test/postgres/cross-domain.integration.test.ts` usa PostgreSQL 18.6 real e
+observa um BEGIN/COMMIT físico, uma conexão, zero consultas independentes
+ao pool e a ordem de locks. Cobre commit/rollback entre os três schemas,
+falha capturada, concorrência, run binding versus atividade, reservas,
+recuperação/replay, ausência de órfãos, read-only, outro pool, contexto
+encerrado, paridade SQLite e HTTP NestJS de vínculo/roteiro manual. As
+regressões PostgreSQL de Affiliate/Content/Campaign e fundação permanecem.
+A harness PG-001 é reutilizada sem acessar bancos operacionais ou apagar
+volumes existentes. Somente providers externos são fake. Sem cutover, deploy,
+scheduler, publicação, chamada paga ou migração de dados reais. Custos locais
+de CPU/energia indisponíveis; nenhuma execução paga realizada.

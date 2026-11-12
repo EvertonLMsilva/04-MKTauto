@@ -10,7 +10,7 @@ import { eligibleCatalogCandidate } from '../domain/affiliate-catalog.js';
 import { DEFAULT_AFFILIATE_DISCOVERY_POLICY } from '../domain/affiliate-discovery.js';
 import { validateShopeeUrl } from '../domain/shopee-link-url.js';
 import { ContractValidationError } from '../domain/affiliate.errors.js';
-import { catalogError } from '../infrastructure/discovery-error.js';
+import { catalogError, errorCode } from '../infrastructure/discovery-error.js';
 import { inspectQualificationImage } from '../infrastructure/qualification-image.reader.js';
 import { FeedQualificationService } from './feed-qualification.service.js';
 import type { AffiliateRepositoryFactory } from './ports/affiliate-repository.port.js';
@@ -27,6 +27,13 @@ export class QualificationPreviewService {
     private readonly projects?: ProjectSnapshotReader,
   ) {}
   async preview(raw: unknown) {
+    return this.previewFromReport(raw);
+  }
+  // A private snapshot parameter prevents callers from supplying a forged report.
+  private async previewFromReport(
+    raw: unknown,
+    snapshot?: Awaited<ReturnType<FeedQualificationService['analyze']>>,
+  ) {
     const fail = (code: string): never => {
       throw catalogError(code);
     };
@@ -57,7 +64,7 @@ export class QualificationPreviewService {
       !Number.isFinite(Date.parse(input.recordedAt))
     )
       fail('QUALIFICATION_PREVIEW_INVALID_INPUT');
-    const report = await this.feeds.analyze();
+    const report = snapshot ?? (await this.feeds.analyze());
     if (input.reportId !== report.reportId)
       fail('FEED_QUALIFICATION_REPORT_CHANGED');
     const candidate =
@@ -293,6 +300,271 @@ export class QualificationPreviewService {
       finalPayload: blockers.length
         ? null
         : { product: productDraft, offer: offerDraft },
+    };
+    return immutable({ ...body, packageHash: affiliateHash(body) });
+  }
+
+  // Review only: one immutable qualification snapshot, one final consistency
+  // check, and the exact individual policy. Never registers or authorizes items.
+  async previewBatch(raw: unknown) {
+    const invalid = (): never => {
+      throw catalogError('QUALIFICATION_PREVIEW_BATCH_INVALID_INPUT');
+    };
+    const record = (v: unknown): v is Record<string, unknown> =>
+      !!v && typeof v === 'object' && !Array.isArray(v);
+    if (
+      !record(raw) ||
+      Object.keys(raw).sort().join(',') !==
+        'candidates,projectId,recordedAt,reportId' ||
+      !Array.isArray(raw.candidates) ||
+      raw.candidates.length < 1 ||
+      raw.candidates.length > 20
+    )
+      invalid();
+    const input = immutable(raw as Record<string, unknown>);
+    affiliateIdentifier(input.projectId, 'projectId');
+    if (
+      typeof input.reportId !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(input.reportId) ||
+      typeof input.recordedAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(input.recordedAt) ||
+      !Number.isFinite(Date.parse(input.recordedAt))
+    )
+      invalid();
+    type CandidateInput = {
+      externalProductId: string;
+      source: { feedId: string; rowNumber: number };
+      product?: unknown;
+      campaign?: unknown;
+      affiliateEvidence?: unknown;
+    };
+    const candidates = Array.from(input.candidates as unknown[]).map(
+      (value) => {
+        if (
+          !record(value) ||
+          Object.keys(value).some(
+            (k) =>
+              ![
+                'externalProductId',
+                'source',
+                'product',
+                'campaign',
+                'affiliateEvidence',
+              ].includes(k),
+          ) ||
+          typeof value.externalProductId !== 'string' ||
+          !/^[1-9]\d{0,39}$/.test(value.externalProductId) ||
+          !record(value.source) ||
+          Object.keys(value.source).sort().join(',') !== 'feedId,rowNumber' ||
+          typeof value.source.feedId !== 'string' ||
+          !value.source.feedId.trim() ||
+          value.source.feedId.length > 128 ||
+          Array.from(value.source.feedId).some(
+            (c) => c.charCodeAt(0) < 32 || c.charCodeAt(0) === 127,
+          ) ||
+          !Number.isSafeInteger(value.source.rowNumber) ||
+          Number(value.source.rowNumber) < 2
+        )
+          invalid();
+        return value as CandidateInput;
+      },
+    );
+    if (
+      new Set(candidates.map((c) => c.externalProductId)).size !==
+      candidates.length
+    )
+      throw catalogError('QUALIFICATION_PREVIEW_BATCH_DUPLICATE');
+    const compare = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+    candidates.sort(
+      (a, b) =>
+        compare(a.externalProductId, b.externalProductId) ||
+        compare(a.source.feedId, b.source.feedId) ||
+        a.source.rowNumber - b.source.rowNumber,
+    );
+    const report = immutable(await this.feeds.analyze());
+    if (report.reportId !== input.reportId)
+      throw catalogError('FEED_QUALIFICATION_REPORT_CHANGED');
+    type Individual = Awaited<
+      ReturnType<QualificationPreviewService['preview']>
+    >;
+    const evidenceKeys = [
+      'FEED_SPECIFICATION',
+      'PRODUCT_CONTRACT',
+      'OFFER_CONTRACT',
+      'LOCAL_IMAGE_BYTES',
+      'REUSABLE_MEDIA_RIGHTS',
+      'DOCUMENTED_AFFILIATE_ASSOCIATION',
+      'PROJECT_SCOPE',
+      'REVISION_SCOPE',
+    ];
+    const items: {
+      identity: CandidateInput['source'] & { externalProductId: string };
+      requestHash: string;
+      provenance: Individual['provenance'] | null;
+      qualification: string | null;
+      status: string;
+      blockers: string[];
+      evidence: { present: string[]; missing: string[]; unverified: string[] };
+      preview: Individual | null;
+      previewHash: string | null;
+      productDraft: Individual['productDraft'] | null;
+      offerDraft: Individual['offerDraft'] | null;
+      productIssues: Individual['productIssues'];
+      offerIssues: Individual['offerIssues'];
+      commercialSnapshot: Individual['commercialSnapshot'] | null;
+      error: { code: string; stage: string } | null;
+      registrationAuthorized: false;
+      operationallyRegistered: false;
+      associationVerified: false;
+    }[] = [];
+    for (const candidateInput of candidates) {
+      const matches = report.items.filter(
+        (c) =>
+          c.externalProductId === candidateInput.externalProductId &&
+          c.source.feedId === candidateInput.source.feedId &&
+          c.source.rowNumber === candidateInput.source.rowNumber,
+      );
+      const candidate = matches.length === 1 ? matches[0] : undefined;
+      const source =
+        candidate &&
+        report.sources.find((s) => s.feedId === candidate.source.feedId);
+      const item: (typeof items)[number] = {
+        identity: {
+          externalProductId: candidateInput.externalProductId,
+          ...candidateInput.source,
+        },
+        requestHash: affiliateHash(candidateInput),
+        provenance:
+          candidate && source
+            ? {
+                ...candidate.source,
+                sourceHash: source.sha256,
+                sourceUpdatedAt: source.sourceUpdatedAt,
+                originVerified: source.originVerified,
+              }
+            : null,
+        qualification: candidate?.classification ?? null,
+        status: 'ERROR',
+        blockers: [],
+        evidence: { present: [], missing: [], unverified: [...evidenceKeys] },
+        preview: null,
+        previewHash: null,
+        productDraft: null,
+        offerDraft: null,
+        productIssues: [],
+        offerIssues: [],
+        commercialSnapshot: null,
+        error: null,
+        registrationAuthorized: false,
+        operationallyRegistered: false,
+        associationVerified: false,
+      };
+      items.push(item);
+      if (!candidate || !source) {
+        item.blockers = ['QUALIFICATION_PREVIEW_CANDIDATE_IDENTITY_MISMATCH'];
+        item.error = { code: item.blockers[0], stage: 'IDENTITY' };
+        continue;
+      }
+      if (candidate.classification !== 'PRE_CANDIDATE') {
+        item.status = 'NOT_PREVIEWABLE';
+        item.blockers = [...new Set(candidate.reasons)].sort();
+        continue;
+      }
+      try {
+        const { source: _identity, ...fields } = candidateInput;
+        const result = await this.previewFromReport(
+          {
+            reportId: input.reportId,
+            projectId: input.projectId,
+            recordedAt: input.recordedAt,
+            ...fields,
+          },
+          { ...report, items: [candidate] },
+        );
+        item.status = result.status;
+        item.blockers = [...result.pending];
+        item.previewHash = result.packageHash;
+        item.productIssues = result.productIssues;
+        item.offerIssues = result.offerIssues;
+        // Invalid drafts are never exposed by the batch; the individual endpoint
+        // keeps its existing diagnostic drafts and hash unchanged.
+        item.productDraft = result.productIssues.length
+          ? null
+          : result.productDraft;
+        item.offerDraft = result.offerIssues.length ? null : result.offerDraft;
+        item.preview = item.productDraft && item.offerDraft ? result : null;
+        item.commercialSnapshot = result.commercialSnapshot;
+        const checks = [
+          !result.pending.includes('FEED_SPECIFICATION_EVIDENCE_REQUIRED'),
+          !result.productIssues.length,
+          !result.offerIssues.length,
+          result.mediaEvidence.status === 'VERIFIED',
+          !result.pending.includes('REUSABLE_MEDIA_RIGHTS_REQUIRED'),
+          !result.pending.includes('AFFILIATE_ASSOCIATION_EVIDENCE_REQUIRED'),
+          !!result.context.projectHash,
+          result.context.revisionsVerified,
+        ];
+        item.evidence = {
+          present: evidenceKeys.filter((_, i) => checks[i]),
+          missing: evidenceKeys.filter((_, i) => !checks[i]),
+          unverified: [],
+        };
+      } catch (error) {
+        const reported =
+          error instanceof ContractValidationError
+            ? error.code
+            : errorCode(error);
+        const code =
+          reported &&
+          /^(QUALIFICATION_PREVIEW_|INVALID_AFFILIATE_|AFFILIATE_)/.test(
+            reported,
+          ) &&
+          /^[A-Z0-9_]+$/.test(reported)
+            ? reported
+            : 'QUALIFICATION_PREVIEW_UNAVAILABLE';
+        item.error = { code, stage: 'PREVIEW' };
+        item.blockers = [code];
+        item.status = 'ERROR';
+        item.preview = null;
+        item.previewHash = null;
+        item.productDraft = null;
+        item.offerDraft = null;
+        item.productIssues = [];
+        item.offerIssues = [];
+        item.commercialSnapshot = null;
+        item.evidence = {
+          present: [],
+          missing: [],
+          unverified: [...evidenceKeys],
+        };
+      }
+    }
+    const current = await this.feeds.analyze();
+    if (current.reportId !== report.reportId)
+      throw catalogError('FEED_QUALIFICATION_REPORT_CHANGED');
+    const body = {
+      previewVersion: 'affiliate-qualification-batch-preview/1.0.0',
+      reportId: report.reportId,
+      projectId: input.projectId,
+      recordedAt: new Date(input.recordedAt as string).toISOString(),
+      items,
+      summary: {
+        requested: items.length,
+        readyForOperatorReview: items.filter(
+          (i) => i.status === 'READY_FOR_OPERATOR_REVIEW',
+        ).length,
+        blocked: items.filter((i) => i.status === 'BLOCKED').length,
+        notPreviewable: items.filter((i) => i.status === 'NOT_PREVIEWABLE')
+          .length,
+        errors: items.filter((i) => i.status === 'ERROR').length,
+      },
+      evidenceBasis: 'OPERATOR_DOCUMENTED_DECLARATIONS_REQUIRE_HUMAN_REVIEW',
+      technicalPreparationOnly: true,
+      registrationAuthorized: false,
+      operationallyRegistered: false,
+      associationVerified: false,
+      humanApprovalGranted: false,
+      liveAuthorized: false,
     };
     return immutable({ ...body, packageHash: affiliateHash(body) });
   }

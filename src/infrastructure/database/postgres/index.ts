@@ -10,6 +10,7 @@ export {
   PostgresDatabase,
   createPostgresPool,
   type PostgresPoolFactory,
+  type PostgresParticipant,
 } from './postgres.database.js';
 export { PostgresError } from './postgres.errors.js';
 export { PostgresModule } from './postgres.module.js';

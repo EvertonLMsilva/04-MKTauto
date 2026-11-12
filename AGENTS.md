@@ -99,13 +99,40 @@ Local recomendado: `D:\04-Projetos\_worktrees\`.
 
 ## Frentes e isolamento
 
-- **CORE:** arquitetura, migrações, organização e limpeza.
-- **A:** Publishing e distribuição.
-- **B:** Produção, Media, TTS, CTC e vídeos.
-- **C:** Shopee, Affiliate e Commercial.
+O projeto possui seis frentes: CORE, A, B, C, D e E.
 
-Cada frente possui seu próprio tópico-pai e subtópicos. CORE é uma frente
-estrutural adicional e não substitui as três frentes funcionais.
+- **CORE:** arquitetura, infraestrutura, PostgreSQL, migrations, persistência,
+  integração estrutural e governança.
+- **A — Publishing:** Instagram, Facebook, publicação, distribuição,
+  autorizações sociais, recibos e recuperação.
+- **B — Produção:** Content, Media, roteiros, TTS, CTC, vídeo, composição,
+  legendas e QC técnico.
+- **C — Affiliate e Commercial:** Shopee, produtos, ofertas, catálogo comercial,
+  links afiliados, comissões comerciais, atribuição e medição de receita.
+- **D — Finance:** orçamento, custos, reservas financeiras, reconciliação,
+  limites e evidências financeiras.
+- **E — Operations:** orquestração funcional, campanhas diárias, scheduler,
+  execuções, recuperação e integração operacional dos módulos.
+
+Cada frente possui seu próprio tópico-pai e subtópicos. CORE é a frente
+estrutural e não substitui as cinco frentes funcionais.
+
+CORE possui migrations e infraestrutura PostgreSQL, inclusive nos schemas
+dos demais domínios. D possui regras de negócio e contratos Finance; E possui
+as regras funcionais de Operations. C mantém Shopee e receitas comerciais,
+A mantém os efeitos de publicação social e B mantém a geração de conteúdo e
+mídia. Integração estrutural de CORE não transfere as regras desses domínios;
+a integração operacional dos módulos pertence a E.
+
+Não duplicar módulos existentes nem transferir automaticamente arquivos ou
+regras de negócio. Em arquivos compartilhados, a task deve definir o ownership
+de edição e coordená-lo com as demais frentes. Arquivos reservados por outra
+frente exigem autorização explícita antes de serem modificados.
+
+A ampliação de CORE/A/B/C para seis frentes é prospectiva: preservar o
+histórico documental, sem reclassificar retroativamente PRs ou entregas.
+Esta atualização não altera as 19 unidades do roadmap MVP V1 nem autoriza
+modificar seu histórico.
 
 É proibido:
 
@@ -231,7 +258,7 @@ Estas regras complementam todas as regras anteriores e orientam a entrega em and
 
 ## Política de tópicos-pai — ChatGPT e Codex
 
-Aplica-se a CORE e às frentes A, B e C, preservando a matriz de
+Aplica-se às seis frentes CORE, A, B, C, D e E, preservando a matriz de
 responsabilidade, o isolamento e as proteções operacionais deste documento.
 
 ### T01 — Planejamento pelo ChatGPT
@@ -278,9 +305,10 @@ sem testes de aplicação alheios ao escopo.
 
 ### T05 — Separação entre frentes
 
-Cada frente mantém seus próprios tópicos-pai, subtópicos, branches,
-worktrees, arquivos autorizados, testes e PRs. O ChatGPT deve distribuir
-implementações independentes entre as frentes para permitir execução
+Cada frente mantém seu chat de planejamento próprio, tópicos-pai
+independentes, subtópicos, branches próprias, worktrees isolados, allowlist
+exata de arquivos, testes focados e um único PR por tópico-pai. O ChatGPT deve
+distribuir implementações independentes entre as frentes para permitir execução
 paralela, respeitando a matriz de responsabilidade vigente. Não atribuir
 simultaneamente à mesma frente duas demandas que exijam tópicos-pai
 independentes.
@@ -305,6 +333,11 @@ Todo retorno de implementação deve complementar a saída padrão com:
 Contar somente subtópicos realmente identificados e validados. O total deve
 corresponder à soma de concluídos, parciais e pendentes, sem percentuais
 inventados. Informar o estado real do PR, incluindo Draft quando aplicável.
+
+Manter o controle por frente e um consolidado das seis frentes no planejamento
+e nos relatórios de coordenação, usando registros verificáveis. Identificar
+informações indisponíveis e não presumir progresso de frentes não consultadas
+nem contar a mesma entrega mais de uma vez.
 
 ### T07 — Critérios de conclusão e evidência
 
