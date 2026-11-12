@@ -30,6 +30,7 @@ import { OperationsPreflightService } from './operations-preflight.service.js';
 import { FinanceModule } from '../finance/finance.module.js';
 import { DashboardSummaryService } from './dashboard-summary.service.js';
 import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-summary.repository.js';
+import { FirstCommercialPilotService } from './first-commercial-pilot.service.js';
 @Module({
   imports: [
     CampaignOrchestrationModule,
@@ -40,7 +41,9 @@ import { SqliteDashboardSummaryRepository } from './infrastructure/dashboard-sum
     ProjectModule,
   ],
   controllers: [OperationsController, FakeCampaignCommandController],
+  exports: [FirstCommercialPilotService],
   providers: [
+    FirstCommercialPilotService,
     OperationsService,
     ProjectShopeeHandoffService,
     ProjectShopeeLivePreflightService,
