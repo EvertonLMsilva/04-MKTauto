@@ -871,3 +871,111 @@ obter autorização específica de cutover. Nenhum dado/banco/Docker operacional
 foi alterado, render físico executado ou serviço pago utilizado. Custos locais
 de CPU/energia são indisponíveis. Media PostgreSQL integral e PG-002 inteiro
 não são declarados concluídos.
+
+## Media local subtitles e burn-in — CORE-PG-002-MEDIA-SUBTITLE-BURNIN-005A
+
+### Contrato comprovado e opt-in
+
+A fonte canônica é o documento de oito campos produzido por
+`LocalFlowRuntime.subtitles`: `subtitleId`, `alignmentId`, `evidenceHash`,
+`voiceTrackId`, `scriptId`, `scriptContentHash`, `srtHash` e `assHash`.
+Este documento `local_subtitles` não é declarado equivalente ao contrato
+histórico SubtitleTrack. Os testes executam os produtores SQLite inalterados
+`acceptAlignment` e `subtitles`, além do registro `registerBurned`, e comparam
+documentos, identidades e linhagens completas com PostgreSQL.
+
+`MediaPostgresModule.register(config, { subtitleProof })` exporta
+`POSTGRES_MEDIA_SUBTITLE` / `PostgresMediaSubtitlePersistence`. O port
+`AsyncLocalSubtitleRepository` oferece `registerLocalSubtitle(documentHash,
+alignmentDocumentHash)`, `getLocalSubtitle(id)` e `close`, todos assíncronos.
+O port de render acrescenta `registerBurned(render, subtitleId)`; o registro
+simples e os opt-ins anteriores permanecem compatíveis. Startup não executa
+queries, migrations, produtores ou efeitos externos.
+
+`LocalSubtitleProof` precisa ser fornecido explicitamente: leitores somente
+de leitura para documentos JSON, SRT/ASS e WAV existentes, mais um
+`AlignmentProvenanceVerifier` do contrato nativo. Não há descoberta de roots,
+variáveis de ambiente, lista de confiança implícita ou bypass de proveniência.
+O chamador deve fornecer o verificador nativo adequado ou hashes previamente
+verificados por um canal confiável ao `PinnedAlignmentVerifier`; o adapter
+não concede confiança ao hash importado. Status VERIFIED e hash recalculado
+isoladamente são insuficientes.
+
+Registro, replay e leitura revalidam os bytes e hashes externos, o JSON
+canônico, AlignmentEvidence, áudio WAV real/duração, revisão/texto do Script,
+VoiceTrack e seu escopo. A comparação em memória com `serializeSubtitles`
+reutiliza a política nativa `frame-coverage/1` a 30 fps; não produz nem grava
+legendas. A identidade `subtitle_local:<evidenceHash>:<presentationHash>`
+permanece igual à nativa. Ausência de prova, confiança removida ou divergência
+impede a operação; a persistência não substitui o armazenamento externo.
+
+O suporte inicial é restrito a `OPERATOR_RECORDING` e `AUTHORIZED_RECORDING`,
+cuja narração canônica é verificável pelo Script existente. `SYNTHETIC_TTS`
+é recusado com `MEDIA_SUBTITLE_NARRATION_CONTEXT_REQUIRED`: a adaptação nativa
+depende de contexto/configuração de síntese ainda não representado aqui.
+Não se presume que a narração sintética seja sempre `fullNarration`.
+
+### Migration v11 e integridade
+
+O registro `MEDIA_SUBTITLE_POSTGRES_MIGRATION_REGISTRY` estende integralmente
+v1–v10 com `011_media_subtitle_burnin_dependencies`, versão 11. Nenhum SQL,
+nome ou checksum histórico muda. Provisionamento permanece uma operação
+administrativa explícita pelo runner PG-001. Abertura do port de legendas
+verifica v1–v11; renders simples continuam disponíveis em banco v10, enquanto
+burn-in exige nome/checksum v11.
+
+São acrescentadas somente três tabelas imutáveis:
+
+- `media.local_alignments`: hashes e vínculos do alinhamento verificado;
+- `media.local_subtitles`: o documento de oito campos e seu escopo/identidade;
+- `media.video_render_burnins`: vínculo render original/legenda/render sucessor.
+
+WAV, SRT, ASS, vídeo, transcrições e AlignmentEvidence completo não são
+armazenados no banco. As duas linhagens de evidência usam os mesmos hashes,
+metadados `local-flow/1` e inputs ordenados do SQLite. Constraints e triggers
+protegem escopo, referências, imutabilidade e propriedade diferida da linhagem.
+Um vínculo de burn-in também precisa ter proprietário canônico no commit;
+não pode ser anexado posteriormente a um render comum existente.
+
+`media.validate_render_scope` é substituída de forma retrocompatível na nova
+migration. A alternativa simples preserva o único input CompositionPlan e
+generationMetadata null. A alternativa burn-in exige exatamente, nesta ordem:
+
+1. CompositionPlan e seu hash;
+2. VideoRender original e seu hash;
+3. `local_subtitles` e o hash de seu documento.
+
+O burn-in permanece `video-render/1.0.0`, revisão 2, sucedendo a revisão 1 do
+mesmo plano/run/projeto. Script, voz, dimensões, formato, duração, proporção e
+data são confrontados; ID local e generationMetadata `subtitle-burn-in` usam
+a identidade canônica nativa. Não se aceitam inputs arbitrários, ciclos ou
+supersession incompatível. Leitura revalida payload, colunas, hash, vínculo,
+prova externa e todas as entradas da linhagem, sem confiar no hash salvo.
+
+Ambos os ports reutilizam `PostgresMediaCatalogSession`, pool e unidade de
+trabalho PG-001. A ordem de locks permanece Content 3 → Affiliate 4 →
+Campaign 5 → Media 7. Importação de alinhamento/legenda e registro de burn-in
+são atômicos; podem participar da mesma unidade de trabalho externa com os
+quatro domínios explicitamente alistados. Falha SQL ou rollback externo não
+deixa linhagens, metadados ou bindings parciais. Replay exige igualdade
+integral, preserva histórico e rejeita reutilização conflitante de IDs.
+
+### Validação e limites
+
+Os testes `media-subtitle-canonical`, `media-subtitle.integration` e
+`media-burnin.integration` usam o harness PostgreSQL 18.6 descartável existente.
+Cobrem paridade SQLite inalterado, v11/checksums/reexecução/rollback DDL,
+preservação v10, prova inválida/ausente, hashes e vínculos divergentes,
+imutabilidade, órfãos, inputs extras/fora de ordem, replay concorrente,
+reinício do pool, mesma conexão/locks e rollback intermediário/externo.
+As fixtures usam gravações e arquivos sintéticos locais, com verificador
+de hashes explicitamente fixados; o runner de processos rejeita execução.
+Não há FFmpeg, CTC, TTS, render físico ou serviço pago nesses testes.
+
+A entrega permite persistência opt-in dos metadados comprovados; não afirma
+que o vídeo foi fisicamente queimado ou aprovado. O runtime SQLite e todos
+os recursos operacionais permanecem inalterados. Não há dual-write, migração
+de dados reais, deploy ou cutover. Custos locais de CPU/energia indisponíveis.
+QualityControl PostgreSQL, Local QC, VideoRender P4 integral, Media PostgreSQL
+integral e PG-002 integral continuam fora desta conclusão. Futura task de QC
+deverá confirmar a próxima versão disponível após v11; não é iniciada aqui.
