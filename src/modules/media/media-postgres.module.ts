@@ -6,8 +6,10 @@ import {
 } from '../../infrastructure/database/postgres/index.js';
 import { PostgresMediaCatalogPersistence } from './infrastructure/postgres-media-catalog.persistence.js';
 import { PostgresMediaVoicePersistence } from './infrastructure/postgres-media-voice.persistence.js';
+import { PostgresMediaCompositionPersistence } from './infrastructure/postgres-media-composition.persistence.js';
 export const POSTGRES_MEDIA_CATALOG = Symbol('POSTGRES_MEDIA_CATALOG');
 export const POSTGRES_MEDIA_VOICE = Symbol('POSTGRES_MEDIA_VOICE');
+export const POSTGRES_MEDIA_COMPOSITION = Symbol('POSTGRES_MEDIA_COMPOSITION');
 @Module({})
 export class MediaPostgresModule {
   static register(config: PostgresConfig): DynamicModule {
@@ -15,6 +17,16 @@ export class MediaPostgresModule {
       module: MediaPostgresModule,
       imports: [PostgresModule.register(config)],
       providers: [
+        {
+          provide: PostgresMediaCompositionPersistence,
+          inject: [PostgresDatabase],
+          useFactory: (db: PostgresDatabase) =>
+            new PostgresMediaCompositionPersistence(db),
+        },
+        {
+          provide: POSTGRES_MEDIA_COMPOSITION,
+          useExisting: PostgresMediaCompositionPersistence,
+        },
         {
           provide: PostgresMediaVoicePersistence,
           inject: [PostgresDatabase],
@@ -37,6 +49,8 @@ export class MediaPostgresModule {
         },
       ],
       exports: [
+        POSTGRES_MEDIA_COMPOSITION,
+        PostgresMediaCompositionPersistence,
         POSTGRES_MEDIA_CATALOG,
         PostgresMediaCatalogPersistence,
         POSTGRES_MEDIA_VOICE,
