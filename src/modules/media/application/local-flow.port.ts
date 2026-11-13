@@ -4,7 +4,33 @@ export type LocalImageSource = Pick<
   MediaAsset,
   'mediaReference' | 'contentHash' | 'origin' | 'provider' | 'rights'
 >;
+// Opaque server capability: JSON/client input cannot manufacture a verifier.
+const processingVerifiers = new WeakMap<
+  object,
+  (scope: LocalMediaScope, source: LocalImageSource) => string
+>();
+export interface VerifiedLocalProcessing {
+  readonly kind: 'VERIFIED_LOCAL_PROCESSING';
+}
+export function verifiedLocalProcessing(
+  verify: (scope: LocalMediaScope, source: LocalImageSource) => string,
+): VerifiedLocalProcessing {
+  const token = Object.freeze({ kind: 'VERIFIED_LOCAL_PROCESSING' as const });
+  processingVerifiers.set(token, verify);
+  return token;
+}
+export function localProcessingScope(
+  scope: LocalMediaScope,
+  source: LocalImageSource,
+): string | undefined {
+  if (scope.processingAuthorization === undefined) return undefined;
+  const verify = processingVerifiers.get(scope.processingAuthorization);
+  if (!verify) throw new Error('ONE_SHOT_MEDIA_BINDING_REQUIRED');
+  return verify(scope, source);
+}
 export interface LocalMediaScope {
+  processingAuthorization?: VerifiedLocalProcessing;
+  campaignId?: string;
   pipelineRunId: string;
   scriptId: string;
   scriptContentHash: string;

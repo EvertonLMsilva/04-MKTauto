@@ -1,3 +1,9 @@
+import { operationalQcIdentity } from '../../publishing/application/local-qc-identity.js';
+import type {
+  OneShotMediaDecision,
+  OneShotMediaPreparation,
+} from '../domain/one-shot-media-binding.js';
+import { adaptationHash } from '../../media/domain/media-hash.js';
 import type { PostgresCampaignRepository } from '../infrastructure/postgres-campaign.persistence.js';
 import type { CampaignExecution, CampaignEvent } from '../domain/campaign.js';
 import {
@@ -66,7 +72,49 @@ export class CampaignAdministrationRuntime<A extends boolean = false>
     private readonly now = () => new Date().toISOString(),
     private readonly notifications?: Pick<OperationalAlertsService, 'scan'>,
     private readonly shopee?: ShopeeDynamicService,
-  ) {}
+  ) {
+    workflow.useOneShotMediaReader((id) => {
+      const { prepared, store } = this.oneShotPreparation(id);
+      const stored = store.oneShotMedia.get(id);
+      if (!stored) return null;
+      const {
+        decision: _decision,
+        actorId: _actor,
+        authorizedAt: _at,
+        ...prior
+      } = stored;
+      if (adaptationHash(prior) !== adaptationHash(prepared))
+        throw new CampaignError('ONE_SHOT_MEDIA_IDENTITY_CONFLICT');
+      return prior;
+    });
+  }
+  private oneShotPreparation(id: string) {
+    if (this.path && typeof this.path !== 'string')
+      throw new CampaignError('ONE_SHOT_MEDIA_SQLITE_REQUIRED');
+    const store = this.open(),
+      execution = store.get(identifier(id));
+    if (execution.status === 'CANCELLED')
+      throw new CampaignError('ONE_SHOT_MEDIA_BINDING_STATE_REQUIRED');
+    return {
+      store,
+      prepared: this.workflow.prepareOneShotBinding(
+        execution,
+        executionRequest(store.history(id)),
+      ),
+    };
+  }
+  prepareOneShotMediaBinding(id: string): OneShotMediaPreparation {
+    return this.oneShotPreparation(id).prepared;
+  }
+  authorizeOneShotMediaBinding(
+    id: string,
+    decision: OneShotMediaDecision,
+    principal: unknown,
+  ) {
+    const actor = operationalQcIdentity.assertActive(principal);
+    const { store, prepared } = this.oneShotPreparation(id);
+    return store.oneShotMedia.bind(prepared, decision, actor.id, this.now());
+  }
   private open() {
     if (this.store) return this.store;
     if (this.path && typeof this.path !== 'string') {

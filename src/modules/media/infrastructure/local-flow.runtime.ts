@@ -1,3 +1,4 @@
+import { localProcessingScope } from '../application/local-flow.port.js';
 import { LocalQcReadStorage } from '../application/local-qc-handoff-storage.js';
 import { assertMediaProcessingRights } from '../domain/media-processing-rights.js';
 import {
@@ -150,6 +151,8 @@ export class LocalFlowRuntime {
         contentHash: source.contentHash,
       },
       null,
+      localProcessingScope(scope, source),
+      { campaignId: scope.campaignId ?? '', purpose: 'HUMAN_QC_REVIEW' },
     );
     if (!this.env.FFMPEG_MEDIA_ROOT)
       localFail('LOCAL_MEDIA_CONFIGURATION_REQUIRED');
