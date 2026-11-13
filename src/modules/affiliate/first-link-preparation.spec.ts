@@ -227,6 +227,27 @@ afterEach(() => {
   }
 });
 
+test('exact-item preparation rejects a snapshot containing another product before selection', async () => {
+  configuration.queries = [{ itemId: '115002', limit: 3 }];
+  await expect(preview.preview(input())).rejects.toThrow(
+    'SHOPEE_OFFERS_RESPONSE_INVALID',
+  );
+  expect(fetchDouble).not.toHaveBeenCalled();
+});
+
+test('exact-item preparation accepts matching controlled data without granting commercial or link rights', async () => {
+  configuration.queries = [{ itemId: '115002', limit: 3 }];
+  response.data.productOfferV2.nodes = [node()];
+  const result = await preview.preview(input());
+  expect(result).toMatchObject({
+    authorizationStatus: 'NOT_GRANTED',
+    executionAllowed: false,
+    associationVerified: false,
+    liveOfferSnapshotStatus: 'SIMULATED_NOT_LIVE_EVIDENCE',
+  });
+  expect(fetchDouble).not.toHaveBeenCalled();
+});
+
 function authorizeFixture(id = '115002') {
   const offer = node(id),
     bytes = png(),
