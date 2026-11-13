@@ -88,5 +88,10 @@ export async function localFixture() {
     }),
   );
   evidence.output.evidenceHash = alignmentHash(evidence);
+  // This fixture replays immutable historical repository observations. Keep its
+  // legacy QC mode explicit; current producer evidence uses the native-schema
+  // subtitle physical fixture instead of extending frozen historical traces.
+  const legacyQc = flow.qc.bind(flow);
+  flow.qc = (videoId: string) => legacyQc(videoId, false);
   return { ...f, open, flow, media, evidence };
 }

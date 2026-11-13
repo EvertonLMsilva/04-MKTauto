@@ -103,7 +103,8 @@ export class LocalFlowService {
     return this.runtime.burn(videoId, subtitleId);
   }
   qc(videoId: string) {
-    return this.runtime.qc(videoId);
+    // Explicit inspection records current provenance; preview/legacy reads do not.
+    return this.runtime.qc(videoId, true);
   }
   qcHandoffEvidence(videoId: string, reportId?: string) {
     return this.runtime.qcHandoffEvidence?.(videoId, reportId) ?? null;

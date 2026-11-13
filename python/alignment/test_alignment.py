@@ -7,6 +7,24 @@ from pathlib import Path
 
 
 class AlignmentTests(unittest.TestCase):
+    def test_affiliate_disclosure_separator_preserves_text_and_offsets(self):
+        text = 'Ação. Publicidade | Link de afiliado.'
+        vocab = {c: i for i, c in enumerate('abcdefghijklmnopqrstuvwxyzáéíóúâêôãõç|')}
+        ids, words = script_tokens(text, vocab, 'pt-br-written/1')
+        self.assertEqual(''.join(list(vocab)[i] for i in ids),
+                         'ação|publicidade|link|de|afiliado')
+        cues = segments(text, words, [(i, i + 1) for i in range(len(ids))], 20)
+        self.assertEqual(' '.join(cue['text'] for cue in cues), text)
+        self.assertEqual(cues[1]['text'], 'Publicidade |')
+        self.assertEqual(cues[1]['textEndOffset'], text.index(' |') + 2)
+        self.assertEqual(cues[2]['textStartOffset'], text.index('Link'))
+        with self.assertRaisesRegex(ValueError, 'UNSUPPORTED'):
+            script_tokens(text, vocab)
+        for unsupported in ('| Publicidade', 'Publicidade || Link', 'Publicidade |Link'):
+            with self.subTest(unsupported=unsupported):
+                with self.assertRaisesRegex(ValueError, 'UNSUPPORTED'):
+                    script_tokens(unsupported, vocab, 'pt-br-written/1')
+
     def test_portuguese_written_numbers_and_separators_preserve_exact_offsets(self):
         text = 'Kit 7 e 14. Publicidade · Cena ilustrativa · material_declarado: plástico.'
         vocab = {c: i for i, c in enumerate('abcdefghijklmnopqrstuvwxyzáéíóúâêôãõç|')}

@@ -73,7 +73,7 @@ export interface LocalAudiovisualPort {
   subtitles(alignmentId: string): unknown;
   compose(value: unknown): Promise<unknown>;
   burn(videoId: string, subtitleId: string): Promise<unknown>;
-  qc(videoId: string): Promise<unknown>;
+  qc(videoId: string, includeHandoffEvidence?: boolean): Promise<unknown>;
   qcHandoffEvidence?(
     videoId: string,
     reportId?: string,
