@@ -179,7 +179,14 @@ export class ShopeeAffiliateLive implements ShopeeOfferPagePort {
     const now = this.#now();
     const timestamp = String(Math.ceil(now / 1000));
     // Same string, same UTF-8 bytes for signing and transport; no reserialization.
-    const payload = JSON.stringify(operation.request);
+    const payload = JSON.stringify(
+      operation.kind === 'offers'
+        ? {
+            query: operation.request.query,
+            variables: operation.request.variables,
+          }
+        : operation.request,
+    );
     const { appId, secret } = this.#credentials;
     const signature = createHash('sha256')
       .update(appId + timestamp + payload + secret, 'utf8')
@@ -285,7 +292,12 @@ export class ShopeeAffiliateLive implements ShopeeOfferPagePort {
       const { variables } = operation.request;
       const result = normalizeShopeeOfferPage(
         body,
-        variables,
+        {
+          ...variables,
+          ...(operation.request.expectedItemId === undefined
+            ? {}
+            : { itemId: operation.request.expectedItemId }),
+        },
         new Date(now).toISOString(),
       );
       if (signal.aborted) fail('SHOPEE_LIVE_TIMEOUT');

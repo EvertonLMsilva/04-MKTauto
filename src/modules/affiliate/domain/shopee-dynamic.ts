@@ -131,7 +131,7 @@ export function validateDynamicConfiguration(
     if (!query || typeof query !== 'object') fail();
     if (
       (query.page !== undefined && query.page !== 1) ||
-      (!query.keyword && !query.productCatId)
+      (!query.keyword && !query.productCatId && !query.itemId)
     )
       fail();
   }

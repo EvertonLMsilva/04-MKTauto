@@ -77,8 +77,13 @@ export class FakeShopeeAffiliate implements ShopeeOfferPagePort {
   async queryOfferPage(
     input: ShopeeOfferQuery = {},
   ): Promise<ShopeeAffiliateOfferPage> {
-    const { page, limit } = buildShopeeOffersQuery(input).variables;
-    const offers = await this.queryOffers();
+    const { variables, expectedItemId } = buildShopeeOffersQuery(input);
+    const { page, limit } = variables;
+    const all = await this.queryOffers();
+    const offers =
+      expectedItemId === undefined
+        ? all
+        : all.filter((offer) => offer.productId === expectedItemId);
     const offset = (page - 1) * limit;
     const hasNextPage = offset + limit < offers.length;
     return {
@@ -213,9 +218,13 @@ export class ConfiguredShopeeAffiliate implements ShopeeOfferPagePort {
     }
   }
   queryOfferPage(input: ShopeeOfferQuery = {}) {
-    buildShopeeOffersQuery(input);
+    const { variables, expectedItemId } = buildShopeeOffersQuery(input);
+    const checked = {
+      ...variables,
+      ...(expectedItemId === undefined ? {} : { itemId: expectedItemId }),
+    };
     reserveLiveRequest('OFFERS');
-    return this.operation((t) => t.queryOfferPage(input));
+    return this.operation((t) => t.queryOfferPage(checked));
   }
   async queryOffers() {
     return (await this.queryOfferPage()).offers;

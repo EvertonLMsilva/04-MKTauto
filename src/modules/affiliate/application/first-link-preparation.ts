@@ -102,7 +102,11 @@ export class FirstLinkPreparationService {
       throw new Error('FIRST_LINK_SINGLE_OPERATION_REQUIRED');
     }
     const query = configuration.queries[0];
-    const request = buildShopeeOffersQuery(query).variables;
+    const { variables, expectedItemId } = buildShopeeOffersQuery(query);
+    const request = {
+      ...variables,
+      ...(expectedItemId === undefined ? {} : { itemId: expectedItemId }),
+    };
     const project = await this.projects.get(
       configuration.projectId,
       projectVersion,

@@ -5,7 +5,9 @@ import type {
 } from '../domain/shopee-affiliate-contracts.js';
 
 // Historical official-schema snapshot: docs/tasks/P7.1-SHOPEE-OFFERS-001-contract.md.
-// Keep arguments/fields unchanged until the current official schema is evidenced.
+// The operator additionally confirmed productOfferV2(itemId: 23792533191).
+// Use its integer-literal form after Int64 validation, without assuming a
+// variable scalar name/coercion not established by that evidence.
 // Types/nullability of these fields still require current Explorer homologation;
 // the itemId-only probe does not validate this detailed contract or API quotas.
 const QUERY = `query AffiliateOffers($page: Int!, $limit: Int!, $keyword: String, $sortType: Int, $productCatId: Int) {
@@ -51,6 +53,9 @@ const integer = (value: unknown, min: number, max: number): value is number =>
   Number.isSafeInteger(value) &&
   value >= min &&
   value <= max;
+const validSortType = (
+  value: unknown,
+): value is NonNullable<ShopeeOfferQuery['sortType']> => integer(value, 1, 5);
 function hasControlCharacters(value: string): boolean {
   for (let index = 0; index < value.length; index++) {
     const code = value.charCodeAt(index);
@@ -60,12 +65,24 @@ function hasControlCharacters(value: string): boolean {
 }
 
 export function buildShopeeOffersQuery(input: ShopeeOfferQuery = {}) {
-  const keys = ['page', 'limit', 'keyword', 'sortType', 'productCatId'];
+  const keys = [
+    'itemId',
+    'page',
+    'limit',
+    'keyword',
+    'sortType',
+    'productCatId',
+  ];
   if (!record(input) || Object.keys(input).some((key) => !keys.includes(key)))
     fail('SHOPEE_OFFERS_QUERY_INVALID');
   const page = input.page === undefined ? 1 : input.page;
   const limit = input.limit === undefined ? MAX_LIMIT : input.limit;
+  const itemId = input.itemId;
   if (
+    (itemId !== undefined &&
+      (typeof itemId !== 'string' ||
+        !/^[1-9]\d{0,18}$/.test(itemId) ||
+        BigInt(itemId) > 9223372036854775807n)) ||
     !integer(page, 1, MAX_PAGE) ||
     !integer(limit, 1, MAX_LIMIT) ||
     (input.keyword !== undefined &&
@@ -73,13 +90,21 @@ export function buildShopeeOffersQuery(input: ShopeeOfferQuery = {}) {
         input.keyword.length < 1 ||
         input.keyword.length > 100 ||
         hasControlCharacters(input.keyword))) ||
-    (input.sortType !== undefined && !integer(input.sortType, 1, 5)) ||
+    (input.sortType !== undefined && !validSortType(input.sortType)) ||
     (input.productCatId !== undefined &&
       !integer(input.productCatId, 1, 2147483647))
   )
     fail('SHOPEE_OFFERS_QUERY_INVALID');
   return {
-    query: QUERY,
+    query:
+      itemId === undefined
+        ? QUERY
+        : QUERY.replace(
+            'productOfferV2(',
+            `productOfferV2(itemId: ${itemId}, `,
+          ),
+    // Local response binding only; excluded from the signed GraphQL payload.
+    ...(itemId === undefined ? {} : { expectedItemId: itemId }),
     variables: {
       page,
       limit,
@@ -137,7 +162,7 @@ function url(value: unknown): string | null {
 
 export function normalizeShopeeOfferPage(
   raw: unknown,
-  request: { page: number; limit: number },
+  request: { page: number; limit: number; itemId?: string },
   observedAt: string,
 ): ShopeeAffiliateOfferPage {
   buildShopeeOffersQuery(request);
@@ -167,6 +192,7 @@ export function normalizeShopeeOfferPage(
     if (node === null) continue;
     if (!record(node)) fail();
     const productId = id(node.itemId);
+    if (request.itemId !== undefined && productId !== request.itemId) fail();
     const discount = node.priceDiscountRate;
     if (discount != null && !integer(discount, 0, 100)) fail();
     const offer: ShopeeAffiliateOfferDetails = {
