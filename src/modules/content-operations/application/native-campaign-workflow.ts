@@ -1,3 +1,8 @@
+import { verifiedLocalProcessing } from '../../media/application/local-flow.port.js';
+import {
+  prepareOneShotMedia,
+  type OneShotMediaPreparation,
+} from '../domain/one-shot-media-binding.js';
 import { assertMediaProcessingRights } from '../../media/domain/media-processing-rights.js';
 import { assertCompositionGrant } from '../domain/composition-authorization.js';
 import { assertFakeExecutionPolicy, createFakeExecutionPolicy, CONTROLLED_FAKE_RUN_PREFIX } from '../domain/fake-execution-policy.js';
@@ -336,6 +341,49 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       'status' | 'prepareFacebookOccurrence'
     >,
   ) {}
+  private oneShotMediaReader?: (id: string) => OneShotMediaPreparation | null;
+  useOneShotMediaReader(
+    reader: (id: string) => OneShotMediaPreparation | null,
+  ) {
+    this.oneShotMediaReader = reader;
+  }
+  prepareOneShotBinding(e: CampaignExecution, r: Record<string, unknown>) {
+    const brief = this.binding.resolveRunBriefing(
+      e.run_id,
+      String(r.briefingId),
+    );
+    const binding = this.binding.getRunBinding(e.run_id);
+    if (
+      !brief ||
+      !binding ||
+      r.schedule ||
+      r.selectionMode === 'CATALOG' ||
+      r.fakeExecutionPolicy ||
+      binding.briefingHash !== brief.contentHash ||
+      brief.campaignId !== e.campaign_id ||
+      brief.campaignRevision !== e.campaign_revision ||
+      r.runId !== e.run_id
+    )
+      throw new CampaignError('ONE_SHOT_MEDIA_NATIVE_CONTEXT_REQUIRED');
+    const source = r.localImage as LocalImageSource;
+    if (!source || !brief.mediaRefs.includes(source.mediaReference))
+      throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+    return prepareOneShotMedia(
+      {
+        executionId: e.execution_id,
+        pipelineRunId: e.run_id,
+        campaignId: e.campaign_id,
+        campaignRevision: e.campaign_revision,
+        productId: brief.productId,
+        productRevision: brief.productRevision,
+        briefingId: brief.briefingId,
+        briefingHash: brief.contentHash,
+        mediaReference: source.mediaReference,
+        imageContentHash: source.contentHash,
+      },
+      source,
+    );
+  }
   coordinatedPackage(e: CampaignExecution, done: Record<string, unknown>) {
     if (!done.HANDOFF) return null;
     const destination = this.instagram?.configuration?.().accountId;
@@ -931,14 +979,47 @@ export class NativeCampaignWorkflow implements CampaignWorkflow {
       !brief.mediaRefs.includes(source.mediaReference)
     )
       throw new CampaignError('CAMPAIGN_SCENE_MEDIA_MISMATCH');
+    let prepared: OneShotMediaPreparation | undefined;
+    if (
+      source.rights?.evidence?.some(
+        (e) => e.mediaAuthorization?.operationScope !== undefined,
+      )
+    ) {
+      prepared = this.prepareOneShotBinding(e, r);
+      const stored = this.oneShotMediaReader?.(e.execution_id);
+      if (!stored || adaptationHash(stored) !== adaptationHash(prepared))
+        throw new CampaignError('ONE_SHOT_MEDIA_BINDING_REQUIRED');
+    }
+    const authorization =
+      prepared &&
+      verifiedLocalProcessing((scope, image) => {
+        const current = this.oneShotMediaReader?.(e.execution_id);
+        if (
+          !current ||
+          adaptationHash(current) !== adaptationHash(prepared) ||
+          scope.pipelineRunId !== current.identity.pipelineRunId ||
+          scope.scriptId !== String(script.scriptId) ||
+          scope.scriptContentHash !== String(script.contentHash) ||
+          scope.campaignId !== current.identity.campaignId ||
+          adaptationHash(image) !== current.boundDeclarationHash
+        )
+          throw new CampaignError('ONE_SHOT_MEDIA_IDENTITY_CONFLICT');
+        return current.operationScope;
+      });
     return this.local.prepareImage(
       {
         pipelineRunId: e.run_id,
         scriptId: String(script.scriptId),
         scriptContentHash: String(script.contentHash),
         createdAt: e.scheduled_at,
+        ...(authorization
+          ? {
+              processingAuthorization: authorization,
+              campaignId: e.campaign_id,
+            }
+          : {}),
       },
-      source,
+      prepared?.boundSource ?? source,
     );
   }
   private compositionRights(

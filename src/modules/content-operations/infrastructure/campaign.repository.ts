@@ -1,3 +1,12 @@
+import { adaptationHash } from '../../media/domain/media-hash.js';
+import type {
+  OneShotMediaPreparation,
+  OneShotMediaDecision,
+} from '../domain/one-shot-media-binding.js';
+import {
+  prepareOneShotMedia,
+  assertOneShotDecision,
+} from '../domain/one-shot-media-binding.js';
 import type { OperationsSql } from './sqlite-operations.repository.js';
 import { randomUUID } from 'node:crypto';
 import { dailySchedule } from '../domain/campaign-schedule.js';
@@ -1099,6 +1108,154 @@ export class CampaignRepository implements CampaignOperationsStore {
         );
       }.call(this),
     );
+  }
+  private verifyOneShotMedia(prepared: OneShotMediaPreparation) {
+    const e = this.get(prepared.identity.executionId);
+    const b = this.db
+      .prepare('SELECT * FROM affiliate_run_bindings WHERE pipeline_run_id=?')
+      .get(e.run_id);
+    const seed = this.history(e.execution_id)[0]?.evidence;
+    if (
+      !b ||
+      !seed ||
+      seed.selectionMode === 'CATALOG' ||
+      seed.schedule ||
+      seed.fakeExecutionPolicy ||
+      seed.campaignRevision !== e.campaign_revision ||
+      seed.runId !== e.run_id ||
+      !seed.localImage
+    )
+      throw new CampaignError('ONE_SHOT_MEDIA_NATIVE_CONTEXT_REQUIRED');
+    const identity = {
+      executionId: e.execution_id,
+      pipelineRunId: e.run_id,
+      campaignId: e.campaign_id,
+      campaignRevision: e.campaign_revision,
+      productId: String(b.product_id),
+      productRevision: Number(b.product_revision),
+      briefingId: String(b.briefing_id),
+      briefingHash: String(b.briefing_hash),
+      mediaReference: String((seed.localImage as any).mediaReference),
+      imageContentHash: String((seed.localImage as any).contentHash),
+    };
+    if (
+      b.campaign_id !== e.campaign_id ||
+      b.campaign_revision !== e.campaign_revision ||
+      adaptationHash(prepareOneShotMedia(identity, seed.localImage as any)) !==
+        adaptationHash(prepared)
+    )
+      throw new CampaignError('ONE_SHOT_MEDIA_IDENTITY_CONFLICT');
+  }
+  // Optional SQLite capability, deliberately outside the cross-backend method port.
+  readonly oneShotMedia = {
+    get: (id: string) => this.oneShotMediaBinding(id),
+    bind: (
+      prepared: OneShotMediaPreparation,
+      decision: OneShotMediaDecision,
+      actorId: string,
+      now: string,
+    ) => this.bindOneShotMedia(prepared, decision, actorId, now),
+  };
+  private oneShotMediaBinding(
+    id: string,
+  ):
+    | (OneShotMediaPreparation & {
+        decision: OneShotMediaDecision;
+        actorId: string;
+        authorizedAt: string;
+      })
+    | null {
+    // SQLite-only administrative extension, using the existing append-only journal.
+    const row = this.db
+      .prepare(
+        "SELECT evidence_json FROM campaign_execution_events WHERE execution_id=? AND event_type='ONE_SHOT_MEDIA_BOUND' ORDER BY sequence LIMIT 1",
+      )
+      .get(id);
+    if (!row) return null;
+    const record = JSON.parse(String(row.evidence_json));
+    const {
+      decision,
+      actorId: _actor,
+      authorizedAt: _at,
+      ...prepared
+    } = record;
+    this.verifyOneShotMedia(prepared);
+    assertOneShotDecision(decision, prepared);
+    return record;
+  }
+  private bindOneShotMedia(
+    prepared: OneShotMediaPreparation,
+    decision: OneShotMediaDecision,
+    actorId: string,
+    now: string,
+  ) {
+    assertOneShotDecision(decision, prepared);
+    identifier(actorId);
+    return this.tx(() => {
+      this.verifyOneShotMedia(prepared);
+      const e = this.get(prepared.identity.executionId);
+      if (
+        e.run_id !== prepared.identity.pipelineRunId ||
+        e.campaign_id !== prepared.identity.campaignId ||
+        e.campaign_revision !== prepared.identity.campaignRevision
+      )
+        throw new CampaignError('ONE_SHOT_MEDIA_IDENTITY_CONFLICT');
+      const existing = this.oneShotMediaBinding(e.execution_id);
+      if (existing) {
+        if (
+          adaptationHash({ prepared, decision, actorId }) !==
+          adaptationHash({
+            prepared: {
+              identity: existing.identity,
+              declarationHash: existing.declarationHash,
+              scopeHash: existing.scopeHash,
+              operationScope: existing.operationScope,
+              boundSource: existing.boundSource,
+              boundDeclarationHash: existing.boundDeclarationHash,
+            },
+            decision: existing.decision,
+            actorId: existing.actorId,
+          })
+        )
+          throw new CampaignError('ONE_SHOT_MEDIA_BINDING_CONFLICT');
+        return existing;
+      }
+      if (!['SCHEDULED', 'WAITING_INPUT'].includes(e.status))
+        throw new CampaignError('ONE_SHOT_MEDIA_BINDING_STATE_REQUIRED');
+      const seed = this.history(e.execution_id)[0]?.evidence;
+      if (
+        !seed ||
+        seed.selectionMode === 'CATALOG' ||
+        seed.schedule ||
+        seed.fakeExecutionPolicy ||
+        seed.campaignRevision !== e.campaign_revision ||
+        seed.runId !== e.run_id
+      )
+        throw new CampaignError('ONE_SHOT_MEDIA_FIXED_REQUIRED');
+      if (
+        this.db
+          .prepare(
+            "SELECT 1 FROM campaign_execution_events WHERE event_type='ONE_SHOT_MEDIA_BOUND' AND (json_extract(evidence_json,'$.declarationHash')=? OR json_extract(evidence_json,'$.decision.authorizationId')=?)",
+          )
+          .get(prepared.declarationHash, decision.authorizationId)
+      )
+        throw new CampaignError('ONE_SHOT_MEDIA_ALREADY_BOUND');
+      const record = {
+        ...prepared,
+        decision,
+        actorId,
+        authorizedAt: instant(now),
+      };
+      this.event(
+        e.execution_id,
+        'ONE_SHOT_MEDIA_BOUND',
+        e.status,
+        e.status,
+        now,
+        record,
+      );
+      return record;
+    });
   }
   administrativeEvent(
     id: string,
