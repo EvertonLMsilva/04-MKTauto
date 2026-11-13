@@ -5,8 +5,11 @@ import { FirstLinkPreparationService } from './first-link-preparation.js';
 import {
   affiliateHash,
   affiliateIdentifier,
+  AFFILIATE_PRODUCT_V2_VERSION,
+  collectAffiliateProductIssues,
   immutable,
   validateAffiliateProduct,
+  type AffiliateProduct,
 } from '../domain/affiliate-contracts.js';
 import { eligibleCatalogCandidate } from '../domain/affiliate-catalog.js';
 import {
@@ -365,6 +368,107 @@ export class ShopeeProjectLiveAuthorizationService {
       throw new Error('SHOPEE_PROJECT_SNAPSHOT_MISMATCH');
     await this.project(scopeIdentity, report.result.configuration);
     return report.result;
+  }
+  // Preparation from persisted normalized facts only. A partial proposal is not
+  // an AffiliateProduct, a grant or a registration command. In particular, an
+  // image URL and the discovery's provenance never manufacture usage rights.
+  async previewProduct(raw: unknown) {
+    if (
+      !raw ||
+      typeof raw !== 'object' ||
+      Array.isArray(raw) ||
+      Object.keys(raw).sort().join(',') !==
+        'occurrenceId,projectId,projectVersion,snapshotHash' ||
+      !('snapshotHash' in raw) ||
+      typeof raw.snapshotHash !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(raw.snapshotHash)
+    )
+      throw new Error('SHOPEE_PROJECT_PRODUCT_PREPARATION_INPUT_INVALID');
+    const input = immutable(raw as LinkIdentity);
+    const frozen = await this.frozen(input);
+    if (frozen.schemaVersion !== 'shopee-project-discovery-result/1.0.0')
+      throw new Error('SHOPEE_PROJECT_SNAPSHOT_MISMATCH');
+    if (affiliateHash(frozen.identity) !== affiliateHash(identity(input)))
+      throw new Error('SHOPEE_PROJECT_SCOPE_MISMATCH');
+    const preparation = await this.preparation(frozen);
+    const selection = preparation.selection;
+    const offer = selection
+      ? frozen.discovery.offers.find(
+          (o) =>
+            o.productId === selection.productId &&
+            o.shopId === selection.shopId &&
+            o.offerId === selection.offerId,
+        )
+      : undefined;
+    if (selection && !offer)
+      throw new Error('SHOPEE_PROJECT_SNAPSHOT_MISMATCH');
+    const productId = offer ? `shopee_${offer.productId}` : null;
+    // Only an absent initial revision allows proposing revision 1. Existing
+    // products require explicit revision review; never pick an old revision or
+    // increment history implicitly. No rights are copied from an earlier grant.
+    const existing = productId
+      ? await this.affiliate.getProduct(productId, 1)
+      : null;
+    const product: Partial<AffiliateProduct> | null = offer
+      ? {
+          schemaVersion: AFFILIATE_PRODUCT_V2_VERSION,
+          productId: productId!,
+          ...(!existing ? { revision: 1 } : {}),
+          name: offer.name!,
+          attributes: [],
+          media: [],
+          evidence: [],
+        }
+      : null;
+    const productIssues = product ? collectAffiliateProductIssues(product) : [];
+    const body = {
+      schemaVersion: 'shopee-project-product-preparation/1.0.0' as const,
+      identity: frozen.identity,
+      snapshotHash: frozen.snapshotHash,
+      configurationHash: affiliateHash(frozen.configuration),
+      recordedAt: frozen.recordedAt,
+      selection:
+        selection && offer
+          ? { ...selection, provenance: offer.provenance }
+          : null,
+      // Keep original URLs, nullable facts, estimates and observation provenance;
+      // the compatibility projection used by selection is not a new observation.
+      offer: offer ?? null,
+      productDraft: product ? { product } : null,
+      productIssues,
+      revisionStatus: !offer
+        ? ('NOT_EVALUATED' as const)
+        : existing
+          ? ('EXISTING_PRODUCT_REVIEW_REQUIRED' as const)
+          : ('INITIAL_REVISION_PROPOSED' as const),
+      unknownFields: [
+        'brand',
+        'attributes',
+        'rights',
+        'processingPermission',
+        'realizedCommission',
+        ...(offer?.description == null ? ['description'] : []),
+        ...(offer?.availability == null ? ['availability'] : []),
+        ...(offer?.price.currency == null ? ['currency'] : []),
+      ],
+      pending: [
+        ...(!offer ? ['NO_FILTER_ELIGIBLE_CANONICAL_CANDIDATE'] : []),
+        ...(productIssues.length ? ['PRODUCT_CONTRACT_INCOMPLETE'] : []),
+        ...(existing ? ['PRODUCT_REVISION_REVIEW_REQUIRED'] : []),
+        'LOCAL_IMAGE_REQUIRED',
+        'REUSABLE_MEDIA_RIGHTS_REQUIRED',
+        'COMMERCIAL_APPROVAL_REQUIRED',
+        'RETURNED_LINK_ASSOCIATION_EVIDENCE_REQUIRED',
+      ],
+      rightsStatus: 'NOT_VERIFIED' as const,
+      mediaStatus: 'LOCAL_IMAGE_REQUIRED' as const,
+      associationVerified: false as const,
+      status: 'BLOCKED' as const,
+      finalPayload: null,
+      registrationAuthorized: false as const,
+      publicationAuthorized: false as const,
+    };
+    return immutable({ ...body, previewHash: affiliateHash(body) });
   }
   private async preparation(
     frozen: FrozenDiscovery,

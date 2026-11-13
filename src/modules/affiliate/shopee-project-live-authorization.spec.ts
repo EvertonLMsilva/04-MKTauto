@@ -21,6 +21,7 @@ import {
 } from './application/shopee-project-live-authorization.service.js';
 import {
   affiliateHash,
+  collectAffiliateProductIssues,
   type AffiliateProduct,
 } from './domain/affiliate-contracts.js';
 import {
@@ -906,3 +907,358 @@ test.each(['maxLinks', 'maxOfferPages', 'associationVerified', 'periodic'])(
     ).toThrow();
   },
 );
+
+describe('read-only product proposal from a frozen discovery', () => {
+  let before: ReturnType<typeof persistedState> | undefined;
+  let assertNoWrites = () => {};
+  function persistedState() {
+    return {
+      bytes: readFileSync(database),
+      tables: projects.db
+        .prepare(
+          "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
+        )
+        .all()
+        .map((row) => ({
+          name: row.name,
+          rows: projects.db
+            .prepare(
+              `SELECT * FROM "${String(row.name).replaceAll('"', '""')}"`,
+            )
+            .all(),
+        })),
+    };
+  }
+  async function frozenInput(
+    transform?: (
+      snapshot: Awaited<ReturnType<typeof discover>>,
+    ) => Awaited<ReturnType<typeof discover>>,
+  ) {
+    let frozen = await discover(); // Previously frozen fixture; injected transport only.
+    if (transform) {
+      frozen = transform(structuredClone(frozen));
+      const { snapshotHash: _old, ...body } = frozen;
+      frozen = { ...body, snapshotHash: affiliateHash(body) };
+      journal.put(
+        'PROJECT_DISCOVERY',
+        affiliateHash(frozen.identity),
+        'RESULT',
+        frozen,
+      );
+    }
+    service = new ShopeeProjectLiveAuthorizationService(
+      catalog,
+      affiliate,
+      journal,
+      { get: async (id, version) => projects.get(id, version) },
+    );
+    fetchDouble.mockClear();
+    financialEvidence.mockClear();
+    fetchDouble.mockRejectedValue(Error('PREPARATION_HTTP_FORBIDDEN'));
+    financialEvidence.mockRejectedValue(Error('PREPARATION_FINANCE_FORBIDDEN'));
+    const writes = [
+      vi.spyOn(journal, 'put').mockImplementation(() => {
+        throw Error('PREPARATION_WRITE_FORBIDDEN');
+      }),
+      vi.spyOn(journal, 'initialize').mockImplementation(() => {
+        throw Error('PREPARATION_WRITE_FORBIDDEN');
+      }),
+      vi.spyOn(journal, 'claimLink').mockImplementation(() => {
+        throw Error('PREPARATION_WRITE_FORBIDDEN');
+      }),
+      vi
+        .spyOn(affiliate, 'registerProduct')
+        .mockRejectedValue(Error('PREPARATION_WRITE_FORBIDDEN')),
+      vi
+        .spyOn(affiliate, 'prepareShopeeCatalog')
+        .mockRejectedValue(Error('PREPARATION_WRITE_FORBIDDEN')),
+    ];
+    assertNoWrites = () => {
+      for (const write of writes) expect(write).not.toHaveBeenCalled();
+    };
+    before = persistedState();
+    return {
+      frozen,
+      input: { ...frozen.identity, snapshotHash: frozen.snapshotHash },
+    };
+  }
+  beforeEach(() => {
+    before = undefined;
+  });
+  afterEach(() => {
+    if (!before) return;
+    expect(persistedState()).toEqual(before);
+    expect(fetchDouble).not.toHaveBeenCalled();
+    expect(financialEvidence).not.toHaveBeenCalled();
+    assertNoWrites();
+  });
+
+  test('projects the selected normalized facts without manufacturing a valid product, evidence or permission', async () => {
+    const { frozen, input } = await frozenInput(),
+      original = structuredClone(input);
+    const result = await service.previewProduct(input),
+      offer = frozen.discovery.offers.find((o) => o.productId === productId)!;
+    expect(result).toMatchObject({
+      schemaVersion: 'shopee-project-product-preparation/1.0.0',
+      identity: identity(),
+      snapshotHash: frozen.snapshotHash,
+      configurationHash: affiliateHash(frozen.configuration),
+      status: 'BLOCKED',
+      finalPayload: null,
+      registrationAuthorized: false,
+      publicationAuthorized: false,
+      associationVerified: false,
+      rightsStatus: 'NOT_VERIFIED',
+      mediaStatus: 'LOCAL_IMAGE_REQUIRED',
+      revisionStatus: 'INITIAL_REVISION_PROPOSED',
+    });
+    expect(result.offer).toEqual(offer);
+    expect(result.recordedAt).toBe(frozen.recordedAt);
+    expect(result.productDraft?.product).toEqual({
+      schemaVersion: 'affiliate-product/2.0.0',
+      productId: `shopee_${productId}`,
+      revision: 1,
+      name: offer.name,
+      attributes: [],
+      media: [],
+      evidence: [],
+    });
+    expect(result.productDraft?.product).not.toHaveProperty('brand');
+    expect(result.productDraft?.product).not.toHaveProperty('localImage');
+    expect(result.productIssues).toEqual(
+      collectAffiliateProductIssues(result.productDraft?.product),
+    );
+    expect(result.productIssues.length).toBeGreaterThan(0);
+    expect(result.pending).toEqual(
+      expect.arrayContaining([
+        'PRODUCT_CONTRACT_INCOMPLETE',
+        'LOCAL_IMAGE_REQUIRED',
+        'REUSABLE_MEDIA_RIGHTS_REQUIRED',
+        'COMMERCIAL_APPROVAL_REQUIRED',
+        'RETURNED_LINK_ASSOCIATION_EVIDENCE_REQUIRED',
+      ]),
+    );
+    const { previewHash, ...body } = result;
+    expect(previewHash).toBe(affiliateHash(body));
+    expect(input).toEqual(original);
+    expect(Object.isFrozen(result.productDraft?.product)).toBe(true);
+  });
+  test('same snapshot replays after restart without Finance or transport and without modifying source records', async () => {
+    const { input, frozen } = await frozenInput(),
+      result = await service.previewProduct(input);
+    expect(await service.previewProduct(input)).toEqual(result);
+    expect(await restart(false).previewProduct(input)).toEqual(result);
+    expect(await service.inspectDiscovery(identity())).toEqual({
+      status: 'FROZEN',
+      result: frozen,
+    });
+    expect(result.unknownFields).toEqual(
+      expect.arrayContaining([
+        'brand',
+        'attributes',
+        'description',
+        'availability',
+        'currency',
+      ]),
+    );
+    expect(result.offer?.description).toBeNull();
+    expect(result.offer?.availability).toBeNull();
+    expect(result.offer?.price.currency).toBeNull();
+  });
+  test.each([
+    'projectId',
+    'projectVersion',
+    'occurrenceId',
+    'snapshotHash',
+  ] as const)('rejects mismatched %s', async (field) => {
+    const { input } = await frozenInput();
+    const changed = {
+      ...input,
+      [field]:
+        field === 'projectVersion'
+          ? 2
+          : field === 'snapshotHash'
+            ? '0'.repeat(64)
+            : 'other_identity',
+    };
+    await expect(service.previewProduct(changed)).rejects.toThrow(
+      'SHOPEE_PROJECT_SNAPSHOT_MISMATCH',
+    );
+  });
+  test('rejects a changed current project context even for a previously correct snapshot', async () => {
+    const { input } = await frozenInput();
+    const changed = new ShopeeProjectLiveAuthorizationService(
+      catalog,
+      affiliate,
+      journal,
+      {
+        get: async () => ({
+          ...projects.get(projectId)!,
+          project: { ...projects.get(projectId)!.project, version: 2 },
+        }),
+      },
+    );
+    await expect(changed.previewProduct(input)).rejects.toThrow(
+      'SHOPEE_PROJECT_SCOPE_MISMATCH',
+    );
+  });
+  test.each(['response', 'product', 'authorization', 'candidate', 'actorId'])(
+    'does not accept caller-supplied %s',
+    async (field) => {
+      const { input } = await frozenInput();
+      await expect(
+        service.previewProduct({ ...input, [field]: { untrusted: true } }),
+      ).rejects.toThrow('SHOPEE_PROJECT_PRODUCT_PREPARATION_INPUT_INVALID');
+    },
+  );
+  test.each(
+    [null, {}, [], { ...identity(), snapshotHash: 'bad_hash' }].map(
+      (input) => ({ input }),
+    ),
+  )('rejects invalid input $input', async ({ input }) => {
+    await frozenInput();
+    await expect(service.previewProduct(input)).rejects.toThrow(
+      'SHOPEE_PROJECT_PRODUCT_PREPARATION_INPUT_INVALID',
+    );
+  });
+  test('missing frozen result never triggers discovery or a write', async () => {
+    const { input } = await frozenInput();
+    vi.spyOn(journal, 'get').mockReturnValue(null);
+    await expect(service.previewProduct(input)).rejects.toThrow(
+      'SHOPEE_PROJECT_SNAPSHOT_MISMATCH',
+    );
+  });
+  test('detects a corrupted persisted snapshot instead of preparing from it', async () => {
+    const { input, frozen } = await frozenInput();
+    vi.spyOn(journal, 'get').mockReturnValue({
+      ...frozen,
+      recordedAt: '2026-11-13T10:00:00Z',
+    });
+    await expect(service.previewProduct(input)).rejects.toThrow(
+      'SHOPEE_PROJECT_SNAPSHOT_MISMATCH',
+    );
+  });
+  test('rejects an unsupported frozen schema even when its content hash is consistent', async () => {
+    const { input, frozen } = await frozenInput();
+    const { snapshotHash: _old, ...original } = frozen;
+    const body = { ...original, schemaVersion: 'unsupported/2.0.0' };
+    const substituted = { ...body, snapshotHash: affiliateHash(body) };
+    vi.spyOn(journal, 'get').mockReturnValue(substituted);
+    await expect(
+      service.previewProduct({
+        ...input,
+        snapshotHash: substituted.snapshotHash,
+      }),
+    ).rejects.toThrow('SHOPEE_PROJECT_SNAPSHOT_MISMATCH');
+  });
+  test('checks identity inside the frozen result as well as its lookup key and content hash', async () => {
+    const { input, frozen } = await frozenInput();
+    const { snapshotHash: _old, ...original } = frozen;
+    const body = {
+      ...original,
+      identity: { ...identity(), occurrenceId: 'wrong_occurrence' },
+    };
+    const substituted = { ...body, snapshotHash: affiliateHash(body) };
+    vi.spyOn(journal, 'get').mockReturnValue(substituted);
+    await expect(
+      service.previewProduct({
+        ...input,
+        snapshotHash: substituted.snapshotHash,
+      }),
+    ).rejects.toThrow('SHOPEE_PROJECT_SCOPE_MISMATCH');
+  });
+  test.each(['empty', 'missingImageUrl', 'missingName', 'wrongOrigin'])(
+    'insufficient or ineligible offer %s does not fabricate a product',
+    async (kind) => {
+      response.data.productOfferV2.nodes = [node()];
+      if (kind === 'empty') response.data.productOfferV2.nodes = [];
+      if (kind === 'missingImageUrl')
+        Object.assign(response.data.productOfferV2.nodes[0], {
+          imageUrl: null,
+        });
+      if (kind === 'missingName')
+        Object.assign(response.data.productOfferV2.nodes[0], {
+          productName: null,
+        });
+      if (kind === 'wrongOrigin')
+        Object.assign(response.data.productOfferV2.nodes[0], {
+          productLink: `https://shopee.com.br/product/${shopId}/999`,
+        });
+      const { input } = await frozenInput(),
+        result = await service.previewProduct(input);
+      expect(result.productDraft).toBeNull();
+      expect(result.selection).toBeNull();
+      expect(result.pending).toContain(
+        'NO_FILTER_ELIGIBLE_CANONICAL_CANDIDATE',
+      );
+      expect(result.finalPayload).toBeNull();
+    },
+  );
+  test.each(['same', 'different', 'archived', 'newer'])(
+    'persisted %s product requires revision review, never overwrite or silent increment',
+    async (kind) => {
+      const product = commercialEvidence().product;
+      if (kind === 'different')
+        product.name = 'FICTITIOUS_TEST_ONLY other name';
+      if (kind === 'archived') product.status = 'ARCHIVED';
+      await affiliate.registerProduct({
+        idempotencyKey: 'existing_020',
+        product,
+      });
+      if (kind === 'newer')
+        await affiliate.registerProduct({
+          idempotencyKey: 'existing_020_v2',
+          product: { ...product, revision: 2 },
+        });
+      const { input } = await frozenInput(),
+        result = await service.previewProduct(input);
+      expect(result.revisionStatus).toBe('EXISTING_PRODUCT_REVIEW_REQUIRED');
+      expect(result.productDraft?.product).not.toHaveProperty('revision');
+      expect(result.pending).toContain('PRODUCT_REVISION_REVIEW_REQUIRED');
+      expect(result.finalPayload).toBeNull();
+      expect(result.productDraft?.product.evidence).toEqual([]);
+      expect(result.productDraft?.product.media).toEqual([]);
+    },
+  );
+  test('snapshot identity changes its proposal hash while preserving the external product identity', async () => {
+    const { input, frozen } = await frozenInput((snapshot) => ({
+      ...snapshot,
+      identity: { ...identity(), occurrenceId: 'occurrence_020' },
+    }));
+    const changed = await service.previewProduct(input),
+      previous = await service.previewProduct({
+        ...identity(),
+        snapshotHash: (await service.inspectDiscovery(identity())).result!
+          .snapshotHash,
+      });
+    expect(changed.previewHash).not.toBe(previous.previewHash);
+    expect(changed.snapshotHash).toBe(frozen.snapshotHash);
+    expect(changed.productDraft?.product.productId).toBe(
+      previous.productDraft?.product.productId,
+    );
+  });
+  test('provenance and unknown monetary values survive projection without becoming product attributes', async () => {
+    const { input, frozen } = await frozenInput((snapshot) => {
+      snapshot.identity.occurrenceId = 'occurrence_unknown';
+      for (const offer of snapshot.discovery.offers) {
+        offer.provenance = {
+          source: 'FAKE',
+          fixtureVersion: 'test-only-020',
+          observedAt: null,
+        };
+        offer.price.currency = null;
+      }
+      return snapshot;
+    });
+    const result = await service.previewProduct(input);
+    expect(result.offer?.provenance).toEqual(
+      frozen.discovery.offers.find((o) => o.productId === productId)!
+        .provenance,
+    );
+    expect(result.offer?.price.currency).toBeNull();
+    expect(result.selection?.provenance).toEqual(result.offer?.provenance);
+    expect(result.productDraft?.product.attributes).toEqual([]);
+    expect(result.registrationAuthorized).toBe(false);
+    expect(result.publicationAuthorized).toBe(false);
+  });
+});
