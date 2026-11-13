@@ -238,6 +238,29 @@ beforeEach(async () => {
   );
   service = compositionService(unscopedService);
 });
+
+test('consumes an item-only query through the existing dynamic preparation with controlled responses', async () => {
+  config.queries = [{ itemId: '11', limit: 1 }];
+  await service.configure(config);
+  const result = await service.runCycle(config.projectId, 'exact_item_fixture');
+  expect(result.decisions[0]).toMatchObject({ productId: '11', status: 'PREPARED' });
+  const payload = JSON.parse(fetchMock.mock.calls[0][1].body as string);
+  expect(payload.query).toContain('productOfferV2(itemId: 11,');
+  expect(await affiliate.getProduct('shopee_11', 1)).not.toBeNull();
+  expect(await affiliate.getProduct('shopee_11', 2)).toBeNull();
+});
+
+test('exact lookup does not replace missing documentary product authorization', async () => {
+  config.queries = [{ itemId: '11', limit: 1 }];
+  config.authorizations = [];
+  await service.configure(config);
+  const result = await service.runCycle(config.projectId, 'exact_item_without_rights');
+  expect(result.decisions[0]).toMatchObject({
+    productId: '11', status: 'WAITING', reasons: ['PRODUCT_AUTHORIZATION_REQUIRED'],
+  });
+  expect(await affiliate.getProduct('shopee_11', 1)).toBeNull();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+});
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

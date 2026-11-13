@@ -61,6 +61,8 @@ export interface ShopeeAffiliateOfferDetails extends ShopeeAffiliateOffer {
 }
 
 export interface ShopeeOfferQuery {
+  // Positive canonical Int64 decimal text; never pass a JavaScript Number.
+  itemId?: string;
   page?: number;
   limit?: number;
   keyword?: string;
