@@ -1,3 +1,6 @@
+import { AffiliateProviderService } from './application/affiliate-provider.service.js';
+import { AFFILIATE_PROVIDER_ADAPTERS } from './application/ports/affiliate-provider.port.js';
+import { shopeeAffiliateAdapterProvider } from './infrastructure/shopee-affiliate.adapter.js';
 import {
   type DynamicModule,
   type ExecutionContext,
@@ -72,6 +75,8 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     DiscoveryController,
   ],
   exports: [
+    AffiliateProviderService,
+    AFFILIATE_PROVIDER_ADAPTERS,
     ShopeeDynamicService,
     ShopeeCatalogService,
     SHOPEE_AFFILIATE,
@@ -81,6 +86,8 @@ import { SqliteAffiliateRunContextPersistence } from './infrastructure/sqlite-af
     AffiliateDiscoveryService,
   ],
   providers: [
+    AffiliateProviderService,
+    shopeeAffiliateAdapterProvider,
     AffiliateReviewRegistrationService,
     ShopeeCatalogCommit,
     ShopeeDynamicJournal,
