@@ -101,6 +101,10 @@ describe('Finance replay, evidence and storage safety', () => {
           async () => ({ mock: true }),
           date,
         );
+        ts.settleGlobal(`op_${day}`, {
+          actualCostUsd: '1',
+          evidenceReference: `fixture:receipt_${day}`,
+        });
       }
       expect(() =>
         ts.reserveGlobal(

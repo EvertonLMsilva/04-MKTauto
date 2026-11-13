@@ -187,28 +187,24 @@ export class FinanceGate {
       let evidence: string | null = row.billing_reference;
       let recorded: bigint | null = row.actual_usd === null ? null : actual;
       const maximum = usdUnits(row.maximum_usd);
-      for (const telemetry of this.attribution.costEvents(
-        row.provider,
-        JSON.parse(row.proof_json).bodyHash ?? row.request_hash,
-        JSON.parse(row.proof_json).telemetryOccurredAt ?? null,
-      )) {
-        const cost = this.repository.getCostEvent(telemetry.cost_event_id);
-        if (cost?.currency === 'USD') {
-          const amount = usdUnits(cost.amount);
-          if (amount > actual) actual = amount;
-          if (recorded === null || amount > recorded) {
-            recorded = amount;
-            evidence = `cost-event:${cost.costEventId}`;
-          }
-          accounted.add(cost.costEventId);
-        }
+      const observed = this.observedGlobalCosts(row);
+      if (observed.amount > actual) actual = observed.amount;
+      if (
+        observed.costEventIds.length &&
+        (recorded === null || observed.amount > recorded)
+      ) {
+        recorded = observed.amount;
+        evidence = `cost-event:${observed.costEventIds.at(-1)}`;
       }
+      for (const id of observed.costEventIds) accounted.add(id);
+      const billingPending = observed.billingPending;
       const settled = this.settledFirstFal(row, JSON.parse(row.proof_json));
       if (settled) for (const id of settled) accounted.add(id);
       add(
         row.created_at,
         settled ? actual : actual > maximum ? actual : maximum,
-        ['RESERVED', 'SUBMITTING', 'UNKNOWN'].includes(row.state),
+        ['RESERVED', 'SUBMITTING', 'UNKNOWN'].includes(row.state) ||
+          billingPending,
         recorded ?? 0n,
         {
           source: 'GLOBAL',
@@ -219,7 +215,7 @@ export class FinanceGate {
           evidenceReference: evidence,
           reconciliationRequired:
             ['SUBMITTING', 'UNKNOWN'].includes(row.state) ||
-            (row.state !== 'RESERVED' && (recorded === null || !evidence)),
+            (row.state !== 'RESERVED' && billingPending),
         },
       );
       if (actual > maximum) ceilingBreach();
@@ -446,6 +442,31 @@ export class FinanceGate {
       ? settlement.costEventIds
       : null;
   }
+  private observedGlobalCosts(row: any) {
+    const proof = JSON.parse(row.proof_json);
+    const ids = new Set<string>();
+    let amount = 0n;
+    for (const telemetry of this.attribution.costEvents(
+      row.provider,
+      proof.bodyHash ?? row.request_hash,
+      proof.telemetryOccurredAt ?? null,
+    )) {
+      if (ids.has(telemetry.cost_event_id)) continue;
+      const cost = this.repository.getCostEvent(telemetry.cost_event_id);
+      if (cost?.currency === 'USD') {
+        ids.add(cost.costEventId);
+        amount += usdUnits(cost.amount);
+      }
+    }
+    return {
+      amount,
+      costEventIds: [...ids],
+      billingPending:
+        row.actual_usd === null ||
+        !row.billing_reference ||
+        (ids.size > 0 && amount !== usdUnits(row.actual_usd)),
+    };
+  }
   assertGlobalAvailable(amount: unknown, now: string): GlobalUsage {
     const usage = this.#globalUsage(now),
       addition = usdUnits(amount);
@@ -578,7 +599,7 @@ export class FinanceGate {
         .get(id);
       if (op?.state !== 'RESERVED')
         fail('GLOBAL_OPERATION_RECONCILIATION_REQUIRED', 'operationId');
-      const at = now ?? op.created_at;
+      const at = now ?? new Date().toISOString();
       const proof = JSON.parse(op.proof_json);
       if (proof.kind === 'MANUAL_TTS_RESERVATION')
         fail('TTS_FINANCIAL_GUARANTEE_REQUIRED', 'ceiling');
@@ -781,22 +802,17 @@ export class FinanceGate {
           continue;
         let actual = usdUnits(row.actual_usd ?? '0');
         const reserved = usdUnits(row.maximum_usd);
-        for (const telemetry of this.attribution.costEvents(
-          row.provider,
-          proof.bodyHash ?? row.request_hash,
-          proof.telemetryOccurredAt ?? null,
-        )) {
-          const cost = this.repository.getCostEvent(telemetry.cost_event_id);
-          if (cost?.currency === 'USD') {
-            const value = usdUnits(cost.amount);
-            if (value > actual) actual = value;
-            accountedCostIds.add(cost.costEventId);
-          }
-        }
+        const observed = this.observedGlobalCosts(row);
+        if (observed.amount > actual) actual = observed.amount;
+        for (const id of observed.costEventIds) accountedCostIds.add(id);
         const settled = this.settledFirstFal(row, proof);
         if (settled) for (const id of settled) accountedCostIds.add(id);
         total += settled ? actual : actual > reserved ? actual : reserved;
-        if (['SUBMITTING', 'UNKNOWN'].includes(row.state)) hasUnknown = true;
+        if (
+          ['SUBMITTING', 'UNKNOWN'].includes(row.state) ||
+          (row.state === 'COMPLETED' && observed.billingPending)
+        )
+          hasUnknown = true;
         if (actual > reserved) hasCeilingBreach = true;
       }
     if (this.tts.exists()) {
