@@ -88,7 +88,9 @@ def script_tokens(text, vocab, text_policy='strict/1'):
     for match in re.finditer(r'\S+', text):
         surface = unicodedata.normalize('NFC', match[0])
         if text_policy == 'pt-br-written/1':
-            if surface == '·' and words:
+            # Display-only disclosure separators stay in the prior cue's exact
+            # text span; they are not phonemes or additional timed words.
+            if surface in ('·', '|') and words:
                 a, _, first, last = words[-1]
                 words[-1] = (a, match.end(), first, last)
                 continue
