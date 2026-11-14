@@ -80,6 +80,17 @@ export type PiperPresentation = {
 };
 const blockedModel =
   'de4cecee38b30bb1a6378a337af605d59f0c377df702c6a6752870db8991cd84';
+const PIPER_SPOKEN_TEXT_POLICY = 'display-separators-to-pauses/1';
+function piperConfigurationHash(manifestHash: string) {
+  return digest(
+    Buffer.from(
+      JSON.stringify({
+        manifestSha256: manifestHash,
+        spokenTextPolicy: PIPER_SPOKEN_TEXT_POLICY,
+      }),
+    ),
+  );
+}
 export type LocalSpeechEvidence = {
   schemaVersion: 'local-tts-evidence/1';
   configurationHash: string;
@@ -147,7 +158,10 @@ export class LocalPiperTts {
       if (expectedHash !== undefined) {
         if (!/^[a-f0-9]{64}$/.test(expectedHash))
           localFail('LOCAL_TTS_LICENSE_REQUIRED');
-        if (expectedHash !== manifestHash) {
+        if (
+          expectedHash !== manifestHash &&
+          expectedHash !== piperConfigurationHash(manifestHash)
+        ) {
           // Explicit original manifests only; the persisted synthesis hash pins
           // their exact bytes. All original dependencies are verified below.
           const history: unknown = JSON.parse(
@@ -157,17 +171,23 @@ export class LocalPiperTts {
             !history ||
             typeof history !== 'object' ||
             Array.isArray(history) ||
-            Object.keys(history).length > 32 ||
-            !Object.hasOwn(history, expectedHash)
+            Object.keys(history).length > 32
           )
             localFail('LOCAL_TTS_LICENSE_REQUIRED');
+          const matches = Object.keys(history).filter(
+            (hash) =>
+              /^[a-f0-9]{64}$/.test(hash) &&
+              (hash === expectedHash ||
+                piperConfigurationHash(hash) === expectedHash),
+          );
+          if (matches.length !== 1) localFail('LOCAL_TTS_LICENSE_REQUIRED');
           const original: unknown = (history as Record<string, unknown>)[
-            expectedHash
+            matches[0]
           ];
           if (typeof original !== 'string' || !isAbsolute(original))
             localFail('LOCAL_TTS_LICENSE_REQUIRED');
           manifestPath = original;
-          manifestHash = expectedHash;
+          manifestHash = matches[0];
         }
       }
       const bytes = this.file(manifestPath, manifestHash, 65536);
@@ -177,7 +197,7 @@ export class LocalPiperTts {
       let historicalFiles: Record<string, string> | undefined;
       if (
         expectedHash !== undefined &&
-        expectedHash !== this.env.LOCAL_TTS_MANIFEST_SHA256 &&
+        manifestHash !== this.env.LOCAL_TTS_MANIFEST_SHA256 &&
         this.env.LOCAL_TTS_HISTORICAL_FILES
       ) {
         const locations: unknown = JSON.parse(
@@ -388,11 +408,23 @@ export class LocalPiperTts {
         localFail('LOCAL_TTS_LICENSE_REQUIRED');
       readPinned(m.executablePath, m.executableSha256, 536870912, !inspectOnly);
       readPinned(m.licenseEvidencePath, m.licenseEvidenceSha256, 1048576);
+      // Old receipts retain their exact manifest identity. New Piper synthesis
+      // pins the spoken-text policy too, without changing approved resource pins.
+      const spokenTextPolicy =
+        m.engine === 'piper' && expectedHash !== manifestHash;
+      const configurationHash = spokenTextPolicy
+        ? piperConfigurationHash(manifestHash)
+        : manifestHash;
+      if (expectedHash !== undefined && expectedHash !== configurationHash)
+        localFail('LOCAL_TTS_LICENSE_REQUIRED');
       return {
         ...m,
         nativeVoice: metadata.espeak?.voice ?? metadata.voice,
         nativeRate: metadata.espeak?.rate ?? 150,
-        configurationHash: digest(bytes),
+        configurationHash,
+        ...(spokenTextPolicy
+          ? { spokenTextPolicy: PIPER_SPOKEN_TEXT_POLICY }
+          : {}),
       };
     } catch (error) {
       if (
@@ -468,6 +500,12 @@ export class LocalPiperTts {
       m.engine === 'kokoro'
         ? adaptKokoroNarration(original, durationMs)
         : adaptLocalNarration(original, durationMs);
+    // Canonical evidence/captions keep their exact text and offsets. Piper alone
+    // receives pauses for standalone display separators, never added spoken words.
+    const spokenNarration =
+      m.engine === 'piper' && m.spokenTextPolicy === PIPER_SPOKEN_TEXT_POLICY
+        ? narration.replace(/(?<=\S)\s+[·|](?=\s|$)/gu, ',')
+        : narration;
     const root = await mkdtemp(join(tmpdir(), 'mktauto-local-tts-'));
     const raw = join(root, 'raw.wav'),
       speech = join(root, 'speech.wav'),
@@ -516,7 +554,7 @@ export class LocalPiperTts {
                     ]
                   : []),
               ],
-        { ...options, outputPath: raw, stdin: narration + '\n' },
+        { ...options, outputPath: raw, stdin: spokenNarration + '\n' },
       );
       await this.runner(
         this.env.FFMPEG_PATH!,

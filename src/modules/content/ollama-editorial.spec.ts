@@ -15,6 +15,112 @@ const input: any = {
   projectSnapshot: { channel: { minDurationSeconds: 10 } },
 };
 
+function kitInput(total = 14) {
+  const counts = total === 14 ? [4, 4, 4, 2] : [2, 2, 2, 1];
+  return {
+    ...input,
+    shortlist: null,
+    projectSnapshot: { channel: { minDurationSeconds: 20 } },
+    briefing: {
+      ...input.briefing,
+      productName: `Kit ${total} Organizadores Multiuso`,
+      disclosure: 'Publicidade · Cena ilustrativa · Link de afiliado',
+      cta: 'Confira os detalhes no link de afiliado!',
+      attributes: [
+        { name: 'variante_piloto', value: `KIT_${total}`, evidenceRef: 'spec' },
+        { name: 'quantidade_total', value: String(total), evidenceRef: 'spec' },
+        {
+          name: `composicao_kit${total}`,
+          value: `${counts[0]} x 7,5x7,5x5 cm; ${counts[1]} x 15x7,5x5 cm; ${counts[2]} x 23x7,5x5 cm; ${counts[3]} x 23x14,5x5 cm`,
+          evidenceRef: 'spec',
+        },
+      ],
+    },
+  };
+}
+function kitProvider(indexes: number[]) {
+  return new OllamaEditorialProvider(
+    'gemma3:4b',
+    async () =>
+      new Response(
+        JSON.stringify({
+          done: true,
+          response: JSON.stringify({ hookIndex: 0, attributeIndexes: indexes }),
+        }),
+      ),
+  );
+}
+it.each([{ indexes: [0, 1, 2] }, { indexes: [] }])(
+  'renders documented Kit14 counts with selector $indexes, without unsupported filler',
+  async ({ indexes }) => {
+    const source = kitInput();
+    const result = await kitProvider(indexes).script(source);
+    const text = [
+      result.hook,
+      ...result.narrativeBlocks.map((b) => b.narration),
+      result.cta,
+    ].join(' ');
+    expect(text).toContain('14 peças');
+    expect(text).toMatch(/4, 4, 4 e duas peças/);
+    expect(text).toContain(source.briefing.disclosure);
+    expect(result.cta).toBe(source.briefing.cta);
+    expect(text.split(/\s+/).length).toBeGreaterThanOrEqual(36);
+    expect(text.split(/\s+/).length).toBeLessThanOrEqual(50);
+    expect(text).not.toMatch(
+      /variante_piloto|composicao_kit|plástico|acrílico|resistente|durável|R\$|estoque/iu,
+    );
+    expect(result.visualDirections).toHaveLength(1);
+    expect(result.sensitiveClaims).toEqual([]);
+    expect(kitProvider([]).configurationVersion).toMatch(
+      /^ollama-grounded\/3:/,
+    );
+  },
+);
+it('renders another documented kit without campaign-specific quantities or identity', async () => {
+  const result = await kitProvider([0, 1, 2]).script(kitInput(7));
+  const text = result.narrativeBlocks[0].narration;
+  expect(text).toContain('7 peças');
+  expect(text).toMatch(/duas, duas, duas e uma peça/);
+  expect(text).not.toContain('14');
+});
+it.each(['mismatched count', 'wrong variant', 'invalid dimensions'])(
+  'rejects %s rather than inventing or silently dropping the kit facts',
+  async (condition) => {
+    const source = kitInput();
+    if (condition === 'mismatched count')
+      source.briefing.attributes[1].value = '15';
+    if (condition === 'wrong variant')
+      source.briefing.attributes[0].value = 'KIT_7';
+    if (condition === 'invalid dimensions')
+      source.briefing.attributes[2].value = '4 x -7,5x7,5x5 cm';
+    await expect(kitProvider([0, 1, 2]).script(source)).rejects.toThrow(
+      'OLLAMA_PRODUCT_EVIDENCE_REQUIRED',
+    );
+  },
+);
+
+it('preserves unrelated free-form variant/quantity fields as unknown, without inventing unit claims', async () => {
+  const source = {
+    ...input,
+    briefing: {
+      ...input.briefing,
+      attributes: [
+        { name: 'variante_piloto', value: 'AZUL', evidenceRef: 'spec' },
+        { name: 'quantidade_total', value: 'um par', evidenceRef: 'spec' },
+      ],
+    },
+  };
+  const result = await kitProvider([0, 1]).script(source);
+  expect(result.narrativeBlocks[0].narration).toBe('Publicidade.');
+});
+it('fails closed when the configured duration cannot fit required documented kit facts', async () => {
+  const source = kitInput();
+  source.projectSnapshot.channel.minDurationSeconds = 12;
+  await expect(kitProvider([]).script(source)).rejects.toThrow(
+    'NARRATION_DURATION_REQUIRED',
+  );
+});
+
 async function localServer(handler: RequestListener) {
   const server = createServer(handler);
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
