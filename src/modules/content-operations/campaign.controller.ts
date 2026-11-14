@@ -14,6 +14,8 @@ import {
   HttpException,
 } from '@nestjs/common';
 import { CampaignAdministration } from './application/campaign-administration.js';
+import type { OneShotMediaDecision } from './domain/one-shot-media-binding.js';
+import { QcIdentityError } from '../publishing/application/local-qc-identity.js';
 @Controller('content-operations/campaign-executions')
 export class CampaignController {
   constructor(
@@ -24,13 +26,15 @@ export class CampaignController {
     try {
       return await action();
     } catch (error) {
+      if (error instanceof QcIdentityError)
+        throw new HttpException({ code: error.code }, error.status);
       const code =
         error && typeof error === 'object' && 'code' in error
           ? String(error.code)
           : 'CAMPAIGN_OPERATION_FAILED';
       const status = code.endsWith('NOT_FOUND')
         ? 404
-        : /CONFLICT|AMBIGUOUS|SCOPE_MISMATCH|CLAIM_LOST|TERMINAL|RECONCILIATION_REQUIRED|NOT_RECOVERABLE/.test(
+        : /CONFLICT|ALREADY_BOUND|AMBIGUOUS|SCOPE_MISMATCH|CLAIM_LOST|TERMINAL|RECONCILIATION_REQUIRED|NOT_RECOVERABLE/.test(
               code,
             )
           ? 409
@@ -59,6 +63,26 @@ export class CampaignController {
   }
   @Get(':id/history') history(@Param('id') id: string) {
     return this.respond(() => this.campaigns.history(id));
+  }
+  @Get(':id/one-shot-media-binding')
+  @UseGuards(LocalQcGuard)
+  prepareOneShotMediaBinding(@Param('id') id: string) {
+    return this.respond(() => this.campaigns.prepareOneShotMediaBinding(id));
+  }
+  @Post(':id/one-shot-media-binding/authorizations')
+  @UseGuards(LocalQcGuard)
+  authorizeOneShotMediaBinding(
+    @Param('id') id: string,
+    @Body() decision: OneShotMediaDecision,
+    @Req() request: any,
+  ) {
+    return this.respond(() =>
+      this.campaigns.authorizeOneShotMediaBinding(
+        id,
+        decision,
+        request[QC_REVIEWER_CONTEXT],
+      ),
+    );
   }
   @Get(':id/review')
   @UseGuards(LocalQcGuard)
