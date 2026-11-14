@@ -9,6 +9,88 @@ import { rejectAffiliateDynamicPrice } from '../../affiliate/domain/affiliate-co
 const fail = (code: string): never => {
   throw Object.assign(new Error(code), { code });
 };
+type Fact = EditorialProviderInput['briefing']['attributes'][number];
+function kitNarration(facts: Fact[], productName: string) {
+  const lines = new Map<number, string>();
+  const required: number[] = [];
+  const compositionIndexes = facts.flatMap((fact, index) =>
+    /^composicao_kit[1-9]\d{0,2}$/.test(fact.name) ? [index] : [],
+  );
+  const quantityIndex = facts.findIndex(
+    (fact) => fact.name === 'quantidade_total',
+  );
+  const variantIndex = facts.findIndex(
+    (fact) => fact.name === 'variante_piloto',
+  );
+  const variant =
+    variantIndex < 0
+      ? null
+      : /^KIT_([1-9]\d{0,2})$/.exec(facts[variantIndex].value);
+  // Other products keep the existing treatment of unknown free-form fields.
+  if (!compositionIndexes.length && !variant) return { lines, required };
+  const quantity =
+    quantityIndex < 0 ? null : Number(facts[quantityIndex].value);
+  if (quantityIndex >= 0 && !/^[1-9]\d{0,2}$/.test(facts[quantityIndex].value))
+    fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+  if (quantity !== null)
+    lines.set(
+      quantityIndex,
+      `Este conjunto vem com ${quantity} ${quantity === 1 ? 'peça' : 'peças'} no total.`,
+    );
+  if (variantIndex >= 0 && !variant) fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+  if (variant && quantity !== null && Number(variant[1]) !== quantity)
+    fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+  if (
+    variant &&
+    !new RegExp(`\\bkit\\s+${variant[1]}\\b`, 'iu').test(productName)
+  )
+    lines.set(variantIndex, `A variante documentada é o Kit ${variant[1]}.`);
+  if (compositionIndexes.length > 1) fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+  for (const index of compositionIndexes) {
+    const fact = facts[index];
+    const groups = fact.value
+      .split(/\s*;\s*/u)
+      .map((value) =>
+        /^([1-9]\d{0,2})\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*[x×]\s*(\d+(?:[,.]\d+)?)\s*cm$/u.exec(
+          value,
+        ),
+      );
+    if (
+      groups.length < 2 ||
+      groups.length > 8 ||
+      groups.some((group) => !group)
+    )
+      fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+    const counts = groups.map((group) => Number(group![1]));
+    const dimensions = groups.map((group) =>
+      group!.slice(2).map((value) => Number(value.replace(',', '.'))),
+    );
+    const total = counts.reduce((sum, n) => sum + n, 0);
+    if (
+      total !== Number(fact.name.slice('composicao_kit'.length)) ||
+      (quantity !== null && quantity !== total) ||
+      (variant && Number(variant[1]) !== total) ||
+      dimensions.some((values) =>
+        values.some((value) => !Number.isFinite(value) || value <= 0),
+      ) ||
+      new Set(dimensions.map((values) => values.join('x'))).size !==
+        groups.length
+    )
+      fail('OLLAMA_PRODUCT_EVIDENCE_REQUIRED');
+    const countsText = counts.map((n) =>
+      n === 1 ? 'uma' : n === 2 ? 'duas' : String(n),
+    );
+    const joined =
+      countsText.slice(0, -1).join(', ') + ' e ' + countsText.at(-1);
+    lines.set(
+      index,
+      `O conjunto combina ${groups.length} tamanhos diferentes, distribuídos em grupos de ${joined} ${counts.at(-1) === 1 ? 'peça' : 'peças'}.`,
+    );
+    if (quantityIndex >= 0) required.push(quantityIndex);
+    required.push(index);
+  }
+  return { lines, required };
+}
 /** Local inference selects/order facts; application code alone renders commercial claims. */
 export class OllamaEditorialProvider implements EditorialProvider {
   readonly mode = 'LOCAL' as const;
@@ -46,7 +128,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
       fail('OLLAMA_BASE_URL_INVALID');
     this.endpoint = `${baseUrl.replace(/\/$/, '')}/api/generate`;
     this.configurationVersion =
-      'ollama-grounded/2:' +
+      'ollama-grounded/3:' +
       createHash('sha256').update(model).digest('hex').slice(0, 16);
   }
   private async select(input: EditorialProviderInput) {
@@ -165,10 +247,11 @@ export class OllamaEditorialProvider implements EditorialProvider {
       '.';
     const duration = input.projectSnapshot.channel.minDurationSeconds;
     const selected: string[] = [];
+    const kit = kitNarration(b.attributes, b.productName);
     let text = [hook, b.disclosure, b.cta].join(' ');
     if (text.split(/\s+/).length > Math.floor(duration * 2.5))
       fail('NARRATION_DURATION_REQUIRED');
-    for (const i of result.attributeIndexes) {
+    for (const i of new Set([...kit.required, ...result.attributeIndexes])) {
       const a = b.attributes[i];
       let line: string;
 
@@ -183,7 +266,8 @@ export class OllamaEditorialProvider implements EditorialProvider {
           line = `O anúncio é da loja ${a.value}`;
           break;
         default:
-          continue;
+          if (!kit.lines.has(i)) continue;
+          line = kit.lines.get(i)!;
       }
 
       if (!/[.!?]$/u.test(line)) {
@@ -194,7 +278,7 @@ export class OllamaEditorialProvider implements EditorialProvider {
       ) {
         selected.push(line);
         text += ' ' + line;
-      }
+      } else if (kit.required.includes(i)) fail('NARRATION_DURATION_REQUIRED');
     }
     return {
       hook,

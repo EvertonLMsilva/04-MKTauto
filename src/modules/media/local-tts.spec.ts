@@ -120,6 +120,94 @@ function fixture() {
   };
 }
 
+test.each(['·', '|'])(
+  'Piper speaks display-only %s as a pause while preserving canonical evidence and a versioned cache identity',
+  async (separator) => {
+    const f = fixture();
+    try {
+      const text = `Publicidade ${separator} Cena ilustrativa ${separator} Link de afiliado.`;
+      const tts = new LocalPiperTts(f.env, f.runner);
+      const result = await tts.synthesize(text, 10000);
+      expect(f.runner.mock.calls[0][2].stdin).toBe(
+        'Publicidade, Cena ilustrativa, Link de afiliado.\n',
+      );
+      expect(result.evidence.narration).toBe(text);
+      expect(result.evidence.configurationHash).not.toBe(
+        f.env.LOCAL_TTS_MANIFEST_SHA256,
+      );
+      expect(
+        tts.configuration(result.evidence.configurationHash).configurationHash,
+      ).toBe(result.evidence.configurationHash);
+      expect(new LocalPiperTts(f.env).configuration().configurationHash).toBe(
+        result.evidence.configurationHash,
+      );
+      expect(
+        tts.configuration(f.env.LOCAL_TTS_MANIFEST_SHA256).configurationHash,
+      ).toBe(f.env.LOCAL_TTS_MANIFEST_SHA256);
+      expect(f.runner.mock.calls[0][1]).not.toContain('--length_scale');
+    } finally {
+      f.cleanup();
+    }
+  },
+);
+
+test('Piper leaves embedded unsupported separators intact and verifies historical versioned identities after manifest rotation', async () => {
+  const f = fixture();
+  try {
+    const oldManifest = f.env.LOCAL_TTS_MANIFEST_SHA256!;
+    const tts = new LocalPiperTts(f.env, f.runner);
+    const oldIdentity = tts.configuration().configurationHash;
+    const result = await tts.synthesize('Kit A|B. Identidade A·B.', 10000);
+    expect(f.runner.mock.calls[0][2].stdin).toBe('Kit A|B. Identidade A·B.\n');
+    expect(result.evidence.narration).toBe('Kit A|B. Identidade A·B.');
+    const oldPath = join(f.root, 'old-manifest.json');
+    writeFileSync(oldPath, readFileSync(f.env.LOCAL_TTS_MANIFEST!));
+    f.manifest.attribution = 'TEST rotated manifest';
+    f.save();
+    f.env.LOCAL_TTS_HISTORICAL_MANIFESTS = JSON.stringify({
+      [oldManifest]: oldPath,
+    });
+    const rotated = new LocalPiperTts(f.env);
+    expect(rotated.configuration().configurationHash).not.toBe(oldIdentity);
+    expect(rotated.configuration(oldIdentity).configurationHash).toBe(
+      oldIdentity,
+    );
+    expect(rotated.configuration(oldManifest).configurationHash).toBe(
+      oldManifest,
+    );
+    writeFileSync(f.manifest.modelPath, 'tampered');
+    expect(() => rotated.configuration(oldIdentity)).toThrow(
+      'LOCAL_TTS_LICENSE_REQUIRED',
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
+test('Piper spoken policy does not change another engine or its manifest identity', async () => {
+  const f = fixture();
+  try {
+    espeakFixture(f);
+    Object.assign(f.manifest, {
+      spokenTextPolicy: 'display-separators-to-pauses/1',
+    });
+    f.save();
+    const tts = new LocalPiperTts(f.env, f.runner);
+    const result = await tts.synthesize(
+      'Publicidade · Link de afiliado.',
+      10000,
+    );
+    expect(f.runner.mock.calls[0][2].stdin).toBe(
+      'Publicidade · Link de afiliado.\n',
+    );
+    expect(result.evidence.configurationHash).toBe(
+      f.env.LOCAL_TTS_MANIFEST_SHA256,
+    );
+  } finally {
+    f.cleanup();
+  }
+});
+
 function espeakFixture(
   f: ReturnType<typeof fixture>,
   windows = process.platform === 'win32',
@@ -136,7 +224,9 @@ function espeakFixture(
   Object.assign(f.manifest, {
     adapterSha256: digest(
       readFileSync(
-        fileURLToPath(new URL('../../../python/tts/espeak.py', import.meta.url)),
+        fileURLToPath(
+          new URL('../../../python/tts/espeak.py', import.meta.url),
+        ),
       ),
     ),
   });
@@ -301,7 +391,9 @@ function kokoroFixture(f: ReturnType<typeof fixture>) {
     voicesSha256: f.manifest.modelSha256,
     adapterSha256: digest(
       readFileSync(
-        fileURLToPath(new URL('../../../python/tts/kokoro.py', import.meta.url)),
+        fileURLToPath(
+          new URL('../../../python/tts/kokoro.py', import.meta.url),
+        ),
       ),
     ),
   });
@@ -329,7 +421,9 @@ test('Kokoro pins Dora natural, voices and adapter; never falls back or changes 
       voicesSha256: f.manifest.modelSha256,
       adapterSha256: digest(
         readFileSync(
-          fileURLToPath(new URL('../../../python/tts/kokoro.py', import.meta.url)),
+          fileURLToPath(
+            new URL('../../../python/tts/kokoro.py', import.meta.url),
+          ),
         ),
       ),
     });
@@ -862,7 +956,8 @@ test.each([0, 0.45])(
         'São 3 passos, em 20 segundos. Confira os detalhes.\n',
       );
       expect(result.evidence).toMatchObject({
-        configurationHash: f.env.LOCAL_TTS_MANIFEST_SHA256,
+        configurationHash: new LocalPiperTts(f.env).configuration()
+          .configurationHash,
         presentation,
         adaptation: 'literal-deduplication/1',
       });
